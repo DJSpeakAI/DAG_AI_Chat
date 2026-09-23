@@ -1,23 +1,25 @@
 import { AppStorageV2 } from '@kit.ArkUI';
-import { BubbleNode, ChatMessage, BubbleTree, generateMessageId, generateNodeId } from '../common/ChatNode';
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, generateMessageId, generateNodeId } from '../common/ChatModel';
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
 export struct ChatPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   @Local inputText: string = '';
-  @Local currentBubbleId: string = '';
   private scroller: Scroller = new Scroller();
 
-  aboutToAppear() {
-    this.currentBubbleId = AppStorage.get<string>('currentBubbleId') ?? '';
+  // V2 @Computed：从 store 读取当前气泡 ID，自动响应式
+  @Computed
+  get currentBubbleId(): string {
+    return this.currentBubbleStore.nodeID;
   }
 
   // V2 @Computed：自动响应式，不需要手动同步
   @Computed
   get currentBubble(): BubbleNode | undefined {
-    return this.store.bubbleList.find(b => b.nodeId === this.currentBubbleId);
+    return this.store.nodeList.find(b => b.nodeID === this.currentBubbleId);
   }
 
   @Computed
@@ -55,7 +57,7 @@ export struct ChatPage {
       this.currentBubble.x + 80 + Math.floor(Math.random() * 40),
       this.currentBubble.y + 80 + Math.floor(Math.random() * 40)
     );
-    this.store.bubbleList = [...this.store.bubbleList, newBubble];
+    this.store.nodeList = [...this.store.nodeList, newBubble];
     this.pathStack.pop();
   }
 

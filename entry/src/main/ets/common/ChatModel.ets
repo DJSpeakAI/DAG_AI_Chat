@@ -18,29 +18,35 @@ export class ChatMessage {
 // 气泡节点（对话树中的一个节点）
 @ObservedV2
 export class BubbleNode {
-  @Trace nodeId: string;
-  @Trace parentId: string | null;
+  @Trace nodeID: string;
+  @Trace parentID: string | null;
   @Trace messages: ChatMessage[];
   @Trace x: number;
   @Trace y: number;
 
-  constructor(nodeId: string, parentId: string | null, messages: ChatMessage[], x: number, y: number) {
-    this.nodeId = nodeId;
-    this.parentId = parentId;
+  constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number) {
+    this.nodeID = nodeID;
+    this.parentID = parentID;
     this.messages = messages;
     this.x = x;
     this.y = y;
   }
 }
 
-// V2 全局状态：包装 bubbleList，配合 AppStorageV2 使用
+// V2 全局状态：包装 nodeList，配合 AppStorageV2 使用
 @ObservedV2
 export class BubbleTree {
-  @Trace bubbleList: BubbleNode[] = [];
+  @Trace nodeList: BubbleNode[] = [];
 
-  constructor(bubbleList: BubbleNode[] = []) {
-    this.bubbleList = bubbleList;
+  constructor(nodeList: BubbleNode[] = []) {
+    this.nodeList = nodeList;
   }
+}
+
+// V2 全局状态：当前选中的气泡 ID
+@ObservedV2
+export class CurrentBubble {
+  @Trace nodeID: string = '';
 }
 
 // 生成唯一气泡 ID

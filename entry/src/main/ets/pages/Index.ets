@@ -1,7 +1,7 @@
 import { AppStorageV2 } from '@kit.ArkUI';
 import { BBTreeCanvas } from '../components/BBTreeCanvas';
 import { ChatPage } from '../components/ChatPage';
-import { BubbleNode, ChatMessage, BubbleTree, generateNodeId, generateMessageId } from '../common/ChatNode';
+import { BubbleNode, ChatMessage, BubbleTree, generateNodeId, generateMessageId } from '../common/ChatModel';
 
 // 首页入口 — V2 全量迁移
 @Entry

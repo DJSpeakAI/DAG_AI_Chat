@@ -1,11 +1,12 @@
 import { AppStorageV2 } from '@kit.ArkUI';
-import { BubbleNode, BubbleTree } from '../common/ChatNode';
+import { BubbleNode, BubbleTree, CurrentBubble } from '../common/ChatModel';
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
 export struct BBTreeCanvas {
   @Param pathStack: NavPathStack = new NavPathStack();
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   @Local dragBubbleId: string = '';
   @Local dragOffsetX: number = 0;
   @Local dragOffsetY: number = 0;
@@ -20,8 +21,8 @@ export struct BBTreeCanvas {
       Stack({ alignContent: Alignment.TopStart }) {
         Stack({ alignContent: Alignment.TopStart }) {
           // 1. 连线 — Path 组件
-          ForEach(this.store.bubbleList.filter(b => b.parentId !== null), (bubble: BubbleNode) => {
-            ForEach(this.store.bubbleList.filter(p => p.nodeId === bubble.parentId), (parent: BubbleNode) => {
+          ForEach(this.store.nodeList.filter(b => b.parentID !== null), (bubble: BubbleNode) => {
+            ForEach(this.store.nodeList.filter(p => p.nodeID === bubble.parentID), (parent: BubbleNode) => {
               Path()
                 .commands(`M${parent.x + 30} ${parent.y + 30} L${bubble.x + 30} ${bubble.y + 30}`)
                 .stroke('#CCCCCC')
@@ -29,11 +30,11 @@ export struct BBTreeCanvas {
                 .fillOpacity(0)
                 .width('100%')
                 .height('100%')
-            }, (parent: BubbleNode) => parent.nodeId)
-          }, (bubble: BubbleNode) => bubble.nodeId)
+            }, (parent: BubbleNode) => parent.nodeID)
+          }, (bubble: BubbleNode) => bubble.nodeID)
 
-          // 2. 气泡 — ForEach key 只用 nodeId，@Trace 自动追踪 x/y/messages
-          ForEach(this.store.bubbleList, (bubble: BubbleNode) => {
+          // 2. 气泡 — ForEach key 只用 nodeID，@Trace 自动追踪 x/y/messages
+          ForEach(this.store.nodeList, (bubble: BubbleNode) => {
             Column() {
               Text(`${bubble.messages.length}`)
                 .fontSize(20)
@@ -45,24 +46,24 @@ export struct BBTreeCanvas {
                 .textAlign(TextAlign.Center)
             }
             .position({
-              x: bubble.x + (bubble.nodeId === this.dragBubbleId ? this.dragOffsetX : 0),
-              y: bubble.y + (bubble.nodeId === this.dragBubbleId ? this.dragOffsetY : 0)
+              x: bubble.x + (bubble.nodeID === this.dragBubbleId ? this.dragOffsetX : 0),
+              y: bubble.y + (bubble.nodeID === this.dragBubbleId ? this.dragOffsetY : 0)
             })
             .gesture(
               PanGesture({ distance: 5 })
                 .onActionStart(() => {
-                  this.dragBubbleId = bubble.nodeId;
+                  this.dragBubbleId = bubble.nodeID;
                   this.dragOffsetX = 0;
                   this.dragOffsetY = 0;
                   this.isDragging = true;
-                  console.info(`[BBTree] drag start: ${bubble.nodeId}`);
+                  console.info(`[BBTree] drag start: ${bubble.nodeID}`);
                 })
                 .onActionUpdate((event: GestureEvent) => {
                   this.dragOffsetX = event.offsetX;
                   this.dragOffsetY = event.offsetY;
                 })
                 .onActionEnd(() => {
-                  const draggedBubble = this.store.bubbleList.find(b => b.nodeId === this.dragBubbleId);
+                  const draggedBubble = this.store.nodeList.find(b => b.nodeID === this.dragBubbleId);
                   if (draggedBubble) {
                     draggedBubble.x = Math.max(0, draggedBubble.x + this.dragOffsetX);
                     draggedBubble.y = Math.max(0, draggedBubble.y + this.dragOffsetY);
@@ -82,12 +83,12 @@ export struct BBTreeCanvas {
                   if (this.isDragging) {
                     return;
                   }
-                  console.info(`[BBTree] double tap: ${bubble.nodeId}`);
-                  AppStorage.setOrCreate('currentBubbleId', bubble.nodeId);
+                  console.info(`[BBTree] double tap: ${bubble.nodeID}`);
+                  this.currentBubbleStore.nodeID = bubble.nodeID;
                   this.pathStack.pushPath({ name: 'ChatPage' });
                 })
             )
-          }, (bubble: BubbleNode) => bubble.nodeId)
+          }, (bubble: BubbleNode) => bubble.nodeID)
         }
         .width('100%')
         .height('100%')
