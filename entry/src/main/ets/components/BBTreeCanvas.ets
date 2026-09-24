@@ -16,24 +16,60 @@ export struct BBTreeCanvas {
   @Local canvasPanStartX: number = 0;
   @Local canvasPanStartY: number = 0;
 
+  // 连线 helper：所有读取来自 bubble 参数（ForEach item）
+  getEdgeStartX(bubble: BubbleNode): number {
+    const pDragX = bubble.parentID === this.dragBubbleId ? this.dragOffsetX : 0;
+    return bubble.parentX + pDragX + 30 + this.canvasOffsetX;
+  }
+  getEdgeStartY(bubble: BubbleNode): number {
+    const pDragY = bubble.parentID === this.dragBubbleId ? this.dragOffsetY : 0;
+    return bubble.parentY + pDragY + 30 + this.canvasOffsetY;
+  }
+  getEdgeEndX(bubble: BubbleNode): number {
+    const cDragX = bubble.nodeID === this.dragBubbleId ? this.dragOffsetX : 0;
+    return bubble.x + cDragX + 30 + this.canvasOffsetX;
+  }
+  getEdgeEndY(bubble: BubbleNode): number {
+    const cDragY = bubble.nodeID === this.dragBubbleId ? this.dragOffsetY : 0;
+    return bubble.y + cDragY + 30 + this.canvasOffsetY;
+  }
+  getEdgeLength(bubble: BubbleNode): number {
+    const dx = this.getEdgeEndX(bubble) - this.getEdgeStartX(bubble);
+    const dy = this.getEdgeEndY(bubble) - this.getEdgeStartY(bubble);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  getEdgeAngle(bubble: BubbleNode): number {
+    const dx = this.getEdgeEndX(bubble) - this.getEdgeStartX(bubble);
+    const dy = this.getEdgeEndY(bubble) - this.getEdgeStartY(bubble);
+    return Math.atan2(dy, dx) * 180 / Math.PI;
+  }
+
   build() {
     NavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          // 1. 连线 — Path 组件
-          ForEach(this.store.nodeList.filter(b => b.parentID !== null), (bubble: BubbleNode) => {
-            ForEach(this.store.nodeList.filter(p => p.nodeID === bubble.parentID), (parent: BubbleNode) => {
-              Path()
-                .commands(`M${parent.x + 30} ${parent.y + 30} L${bubble.x + 30} ${bubble.y + 30}`)
-                .stroke('#CCCCCC')
-                .strokeWidth(2)
-                .fillOpacity(0)
-                .width('100%')
-                .height('100%')
-            }, (parent: BubbleNode) => parent.nodeID)
-          }, (bubble: BubbleNode) => bubble.nodeID)
+        // 1. 连线 — Column + position + rotate（弃用 Path）
+        ForEach(this.store.nodeList, (bubble: BubbleNode, index: number) => {
+          if (bubble.parentID !== null) {
+            Column()
+              .width(this.getEdgeLength(bubble))
+              .height(2)
+              .backgroundColor('#CCCCCC')
+              .position({
+                x: this.getEdgeStartX(bubble),
+                y: this.getEdgeStartY(bubble) - 1
+              })
+              .rotate({
+                angle: this.getEdgeAngle(bubble),
+                centerX: 0,
+                centerY: 1
+              })
+          } else {
+            Blank()
+          }
+        }, (bubble: BubbleNode) => bubble.nodeID)
 
-          // 2. 气泡 — ForEach key 只用 nodeID，@Trace 自动追踪 x/y/messages
+        // 2. 气泡 — 内层 Stack，保留 .translate() 画布平移（不动）
+        Stack({ alignContent: Alignment.TopStart }) {
           ForEach(this.store.nodeList, (bubble: BubbleNode) => {
             Column() {
               Text(`${bubble.messages.length}`)
@@ -65,8 +101,18 @@ export struct BBTreeCanvas {
                 .onActionEnd(() => {
                   const draggedBubble = this.store.nodeList.find(b => b.nodeID === this.dragBubbleId);
                   if (draggedBubble) {
-                    draggedBubble.x = Math.max(0, draggedBubble.x + this.dragOffsetX);
-                    draggedBubble.y = Math.max(0, draggedBubble.y + this.dragOffsetY);
+                    const newX = Math.max(0, draggedBubble.x + this.dragOffsetX);
+                    const newY = Math.max(0, draggedBubble.y + this.dragOffsetY);
+                    draggedBubble.x = newX;
+                    draggedBubble.y = newY;
+                    // 更新所有直接子节点的 parentX/parentY
+                    for (let i = 0; i < this.store.nodeList.length; i++) {
+                      const child = this.store.nodeList[i];
+                      if (child.parentID === this.dragBubbleId) {
+                        child.parentX = newX;
+                        child.parentY = newY;
+                      }
+                    }
                   }
                   this.dragBubbleId = '';
                   this.dragOffsetX = 0;
@@ -85,6 +131,8 @@ export struct BBTreeCanvas {
                   }
                   console.info(`[BBTree] double tap: ${bubble.nodeID}`);
                   this.currentBubbleStore.nodeID = bubble.nodeID;
+                  this.currentBubbleStore.bubbleX = bubble.x;
+                  this.currentBubbleStore.bubbleY = bubble.y;
                   this.pathStack.pushPath({ name: 'ChatPage' });
                 })
             )

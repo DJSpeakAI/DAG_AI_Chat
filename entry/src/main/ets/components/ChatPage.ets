@@ -54,8 +54,10 @@ export struct ChatPage {
       generateNodeId(),
       this.currentBubbleId,
       [],
-      this.currentBubble.x + 80 + Math.floor(Math.random() * 40),
-      this.currentBubble.y + 80 + Math.floor(Math.random() * 40)
+      this.currentBubbleStore.bubbleX + 80 + Math.floor(Math.random() * 40),
+      this.currentBubbleStore.bubbleY + 80 + Math.floor(Math.random() * 40),
+      this.currentBubbleStore.bubbleX, // parentX — 冗余存储父节点坐标
+      this.currentBubbleStore.bubbleY  // parentY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
     this.pathStack.pop();

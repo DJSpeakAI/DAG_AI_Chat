@@ -23,13 +23,17 @@ export class BubbleNode {
   @Trace messages: ChatMessage[];
   @Trace x: number;
   @Trace y: number;
+  @Trace parentX: number; // 冗余存储父节点 x，避免 find 读取 @Trace 断链
+  @Trace parentY: number; // 冗余存储父节点 y
 
-  constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number) {
+  constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number, parentX: number = 0, parentY: number = 0) {
     this.nodeID = nodeID;
     this.parentID = parentID;
     this.messages = messages;
     this.x = x;
     this.y = y;
+    this.parentX = parentX;
+    this.parentY = parentY;
   }
 }
 
@@ -43,10 +47,12 @@ export class BubbleTree {
   }
 }
 
-// V2 全局状态：当前选中的气泡 ID
+// V2 全局状态：当前选中的气泡 ID + 坐标
 @ObservedV2
 export class CurrentBubble {
   @Trace nodeID: string = '';
+  @Trace bubbleX: number = 0; // 双击时存入 bubble.x，供 ChatPage addBubble 使用
+  @Trace bubbleY: number = 0;
 }
 
 // 生成唯一气泡 ID
