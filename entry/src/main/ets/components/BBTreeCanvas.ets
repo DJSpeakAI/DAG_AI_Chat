@@ -1,5 +1,6 @@
 import { AppStorageV2 } from '@kit.ArkUI';
 import { BubbleNode, BubbleTree, CurrentBubble } from '../common/ChatModel';
+import { saveBubbleTree, loadBubbleTree } from '../utils/TreeFileUtil';
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -15,6 +16,15 @@ export struct BBTreeCanvas {
   @Local canvasOffsetY: number = 0;
   @Local canvasPanStartX: number = 0;
   @Local canvasPanStartY: number = 0;
+
+  aboutToAppear() {
+    // 从沙盒加载持久化数据，成功则替换 nodeList
+    loadBubbleTree().then((tree) => {
+      if (tree && tree.nodeList.length > 0) {
+        this.store.nodeList = tree.nodeList;
+      }
+    });
+  }
 
   // 连线 helper：所有读取来自 bubble 参数（ForEach item）
   getEdgeStartX(bubble: BubbleNode): number {
@@ -118,6 +128,7 @@ export struct BBTreeCanvas {
                   this.dragOffsetX = 0;
                   this.dragOffsetY = 0;
                   console.info(`[BBTree] drag end, committed`);
+                  saveBubbleTree(this.store);
                   setTimeout(() => {
                     this.isDragging = false;
                   }, 200);

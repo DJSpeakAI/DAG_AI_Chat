@@ -1,5 +1,6 @@
 import { AppStorageV2 } from '@kit.ArkUI';
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, generateMessageId, generateNodeId } from '../common/ChatModel';
+import { saveBubbleTree } from '../utils/TreeFileUtil';
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
@@ -60,6 +61,7 @@ export struct ChatPage {
       this.currentBubbleStore.bubbleY  // parentY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
+    saveBubbleTree(this.store);
     this.pathStack.pop();
   }
 
