@@ -1,7 +1,8 @@
-import { AppStorageV2 } from '@kit.ArkUI';
+import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BBTreeCanvas } from '../components/BBTreeCanvas';
 import { ChatPage } from '../components/ChatPage';
-import { BubbleNode, ChatMessage, BubbleTree, generateNodeId, generateMessageId } from '../common/ChatModel';
+import { SettingsPage } from '../components/SettingsPage';
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, generateNodeId, generateMessageId } from '../common/ChatModel';
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -16,10 +17,12 @@ struct Index {
       return new BubbleTree([
         new BubbleNode(rootId, null, [
           new ChatMessage(generateMessageId(), 'user', '你好'),
-          new ChatMessage(generateMessageId(), 'AI', '1')
+          new ChatMessage(generateMessageId(), 'assistant', '1')
         ], 200, 200)
       ]);
     });
+    // PersistenceV2：API 配置持久化，跨重启保存
+    PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());
   }
 
   @Builder
@@ -28,6 +31,8 @@ struct Index {
       BBTreeCanvas({ pathStack: this.pathStack })
     } else if (name === 'ChatPage') {
       ChatPage({ pathStack: this.pathStack })
+    } else if (name === 'SettingsPage') {
+      SettingsPage({ pathStack: this.pathStack })
     }
   }
 

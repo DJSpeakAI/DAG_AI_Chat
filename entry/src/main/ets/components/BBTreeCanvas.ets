@@ -149,6 +149,58 @@ export struct BBTreeCanvas {
                   this.pathStack.pushPath({ name: 'ChatPage' });
                 })
             )
+            .gesture(
+              LongPressGesture({ duration: 500 })
+                .onAction(() => {
+                  if (this.isDragging) {
+                    return;
+                  }
+                  // 根节点不允许删除
+                  if (bubble.parentID === null) {
+                    console.info('[BBTree] 根节点不可删除');
+                    return;
+                  }
+                  console.info(`[BBTree] long press: ${bubble.nodeID}`);
+                  AlertDialog.show({
+                    title: '删除节点',
+                    message: `确认删除此节点及其所有子节点？`,
+                    primaryButton: {
+                      value: '取消',
+                      action: () => {}
+                    },
+                    secondaryButton: {
+                      value: '删除',
+                      fontColor: '#F44336',
+                      action: () => {
+                        // 收集要删除的节点 ID（自身 + 所有后代）
+                        const idsToDelete: string[] = [bubble.nodeID];
+                        let changed = true;
+                        while (changed) {
+                          changed = false;
+                          for (let i = 0; i < this.store.nodeList.length; i++) {
+                            const node = this.store.nodeList[i];
+                            const pid = node.parentID !== null ? node.parentID : '';
+                            if (idsToDelete.includes(pid) && !idsToDelete.includes(node.nodeID)) {
+                              idsToDelete.push(node.nodeID);
+                              changed = true;
+                            }
+                          }
+                        }
+                        // 过滤掉被删除的节点
+                        const newList: BubbleNode[] = [];
+                        for (let i = 0; i < this.store.nodeList.length; i++) {
+                          if (!idsToDelete.includes(this.store.nodeList[i].nodeID)) {
+                            newList.push(this.store.nodeList[i]);
+                          }
+                        }
+                        this.store.nodeList = newList;
+                        saveBubbleTree(this.store, this.getUIContext().getHostContext() as common.UIAbilityContext);
+                        console.info(`[BBTree] 已删除 ${idsToDelete.length} 个节点`);
+                      }
+                    }
+                  });
+                })
+            )
           }, (bubble: BubbleNode) => bubble.nodeID)
         }
         .width('100%')

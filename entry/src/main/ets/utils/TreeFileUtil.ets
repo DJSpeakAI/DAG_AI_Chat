@@ -9,6 +9,7 @@ interface PlainChatMessage {
   messageId: string;
   role: string;
   content: string;
+  imageUrl: string[];
 }
 
 interface PlainBubbleNode {
@@ -40,7 +41,8 @@ export function treeToPlainObj(tree: BubbleTree): PlainBubbleTree {
       const plainMsg: PlainChatMessage = {
         messageId: msg.messageId,
         role: msg.role,
-        content: msg.content
+        content: msg.content,
+        imageUrl: msg.imageUrl
       };
       plainMsgs.push(plainMsg);
     }
@@ -76,7 +78,7 @@ export function plainObjToTree(obj: PlainBubbleTree): BubbleTree {
     if (n.messages && Array.isArray(n.messages)) {
       for (let j = 0; j < n.messages.length; j++) {
         const m = n.messages[j];
-        messages.push(new ChatMessage(m.messageId, m.role as ChatRole, m.content));
+        messages.push(new ChatMessage(m.messageId, m.role as ChatRole, m.content, m.imageUrl || []));
       }
     }
     // 重建 BubbleNode，parentX/parentY 兜底默认 0

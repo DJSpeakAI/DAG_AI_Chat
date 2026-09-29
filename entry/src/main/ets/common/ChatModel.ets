@@ -1,5 +1,5 @@
-// 角色类型：用户 / AI
-export type ChatRole = 'user' | 'AI';
+// 角色类型：用户 / assistant（火山方舟 v3 接口规范）
+export type ChatRole = 'user' | 'assistant';
 
 // 单条对话消息
 @ObservedV2
@@ -7,11 +7,13 @@ export class ChatMessage {
   @Trace messageId: string;
   @Trace role: ChatRole;
   @Trace content: string;
+  @Trace imageUrl: string[]; // 多模态图片 URL 数组（Base64 或远程 URL），空数组代表无图片
 
-  constructor(messageId: string, role: ChatRole, content: string) {
+  constructor(messageId: string, role: ChatRole, content: string, imageUrl: string[] = []) {
     this.messageId = messageId;
     this.role = role;
     this.content = content;
+    this.imageUrl = imageUrl;
   }
 }
 
@@ -63,4 +65,12 @@ export function generateNodeId(): string {
 // 生成唯一消息 ID
 export function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+}
+
+// API 配置（火山引擎方舟）：PersistenceV2 持久化，跨重启保存
+@ObservedV2
+export class ApiConfig {
+  @Trace apiKey: string = '';
+  @Trace endpoint: string = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+  @Trace model: string = 'doubao-pro-32k';
 }
