@@ -1,4 +1,5 @@
 import { AppStorageV2 } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, generateMessageId, generateNodeId } from '../common/ChatModel';
 import { saveBubbleTree } from '../utils/TreeFileUtil';
 
@@ -61,7 +62,7 @@ export struct ChatPage {
       this.currentBubbleStore.bubbleY  // parentY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
-    saveBubbleTree(this.store);
+    saveBubbleTree(this.store, this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.pathStack.pop();
   }
 

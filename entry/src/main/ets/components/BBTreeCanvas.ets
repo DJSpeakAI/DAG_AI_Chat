@@ -1,4 +1,5 @@
 import { AppStorageV2 } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { BubbleNode, BubbleTree, CurrentBubble } from '../common/ChatModel';
 import { saveBubbleTree, loadBubbleTree } from '../utils/TreeFileUtil';
 
@@ -19,7 +20,8 @@ export struct BBTreeCanvas {
 
   aboutToAppear() {
     // 从沙盒加载持久化数据，成功则替换 nodeList
-    loadBubbleTree().then((tree) => {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    loadBubbleTree(ctx).then((tree) => {
       if (tree && tree.nodeList.length > 0) {
         this.store.nodeList = tree.nodeList;
       }
@@ -128,7 +130,7 @@ export struct BBTreeCanvas {
                   this.dragOffsetX = 0;
                   this.dragOffsetY = 0;
                   console.info(`[BBTree] drag end, committed`);
-                  saveBubbleTree(this.store);
+                  saveBubbleTree(this.store, this.getUIContext().getHostContext() as common.UIAbilityContext);
                   setTimeout(() => {
                     this.isDragging = false;
                   }, 200);

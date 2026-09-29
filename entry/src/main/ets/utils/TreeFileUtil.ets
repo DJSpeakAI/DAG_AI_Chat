@@ -95,14 +95,13 @@ export function plainObjToTree(obj: PlainBubbleTree): BubbleTree {
 
 // ========== 3. 保存气泡树到沙盒 JSON ==========
 // 流程：tree → treeToPlainObj → JSON.stringify → 写入沙盒文件
-export async function saveBubbleTree(tree: BubbleTree): Promise<boolean> {
+export async function saveBubbleTree(tree: BubbleTree, ctx: common.UIAbilityContext): Promise<boolean> {
   try {
     // ① 代理对象 → 纯对象
     const plain = treeToPlainObj(tree);
     // ② 序列化
     const json = JSON.stringify(plain);
-    // ③ 获取沙盒路径（禁止顶层全局调用 getContext）
-    const ctx = getContext() as common.UIAbilityContext;
+    // ③ 获取沙盒路径
     const filePath = ctx.filesDir + '/bubbleTreeData.json';
     // ④ 打开文件，TRUNC 清空旧内容防止残留
     const file = fileIo.openSync(filePath,
@@ -121,10 +120,9 @@ export async function saveBubbleTree(tree: BubbleTree): Promise<boolean> {
 
 // ========== 4. 从沙盒加载气泡树 ==========
 // 流程：判断文件存在 → 读取 → 转文本 → JSON.parse → plainObjToTree
-export async function loadBubbleTree(): Promise<BubbleTree | null> {
+export async function loadBubbleTree(ctx: common.UIAbilityContext): Promise<BubbleTree | null> {
   try {
     // ① 获取沙盒路径
-    const ctx = getContext() as common.UIAbilityContext;
     const filePath = ctx.filesDir + '/bubbleTreeData.json';
     // ② 判断文件是否存在，accessSync 抛异常代表不存在
     try {
