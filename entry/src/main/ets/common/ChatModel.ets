@@ -1,5 +1,5 @@
 // 角色类型：用户 / assistant（火山方舟 v3 接口规范）
-export type ChatRole = 'user' | 'assistant';
+export type ChatRole = 'user' | 'assistant' | 'system'; // ★ 新增 'system'（0.117 摘要虚拟消息）
 
 // 单条对话消息
 @ObservedV2
@@ -31,8 +31,11 @@ export class BubbleNode {
   @Trace y: number;
   @Trace parentX: number; // 冗余存储父节点 x，避免 find 读取 @Trace 断链
   @Trace parentY: number; // 冗余存储父节点 y
+  @Trace historySummary: string; // ★ 新增：分支链路摘要（0.117）
+  @Trace historySummaryCount: number; // ★ 新增：上次生成摘要时的链路消息总数（0.117）
 
-  constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number, parentX: number = 0, parentY: number = 0) {
+  constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number, parentX: number = 0, parentY: number = 0,
+              historySummary: string = '', historySummaryCount: number = 0) {
     this.nodeID = nodeID;
     this.parentID = parentID;
     this.messages = messages;
@@ -40,6 +43,8 @@ export class BubbleNode {
     this.y = y;
     this.parentX = parentX;
     this.parentY = parentY;
+    this.historySummary = historySummary;
+    this.historySummaryCount = historySummaryCount;
   }
 }
 
@@ -76,6 +81,8 @@ interface SerializedNode {
   y: number;
   parentX: number;
   parentY: number;
+  historySummary?: string; // ★ 新增（0.117）
+  historySummaryCount?: number; // ★ 新增（0.117）
 }
 interface SerializedTree {
   nodeList: SerializedNode[];
@@ -102,7 +109,9 @@ export function serializeBubbleTree(tree: BubbleTree): string {
         x: node.x,
         y: node.y,
         parentX: node.parentX,
-        parentY: node.parentY
+        parentY: node.parentY,
+        historySummary: node.historySummary,
+        historySummaryCount: node.historySummaryCount
       };
     })
   };
@@ -120,7 +129,8 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
       const messages: ChatMessage[] = node.messages.map((msg: SerializedMessage): ChatMessage => {
         return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl, msg.inputTokens ?? 0, msg.outputTokens ?? 0);
       });
-      return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY);
+      return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
+        node.historySummary ?? '', node.historySummaryCount ?? 0);
     });
     return new BubbleTree(nodeList);
   } catch (e) {

@@ -54,7 +54,92 @@ export struct ChatPage {
     return this.currentBubble?.messages ?? [];
   }
 
-  sendMessage(): void {
+  // ★ 新增：调用 LLM 生成摘要（0.117）
+  async generateSummaryWithLLM(messages: ChatMessage[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const summaryMessages: ChatMessage[] = [
+        new ChatMessage(generateMessageId(), 'system',
+          '请将以下对话内容精简摘要，保留：核心定义、前提条件、已推导结论、关键约定。用简洁的中文输出。'),
+        ...messages
+      ];
+      let summary = '';
+      streamChat(
+        summaryMessages,
+        this.apiConfig,
+        (chunk: string) => { summary += chunk; },
+        () => { resolve(summary); },
+        (error: string) => { reject(error); }
+      );
+    });
+  }
+
+  // ★ 新增：链路回溯 + 摘要滑动窗口压缩（0.117）
+  async buildBranchMessageList(currentNode: BubbleNode): Promise<ChatMessage[]> {
+    const THRESHOLD = 25;
+    const SUMMARY_COUNT = 10;
+    const RECENT_COUNT = 15;
+
+    // 1. 沿 parentID 回溯到根节点，收集链路上所有节点
+    const chainNodes: BubbleNode[] = [];
+    let node: BubbleNode | undefined = currentNode;
+    while (node) {
+      chainNodes.unshift(node);
+      if (node.parentID === null) break;
+      node = this.store.nodeList.find(n => n.nodeID === node!.parentID);
+    }
+
+    // 2. 按时序组装消息数组（根 → 当前），过滤空内容和占位文字
+    const allMessages: ChatMessage[] = [];
+    for (const n of chainNodes) {
+      for (const msg of n.messages) {
+        if (msg.content.length > 0 && msg.content !== 'AI正在回复中，请稍候...') {
+          allMessages.push(msg);
+        }
+      }
+    }
+
+    const totalCount = allMessages.length;
+    console.info(`[0.117] 链路消息总数: ${totalCount}`);
+
+    // 3. 未超阈值，直接返回
+    if (totalCount <= THRESHOLD) {
+      console.info(`[0.117] 未触发压缩，直接返回 ${totalCount} 条消息`);
+      return allMessages;
+    }
+
+    // 4. 超阈值，执行压缩
+    console.info(`[0.117] 触发压缩: ${totalCount} > ${THRESHOLD}`);
+
+    // 判断是否需要重新生成摘要
+    const needRegenerate = currentNode.historySummary.length === 0 ||
+      (totalCount - currentNode.historySummaryCount >= SUMMARY_COUNT);
+
+    if (needRegenerate) {
+      const toSummarize = allMessages.slice(0, SUMMARY_COUNT);
+      console.info(`[0.117] 生成新摘要，摘要消息数: ${toSummarize.length}`);
+      try {
+        const summary = await this.generateSummaryWithLLM(toSummarize);
+        currentNode.historySummary = summary;
+        currentNode.historySummaryCount = totalCount;
+        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      } catch (e) {
+        console.error(`[0.117] 摘要生成失败: ${e}`);
+      }
+    } else {
+      console.info(`[0.117] 使用已有摘要，无需重新生成`);
+    }
+
+    // 5. 组装最终消息：[1 条摘要虚拟消息 + 最近 15 条原始消息]
+    const summaryMsg = new ChatMessage(generateMessageId(), 'system',
+      `【历史摘要】${currentNode.historySummary}`);
+    const recentMessages = allMessages.slice(allMessages.length - RECENT_COUNT);
+    const result: ChatMessage[] = [summaryMsg, ...recentMessages];
+
+    console.info(`[0.117] 最终发给 AI 的消息数: ${result.length} (1 摘要 + ${recentMessages.length} 原始)`);
+    return result;
+  }
+
+  async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
@@ -71,12 +156,8 @@ export struct ChatPage {
     this.isLoading = true;
 
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
-    const messagesToSend: ChatMessage[] = [];
-    for (let i = 0; i < this.currentBubble.messages.length; i++) {
-      if (this.currentBubble.messages[i].content.length > 0) {
-        messagesToSend.push(this.currentBubble.messages[i]);
-      }
-    }
+    // ★ 替换为链路回溯 + 压缩（0.117）
+    const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
 
     this.streamController = streamChat(
       messagesToSend,
