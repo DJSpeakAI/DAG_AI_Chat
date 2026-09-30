@@ -8,12 +8,16 @@ export class ChatMessage {
   @Trace role: ChatRole;
   @Trace content: string;
   @Trace imageUrl: string[]; // 多模态图片 URL 数组（Base64 或远程 URL），空数组代表无图片
+  @Trace inputTokens: number; // 输入 token 数
+  @Trace outputTokens: number; // 输出 token 数
 
-  constructor(messageId: string, role: ChatRole, content: string, imageUrl: string[] = []) {
+  constructor(messageId: string, role: ChatRole, content: string, imageUrl: string[] = [], inputTokens: number = 0, outputTokens: number = 0) {
     this.messageId = messageId;
     this.role = role;
     this.content = content;
     this.imageUrl = imageUrl;
+    this.inputTokens = inputTokens;
+    this.outputTokens = outputTokens;
   }
 }
 
@@ -61,6 +65,8 @@ interface SerializedMessage {
   role: string;
   content: string;
   imageUrl: string[];
+  inputTokens: number;
+  outputTokens: number;
 }
 interface SerializedNode {
   nodeID: string;
@@ -84,7 +90,9 @@ export function serializeBubbleTree(tree: BubbleTree): string {
           messageId: msg.messageId,
           role: msg.role,
           content: msg.content,
-          imageUrl: msg.imageUrl
+          imageUrl: msg.imageUrl,
+          inputTokens: msg.inputTokens,
+          outputTokens: msg.outputTokens
         };
       });
       return {
@@ -110,7 +118,7 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
     const data: SerializedTree = JSON.parse(json) as SerializedTree;
     const nodeList: BubbleNode[] = data.nodeList.map((node: SerializedNode): BubbleNode => {
       const messages: ChatMessage[] = node.messages.map((msg: SerializedMessage): ChatMessage => {
-        return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl);
+        return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl, msg.inputTokens ?? 0, msg.outputTokens ?? 0);
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY);
     });

@@ -28,10 +28,15 @@ interface VolcanoMessage {
 }
 
 // 火山引擎请求体
+interface StreamOptions {
+  include_usage: boolean;
+}
+
 interface VolcanoRequestBody {
   model: string;
   messages: VolcanoMessage[];
   stream: boolean;
+  stream_options?: StreamOptions;
 }
 
 // 流式控制器：支持手动 cancel 终止请求
@@ -43,6 +48,7 @@ export interface StreamController {
 interface SSEResult {
   texts: string[];
   remainder: string;
+  usage?: SSEResponseUsage;
 }
 
 // SSE 响应 JSON 结构
@@ -56,6 +62,13 @@ interface SSEResponseChoice {
 
 interface SSEResponse {
   choices?: SSEResponseChoice[];
+  usage?: SSEResponseUsage;
+}
+
+interface SSEResponseUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 }
 
 // ========== 消息转换 ==========
@@ -98,6 +111,7 @@ function buildMessages(messages: ChatMessage[]): VolcanoMessage[] {
 // 解析累积 buffer，按 \n 分割事件，返回提取的文本分片和剩余未解析数据
 function parseSSEChunk(accumulated: string): SSEResult {
   const texts: string[] = [];
+  let usage: SSEResponseUsage | undefined = undefined;
   const lines = accumulated.split('\n');
   const remainder = lines.pop() || ''; // 最后一段可能不完整，保留
   for (let i = 0; i < lines.length; i++) {
@@ -115,11 +129,14 @@ function parseSSEChunk(accumulated: string): SSEResult {
       if (json.choices && json.choices.length > 0 && json.choices[0].delta && json.choices[0].delta!.content) {
         texts.push(json.choices[0].delta!.content!);
       }
+      if (json.usage) {
+        usage = json.usage;
+      }
     } catch (e) {
       // 单条 JSON 解析失败不中断整个流
     }
   }
-  const result: SSEResult = { texts: texts, remainder: remainder };
+  const result: SSEResult = { texts: texts, remainder: remainder, usage: usage };
   return result;
 }
 
@@ -142,12 +159,13 @@ export function streamChat(
   messages: ChatMessage[],
   config: ApiConfig,
   onChunk: (text: string) => void,
-  onDone: () => void,
+  onDone: (inputTokens: number, outputTokens: number) => void,
   onError: (error: string) => void
 ): StreamController {
   let cancelled = false;
   const httpRequest = http.createHttp();
   let sseBuffer = '';
+  let trackedUsage: SSEResponseUsage | undefined = undefined;
 
   // 订阅流式数据回调
   httpRequest.on('dataReceive', (data: ArrayBuffer) => {
@@ -166,6 +184,9 @@ export function streamChat(
     for (let i = 0; i < parsed.texts.length; i++) {
       console.info(`[ApiClient] chunk=${parsed.texts[i]}`);
       onChunk(parsed.texts[i]);
+    }
+    if (parsed.usage) {
+      trackedUsage = parsed.usage;
     }
   });
 
@@ -187,16 +208,21 @@ export function streamChat(
       for (let i = 0; i < parsed.texts.length; i++) {
         onChunk(parsed.texts[i]);
       }
+      if (parsed.usage) {
+        trackedUsage = parsed.usage;
+      }
     }
-    onDone();
+    onDone(trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0);
     cleanupRequest(httpRequest);
   });
 
   // 构建请求体
+  const streamOpts: StreamOptions = { include_usage: true };
   const body: VolcanoRequestBody = {
     model: config.model,
     messages: buildMessages(messages),
-    stream: true
+    stream: true,
+    stream_options: streamOpts
   };
 
   // ① 日志：请求构建完成

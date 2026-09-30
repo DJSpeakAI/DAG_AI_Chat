@@ -80,10 +80,12 @@ export struct ChatPage {
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
         this.scroller.scrollEdge(Edge.Bottom);
       },
-      () => {
-        // onDone：解锁
+      (inputTokens: number, outputTokens: number) => {
+        // onDone：解锁 + 存储 token
         this.isLoading = false;
         this.streamController = null;
+        aiMsg.inputTokens = inputTokens;
+        aiMsg.outputTokens = outputTokens;
         // 流式完成时滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
         this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
@@ -244,6 +246,13 @@ export struct ChatPage {
                         }, (url: string) => url)
                       }
                       .margin({ top: 4 })
+                    }
+                    // AI 消息 token 统计
+                    if (msg.role === 'assistant' && msg.outputTokens > 0) {
+                      Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
+                        .fontSize(11)
+                        .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
+                        .margin({ top: 4 })
                     }
                   }
                   .alignItems(HorizontalAlign.Start)
