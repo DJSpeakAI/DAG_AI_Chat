@@ -22,6 +22,12 @@ export struct ChatPage {
   @Local imageViewerVisible: boolean = false;
   @Local imageViewerIndex: number = 0;
   @Local imageViewerImages: string[] = [];
+  // 长按菜单状态
+  @Local menuMessageId: string = '';
+  @Local menuVisible: boolean = false;
+  @Local deleteConfirmVisible: boolean = false;
+  @Local textPreviewVisible: boolean = false;
+  @Local textPreviewContent: string = '';
   private scroller: Scroller = new Scroller();
   private inputController: TextAreaController = new TextAreaController();
   private streamController: StreamController | null = null;
@@ -159,6 +165,7 @@ export struct ChatPage {
       return;
     }
     this.currentBubble.messages = this.currentBubble.messages.filter(m => m.messageId !== messageId);
+    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
   }
 
   // 全屏图片浏览器：收集当前对话所有图片，定位点击的图片，打开 viewer
@@ -299,6 +306,12 @@ export struct ChatPage {
                 }
                 .width('100%')
                 .justifyContent(msg.role === 'user' ? FlexAlign.Start : FlexAlign.End)
+                .gesture(
+                  LongPressGesture().onAction(() => {
+                    this.menuMessageId = msg.messageId;
+                    this.menuVisible = true;
+                  })
+                )
               }
             }, (msg: ChatMessage) => msg.messageId)
           }
@@ -397,6 +410,149 @@ export struct ChatPage {
           .onClick(() => {
             this.imageViewerVisible = false;
           })
+        }
+
+        // 长按菜单弹窗
+        if (this.menuVisible) {
+          Stack() {
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+            .onClick(() => {
+              this.menuVisible = false;
+            })
+
+            Column() {
+              Button('选择文本')
+                .width('100%')
+                .height(44)
+                .fontSize(16)
+                .backgroundColor(Color.Transparent)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .onClick(() => {
+                  const msg = this.currentBubble?.messages.find(m => m.messageId === this.menuMessageId);
+                  this.textPreviewContent = msg?.content ?? '';
+                  this.textPreviewVisible = true;
+                  this.menuVisible = false;
+                })
+
+              Button('删除')
+                .width('100%')
+                .height(44)
+                .fontSize(16)
+                .backgroundColor(Color.Transparent)
+                .fontColor('#F44336')
+                .onClick(() => {
+                  this.menuVisible = false;
+                  this.deleteConfirmVisible = true;
+                })
+            }
+            .width('50%')
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .padding(4)
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
+
+        // 删除确认弹窗
+        if (this.deleteConfirmVisible) {
+          Stack() {
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+            .onClick(() => {
+              this.deleteConfirmVisible = false;
+            })
+
+            Column() {
+              Text('确认删除这条消息？')
+                .fontSize(16)
+                .margin({ bottom: 16 })
+
+              Row() {
+                Button('取消')
+                  .layoutWeight(1)
+                  .margin({ right: 8 })
+                  .onClick(() => {
+                    this.deleteConfirmVisible = false;
+                  })
+
+                Button('确认')
+                  .layoutWeight(1)
+                  .backgroundColor('#F44336')
+                  .fontColor('#FFFFFF')
+                  .onClick(() => {
+                    this.deleteMessage(this.menuMessageId);
+                    this.deleteConfirmVisible = false;
+                  })
+              }
+              .width('100%')
+            }
+            .width('70%')
+            .padding(20)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
+
+        // 文本预览弹窗（选择文本）
+        if (this.textPreviewVisible) {
+          Stack() {
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+            .onClick(() => {
+              this.textPreviewVisible = false;
+            })
+
+            Column() {
+              Text('选择文本')
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .margin({ bottom: 12 })
+
+              Scroll() {
+                Text(this.textPreviewContent)
+                  .fontSize(14)
+                  .copyOption(CopyOptions.LocalDevice)
+                  .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+                  .padding(8)
+              }
+              .width('100%')
+              .height(200)
+              .borderRadius(8)
+              .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+
+              Button('关闭')
+                .width('100%')
+                .margin({ top: 12 })
+                .onClick(() => {
+                  this.textPreviewVisible = false;
+                })
+            }
+            .width('80%')
+            .padding(20)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
         }
       }
       .width('100%')
