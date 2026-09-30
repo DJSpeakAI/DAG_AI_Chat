@@ -102,6 +102,13 @@ export struct ChatPage {
     this.scroller.scrollEdge(Edge.Bottom);
   }
 
+  // 进入对话页面：延迟滚到底部，显示最新消息
+  aboutToAppear() {
+    setTimeout(() => {
+      this.scroller.scrollEdge(Edge.Bottom);
+    }, 100);
+  }
+
   // 页面退出：终止正在进行的 SSE 请求，防止内存泄漏
   aboutToDisappear() {
     if (this.streamController) {
@@ -211,7 +218,8 @@ export struct ChatPage {
                     // 文字内容（非空才显示）
                     if (msg.content.length > 0) {
                       Text(msg.content)
-                        .fontSize(14)
+                        .fontSize(16)
+                        .lineHeight(24)
                         // 深浅色模式（0.103 功能）
                         .fontColor(this.getThemeStore().isDark
                           ? (msg.role === 'user' ? '#FFFFFF' : '#FFFFFF')
