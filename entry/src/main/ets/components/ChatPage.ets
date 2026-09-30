@@ -18,8 +18,12 @@ export struct ChatPage {
   @Local inputText: string = '';
   @Local isLoading: boolean = false;
   @Local pendingImages: string[] = [];
+  // 全屏图片浏览器状态
+  @Local imageViewerVisible: boolean = false;
+  @Local imageViewerIndex: number = 0;
+  @Local imageViewerImages: string[] = [];
   private scroller: Scroller = new Scroller();
-  private inputController: TextInputController = new TextInputController();
+  private inputController: TextAreaController = new TextAreaController();
   private streamController: StreamController | null = null;
 
   // ★ 获取 ThemeStore（通过 AppStorageV2 共享，0.103 功能）
@@ -157,6 +161,30 @@ export struct ChatPage {
     this.currentBubble.messages = this.currentBubble.messages.filter(m => m.messageId !== messageId);
   }
 
+  // 全屏图片浏览器：收集当前对话所有图片，定位点击的图片，打开 viewer
+  openImageViewer(clickedUrl: string): void {
+    if (!this.currentBubble) {
+      return;
+    }
+    const allImages: string[] = [];
+    const messages = this.currentBubble.messages;
+    for (let i = 0; i < messages.length; i++) {
+      const urls = messages[i].imageUrl;
+      for (let j = 0; j < urls.length; j++) {
+        if (urls[j].length > 0) {
+          allImages.push(urls[j]);
+        }
+      }
+    }
+    if (allImages.length === 0) {
+      return;
+    }
+    const idx = allImages.indexOf(clickedUrl);
+    this.imageViewerImages = allImages;
+    this.imageViewerIndex = idx >= 0 ? idx : 0;
+    this.imageViewerVisible = true;
+  }
+
   addBubble(): void {
     if (!this.currentBubble) {
       return;
@@ -177,7 +205,8 @@ export struct ChatPage {
 
   build() {
     NavDestination() {
-      Column() {
+      Stack() {
+        Column() {
         // 顶栏：添加子气泡按钮在右上角
         Row() {
           Blank()
@@ -217,6 +246,22 @@ export struct ChatPage {
               ListItem() {
                 Row() {
                   Column() {
+                    // 图片缩略图（在文字上方）
+                    if (msg.imageUrl.length > 0) {
+                      Row() {
+                        ForEach(msg.imageUrl, (url: string) => {
+                          Image(url)
+                            .width(80)
+                            .height(80)
+                            .borderRadius(8)
+                            .margin({ right: 4 })
+                            .onClick(() => {
+                              this.openImageViewer(url);
+                            })
+                        }, (url: string) => url)
+                      }
+                      .margin({ bottom: 4 })
+                    }
                     // 文字内容（非空才显示）
                     if (msg.content.length > 0) {
                       Text(msg.content)
@@ -233,19 +278,6 @@ export struct ChatPage {
                           ? (msg.role === 'user' ? '#0D47A1' : '#1E1E1E')
                           : (msg.role === 'user' ? '#E3F2FD' : '#F5F5F5'))
                         .copyOption(CopyOptions.LocalDevice)
-                    }
-                    // 用户消息图片缩略图
-                    if (msg.role === 'user' && msg.imageUrl.length > 0) {
-                      Row() {
-                        ForEach(msg.imageUrl, (url: string) => {
-                          Image(url)
-                            .width(80)
-                            .height(80)
-                            .borderRadius(8)
-                            .margin({ right: 4 })
-                        }, (url: string) => url)
-                      }
-                      .margin({ top: 4 })
                     }
                     // AI 消息 token 统计
                     if (msg.role === 'assistant' && msg.outputTokens > 0) {
@@ -316,8 +348,11 @@ export struct ChatPage {
               this.selectImages();
             })
 
-          TextInput({ text: $$this.inputText, placeholder: '输入问题...', controller: this.inputController })
+          TextArea({ text: $$this.inputText, placeholder: '输入问题...', controller: this.inputController })
             .layoutWeight(1)
+            .minLines(1)
+            .maxLines(5)
+            .enterKeyType(EnterKeyType.NEW_LINE)
 
           Button('发送')
             .enabled(!this.isLoading)
@@ -328,6 +363,41 @@ export struct ChatPage {
         }
         .width('100%')
         .padding({ left: 16, right: 16, bottom: 16 })
+        }
+        .width('100%')
+        .height('100%')
+
+        // 全屏图片浏览器
+        if (this.imageViewerVisible) {
+          Stack() {
+            Swiper() {
+              ForEach(this.imageViewerImages, (url: string) => {
+                Image(url)
+                  .objectFit(ImageFit.Contain)
+                  .width('100%')
+                  .height('100%')
+              }, (url: string) => url)
+            }
+            .index(this.imageViewerIndex)
+            .indicator(true)
+            .backgroundColor(Color.Black)
+
+            Button('×')
+              .fontSize(24)
+              .fontColor('#FFFFFF')
+              .backgroundColor(Color.Transparent)
+              .position({ x: 20, y: 20 })
+              .onClick(() => {
+                this.imageViewerVisible = false;
+              })
+          }
+          .width('100%')
+          .height('100%')
+          .backgroundColor(Color.Black)
+          .onClick(() => {
+            this.imageViewerVisible = false;
+          })
+        }
       }
       .width('100%')
       .height('100%')
