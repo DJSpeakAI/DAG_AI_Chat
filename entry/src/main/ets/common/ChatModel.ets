@@ -39,13 +39,84 @@ export class BubbleNode {
   }
 }
 
-// V2 全局状态：包装 nodeList，配合 AppStorageV2 使用
+// V2 全局状态：包装 nodeList，AppStorageV2 内存（持久化通过 PersistData JSON）
 @ObservedV2
 export class BubbleTree {
   @Trace nodeList: BubbleNode[] = [];
 
   constructor(nodeList: BubbleNode[] = []) {
     this.nodeList = nodeList;
+  }
+}
+
+// ── 持久化包装：PersistenceV2 只存一个 JSON 字符串 ──
+@ObservedV2
+export class PersistData {
+  @Trace bubbleTreeJson: string = '';
+}
+
+// 序列化接口
+interface SerializedMessage {
+  messageId: string;
+  role: string;
+  content: string;
+  imageUrl: string[];
+}
+interface SerializedNode {
+  nodeID: string;
+  parentID: string | null;
+  messages: SerializedMessage[];
+  x: number;
+  y: number;
+  parentX: number;
+  parentY: number;
+}
+interface SerializedTree {
+  nodeList: SerializedNode[];
+}
+
+// 序列化 BubbleTree → JSON 字符串
+export function serializeBubbleTree(tree: BubbleTree): string {
+  const data: SerializedTree = {
+    nodeList: tree.nodeList.map((node: BubbleNode): SerializedNode => {
+      const msgs: SerializedMessage[] = node.messages.map((msg: ChatMessage): SerializedMessage => {
+        return {
+          messageId: msg.messageId,
+          role: msg.role,
+          content: msg.content,
+          imageUrl: msg.imageUrl
+        };
+      });
+      return {
+        nodeID: node.nodeID,
+        parentID: node.parentID,
+        messages: msgs,
+        x: node.x,
+        y: node.y,
+        parentX: node.parentX,
+        parentY: node.parentY
+      };
+    })
+  };
+  return JSON.stringify(data);
+}
+
+// 反序列化 JSON → BubbleTree
+export function deserializeBubbleTree(json: string): BubbleTree | null {
+  if (!json || json.length === 0) {
+    return null;
+  }
+  try {
+    const data: SerializedTree = JSON.parse(json) as SerializedTree;
+    const nodeList: BubbleNode[] = data.nodeList.map((node: SerializedNode): BubbleNode => {
+      const messages: ChatMessage[] = node.messages.map((msg: SerializedMessage): ChatMessage => {
+        return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl);
+      });
+      return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY);
+    });
+    return new BubbleTree(nodeList);
+  } catch (e) {
+    return null;
   }
 }
 

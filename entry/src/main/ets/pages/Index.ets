@@ -2,7 +2,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BBTreeCanvas } from '../components/BBTreeCanvas';
 import { ChatPage } from '../components/ChatPage';
 import { SettingsPage } from '../components/SettingsPage';
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, generateNodeId, generateMessageId } from '../common/ChatModel';
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree } from '../common/ChatModel';
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -11,16 +11,24 @@ struct Index {
   pathStack: NavPathStack = new NavPathStack();
 
   aboutToAppear() {
-    // V2：AppStorageV2.connect 初始化全局状态
-    AppStorageV2.connect(BubbleTree, 'bubble-tree', () => {
-      const rootId = generateNodeId();
-      return new BubbleTree([
-        new BubbleNode(rootId, null, [
-          new ChatMessage(generateMessageId(), 'user', '你好'),
-          new ChatMessage(generateMessageId(), 'assistant', '1')
-        ], 200, 200)
-      ]);
-    });
+    // PersistenceV2: 持久化 JSON 字符串
+    const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
+    // 尝试从 JSON 恢复 BubbleTree
+    const loaded = deserializeBubbleTree(persist.bubbleTreeJson);
+    if (loaded) {
+      AppStorageV2.connect(BubbleTree, 'bubble-tree', () => loaded);
+    } else {
+      // 首次启动，创建默认气泡树
+      AppStorageV2.connect(BubbleTree, 'bubble-tree', () => {
+        const rootId = generateNodeId();
+        return new BubbleTree([
+          new BubbleNode(rootId, null, [
+            new ChatMessage(generateMessageId(), 'user', '你好'),
+            new ChatMessage(generateMessageId(), 'assistant', '1')
+          ], 200, 200)
+        ]);
+      });
+    }
     // PersistenceV2：API 配置持久化，跨重启保存
     PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());
   }

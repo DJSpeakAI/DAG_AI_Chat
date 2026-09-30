@@ -3,7 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, generateMessageId, generateNodeId } from '../common/ChatModel';
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree } from '../common/ChatModel';
 import { streamChat, StreamController } from '../utils/ApiClient';
 import { ThemeStore } from '../entryability/EntryAbility';
 
@@ -12,6 +12,7 @@ import { ThemeStore } from '../entryability/EntryAbility';
 export struct ChatPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   apiConfig: ApiConfig = PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig()) as ApiConfig;
   @Local inputText: string = '';
@@ -53,6 +54,7 @@ export struct ChatPage {
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages]);
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', 'AI正在回复中，请稍候...');
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
+    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
     this.inputText = '';
     this.pendingImages = [];
     this.inputController.stopEditing();
@@ -84,6 +86,7 @@ export struct ChatPage {
         this.streamController = null;
         // 流式完成时滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
+        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
       },
       (errMsg: string) => {
         // onError：解锁 + 日志 + 错误气泡
@@ -92,6 +95,7 @@ export struct ChatPage {
         aiMsg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
         // 错误时也滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
+        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
       }
     );
     // 发送消息后自动滚到底部
@@ -158,6 +162,7 @@ export struct ChatPage {
       this.currentBubbleStore.bubbleY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
+    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
     this.pathStack.pop();
   }
 

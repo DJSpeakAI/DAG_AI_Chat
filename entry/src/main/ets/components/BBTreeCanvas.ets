@@ -1,11 +1,12 @@
-import { AppStorageV2 } from '@kit.ArkUI';
-import { BubbleNode, BubbleTree, CurrentBubble } from '../common/ChatModel';
+import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
+import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree } from '../common/ChatModel';
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
 export struct BBTreeCanvas {
   @Param pathStack: NavPathStack = new NavPathStack();
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   @Local dragBubbleId: string = '';
   @Local dragOffsetX: number = 0;
@@ -157,6 +158,7 @@ export struct BBTreeCanvas {
                 setTimeout(() => {
                   this.isDragging = false;
                 }, 200);
+                this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
               })
           )
           // ── 双击导航到对话 ──
@@ -213,6 +215,7 @@ export struct BBTreeCanvas {
                         }
                       }
                       this.store.nodeList = newList;
+                      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
                     }
                   }
                 });
