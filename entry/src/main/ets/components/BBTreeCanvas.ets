@@ -39,25 +39,25 @@ export struct BBTreeCanvas {
 
   // ── 连线计算（屏幕坐标，已扣除气泡半径 30px） ──
 
-  /** 获取父圆心屏幕坐标 X */
+  /** 获取父圆心屏幕坐标 X（半径 30px 是屏幕像素，不随缩放变化） */
   getParentCX(bubble: BubbleNode): number {
     const pDragX = bubble.parentID === this.dragBubbleId ? this.dragOffsetX : 0;
-    return this.c2sX(bubble.parentX + pDragX + 30);
+    return this.c2sX(bubble.parentX + pDragX) + 30;
   }
   /** 获取父圆心屏幕坐标 Y */
   getParentCY(bubble: BubbleNode): number {
     const pDragY = bubble.parentID === this.dragBubbleId ? this.dragOffsetY : 0;
-    return this.c2sY(bubble.parentY + pDragY + 30);
+    return this.c2sY(bubble.parentY + pDragY) + 30;
   }
   /** 获取子圆心屏幕坐标 X */
   getChildCX(bubble: BubbleNode): number {
     const cDragX = bubble.nodeID === this.dragBubbleId ? this.dragOffsetX : 0;
-    return this.c2sX(bubble.x + cDragX + 30);
+    return this.c2sX(bubble.x + cDragX) + 30;
   }
   /** 获取子圆心屏幕坐标 Y */
   getChildCY(bubble: BubbleNode): number {
     const cDragY = bubble.nodeID === this.dragBubbleId ? this.dragOffsetY : 0;
-    return this.c2sY(bubble.y + cDragY + 30);
+    return this.c2sY(bubble.y + cDragY) + 30;
   }
   /** 连线中点 X（线段中心位置，用于居中渲染） */
   getEdgeMidX(bubble: BubbleNode): number {
@@ -67,12 +67,11 @@ export struct BBTreeCanvas {
   getEdgeMidY(bubble: BubbleNode): number {
     return (this.getParentCY(bubble) + this.getChildCY(bubble)) / 2;
   }
-  /** 连线长度（圆心距 − 2×半径） */
+  /** 连线长度（圆心到圆心，气泡实心覆盖多余部分） */
   getEdgeLength(bubble: BubbleNode): number {
     const dx = this.getChildCX(bubble) - this.getParentCX(bubble);
     const dy = this.getChildCY(bubble) - this.getParentCY(bubble);
-    const len = Math.sqrt(dx * dx + dy * dy);
-    return Math.max(0, len - 60);
+    return Math.sqrt(dx * dx + dy * dy);
   }
   /** 连线角度（度） */
   getEdgeAngle(bubble: BubbleNode): number {
@@ -84,7 +83,7 @@ export struct BBTreeCanvas {
   build() {
     NavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
-        // ── 连线层（屏幕坐标，气泡实心覆盖后视觉上仅为边沿到边沿） ──
+        // ── 连线层（从父圆心到子圆心，气泡实心覆盖多余部分） ──
         ForEach(this.store.nodeList, (bubble: BubbleNode) => {
           if (bubble.parentID !== null) {
             Column()
@@ -92,13 +91,13 @@ export struct BBTreeCanvas {
               .height(2)
               .backgroundColor('#CCCCCC')
               .position({
-                x: this.getEdgeMidX(bubble) - this.getEdgeLength(bubble) / 2,
-                y: this.getEdgeMidY(bubble) - 1
+                x: this.getParentCX(bubble),
+                y: this.getParentCY(bubble) - 1
               })
               .rotate({
                 angle: this.getEdgeAngle(bubble),
-                centerX: 0.5,
-                centerY: 0.5
+                centerX: 0,
+                centerY: 1
               })
           }
         }, (bubble: BubbleNode) => bubble.nodeID)
