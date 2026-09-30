@@ -1,8 +1,14 @@
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window } from '@kit.ArkUI';
+import { AppStorageV2, window } from '@kit.ArkUI';
 
 const DOMAIN = 0x0000;
+
+// ★ 全局主题状态（UI 运行时状态，非持久化数据模型）
+@ObservedV2
+export class ThemeStore {
+  @Trace isDark: boolean = false;
+}
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -30,6 +36,21 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+
+    // ★ 初始化主题状态：读取当前系统深浅色模式
+    try {
+      const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+      themeStore.isDark = this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    } catch (err) {
+      hilog.error(DOMAIN, 'testTag', 'Failed to init theme. Cause: %{public}s', JSON.stringify(err));
+    }
+  }
+
+  // ★ 系统主题变化时实时更新全局 ThemeStore
+  onConfigurationUpdate(newConfig: Configuration): void {
+    const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+    themeStore.isDark = newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    hilog.info(DOMAIN, 'testTag', 'Color mode updated: %{public}s', themeStore.isDark ? 'dark' : 'light');
   }
 
   onWindowStageDestroy(): void {

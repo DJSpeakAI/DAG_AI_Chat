@@ -45,7 +45,7 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor('#333333')
 
-        Text('图结构对话 · 多分支推演')
+        Text('图结构对话 · 多分支推理')
           .fontSize(14)
           .fontColor('#999999')
           .margin({ top: 8 })

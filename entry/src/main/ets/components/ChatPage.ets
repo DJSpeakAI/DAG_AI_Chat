@@ -4,8 +4,8 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, generateMessageId, generateNodeId } from '../common/ChatModel';
-import { saveBubbleTree } from '../utils/TreeFileUtil';
-import { streamChat, StreamController, testApiConnection, testApiWithDiagnostics } from '../utils/ApiClient';
+import { streamChat, StreamController } from '../utils/ApiClient';
+import { ThemeStore } from '../entryability/EntryAbility';
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
@@ -15,11 +15,16 @@ export struct ChatPage {
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   apiConfig: ApiConfig = PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig()) as ApiConfig;
   @Local inputText: string = '';
-  @Local isLoading: boolean = false; // 请求期间置灰发送按钮
-  @Local pendingImages: string[] = []; // 待发送图片 Base64 数组
+  @Local isLoading: boolean = false;
+  @Local pendingImages: string[] = [];
   private scroller: Scroller = new Scroller();
   private inputController: TextInputController = new TextInputController();
   private streamController: StreamController | null = null;
+
+  // ★ 获取 ThemeStore（通过 AppStorageV2 共享，0.103 功能）
+  getThemeStore(): ThemeStore {
+    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+  }
 
   // V2 @Computed：从 store 读取当前气泡 ID，自动响应式
   @Computed
@@ -39,24 +44,18 @@ export struct ChatPage {
   }
 
   sendMessage(): void {
-    // 空输入 / 无气泡 / 加载中 直接返回
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
-    // 取消上一轮请求（如有）
     if (this.streamController) {
       this.streamController.cancel();
     }
-    // 新建用户消息（含图片）+ 占位 AI 消息
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages]);
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', 'AI正在回复中，请稍候...');
-    // 追加到当前气泡，@Trace 触发刷新
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
-    // 清空输入 + 图片 + 收起键盘
     this.inputText = '';
     this.pendingImages = [];
     this.inputController.stopEditing();
-    // 发起流式请求
     this.isLoading = true;
 
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
@@ -66,15 +65,6 @@ export struct ChatPage {
         messagesToSend.push(this.currentBubble.messages[i]);
       }
     }
-    console.info(`[ChatPage] 发送请求，消息数: ${messagesToSend.length}`);
-    console.info(`[ChatPage] Endpoint: ${this.apiConfig.endpoint}`);
-    console.info(`[ChatPage] Model: ${this.apiConfig.model}`);
-    // 打印每条消息的 role + content，方便调试
-    let logMsgs: string = '';
-    for (let i = 0; i < messagesToSend.length; i++) {
-      logMsgs += `[${messagesToSend[i].role}] ${messagesToSend[i].content}; `;
-    }
-    console.info(`[ChatPage] messagesToSend: ${logMsgs}`);
 
     this.streamController = streamChat(
       messagesToSend,
@@ -85,35 +75,26 @@ export struct ChatPage {
           aiMsg.content = '';
         }
         aiMsg.content += chunk;
-        console.info(`[ChatPage] AI chunk: ${chunk}`);
+        // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
+        this.scroller.scrollEdge(Edge.Bottom);
       },
       () => {
-        // onDone：解锁 + 保存 + 滚动
+        // onDone：解锁
         this.isLoading = false;
         this.streamController = null;
-        // 日志：打印完整 AI 回复；空则警告
-        if (aiMsg.content.length === 0) {
-          console.warn('[ChatPage] AI 回复内容为空');
-        } else {
-          console.info(`[ChatPage] AI 回复完成: ${aiMsg.content}`);
-        }
-        // IIFE 异步包裹 saveBubbleTree
-        (async () => {
-          await saveBubbleTree(
-            this.store,
-            this.getUIContext().getHostContext() as common.UIAbilityContext
-          );
-        })();
+        // 流式完成时滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
       },
       (errMsg: string) => {
         // onError：解锁 + 日志 + 错误气泡
         this.isLoading = false;
         this.streamController = null;
-        console.error(`[ChatPage] SSE error: ${errMsg}`);
         aiMsg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
+        // 错误时也滚到底部
+        this.scroller.scrollEdge(Edge.Bottom);
       }
     );
+    // 发送消息后自动滚到底部
     this.scroller.scrollEdge(Edge.Bottom);
   }
 
@@ -140,7 +121,6 @@ export struct ChatPage {
         const base64 = buffer.from(arrayBuffer).toString('base64');
         this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
       }
-      console.info(`[ChatPage] 已选择 ${result.photoUris.length} 张图片`);
     } catch (err) {
       console.error(`[ChatPage] selectImages error: ${(err as Error).message}`);
     }
@@ -174,11 +154,10 @@ export struct ChatPage {
       [],
       this.currentBubbleStore.bubbleX + 80 + Math.floor(Math.random() * 40),
       this.currentBubbleStore.bubbleY + 80 + Math.floor(Math.random() * 40),
-      this.currentBubbleStore.bubbleX, // parentX — 冗余存储父节点坐标
-      this.currentBubbleStore.bubbleY  // parentY
+      this.currentBubbleStore.bubbleX,
+      this.currentBubbleStore.bubbleY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
-    saveBubbleTree(this.store, this.getUIContext().getHostContext() as common.UIAbilityContext);
     this.pathStack.pop();
   }
 
@@ -197,27 +176,7 @@ export struct ChatPage {
             .onClick(() => {
               this.pathStack.pushPath({ name: 'SettingsPage' });
             })
-          // 测试 API 连通性：诊断结果直接显示在消息气泡中
-          Button('测试')
-            .fontSize(13)
-            .backgroundColor(Color.Transparent)
-            .fontColor('#1976D2')
-            .margin({ right: 8 })
-            .onClick(() => {
-              if (!this.currentBubble) {
-                return;
-              }
-              console.info('[ChatPage] 点击诊断测试');
-              // 创建用户消息 + AI 占位消息
-              const userMsg = new ChatMessage(generateMessageId(), 'user', '[诊断测试]');
-              const aiMsg = new ChatMessage(generateMessageId(), 'assistant', '正在诊断，请稍候...');
-              this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
-              // 调用诊断函数，结果写入 AI 气泡
-              testApiWithDiagnostics(this.apiConfig, (result: string) => {
-                aiMsg.content = result;
-              });
-            })
-          Button('＋ 添加子气泡')
+          Button('+ 添加子气泡')
             .fontSize(14)
             .backgroundColor('#1976D2')
             .fontColor('#FFFFFF')
@@ -228,7 +187,7 @@ export struct ChatPage {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 4 })
 
-        // 消息列表 — 直接用 @Computed currentMessages
+        // 消息列表 — 直接由 @Computed currentMessages 驱动
         if (this.currentMessages.length === 0) {
           Column() {
             Text('暂无对话')
@@ -248,10 +207,16 @@ export struct ChatPage {
                     if (msg.content.length > 0) {
                       Text(msg.content)
                         .fontSize(14)
-                        .fontColor(msg.role === 'user' ? '#1976D2' : '#616161')
+                        // 深浅色模式（0.103 功能）
+                        .fontColor(this.getThemeStore().isDark
+                          ? (msg.role === 'user' ? '#FFFFFF' : '#FFFFFF')
+                          : (msg.role === 'user' ? '#1976D2' : '#616161'))
                         .padding(10)
                         .borderRadius(8)
-                        .backgroundColor(msg.role === 'user' ? '#E3F2FD' : '#F5F5F5')
+                        // 深浅色模式背景
+                        .backgroundColor(this.getThemeStore().isDark
+                          ? (msg.role === 'user' ? '#0D47A1' : '#1E1E1E')
+                          : (msg.role === 'user' ? '#E3F2FD' : '#F5F5F5'))
                         .copyOption(CopyOptions.LocalDevice)
                     }
                     // 用户消息图片缩略图
