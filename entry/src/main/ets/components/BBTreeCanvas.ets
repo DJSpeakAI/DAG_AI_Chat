@@ -18,7 +18,6 @@ import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
 
 // 气泡树页面 — V2 全量迁移
-import { display } from '@kit.ArkUI'; // ★ 屏宽适配（0.123fix7）
 @ComponentV2
 export struct BBTreeCanvas {
   @Param pathStack: NavPathStack = new NavPathStack();
@@ -31,9 +30,9 @@ export struct BBTreeCanvas {
   @Local canvasPanStartY: number = 0;
   @Local canvasScale: number = 1.0;
   @Local pinchStartScale: number = 1.0;
-
-  // ★ 顶层安全边距常量，fitViewport 与 Pan 手势共用（0.126）
-  private readonly topSafePadding: number = 120;
+  // ★ 0.130 画布可视区真实宽高（onAreaChange 获取，替代整屏尺寸 + 写死标题栏高度估算）
+  @Local viewW: number = 0;
+  @Local viewH: number = 0;
 
   // ── 坐标变换（手动，弃用容器 scale/translate） ──
 
@@ -159,9 +158,11 @@ export struct BBTreeCanvas {
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
   }
 
-  // ★ 排版后视口自适应：平移使整棵树居中可见（0.123）
+  // ★ 排版后视口自适应：缩放 + 平移使整棵树居中可见（0.130 重构）
   fitViewport(): void {
     if (this.store.nodeList.length === 0) return;
+    // ★ 画布尺寸未就绪（onAreaChange 尚未回调）时跳过，由 onAreaChange 首次回调补调（0.130）
+    if (this.viewW <= 0 || this.viewH <= 0) return;
 
     // 计算画布坐标包围盒
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -175,26 +176,14 @@ export struct BBTreeCanvas {
     const treeCenterX = (minX + maxX) / 2;
     const treeCenterY = (minY + maxY) / 2;
 
-    const screenWidth = px2vp(display.getDefaultDisplaySync().width);
-    const screenHeight = px2vp(display.getDefaultDisplaySync().height);
-    const viewHeight = screenHeight - this.topSafePadding;
-
-    // ★ 自动缩放，让整棵树塞进可视画布（0.126）
+    // ★ 自动缩放：以画布真实尺寸为准，去掉 0.3 下限，任何大小的树都完整可见（0.130）
     const treeW = maxX - minX + 60;
     const treeH = maxY - minY + 60;
-    const scaleX = screenWidth / treeW;
-    const scaleY = viewHeight / treeH;
-    this.canvasScale = Math.max(0.3, Math.min(scaleX, scaleY, 1.0)); // 约束 [0.3, 1.0]
+    this.canvasScale = Math.min(this.viewW / treeW, this.viewH / treeH, 1.0);
 
-    // ★ 树中心对齐可视画布中心，-30 气泡半径补偿（0.126）
-    this.canvasOffsetX = screenWidth / 2 - treeCenterX * this.canvasScale - 30;
-    const calculatedY = this.topSafePadding + viewHeight / 2 - treeCenterY * this.canvasScale - 30;
-    this.canvasOffsetY = Math.max(this.topSafePadding, calculatedY); // ★ 不低于安全区，防 Pan 跳变
-  }
-
-  // ★ 页面加载自动适配全树视口（0.124）
-  aboutToAppear(): void {
-    this.fitViewport();
+    // ★ 树几何中心对齐画布正中，-30 气泡左上角定位补偿；去掉 Math.max 截断，树再大中心也对齐（0.130）
+    this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - 30;
+    this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 30;
   }
 
   build() {
@@ -310,6 +299,14 @@ export struct BBTreeCanvas {
       .height('100%')
       .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA') // ★ 深浅色适配（0.123）
       .clip(true) // ★ 0.126：裁剪画布溢出内容，防止绘制跑到标题栏
+      // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
+      .onAreaChange((oldVal: Area, newVal: Area) => {
+        this.viewW = newVal.width as number;
+        this.viewH = newVal.height as number;
+        if ((oldVal.width as number) <= 0 && this.viewW > 0) {
+          this.fitViewport();
+        }
+      })
       // ── 画布平移手势 ──
       .gesture(
         PanGesture({ distance: 5 })
