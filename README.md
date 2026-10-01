@@ -54,33 +54,31 @@ DAG_AI_Chat/
 │   └── app.json5                          # 应用全局配置（bundleName、版本）
 ├── entry/
 │   └── src/main/
-│       ├── ets/
-│       │   ├── pages/
-│       │   │   └── Index.ets              # 首页入口（Navigation 导航）
-│       │   ├── components/
-│       │   │   ├── BBTreeCanvas.ets       # 气泡树画布（Canvas 绘制 + 拖拽 + 连线）
-│       │   │   ├── ChatPage.ets           # 对话页面（消息列表 + 输入 + 图片 + 流式）
-│       │   │   └── SettingsPage.ets       # 设置页面（API 配置 + 模型选择 + 诊断）
-│       │   ├── common/
-│       │   │   └── ChatModel.ets          # 数据模型（ChatMessage / BubbleNode / BubbleTree / ApiConfig）
-│       │   ├── utils/
-│       │   │   ├── ApiClient.ets          # API 客户端（SSE 流式 + 多模态 + 诊断测试）
-│       │   │   └── TreeFileUtil.ets       # 持久化工具（序列化 / 反序列化 / 沙盒读写）
-│       │   └── entryability/
-│       │       └── EntryAbility.ets       # 入口 Ability
-│       ├── resources/
-│       │   └── base/
-│       │       ├── profile/
-│       │       │   └── main_pages.json    # 页面路由配置
-│       │       ├── element/
-│       │       │   ├── string.json        # 字符串资源
-│       │       │   └── color.json         # 颜色资源
-│       │       └── media/                 # 图标资源
-│       └── module.json5                   # 模块配置（权限、设备类型）
-├── docs/                                  # 版本文档
-│   ├── 0.40.md                            # 模型名 404 修复
-│   ├── 0.41.md                            # Model ID 修正
-│   └── 0.42.md                            # 加载状态 + 多模态图片
+│   ├── ets/
+│   │   ├── pages/
+│   │   │   └── Index.ets              # 首页入口（Navigation 导航）
+│   │   ├── components/
+│   │   │   ├── BBTreeCanvas.ets       # 气泡树画布（Canvas 绘制 + 拖拽 + 连线）
+│   │   │   ├── ChatPage.ets           # 对话页面（消息列表 + 输入 + 图片 + 流式）
+│   │   │   └── SettingsPage.ets       # 设置页面（API 配置 + 模型选择 + 诊断）
+│   │   ├── common/
+│   │   │   └── ChatModel.ets          # 数据模型（ChatMessage / BubbleNode / BubbleTree / 序列化 / PersistenceV2 持久化）
+│   │   ├── utils/
+│   │   │   └── ApiClient.ets          # API 客户端（SSE 流式 + 多模态 + 诊断测试）
+│   │   ├── entryability/
+│   │   │   └── EntryAbility.ets       # 入口 Ability（含全局 ThemeStore 深浅色）
+│   │   └── entrybackupability/
+│   │       └── EntryBackupAbility.ets # 备份恢复扩展 Ability
+│   ├── resources/
+│   │   └── base/
+│   │       ├── profile/
+│   │       │   ├── main_pages.json    # 页面路由配置
+│   │       ├── element/
+│   │       │   ├── string.json        # 字符串资源
+│   │       │   └── color.json         # 颜色资源
+│   │       └── media/                 # 图标资源
+│   └── module.json5                   # 模块配置（权限、设备类型）
+├── docs/                                  # 版本文档（0.40 ~ 0.131）
 ├── build-profile.json5                    # 构建配置（签名、SDK 版本）
 ├── oh-package.json5                       # 依赖管理
 └── hvigorfile.ts                          # hvigor 构建任务
@@ -179,12 +177,11 @@ export class ApiConfig {
 | DeepSeek-V4-Pro正式版 | `deepseek-v4-pro-260425` | 纯文本 |
 | DeepSeek-V4-Flash正式版 | `deepseek-v4-flash-260425` | 纯文本 |
 
-### 5.6 本地持久化（TreeFileUtil.ets）
-- `treeToPlainObj`：响应式树 → 纯对象（剥离 @ObservedV2 代理）
-- `plainObjToTree`：纯对象 → 重建响应式 BubbleTree
-- `saveBubbleTree`：序列化 → 写入沙盒 JSON 文件
-- `loadBubbleTree`：读取沙盒 → 反序列化 → 重建响应式树
-- 版本字段 `version: 1` 支持后续数据结构迁移
+### 5.6 本地持久化（ChatModel.ets + PersistenceV2）
+- `serializeBubbleTree`：响应式树 → 纯对象（剥离 @ObservedV2 代理）→ JSON 字符串
+- `deserializeBubbleTree`：JSON 字符串 → 重建响应式 BubbleTree（启动时由 Index 恢复）
+- 持久化载体：PersistenceV2 存储单一 JSON 字符串（`PersistData.bubbleTreeJson`），坐标/消息变更即写回
+- 版本字段支持后续数据结构迁移（`historySummary` 等字段带 `??` 兜底）
 
 ---
 
@@ -248,6 +245,11 @@ AppStorageV2（全局响应式存储）
 | 0.118 | 输入框动态高度优化 |
 | 0.121 | AI 回复 Markdown 渲染（代码块、表格） |
 | 0.122 | 代码块自动换行按钮 + 代码清理（删除死代码、未使用导入） |
+| 0.123 | 气泡树画布深浅色适配 + 阴影 + 高亮连线 |
+| 0.124 | 纵向树形自动排版 + 「显示全部」按钮 |
+| 0.126 | fitViewport 自动缩放 + 画布裁剪（clip） |
+| 0.130 | fitViewport 重构：以画布真实尺寸居中（「显示全部」+ 清零默认节点位置修复） |
+| 0.131 | 全项目代码清理：弃用 API 迁移（headersReceive / UIContext.showAlertDialog / focusControl）+ 默认模型对齐 + 首页/设置页深浅色补齐 + 显示全部按钮右缘自适应 |
 
 ---
 

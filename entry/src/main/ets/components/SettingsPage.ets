@@ -10,8 +10,9 @@
 // 技术栈：鸿蒙 ArkUI V2
 // ============================================================
 
-import { PersistenceV2 } from '@kit.ArkUI'; // ★ 删除未使用 AppStorageV2（0.122 清理）
+import { PersistenceV2, AppStorageV2 } from '@kit.ArkUI'; // ★ 0.131：追加 AppStorageV2（ThemeStore 共享）
 import { ApiConfig } from '../common/ChatModel';
+import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.131：深浅色适配
 
 // 模型选项接口
 interface ModelOption {
@@ -43,6 +44,11 @@ export struct SettingsPage {
   @Local selectedModelIndex: number = 0;   // 下拉选中索引
   @Local isDropdownOpen: boolean = false;   // 下拉面板展开状态
 
+  // ★ 0.131：获取全局主题状态（与 BBTreeCanvas/ChatPage 相同模式）
+  getThemeStore(): ThemeStore {
+    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+  }
+
   aboutToAppear() {
     // 初始化编辑副本
     this.editKey = this.apiConfig.apiKey;
@@ -71,16 +77,16 @@ export struct SettingsPage {
         Column() {
           Text('API Key')
             .fontSize(14)
-            .fontColor('#666')
+            .fontColor(this.getThemeStore().isDark ? '#888888' : '#666') // ★ 0.131：深浅色适配
             .margin({ bottom: 6 })
           TextInput({ text: $$this.editKey, placeholder: '填入火山方舟 API Key' })
             .width('100%')
             .height(48)
             .fontSize(14)
-            .fontColor('#333333')
-            .placeholderColor('#666666')
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333') // ★ 0.131
+            .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666') // ★ 0.131
             .borderRadius(8)
-            .backgroundColor('#F5F5F5')
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5') // ★ 0.131
         }
         .width('100%')
         .margin({ bottom: 16 })
@@ -89,16 +95,16 @@ export struct SettingsPage {
         Column() {
           Text('Endpoint')
             .fontSize(14)
-            .fontColor('#666')
+            .fontColor(this.getThemeStore().isDark ? '#888888' : '#666') // ★ 0.131：深浅色适配
             .margin({ bottom: 6 })
           TextInput({ text: $$this.editEndpoint, placeholder: 'API 地址' })
             .width('100%')
             .height(48)
             .fontSize(14)
-            .fontColor('#333333')
-            .placeholderColor('#666666')
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333') // ★ 0.131
+            .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666') // ★ 0.131
             .borderRadius(8)
-            .backgroundColor('#F5F5F5')
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5') // ★ 0.131
         }
         .width('100%')
         .margin({ bottom: 16 })
@@ -107,23 +113,23 @@ export struct SettingsPage {
         Column() {
           Text('Model')
             .fontSize(14)
-            .fontColor('#666')
+            .fontColor(this.getThemeStore().isDark ? '#888888' : '#666') // ★ 0.131：深浅色适配
             .margin({ bottom: 6 })
 
           // 下拉触发器：显示当前选中模型名称 + 箭头
           Row() {
             Text(MODEL_LIST[this.selectedModelIndex].name)
               .fontSize(14)
-              .fontColor('#333333')
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333') // ★ 0.131
               .layoutWeight(1)
             Text(this.isDropdownOpen ? '▲' : '▼')
               .fontSize(12)
-              .fontColor('#999')
+              .fontColor(this.getThemeStore().isDark ? '#777777' : '#999') // ★ 0.131
           }
           .width('100%')
           .height(48)
           .borderRadius(8)
-          .backgroundColor('#F5F5F5')
+          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5') // ★ 0.131
           .padding({ left: 12, right: 12 })
           .onClick(() => {
             this.isDropdownOpen = !this.isDropdownOpen;
@@ -137,16 +143,18 @@ export struct SettingsPage {
                   // 主文字：模型名称
                   Text(model.name)
                     .fontSize(14)
-                    .fontColor('#333333')
+                    .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333') // ★ 0.131
                   // 小字：类型 + 价格
                   Text(`${model.type} · ${model.price}`)
                     .fontSize(12)
-                    .fontColor('#999')
+                    .fontColor(this.getThemeStore().isDark ? '#777777' : '#999') // ★ 0.131
                     .margin({ top: 2 })
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor(index === this.selectedModelIndex ? '#E3F2FD' : '#FFFFFF')
+                .backgroundColor(index === this.selectedModelIndex
+                  ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') // ★ 0.131：选中项高亮深浅色
+                  : (this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF'))
                 .onClick(() => {
                   this.selectedModelIndex = index;
                   this.editModel = model.id;
@@ -156,15 +164,15 @@ export struct SettingsPage {
             }
             .width('100%')
             .borderRadius(8)
-            .backgroundColor('#FFFFFF')
-            .border({ width: 1, color: '#E0E0E0' })
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF') // ★ 0.131：面板背景
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' }) // ★ 0.131：边框
             .margin({ top: 4 })
           }
 
           // 提示：模型 ID 说明
           Text('⚠️ 控制台展示名称≠API调用ID，预置模型示例：doubao-seed-2-1-lite-260915；数字之间是短横线`-`，禁止小数点，直接复制上表ID使用。')
             .fontSize(11)
-            .fontColor('#999')
+            .fontColor(this.getThemeStore().isDark ? '#777777' : '#999') // ★ 0.131
             .margin({ top: 4 })
         }
         .width('100%')
@@ -190,6 +198,7 @@ export struct SettingsPage {
       .width('100%')
       .height('100%')
       .padding(16)
+      .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FFFFFF') // ★ 0.131：页面背景深浅色
     }
     .title('API 配置')
   }

@@ -15,7 +15,7 @@
 // 导航模式：NavPathStack（从 BBTreeCanvas 气泡画布页面跳入）
 // ============================================================
 
-import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
+import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -39,6 +39,11 @@ class MdSegment {
     this.rows = rows;
   }
 }
+
+// ★ 0.132：AI 消息占位文字常量（两态：加载中 / 深度思考中）
+// 注意：PLACEHOLDER_LOADING 字面值与历史持久化数据一致，不可改动（旧数据的过滤判断依赖它）
+const PLACEHOLDER_LOADING = 'AI正在回复中，请稍候...';
+const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
 
 // ★ 新增：代码块组件，支持自动换行/横向滚动切换（0.122）
 @ComponentV2
@@ -124,7 +129,6 @@ export struct ChatPage {
   @Local textPreviewVisible: boolean = false;
   @Local textPreviewContent: string = '';
   private scroller: Scroller = new Scroller();
-  private inputController: TextAreaController = new TextAreaController();
   private streamController: StreamController | null = null;
 
   // ★ 获取 ThemeStore（通过 AppStorageV2 共享，0.103 功能）
@@ -262,7 +266,8 @@ export struct ChatPage {
     const allMessages: ChatMessage[] = [];
     for (const n of chainNodes) {
       for (const msg of n.messages) {
-        if (msg.content.length > 0 && msg.content !== 'AI正在回复中，请稍候...') {
+        // ★ 0.132：兼容加载/思考两个占位态
+        if (msg.content.length > 0 && msg.content !== PLACEHOLDER_LOADING && msg.content !== PLACEHOLDER_THINKING) {
           allMessages.push(msg);
         }
       }
@@ -317,12 +322,12 @@ export struct ChatPage {
       this.streamController.cancel();
     }
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages]);
-    const aiMsg = new ChatMessage(generateMessageId(), 'assistant', 'AI正在回复中，请稍候...');
+    const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING); // ★ 0.132：占位常量
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
     this.inputText = '';
     this.pendingImages = [];
-    this.inputController.stopEditing();
+    this.getUIContext().getFocusController().clearFocus(); // ★ 0.131：替代 TextAreaController.stopEditing（API 12+ 全设备兼容），发送后收起键盘
     this.isLoading = true;
 
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
@@ -333,8 +338,8 @@ export struct ChatPage {
       messagesToSend,
       this.apiConfig,
       (chunk: string) => {
-        // onChunk：首次收到数据时清除占位文字，然后追加 AI content
-        if (aiMsg.content === 'AI正在回复中，请稍候...') {
+        // onChunk：首次收到数据时清除占位文字（兼容加载/思考两态），然后追加 AI content
+        if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
           aiMsg.content = '';
         }
         aiMsg.content += chunk;
@@ -345,6 +350,10 @@ export struct ChatPage {
         // onDone：解锁 + 存储 token
         this.isLoading = false;
         this.streamController = null;
+        // ★ 0.132 兜底：流结束但零内容时给出明确提示，杜绝任何场景永久卡占位
+        if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
+          aiMsg.content = '（AI 未返回文本内容，请重试或更换模型）';
+        }
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
         // 流式完成时滚到底部
@@ -359,6 +368,14 @@ export struct ChatPage {
         // 错误时也滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
         this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      },
+      (reasoning: string) => {
+        // ★ 0.132 onReasoning：深度思考内容到达，占位切换为思考态
+        // 思考内容不追加进 content（不参与持久化、不进入后续上下文），仅用于 UI 状态反馈
+        if (aiMsg.content === PLACEHOLDER_LOADING) {
+          aiMsg.content = PLACEHOLDER_THINKING;
+        }
+        this.scroller.scrollEdge(Edge.Bottom);
       }
     );
     // 发送消息后自动滚到底部
@@ -589,7 +606,9 @@ export struct ChatPage {
                               .width('100%')
                               .margin({ top: 6, bottom: 6 })
                             }
-                          }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}`)
+                           // ★ 0.132 修复：key 纳入 content/header/rows 尺寸——流式追加时 key 变化触发 item 重建，
+                           // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
+                           }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.header.length}_${seg.rows.length}`)
                         }
                         .padding(10)
                         .borderRadius(8)
@@ -671,7 +690,7 @@ export struct ChatPage {
               this.selectImages();
             })
 
-          TextArea({ text: $$this.inputText, placeholder: '输入问题...', controller: this.inputController })
+          TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
             .layoutWeight(1)
             .height(this.inputAreaHeight) // ★ 新增：动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
             .enterKeyType(EnterKeyType.NEW_LINE)

@@ -17,12 +17,18 @@ import { BBTreeCanvas } from '../components/BBTreeCanvas';
 import { ChatPage } from '../components/ChatPage';
 import { SettingsPage } from '../components/SettingsPage';
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree } from '../common/ChatModel';
+import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.131：深浅色适配
 
 // 首页入口 — V2 全量迁移
 @Entry
 @ComponentV2
 struct Index {
   pathStack: NavPathStack = new NavPathStack();
+
+  // ★ 0.131：获取全局主题状态（与 BBTreeCanvas/ChatPage 相同模式）
+  getThemeStore(): ThemeStore {
+    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+  }
 
   aboutToAppear() {
     // PersistenceV2: 持久化 JSON 字符串
@@ -65,11 +71,11 @@ struct Index {
         Text('DAG AI Chat')
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#333333')
+          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333') // ★ 0.131：深浅色适配
 
         Text('图结构对话 · 多分支推理')
           .fontSize(14)
-          .fontColor('#999999')
+          .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999') // ★ 0.131：深浅色适配
           .margin({ top: 8 })
 
         Button('进入对话画布')
@@ -82,6 +88,7 @@ struct Index {
       .height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
+      .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA') // ★ 0.131：深浅色适配（与其他页面一致）
     }
     .navDestination(this.pageMap)
     .mode(NavigationMode.Auto)

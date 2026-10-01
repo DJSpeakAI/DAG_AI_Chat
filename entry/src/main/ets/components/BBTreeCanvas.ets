@@ -256,7 +256,8 @@ export struct BBTreeCanvas {
                 if (bubble.parentID === null) {
                   return;
                 }
-                AlertDialog.show({
+                // ★ 0.131：全局静态 AlertDialog.show 自 API 12 起废弃，改走 UIContext
+                this.getUIContext().showAlertDialog({
                   title: '删除节点',
                   message: '确认删除此节点及其所有子节点？',
                   primaryButton: {
@@ -347,7 +348,9 @@ export struct BBTreeCanvas {
         .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
         .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
         .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-        .position({ x: 260, y: 10 })
+        .position({ x: '100%', y: 10 }) // ★ 0.131/V1：右缘自适应（替代写死 x:260，任意屏宽都贴右侧）
+        .markAnchor({ x: '100%', y: 0 }) // ★ 锚点为按钮右缘，使 position 100% 对齐父容器右缘
+        .translate({ x: -12 }) // ★ 距右缘 12vp 边距
         .gesture(
           TapGesture()
             .onAction(() => {

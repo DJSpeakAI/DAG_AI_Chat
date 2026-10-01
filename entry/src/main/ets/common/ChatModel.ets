@@ -178,5 +178,5 @@ export function generateMessageId(): string {
 export class ApiConfig {
   @Trace apiKey: string = '';
   @Trace endpoint: string = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
-  @Trace model: string = 'doubao-pro-32k';
+  @Trace model: string = 'doubao-seed-2-1-lite-260915'; // ★ 0.131：与 SettingsPage 预置列表第 0 项一致（原 doubao-pro-32k 不在预置列表）
 }
