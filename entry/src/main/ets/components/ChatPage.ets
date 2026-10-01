@@ -499,6 +499,15 @@ export struct ChatPage {
           .onClick(() => {
             this.imageViewerVisible = false;
           })
+          // ★ 新增：右滑手势关闭图片预览（0.120）
+          .gesture(
+            PanGesture({ direction: PanDirection.Horizontal })
+              .onActionEnd((event: PanGestureEvent) => {
+                if (event.offsetX > 30) { // 右滑超过30vp关闭预览
+                  this.imageViewerVisible = false;
+                }
+              })
+          )
         }
 
         // 长按菜单弹窗
@@ -648,5 +657,17 @@ export struct ChatPage {
       .height('100%')
     }
     .title('对话')
+    // ★ 新增：图片/文本预览打开时拦截系统返回手势，不跳转Canvas（0.120）
+    .onBackPressed(() => {
+      if (this.imageViewerVisible) {
+        this.imageViewerVisible = false;
+        return true; // 消费返回事件，阻止页面导航
+      }
+      if (this.textPreviewVisible) {
+        this.textPreviewVisible = false;
+        return true;
+      }
+      return false; // 预览未打开，恢复原生返回逻辑
+    })
   }
 }
