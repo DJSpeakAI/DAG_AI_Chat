@@ -1,3 +1,17 @@
+// ============================================================
+// Index.ets — 应用首页入口
+// ============================================================
+// 本文件是应用的入口页面，负责：
+//   - 初始化持久化数据（PersistenceV2 连接）
+//   - 从 JSON 恢复气泡树（反序列化）
+//   - 首次启动时创建默认气泡树（根节点）
+//   - 配置 NavPathStack 导航路由（气泡画布 / 对话页 / 设置页）
+//
+// 页面导航关系：
+//   Index → BBTreeCanvas（气泡画布）→ ChatPage（对话页）
+//                                  → SettingsPage（设置页）
+// ============================================================
+
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BBTreeCanvas } from '../components/BBTreeCanvas';
 import { ChatPage } from '../components/ChatPage';

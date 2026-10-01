@@ -1,4 +1,16 @@
-import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
+// ============================================================
+// SettingsPage.ets — API 配置页面
+// ============================================================
+// 本文件是应用的设置页面，功能包括：
+//   - 火山引擎 API Key 输入
+//   - API Endpoint 地址输入
+//   - 模型选择（下拉列表，硬编码 5 个已开通模型）
+//   - 保存配置到 PersistenceV2 持久化存储
+//
+// 技术栈：鸿蒙 ArkUI V2
+// ============================================================
+
+import { PersistenceV2 } from '@kit.ArkUI'; // ★ 删除未使用 AppStorageV2（0.122 清理）
 import { ApiConfig } from '../common/ChatModel';
 
 // 模型选项接口

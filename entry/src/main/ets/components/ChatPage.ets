@@ -1,5 +1,22 @@
+// ============================================================
+// ChatPage.ets — 对话页面（气泡内聊天界面）
+// ============================================================
+// 本文件是用户与 AI 对话的主界面，功能包括：
+//   - 消息列表渲染（用户消息纯文本，AI 消息 Markdown 代码块/表格）
+//   - 流式接收 AI 回复（打字机效果，边接收边渲染）
+//   - 图片发送（多选相册 → Base64 → 发送给 AI）
+//   - 图片全屏预览（点击放大、右滑/点击关闭、双指缩放）
+//   - 输入框多行自适应（≤5 行自适应高度，>5 行内部滚动）
+//   - DAG 链路回溯 + 上下文压缩（超 25 条消息自动摘要）
+//   - 长按消息菜单（复制、删除）
+//   - 深浅色主题适配
+//
+// 技术栈：鸿蒙 ArkUI V2（@ComponentV2 / @Local / @Param / @Computed）
+// 导航模式：NavPathStack（从 BBTreeCanvas 气泡画布页面跳入）
+// ============================================================
+
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
-import { common } from '@kit.AbilityKit';
+// ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';

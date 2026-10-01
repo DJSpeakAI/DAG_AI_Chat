@@ -1,3 +1,18 @@
+// ============================================================
+// BBTreeCanvas.ets — 气泡树画布页面
+// ============================================================
+// 本文件是 DAG 气泡树的可视化画布，功能包括：
+//   - 气泡节点渲染（圆形气泡，显示节点名称和消息数）
+//   - 父子节点连线绘制（贝塞尔曲线）
+//   - 气泡拖拽（长按拖动改变位置）
+//   - 点击气泡进入 ChatPage 对话页面
+//   - 添加子气泡（从父气泡分叉出新节点）
+//   - 删除气泡及其子树
+//   - 持久化：位置变更自动保存到 PersistenceV2
+//
+// 技术栈：鸿蒙 ArkUI V2 + Canvas 绘图
+// ============================================================
+
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree } from '../common/ChatModel';
 

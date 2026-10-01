@@ -1,3 +1,19 @@
+// ============================================================
+// ApiClient.ets — AI 大模型 API 请求客户端
+// ============================================================
+// 本文件封装了与火山引擎（Volcano）AI 大模型的通信逻辑：
+//   - streamChat()：流式对话请求，AI 边生成边返回（SSE 协议）
+//   - StreamController：流式请求控制器，支持手动 cancel 终止请求
+//   - parseSSEChunk()：解析 SSE（Server-Sent Events）数据块
+//
+// 工作流程：
+//   1. 构建 OpenAI 兼容格式的请求体（model + messages + stream:true）
+//   2. 发送 HTTP POST 请求，设置 Authorization Bearer 头
+//   3. 接收 SSE 流式响应，逐块解析出 AI 生成的文本片段
+//   4. 通过 onChunk 回调实时推送文本片段到 UI（打字机效果）
+//   5. 流结束后通过 onDone 回调通知 UI 完成
+// ============================================================
+
 import { http } from '@kit.NetworkKit';
 import { buffer } from '@kit.ArkTS';
 import { ChatMessage, ApiConfig } from '../common/ChatModel';
@@ -270,99 +286,4 @@ export function streamChat(
   };
   return controller;
 }
-
-// ========== 连通性测试 ==========
-// 非流式请求，快速排查网络 / Key / Endpoint 是否通
-export function testApiConnection(config: ApiConfig): void {
-  const httpRequest = http.createHttp();
-
-  // 构建最简请求体（非流式）
-  const testMsg: VolcanoMessage = { role: 'user', content: '你好' };
-  const body: VolcanoRequestBody = {
-    model: config.model,
-    messages: [testMsg],
-    stream: false
-  };
-
-  console.info('[ApiClient] ========== 测试连接开始 ==========');
-  console.info(`[ApiClient] URL: ${config.endpoint}`);
-  console.info(`[ApiClient] API Key: ${config.apiKey}`);
-  console.info(`[ApiClient] Model: ${config.model}`);
-  console.info(`[ApiClient] Body: ${JSON.stringify(body)}`);
-
-  httpRequest.request(config.endpoint, {
-    method: http.RequestMethod.POST,
-    header: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`
-    },
-    extraData: JSON.stringify(body),
-    connectTimeout: 30000,
-    readTimeout: 30000,
-  }).then((resp: http.HttpResponse) => {
-    console.info('[ApiClient] ========== 测试连接响应 ==========');
-    console.info(`[ApiClient] 响应码: ${resp.responseCode}`);
-    const respStr = resp.result ? String(resp.result) : '空';
-    console.info(`[ApiClient] 响应体: ${respStr.substring(0, 500)}`);
-    httpRequest.destroy();
-  }).catch((err: Error) => {
-    console.error('[ApiClient] ========== 测试连接失败 ==========');
-    console.error(`[ApiClient] 错误: ${err.message}`);
-    console.error(`[ApiClient] err.stack: ${err.stack}`);
-    httpRequest.destroy();
-  });
-}
-
-// ========== 诊断测试（结果回传到 UI） ==========
-// 非流式请求，把全链路诊断信息通过 onResult 回传，显示在消息气泡中
-export function testApiWithDiagnostics(config: ApiConfig, onResult: (result: string) => void): void {
-  const httpRequest = http.createHttp();
-  let log: string = '';
-
-  const addLog = (msg: string): void => {
-    log += msg + '\n';
-    console.info(`[ApiClient] ${msg}`);
-  };
-
-  // 构建请求体（非流式）
-  const testMsg: VolcanoMessage = { role: 'user', content: '你好，请自我介绍一下' };
-  const body: VolcanoRequestBody = {
-    model: config.model,
-    messages: [testMsg],
-    stream: false
-  };
-
-  addLog('========== 诊断开始 ==========');
-  addLog(`① URL: ${config.endpoint}`);
-  addLog(`② API Key: ${config.apiKey}`);
-  addLog(`③ API Key 长度: ${config.apiKey.length}`);
-  addLog(`④ Model: ${config.model}`);
-  addLog(`⑤ 请求体: ${JSON.stringify(body)}`);
-  addLog(`⑥ Authorization: Bearer ${config.apiKey.substring(0, 8)}...`);
-  addLog('⑦ 开始发送 http.request...');
-
-  httpRequest.request(config.endpoint, {
-    method: http.RequestMethod.POST,
-    header: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`
-    },
-    extraData: JSON.stringify(body),
-    connectTimeout: 30000,
-    readTimeout: 30000,
-  }).then((resp: http.HttpResponse) => {
-    addLog(`⑧ HTTP 响应码: ${resp.responseCode}`);
-    const respStr = resp.result ? String(resp.result) : '(空)';
-    addLog(`⑨ 响应体(前1000字符): ${respStr.substring(0, 1000)}`);
-    addLog('========== 诊断结束 ==========');
-    onResult(log);
-    httpRequest.destroy();
-  }).catch((err: Error) => {
-    addLog(`⑧ 请求失败: ${err.message}`);
-    addLog(`⑨ err.name: ${err.name}`);
-    addLog(`⑩ err.stack: ${err.stack}`);
-    addLog('========== 诊断结束 ==========');
-    onResult(log);
-    httpRequest.destroy();
-  });
-}
+// ★ 删除未使用的 testApiConnection + testApiWithDiagnostics（0.122 清理）

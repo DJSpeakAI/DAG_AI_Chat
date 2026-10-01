@@ -1,3 +1,15 @@
+// ============================================================
+// EntryAbility.ets — 应用入口 Ability
+// ============================================================
+// 本文件是应用的 UI Ability（生命周期入口），负责：
+//   - 加载主页面（pages/Index）
+//   - 全局主题状态管理（ThemeStore，深浅色切换）
+//   - 系统配置变化监听（深浅色主题跟随系统切换）
+//
+// ThemeStore 是全局 UI 运行时状态（非持久化），
+// 通过 AppStorageV2 在所有页面间共享。
+// ============================================================
+
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppStorageV2, window } from '@kit.ArkUI';
