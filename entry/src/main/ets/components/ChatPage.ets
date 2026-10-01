@@ -10,7 +10,7 @@
 //   - DAG 链路回溯 + 上下文压缩（超 25 条消息自动摘要）
 //   - 长按消息菜单（复制、删除）
 //   - 深浅色主题适配
-//   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.136 恢复 HTTP 语音合成 + 分段流水线，失败时插入调试消息）
+//   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.139 openspeech 2.0 协议 + 分段流水线，0.143 收尾清理调试链路）
 //
 // 技术栈：鸿蒙 ArkUI V2（@ComponentV2 / @Local / @Param / @Computed）
 // 导航模式：NavPathStack（从 BBTreeCanvas 气泡画布页面跳入）
@@ -24,7 +24,7 @@ import { buffer } from '@kit.ArkTS';
 import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig } from '../common/ChatModel'; // ★ 0.143：connectApiConfig
-import { streamChat, synthesizeTTS, StreamController, TTSDebugInfo } from '../utils/ApiClient';
+import { streamChat, synthesizeTTS, StreamController } from '../utils/ApiClient';
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -550,8 +550,7 @@ export struct ChatPage {
     this.ttsRequestIndex = 0;
     this.ttsPlayIndex = 0;
     this.ttsAudioCache = [];
-    this.ttsWaitingForAudio = true; // ★ 0.142：初始即「等音频」——首段到达立即开播（原 false 死锁：onDone 不触发播放、无人再调 tryPlayNextAudio，0.141 过程消息定位实锤）
-    console.info(`[ChatPage] 开始朗读: ${msg.messageId}, 分段数=${this.ttsSegments.length}`);
+    this.ttsWaitingForAudio = true; // ★ 0.142：初始即「等音频」——首段到达立即开播（原 false 死锁：onDone 不触发播放、无人再调 tryPlayNextAudio）
     this.requestNextSegment();
   }
 
@@ -572,8 +571,6 @@ export struct ChatPage {
           return; // 会话已停止/被新会话取代，丢弃过期结果
         }
         this.ttsAudioCache.push(audioBase64);
-        console.info(`[ChatPage] 第 ${index + 1}/${this.ttsSegments.length} 段合成完成`);
-        this.addTTSProgressMessage(`第 ${index + 1} 段音频已到达（base64 长度 ${audioBase64.length}），进入播放队列`); // ★ 0.141-DEBUG
         // 播放器空闲（等音频）→ 立即开播
         if (this.ttsWaitingForAudio) {
           this.tryPlayNextAudio();
@@ -581,20 +578,13 @@ export struct ChatPage {
         // 继续请求下一段（串行流水线）
         this.requestNextSegment();
       },
-      (err: string, debug: TTSDebugInfo) => {
+      (err: string) => {
         if (gen !== this.ttsGeneration) {
           return;
         }
         console.error(`[ChatPage] 第 ${index + 1} 段合成失败: ${err}`);
         this.showToastSafe(`语音合成失败：${err.substring(0, 150)}`);
-        this.addTTSDebugMessage(debug); // ★ 0.136-DEBUG：失败详情以对话消息显示（用户方案）
         this.stopTTS();
-      },
-      (info: string) => { // ★ 0.141-DEBUG：过程反馈（诊断沙漏卡点，修复后删）
-        if (gen !== this.ttsGeneration) {
-          return;
-        }
-        this.addTTSProgressMessage(`第 ${index + 1}/${this.ttsSegments.length} 段 ${info}`);
       }
     );
   }
@@ -607,7 +597,6 @@ export struct ChatPage {
     if (this.ttsPlayIndex >= this.ttsAudioCache.length) {
       if (this.ttsAudioCache.length >= this.ttsSegments.length) {
         // 全部段落合成完且播完 → 正常结束
-        console.info('[ChatPage] 朗读完成（全部段落播完）');
         this.stopTTS();
       } else {
         // 缓存播完但合成未完 → 等待下一段合成回调
@@ -691,7 +680,6 @@ export struct ChatPage {
       // fd 保持打开供播放器使用（fdSrc 模式），播放完成后 cleanupSegment 关闭
       this.ttsCurrentFd = file.fd;
       this.ttsCurrentPath = path;
-      this.addTTSProgressMessage(`第 ${index + 1} 段临时文件写入完成（${audioBytes.length} 字节），创建播放器...`); // ★ 0.141-DEBUG
 
       const player = await media.createAVPlayer();
       if (gen !== this.ttsGeneration) {
@@ -708,11 +696,9 @@ export struct ChatPage {
         if (state === 'initialized') {
           player.prepare();
         } else if (state === 'prepared') {
-          this.addTTSProgressMessage(`第 ${index + 1} 段播放器就绪，开始播放`); // ★ 0.141-DEBUG
           player.play();
         } else if (state === 'completed') {
           // 本段播完：清理 → 播下一段
-          console.info(`[ChatPage] 第 ${index + 1} 段播放完成`);
           this.cleanupSegment();
           this.ttsPlayIndex++;
           this.tryPlayNextAudio();
@@ -729,44 +715,6 @@ export struct ChatPage {
       this.showToastSafe('音频播放失败');
       this.stopTTS();
     }
-  }
-
-  // ★ 0.141-DEBUG：TTS 过程消息（诊断沙漏卡点）——把朗读链路每个关键阶段的实时进度
-  // 作为 AI 消息插入当前气泡（[TTS过程] 前缀）；定位修复出声后随调试链路整体删除
-  addTTSProgressMessage(info: string): void {
-    if (!this.currentBubble) {
-      return;
-    }
-    const msg = new ChatMessage(generateMessageId(), 'assistant', `[TTS过程] ${info}`, [], 0, 0);
-    this.currentBubble.messages = [...this.currentBubble.messages, msg];
-    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-    console.info(`[ChatPage] TTS 过程: ${info}`);
-  }
-
-  // ★ 0.136-DEBUG：TTS 调试消息（用户方案）——失败时把完整调试信息作为 AI 消息插入当前气泡
-  // 复用现有气泡渲染（长按可复制/删除），持久化保存便于用户截图反馈；定位修复出声后整段删除
-  addTTSDebugMessage(debug: TTSDebugInfo): void {
-    if (!this.currentBubble) {
-      return;
-    }
-    const lines: string[] = [
-      '[TTS调试] 语音合成失败',
-      `URL: ${debug.endpoint}`,
-      `model: ${debug.model} | voice: ${debug.voice}`,
-      `文本长度: ${debug.inputLength}`,
-      `阶段: ${debug.stage}`
-    ];
-    if (debug.httpCode >= 0) {
-      lines.push(`HTTP ${debug.httpCode}`);
-    } else {
-      lines.push('HTTP 无响应（请求异常）');
-    }
-    lines.push(`响应体: ${debug.responseBody.length > 0 ? debug.responseBody : '（空）'}`);
-    lines.push(`错误: ${debug.error}`);
-    const msg = new ChatMessage(generateMessageId(), 'assistant', lines.join('\n'), [], 0, 0);
-    this.currentBubble.messages = [...this.currentBubble.messages, msg];
-    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-    console.info('[ChatPage] 已插入 TTS 调试消息');
   }
 
   // 进入对话页面：延迟滚到底部，显示最新消息
@@ -1121,7 +1069,7 @@ export struct ChatPage {
             })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, bottom: 16 })
+        .padding({ left: 6, right: 6, top: 8, bottom: 8 }) // ★ 0.143：输入区顶部留白——消息列表/图片预览与输入框原本贴边，加 top 12 与列表顶部 padding 呼应
         }
         .width('100%')
         .height('100%')

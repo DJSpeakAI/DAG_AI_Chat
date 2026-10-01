@@ -97,8 +97,9 @@ function buildMessages(messages: ChatMessage[]): VolcanoMessage[] {
   const result: VolcanoMessage[] = [];
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    // ★ 0.136-DEBUG：TTS 调试消息不进入 LLM 上下文（定位修复后随调试功能一并删除）
-    if (msg.content.startsWith('[TTS调试]')) {
+    // ★ 0.143 收尾：TTS 调试/过程消息不进入 LLM 上下文（历史对话中持久化保存的调试遗留消息，
+    // 构建上下文时跳过，避免污染对话；调试功能已删，此过滤为数据卫生逻辑长期保留）
+    if (msg.content.startsWith('[TTS调试]') || msg.content.startsWith('[TTS过程]')) {
       continue;
     }
     if (msg.imageUrl && msg.imageUrl.length > 0) {
@@ -352,8 +353,6 @@ export function streamChat(
 //   - 请求体：{ req_params: { text, speaker, audio_params: { format, sample_rate } } }
 //   - 响应：Chunked 流式 JSON，data 字段为 base64 音频片段，code=0 成功
 //   - 组合：resource=seed-tts-2.0 + speaker=zh_female_vv_uranus_bigtts（2.0 专用音色）
-// ★ 0.136-DEBUG：失败回调携带结构化调试信息（TTSDebugInfo），供 ChatPage 把失败详情
-//   以对话消息显示给用户（用户方案）；定位修复出声后，调试信息链路整体删除。
 
 // TTS 音频参数（openspeech 2.0 协议 audio_params）
 interface AudioParams {
@@ -373,28 +372,15 @@ interface SpeechRequestBody {
   req_params: ReqParams;
 }
 
-// ★ 0.136-DEBUG：TTS 调试信息（失败时回调给 UI 显示调试消息）
-export interface TTSDebugInfo {
-  endpoint: string;     // 请求 URL
-  model: string;        // 模型 ID
-  voice: string;        // 音色 ID
-  inputLength: number;  // 请求文本长度
-  stage: string;        // 失败阶段（request 请求异常 / response 非200 / parse 解析失败）
-  httpCode: number;     // HTTP 状态码（-1 = 请求异常未拿到响应）
-  responseBody: string; // 响应体前 300 字符（二进制响应显示字节摘要）
-  error: string;        // 错误描述
-}
-
-// 单段 TTS 合成：HTTP POST openspeech /api/v3/tts/unidirectional（0.139 官方 2.0 协议 + 调试信息增强）
+// 单段 TTS 合成：HTTP POST openspeech /api/v3/tts/unidirectional（0.139 官方 2.0 协议）
 // onDone: 成功回调音频 base64（mp3）
-// onError: 失败回调（错误信息 + ★ 0.136-DEBUG 调试信息）
+// onError: 失败回调（错误信息）
 // 返回 StreamController，支持手动 cancel（停止朗读时中断进行中的请求）
 export function synthesizeTTS(
   text: string,
   config: ApiConfig,
   onDone: (audioBase64: string) => void,
-  onError: (error: string, debug: TTSDebugInfo) => void,
-  onProgress?: (info: string) => void // ★ 0.141-DEBUG：过程反馈（诊断沙漏卡点，修复后随调试链路删除）
+  onError: (error: string) => void
 ): StreamController {
   let cancelled = false;
 
@@ -423,27 +409,11 @@ export function synthesizeTTS(
     }
   };
 
-  console.info(`[ApiClient] TTS 请求: URL=${endpoint}, resource=${config.audioModel}, voice=${voice}, 文本长度=${text.length}`);
-
-  // ★ 0.136-DEBUG：构造调试信息（失败时回调给 UI）
-  const buildDebug = (stage: string, httpCode: number, responseBody: string, error: string): TTSDebugInfo => {
-    return {
-      endpoint: endpoint,
-      model: config.audioModel,
-      voice: voice,
-      inputLength: text.length,
-      stage: stage,
-      httpCode: httpCode,
-      responseBody: responseBody.substring(0, 300),
-      error: error
-    };
-  };
-
   // ★ 0.140：音频 Key 空值检查——豆包语音 Key 与方舟 Key 相互独立，未填写直接明确报错（不拿空 Key 撞服务器）
   if (config.audioKey.trim().length === 0) {
     const errMsg = '音频 API Key 未填写：请在设置页「音频 API Key」填入豆包语音控制台新建的 Key（与对话 Key 相互独立）';
     console.error(`[ApiClient] TTS ${errMsg}`);
-    onError(errMsg, buildDebug('request', -1, '', 'audioKey 为空'));
+    onError(errMsg);
     return { cancel: () => { cancelled = true; } };
   }
 
@@ -470,22 +440,18 @@ export function synthesizeTTS(
     const code = resp.responseCode;
     // ★ 0.137 空值保护沿用：错误响应可能无 body（如 404 空 body），resp.result 为 undefined
     const bodyText = resp.result ? (resp.result as string) : '';
-    // ★ 0.141-DEBUG：响应到达（时序标记——沙漏卡住时若停在本条之前，说明 HTTP 挂起等流式响应结束）
-    if (onProgress) {
-      onProgress(`收到响应: HTTP ${code}, 响应体 ${bodyText.length} 字符, 内容: ${bodyText.substring(0, 200)}`);
-    }
     if (code !== 200) {
       // ★ 0.137：body 为空时明确显示「响应体为空」，不显示悬空冒号
       const errMsg = bodyText.length > 0
         ? `HTTP ${code}: ${bodyText.substring(0, 150)}`
         : `HTTP ${code}（响应体为空）`;
       console.error(`[ApiClient] TTS 失败: ${errMsg}`);
-      onError(errMsg, buildDebug('response', code, bodyText, `HTTP ${code}`));
+      onError(errMsg);
       return;
     }
     // 200：解析 Chunked 流式 JSON——正则提取 code 校验 + 所有 data 字段 base64 片段拼接
     if (bodyText.length === 0) {
-      onError('HTTP 200 但响应体为空', buildDebug('parse', code, '（空）', '响应体为空'));
+      onError('HTTP 200 但响应体为空');
       return;
     }
     try {
@@ -496,7 +462,7 @@ export function synthesizeTTS(
         const bizMsg = msgMatch ? msgMatch[1] : '未知业务错误';
         const errMsg = `业务错误 code=${codeMatch[1]}: ${bizMsg}`;
         console.error(`[ApiClient] TTS 失败: ${errMsg}`);
-        onError(errMsg, buildDebug('parse', code, bodyText, `业务错误 code=${codeMatch[1]}`));
+        onError(errMsg);
         return;
       }
       // 提取所有 data 字段（Chunked 流式返回多段 base64 音频片段）
@@ -510,7 +476,7 @@ export function synthesizeTTS(
         dataMatch = dataReg.exec(bodyText);
       }
       if (chunks.length === 0) {
-        onError('响应中无 data 音频字段', buildDebug('parse', code, bodyText, '无 data 字段'));
+        onError('响应中无 data 音频字段');
         return;
       }
       // 逐段 base64 解码 → ArrayBuffer 拼接 → 整体转 base64
@@ -530,14 +496,9 @@ export function synthesizeTTS(
         offset += decoded[i].byteLength;
       }
       const audioBase64 = buffer.from(mergedBuf).toString('base64');
-      console.info(`[ApiClient] TTS 成功: ${chunks.length} 段拼接 ${totalLen} 字节音频（base64 长度 ${audioBase64.length}）`);
-      // ★ 0.141-DEBUG：解析完成
-      if (onProgress) {
-        onProgress(`解析完成: ${chunks.length} 段 base64 拼接 ${totalLen} 字节, base64 长度 ${audioBase64.length}`);
-      }
       onDone(audioBase64);
     } catch (e) {
-      onError('响应解析失败', buildDebug('parse', code, bodyText, (e as BusinessError).message));
+      onError('响应解析失败');
       return;
     }
   }).catch((err: BusinessError) => {
@@ -547,13 +508,8 @@ export function synthesizeTTS(
     httpRequest.destroy();
     const errMsg = `请求异常: ${err.message}`;
     console.error(`[ApiClient] TTS ${errMsg}`);
-    onError(errMsg, buildDebug('request', -1, '', errMsg));
+    onError(errMsg);
   });
-
-  // ★ 0.141-DEBUG：请求已发出（时序标记——若后续无「收到响应」消息，说明 HTTP 挂起等流式响应结束）
-  if (onProgress) {
-    onProgress(`请求已发出: URL=${endpoint}, Key长度=${config.audioKey.trim().length}, 等待服务器响应...`);
-  }
 
   // 返回控制器，支持手动 cancel
   const controller: StreamController = {
