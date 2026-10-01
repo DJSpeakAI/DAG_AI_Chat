@@ -54,6 +54,15 @@ export struct ChatPage {
     return this.currentBubble?.messages ?? [];
   }
 
+  // ★ 新增：输入框动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
+  // ★ 修复：单行基准40vp，避免首行文字被遮挡（0.119）
+  @Computed
+  get inputAreaHeight(): number {
+    if (this.inputText.length === 0) return 40; // 空文本单行高度
+    const lines = this.inputText.split('\n').length;
+    return 40 + (Math.min(lines, 5) - 1) * 24; // 首行40vp，后续每行+24vp，上限5行=136vp
+  }
+
   // ★ 新增：调用 LLM 生成摘要（0.117）
   async generateSummaryWithLLM(messages: ChatMessage[]): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -444,8 +453,7 @@ export struct ChatPage {
 
           TextArea({ text: $$this.inputText, placeholder: '输入问题...', controller: this.inputController })
             .layoutWeight(1)
-            .minLines(1)
-            .maxLines(5)
+            .height(this.inputAreaHeight) // ★ 新增：动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
             .enterKeyType(EnterKeyType.NEW_LINE)
 
           Button('发送')
