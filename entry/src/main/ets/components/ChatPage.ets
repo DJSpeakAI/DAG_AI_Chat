@@ -7,6 +7,22 @@ import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistD
 import { streamChat, StreamController } from '../utils/ApiClient';
 import { ThemeStore } from '../entryability/EntryAbility';
 
+// ★ 新增：Markdown 解析段（0.121）
+class MdSegment {
+  type: number; // 0=普通文本, 1=代码块, 2=表格
+  content: string;
+  lang: string;
+  header: string[];
+  rows: string[][];
+  constructor(type: number, content: string, lang: string = '', header: string[] = [], rows: string[][] = []) {
+    this.type = type;
+    this.content = content;
+    this.lang = lang;
+    this.header = header;
+    this.rows = rows;
+  }
+}
+
 // 对话页面 — V2 全量迁移
 @ComponentV2
 export struct ChatPage {
@@ -61,6 +77,72 @@ export struct ChatPage {
     if (this.inputText.length === 0) return 40; // 空文本单行高度
     const lines = this.inputText.split('\n').length;
     return 40 + (Math.min(lines, 5) - 1) * 24; // 首行40vp，后续每行+24vp，上限5行=136vp
+  }
+
+  // ★ 新增：Markdown 解析，拆分为普通文本/代码块/表格段（0.121）
+  parseMarkdown(content: string): MdSegment[] {
+    const segments: MdSegment[] = [];
+    const lines: string[] = content.split('\n');
+    let i = 0;
+    let textBuffer: string[] = [];
+
+    const flushText = () => {
+      if (textBuffer.length > 0) {
+        segments.push(new MdSegment(0, textBuffer.join('\n')));
+        textBuffer = [];
+      }
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // 代码块：```lang ... ```
+      if (trimmed.startsWith('```')) {
+        flushText();
+        const lang = trimmed.substring(3).trim();
+        i++;
+        const codeLines: string[] = [];
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        segments.push(new MdSegment(1, codeLines.join('\n'), lang));
+        i++; // 跳过闭合 ```
+        continue;
+      }
+
+      // 表格：| header | ... | 后跟 |---|---|
+      if (trimmed.startsWith('|') && trimmed.endsWith('|') &&
+        i + 1 < lines.length && lines[i + 1].includes('---')) {
+        flushText();
+        const header = this.parseTableRow(line);
+        i += 2; // 跳过表头和分隔行
+        const rows: string[][] = [];
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          rows.push(this.parseTableRow(lines[i]));
+          i++;
+        }
+        segments.push(new MdSegment(2, '', '', header, rows));
+        continue;
+      }
+
+      // 普通文本
+      textBuffer.push(line);
+      i++;
+    }
+    flushText();
+    return segments;
+  }
+
+  // ★ 新增：解析表格行 | a | b | → [a, b]（0.121）
+  parseTableRow(line: string): string[] {
+    const parts = line.split('|');
+    const result: string[] = [];
+    for (let j = 1; j < parts.length - 1; j++) {
+      result.push(parts[j].trim());
+    }
+    return result;
   }
 
   // ★ 新增：调用 LLM 生成摘要（0.117）
@@ -361,20 +443,87 @@ export struct ChatPage {
                     }
                     // 文字内容（非空才显示）
                     if (msg.content.length > 0) {
-                      Text(msg.content)
-                        .fontSize(16)
-                        .lineHeight(24)
-                        // 深浅色模式（0.103 功能）
-                        .fontColor(this.getThemeStore().isDark
-                          ? (msg.role === 'user' ? '#FFFFFF' : '#FFFFFF')
-                          : (msg.role === 'user' ? '#1976D2' : '#616161'))
+                      if (msg.role === 'user') {
+                        // 用户消息：纯文本渲染（保持原有逻辑）
+                        Text(msg.content)
+                          .fontSize(16)
+                          .lineHeight(24)
+                          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#1976D2')
+                          .padding(10)
+                          .borderRadius(8)
+                          .backgroundColor(this.getThemeStore().isDark ? '#0D47A1' : '#E3F2FD')
+                          .copyOption(CopyOptions.LocalDevice)
+                      } else {
+                        // ★ AI 消息：Markdown 分段渲染（0.121）
+                        Column() {
+                          ForEach(this.parseMarkdown(msg.content), (seg: MdSegment, idx: number) => {
+                            if (seg.type === 0) {
+                              // 普通文本段
+                              Text(seg.content)
+                                .fontSize(16)
+                                .lineHeight(24)
+                                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#616161')
+                                .copyOption(CopyOptions.LocalDevice)
+                            }
+                            if (seg.type === 1) {
+                              // 代码块：等宽字体 + 深色底 + 横向滚动
+                              Scroll() {
+                                Text(seg.content)
+                                  .fontSize(14)
+                                  .fontFamily('monospace')
+                                  .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
+                                  .padding(10)
+                                  .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
+                                  .borderRadius(6)
+                              }
+                              .scrollable(ScrollDirection.Horizontal)
+                              .scrollBar(BarState.Auto)
+                              .width('100%')
+                              .margin({ top: 6, bottom: 6 })
+                            }
+                            if (seg.type === 2) {
+                              // 表格：带边框 + 表头区分 + 横向滚动
+                              Scroll() {
+                                Column() {
+                                  // 表头行
+                                  Row() {
+                                    ForEach(seg.header, (cell: string, ci: number) => {
+                                      Text(cell)
+                                        .fontSize(14)
+                                        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                                        .padding(8)
+                                        .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                                        .layoutWeight(1)
+                                        .textAlign(TextAlign.Center)
+                                    }, (cell: string, ci: number) => `h_${ci}`)
+                                  }
+                                  // 数据行
+                                  ForEach(seg.rows, (row: string[], ri: number) => {
+                                    Row() {
+                                      ForEach(row, (cell: string, ci: number) => {
+                                        Text(cell)
+                                          .fontSize(14)
+                                          .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
+                                          .padding(8)
+                                          .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                                          .layoutWeight(1)
+                                          .textAlign(TextAlign.Center)
+                                      }, (cell: string, ci: number) => `r_${ri}_${ci}`)
+                                    }
+                                  }, (row: string[], ri: number) => `row_${ri}`)
+                                }
+                              }
+                              .scrollable(ScrollDirection.Horizontal)
+                              .scrollBar(BarState.Auto)
+                              .width('100%')
+                              .margin({ top: 6, bottom: 6 })
+                            }
+                          }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}`)
+                        }
                         .padding(10)
                         .borderRadius(8)
-                        // 深浅色模式背景
-                        .backgroundColor(this.getThemeStore().isDark
-                          ? (msg.role === 'user' ? '#0D47A1' : '#1E1E1E')
-                          : (msg.role === 'user' ? '#E3F2FD' : '#F5F5F5'))
-                        .copyOption(CopyOptions.LocalDevice)
+                        .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                      }
                     }
                     // AI 消息 token 统计
                     if (msg.role === 'assistant' && msg.outputTokens > 0) {
