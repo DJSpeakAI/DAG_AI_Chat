@@ -15,6 +15,7 @@
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree } from '../common/ChatModel';
+import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -96,16 +97,137 @@ export struct BBTreeCanvas {
     return Math.atan2(dy, dx) * 180 / Math.PI;
   }
 
+  // ★ 获取 ThemeStore（0.123 深浅色主题）
+  getThemeStore(): ThemeStore {
+    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+  }
+
+  // ★ 判断连线是否属于选中分支（0.123）
+  isHighlightedLine(bubble: BubbleNode): boolean {
+    // 选中节点自身的入边高亮
+    if (bubble.nodeID === this.currentBubbleStore.nodeID) return true;
+    // 选中节点的出边高亮
+    if (bubble.parentID === this.currentBubbleStore.nodeID) return true;
+    return false;
+  }
+
+  // ★ 箭头屏幕坐标 X（子气泡边缘，靠近子节点一端）（0.123）
+  getArrowX(bubble: BubbleNode): number {
+    const angle = this.getEdgeAngle(bubble) * Math.PI / 180;
+    return this.getChildCX(bubble) - 30 * Math.cos(angle);
+  }
+  // ★ 箭头屏幕坐标 Y（0.123）
+  getArrowY(bubble: BubbleNode): number {
+    const angle = this.getEdgeAngle(bubble) * Math.PI / 180;
+    return this.getChildCY(bubble) - 30 * Math.sin(angle);
+  }
+
+  // ★ 纵向树形自动排版（0.123）
+  autoLayout(): void {
+    const root = this.store.nodeList.find(n => n.parentID === null);
+    if (!root) return;
+
+    // 边界场景：全部节点都被手动拖拽过，直接跳过
+    const nonDragged = this.store.nodeList.filter(n => !n.isUserDragged);
+    if (nonDragged.length === 0) {
+      console.info('[0.123] 所有节点已被手动拖拽，跳过自动排版');
+      return;
+    }
+
+    const horizontalSpacing = 120; // 同层级水平间距
+    const verticalSpacing = 160;   // 层级间垂直间距
+
+    // 构建父→子映射
+    const childrenMap = new Map<string, BubbleNode[]>();
+    for (const node of this.store.nodeList) {
+      if (node.parentID !== null) {
+        const children = childrenMap.get(node.parentID) || [];
+        children.push(node);
+        childrenMap.set(node.parentID, children);
+      }
+    }
+
+    // 计算每个节点深度
+    const depthMap = new Map<string, number>();
+    const calcDepth = (node: BubbleNode, depth: number): void => {
+      depthMap.set(node.nodeID, depth);
+      const children = childrenMap.get(node.nodeID) || [];
+      for (const child of children) {
+        calcDepth(child, depth + 1);
+      }
+    };
+    calcDepth(root, 0);
+
+    // 按深度分层，逐层分配坐标
+    const maxDepth = Math.max(...Array.from(depthMap.values()));
+    for (let depth = 0; depth <= maxDepth; depth++) {
+      const nodesAtDepth = this.store.nodeList.filter(n => depthMap.get(n.nodeID) === depth);
+      // 按当前 x 排序，保持左右顺序
+      nodesAtDepth.sort((a, b) => a.x - b.x);
+      // 计算总宽度，居中于 root.x
+      const totalWidth = (nodesAtDepth.length - 1) * horizontalSpacing;
+      const startX = root.x - totalWidth / 2;
+      for (let i = 0; i < nodesAtDepth.length; i++) {
+        const node = nodesAtDepth[i];
+        if (!node.isUserDragged) { // ★ 仅排版未拖拽节点
+          node.x = startX + i * horizontalSpacing;
+          node.y = depth * verticalSpacing;
+        }
+      }
+    }
+
+    // 更新所有子节点的 parentX/parentY
+    for (const node of this.store.nodeList) {
+      if (node.parentID !== null) {
+        const parent = this.store.nodeList.find(n => n.nodeID === node.parentID);
+        if (parent) {
+          node.parentX = parent.x;
+          node.parentY = parent.y;
+        }
+      }
+    }
+
+    // 持久化
+    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+
+    // 视口自适应（优先平移，不改变缩放比例）
+    this.fitViewport();
+  }
+
+  // ★ 排版后视口自适应：平移使整棵树居中可见（0.123）
+  fitViewport(): void {
+    if (this.store.nodeList.length === 0) return;
+
+    // 计算画布坐标包围盒
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const node of this.store.nodeList) {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x);
+      minY = Math.min(minY, node.y);
+      maxY = Math.max(maxY, node.y);
+    }
+
+    const centerX = (minX + maxX) / 2;
+    // 估算屏幕宽度（NavDestination 内容区约 360vp）
+    const screenWidth = 360;
+    // 水平居中：让 centerX 映射到屏幕中央
+    this.canvasOffsetX = screenWidth / 2 - centerX * this.canvasScale - 30;
+    // 垂直：根节点放在顶部留白 100vp 处
+    this.canvasOffsetY = 100 - minY * this.canvasScale;
+  }
+
   build() {
     NavDestination() {
-      Stack({ alignContent: Alignment.TopStart }) {
+      Stack() { // ★ 外层 Stack：包裹画布 + 悬浮按钮（0.123）
+        Stack({ alignContent: Alignment.TopStart }) {
         // ── 连线层（从父圆心到子圆心，气泡实心覆盖多余部分） ──
         ForEach(this.store.nodeList, (bubble: BubbleNode) => {
           if (bubble.parentID !== null) {
+            // ★ 连线：区分普通/选中分支颜色（0.123）
             Column()
               .width(this.getEdgeLength(bubble))
               .height(2)
-              .backgroundColor('#CCCCCC')
+              .backgroundColor(this.isHighlightedLine(bubble) ? '#FF6600' : '#CCCCCC')
               .position({
                 x: this.getParentCX(bubble),
                 y: this.getParentCY(bubble) - 1
@@ -115,6 +237,17 @@ export struct BBTreeCanvas {
                 centerX: 0,
                 centerY: 1
               })
+
+            // ★ 箭头：靠近子节点一端，跟随 scale 缩放（0.123）
+            Text('▶')
+              .fontSize(10 * this.canvasScale)
+              .fontColor(this.isHighlightedLine(bubble) ? '#FF6600' : '#AAAAAA')
+              .textAlign(TextAlign.Center)
+              .position({
+                x: this.getArrowX(bubble) - 5 * this.canvasScale,
+                y: this.getArrowY(bubble) - 5 * this.canvasScale
+              })
+              .rotate({ angle: this.getEdgeAngle(bubble) })
           }
         }, (bubble: BubbleNode) => bubble.nodeID)
 
@@ -126,9 +259,16 @@ export struct BBTreeCanvas {
               .fontColor('#FFFFFF')
               .width(60)
               .height(60)
-              .borderRadius(30)
-              .backgroundColor('#1976D2')
+              .borderRadius(30) // ★ 圆角（0.123）
+              .backgroundColor(this.getThemeStore().isDark ? '#42A5F5' : '#1976D2') // ★ 深浅色适配（0.123）
               .textAlign(TextAlign.Center)
+              // ★ 阴影样式（0.123）
+              .shadow({
+                radius: this.getThemeStore().isDark ? 8 : 6,
+                color: this.getThemeStore().isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)',
+                offsetX: 0,
+                offsetY: 2
+              })
               // 0.101 高亮：当前选中气泡加橙色边框
               .border({
                 width: bubble.nodeID === this.currentBubbleStore.nodeID ? 3 : 0,
@@ -159,6 +299,7 @@ export struct BBTreeCanvas {
                   const newY = Math.max(0, draggedBubble.y + this.dragOffsetY);
                   draggedBubble.x = newX;
                   draggedBubble.y = newY;
+                  draggedBubble.isUserDragged = true; // ★ 标记用户手动拖拽（0.123 自动排版跳过此节点）
                   for (let i = 0; i < this.store.nodeList.length; i++) {
                     const child = this.store.nodeList[i];
                     if (child.parentID === this.dragBubbleId) {
@@ -240,7 +381,7 @@ export struct BBTreeCanvas {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#FAFAFA')
+      .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA') // ★ 深浅色适配（0.123）
       // ── 画布平移手势 ──
       .gesture(
         PanGesture({ distance: 5 })
@@ -271,6 +412,26 @@ export struct BBTreeCanvas {
           })
       )
       // ❌ 不再使用容器级 .translate() 和 .scale()
+
+      // ★ 右上角悬浮【自动排版】按钮（0.123）
+      Row() {
+        Blank()
+        Text('自动排版')
+          .fontSize(14)
+          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .borderRadius(8)
+          .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+          .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+          .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
+          .onClick(() => {
+            this.autoLayout();
+          })
+      }
+      .width('100%')
+      .padding({ top: 10, right: 12 })
+      .hitTestBehavior(HitTestMode.Transparent)
+      } // ★ 外层 Stack 结束（0.123）
     }
     .title('气泡树')
   }

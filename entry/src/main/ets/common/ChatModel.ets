@@ -49,9 +49,10 @@ export class BubbleNode {
   @Trace parentY: number; // 冗余存储父节点 y
   @Trace historySummary: string; // ★ 新增：分支链路摘要（0.117）
   @Trace historySummaryCount: number; // ★ 新增：上次生成摘要时的链路消息总数（0.117）
+  @Trace isUserDragged: boolean; // ★ 新增：用户是否手动拖拽过此节点（0.123 自动排版标记）
 
   constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number, parentX: number = 0, parentY: number = 0,
-              historySummary: string = '', historySummaryCount: number = 0) {
+              historySummary: string = '', historySummaryCount: number = 0, isUserDragged: boolean = false) {
     this.nodeID = nodeID;
     this.parentID = parentID;
     this.messages = messages;
@@ -61,6 +62,7 @@ export class BubbleNode {
     this.parentY = parentY;
     this.historySummary = historySummary;
     this.historySummaryCount = historySummaryCount;
+    this.isUserDragged = isUserDragged; // ★ 0.123
   }
 }
 
@@ -99,6 +101,7 @@ interface SerializedNode {
   parentY: number;
   historySummary?: string; // ★ 新增（0.117）
   historySummaryCount?: number; // ★ 新增（0.117）
+  isUserDragged?: boolean; // ★ 新增（0.123 自动排版标记）
 }
 interface SerializedTree {
   nodeList: SerializedNode[];
@@ -127,7 +130,8 @@ export function serializeBubbleTree(tree: BubbleTree): string {
         parentX: node.parentX,
         parentY: node.parentY,
         historySummary: node.historySummary,
-        historySummaryCount: node.historySummaryCount
+        historySummaryCount: node.historySummaryCount,
+        isUserDragged: node.isUserDragged // ★ 0.123 持久化拖拽标记
       };
     })
   };
@@ -146,7 +150,7 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
         return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl, msg.inputTokens ?? 0, msg.outputTokens ?? 0);
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
-        node.historySummary ?? '', node.historySummaryCount ?? 0);
+        node.historySummary ?? '', node.historySummaryCount ?? 0, node.isUserDragged ?? false); // ★ 0.123 反序列化拖拽标记
     });
     return new BubbleTree(nodeList);
   } catch (e) {
