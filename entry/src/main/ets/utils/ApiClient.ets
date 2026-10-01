@@ -14,8 +14,9 @@
 //   5. 流结束后通过 onDone 回调通知 UI 完成
 // ============================================================
 
-import { http } from '@kit.NetworkKit';
-import { buffer } from '@kit.ArkTS';
+import { http } from '@kit.NetworkKit'; // ★ 0.136：webSocket 已随播客路径移除（TTS 回归 HTTP）
+import { buffer, util } from '@kit.ArkTS'; // ★ 0.139：util（UUID 生成 + Base64Helper 解码，openspeech 2.0 协议需要）
+import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.136：HTTP 请求异常回调类型
 import { ChatMessage, ApiConfig } from '../common/ChatModel';
 
 // ========== 接口定义 ==========
@@ -96,6 +97,10 @@ function buildMessages(messages: ChatMessage[]): VolcanoMessage[] {
   const result: VolcanoMessage[] = [];
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
+    // ★ 0.136-DEBUG：TTS 调试消息不进入 LLM 上下文（定位修复后随调试功能一并删除）
+    if (msg.content.startsWith('[TTS调试]')) {
+      continue;
+    }
     if (msg.imageUrl && msg.imageUrl.length > 0) {
       // 多模态：content 为数组
       const parts: Object[] = [];
@@ -335,3 +340,231 @@ export function streamChat(
   return controller;
 }
 // ★ 删除未使用的 testApiConnection + testApiWithDiagnostics（0.122 清理）
+
+// ============================================================
+// ★ 0.139 重写：TTS（文本转语音）— openspeech /api/v3/tts/unidirectional（豆包语音合成 2.0）
+// ============================================================
+// 0.134/0.137 真机两次 HTTP 404 实锤：模型与端点是绑定的，方舟 ark…/audio/speech
+// 端点不服务语音合成模型（docs/0.139，依据用户提供的官方《豆包语音合成大模型 2.0 概览》）。
+// 本版采用官方 2.0 协议（openspeech HTTP Chunked 单向流）：
+//   - 端点：https://openspeech.bytedance.com/api/v3/tts/unidirectional
+//   - 鉴权：X-Api-Key（方舟 Key）+ X-Api-Resource-Id（模型资源 ID）+ X-Api-Request-Id（UUID）
+//   - 请求体：{ req_params: { text, speaker, audio_params: { format, sample_rate } } }
+//   - 响应：Chunked 流式 JSON，data 字段为 base64 音频片段，code=0 成功
+//   - 组合：resource=seed-tts-2.0 + speaker=zh_female_vv_uranus_bigtts（2.0 专用音色）
+// ★ 0.136-DEBUG：失败回调携带结构化调试信息（TTSDebugInfo），供 ChatPage 把失败详情
+//   以对话消息显示给用户（用户方案）；定位修复出声后，调试信息链路整体删除。
+
+// TTS 音频参数（openspeech 2.0 协议 audio_params）
+interface AudioParams {
+  format: string;      // 音频格式：mp3
+  sample_rate: number; // 采样率：24000
+}
+
+// TTS 请求参数（openspeech 2.0 协议 req_params）
+interface ReqParams {
+  text: string;      // 待合成文本
+  speaker: string;   // 音色 ID（2.0 模型只能用 2.0 音色）
+  audio_params: AudioParams;
+}
+
+// TTS 请求体（openspeech 2.0 协议）
+interface SpeechRequestBody {
+  req_params: ReqParams;
+}
+
+// ★ 0.136-DEBUG：TTS 调试信息（失败时回调给 UI 显示调试消息）
+export interface TTSDebugInfo {
+  endpoint: string;     // 请求 URL
+  model: string;        // 模型 ID
+  voice: string;        // 音色 ID
+  inputLength: number;  // 请求文本长度
+  stage: string;        // 失败阶段（request 请求异常 / response 非200 / parse 解析失败）
+  httpCode: number;     // HTTP 状态码（-1 = 请求异常未拿到响应）
+  responseBody: string; // 响应体前 300 字符（二进制响应显示字节摘要）
+  error: string;        // 错误描述
+}
+
+// 单段 TTS 合成：HTTP POST openspeech /api/v3/tts/unidirectional（0.139 官方 2.0 协议 + 调试信息增强）
+// onDone: 成功回调音频 base64（mp3）
+// onError: 失败回调（错误信息 + ★ 0.136-DEBUG 调试信息）
+// 返回 StreamController，支持手动 cancel（停止朗读时中断进行中的请求）
+export function synthesizeTTS(
+  text: string,
+  config: ApiConfig,
+  onDone: (audioBase64: string) => void,
+  onError: (error: string, debug: TTSDebugInfo) => void,
+  onProgress?: (info: string) => void // ★ 0.141-DEBUG：过程反馈（诊断沙漏卡点，修复后随调试链路删除）
+): StreamController {
+  let cancelled = false;
+
+  // 端点兜底：旧版本持久化的方舟/播客端点（0.134-0.137 已证伪）→ 用官方 2.0 端点
+  let endpoint = config.audioEndpoint.trim();
+  if (endpoint.length === 0 || !endpoint.startsWith('https://')) {
+    console.info(`[ApiClient] TTS 端点无效（${endpoint}），使用官方 2.0 端点`);
+    endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+  }
+
+  // 音色兜底：空值用 2.0 官方默认音色（2.0 模型只能用 2.0 音色，1.0 音色会报错）
+  const voice = config.audioVoice.trim().length > 0 ? config.audioVoice.trim() : 'zh_female_vv_uranus_bigtts';
+
+  // 请求 ID（openspeech 2.0 协议要求每次请求携带唯一 UUID）
+  const requestId = util.generateRandomUUID(false);
+
+  // 请求体（openspeech 2.0 协议 req_params 嵌套格式）
+  const body: SpeechRequestBody = {
+    req_params: {
+      text: text,
+      speaker: voice,
+      audio_params: {
+        format: 'mp3',
+        sample_rate: 24000
+      }
+    }
+  };
+
+  console.info(`[ApiClient] TTS 请求: URL=${endpoint}, resource=${config.audioModel}, voice=${voice}, 文本长度=${text.length}`);
+
+  // ★ 0.136-DEBUG：构造调试信息（失败时回调给 UI）
+  const buildDebug = (stage: string, httpCode: number, responseBody: string, error: string): TTSDebugInfo => {
+    return {
+      endpoint: endpoint,
+      model: config.audioModel,
+      voice: voice,
+      inputLength: text.length,
+      stage: stage,
+      httpCode: httpCode,
+      responseBody: responseBody.substring(0, 300),
+      error: error
+    };
+  };
+
+  // ★ 0.140：音频 Key 空值检查——豆包语音 Key 与方舟 Key 相互独立，未填写直接明确报错（不拿空 Key 撞服务器）
+  if (config.audioKey.trim().length === 0) {
+    const errMsg = '音频 API Key 未填写：请在设置页「音频 API Key」填入豆包语音控制台新建的 Key（与对话 Key 相互独立）';
+    console.error(`[ApiClient] TTS ${errMsg}`);
+    onError(errMsg, buildDebug('request', -1, '', 'audioKey 为空'));
+    return { cancel: () => { cancelled = true; } };
+  }
+
+  const httpRequest = http.createHttp();
+
+  httpRequest.request(endpoint, {
+    method: http.RequestMethod.POST,
+    header: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': config.audioKey, // ★ 0.140：豆包语音 Key（与方舟对话 Key 相互独立）
+      'X-Api-Resource-Id': config.audioModel,
+      'X-Api-Request-Id': requestId
+    },
+    extraData: JSON.stringify(body),
+    // 响应是 Chunked 流式 JSON 文本（data 字段 base64），按文本接收
+    expectDataType: http.HttpDataType.STRING,
+    connectTimeout: 15000,
+    readTimeout: 60000
+  }).then((resp: http.HttpResponse) => {
+    if (cancelled) {
+      return;
+    }
+    httpRequest.destroy();
+    const code = resp.responseCode;
+    // ★ 0.137 空值保护沿用：错误响应可能无 body（如 404 空 body），resp.result 为 undefined
+    const bodyText = resp.result ? (resp.result as string) : '';
+    // ★ 0.141-DEBUG：响应到达（时序标记——沙漏卡住时若停在本条之前，说明 HTTP 挂起等流式响应结束）
+    if (onProgress) {
+      onProgress(`收到响应: HTTP ${code}, 响应体 ${bodyText.length} 字符, 内容: ${bodyText.substring(0, 200)}`);
+    }
+    if (code !== 200) {
+      // ★ 0.137：body 为空时明确显示「响应体为空」，不显示悬空冒号
+      const errMsg = bodyText.length > 0
+        ? `HTTP ${code}: ${bodyText.substring(0, 150)}`
+        : `HTTP ${code}（响应体为空）`;
+      console.error(`[ApiClient] TTS 失败: ${errMsg}`);
+      onError(errMsg, buildDebug('response', code, bodyText, `HTTP ${code}`));
+      return;
+    }
+    // 200：解析 Chunked 流式 JSON——正则提取 code 校验 + 所有 data 字段 base64 片段拼接
+    if (bodyText.length === 0) {
+      onError('HTTP 200 但响应体为空', buildDebug('parse', code, '（空）', '响应体为空'));
+      return;
+    }
+    try {
+      // code 校验：code=0 成功，非 0 为业务错误（提取 message 一并显示）
+      const codeMatch = /"code"\s*:\s*(-?\d+)/.exec(bodyText);
+      if (codeMatch && parseInt(codeMatch[1], 10) !== 0) {
+        const msgMatch = /"message"\s*:\s*"([^"]*)"/.exec(bodyText);
+        const bizMsg = msgMatch ? msgMatch[1] : '未知业务错误';
+        const errMsg = `业务错误 code=${codeMatch[1]}: ${bizMsg}`;
+        console.error(`[ApiClient] TTS 失败: ${errMsg}`);
+        onError(errMsg, buildDebug('parse', code, bodyText, `业务错误 code=${codeMatch[1]}`));
+        return;
+      }
+      // 提取所有 data 字段（Chunked 流式返回多段 base64 音频片段）
+      const dataReg = /"data"\s*:\s*"([^"]*)"/g;
+      const chunks: string[] = [];
+      let dataMatch = dataReg.exec(bodyText);
+      while (dataMatch !== null) {
+        if (dataMatch[1].length > 0) {
+          chunks.push(dataMatch[1]);
+        }
+        dataMatch = dataReg.exec(bodyText);
+      }
+      if (chunks.length === 0) {
+        onError('响应中无 data 音频字段', buildDebug('parse', code, bodyText, '无 data 字段'));
+        return;
+      }
+      // 逐段 base64 解码 → ArrayBuffer 拼接 → 整体转 base64
+      const helper = new util.Base64Helper();
+      const decoded: Uint8Array[] = [];
+      let totalLen = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        const seg = helper.decodeSync(chunks[i]);
+        decoded.push(seg);
+        totalLen += seg.byteLength;
+      }
+      const mergedBuf = new ArrayBuffer(totalLen);
+      const merged = new Uint8Array(mergedBuf);
+      let offset = 0;
+      for (let i = 0; i < decoded.length; i++) {
+        merged.set(decoded[i], offset);
+        offset += decoded[i].byteLength;
+      }
+      const audioBase64 = buffer.from(mergedBuf).toString('base64');
+      console.info(`[ApiClient] TTS 成功: ${chunks.length} 段拼接 ${totalLen} 字节音频（base64 长度 ${audioBase64.length}）`);
+      // ★ 0.141-DEBUG：解析完成
+      if (onProgress) {
+        onProgress(`解析完成: ${chunks.length} 段 base64 拼接 ${totalLen} 字节, base64 长度 ${audioBase64.length}`);
+      }
+      onDone(audioBase64);
+    } catch (e) {
+      onError('响应解析失败', buildDebug('parse', code, bodyText, (e as BusinessError).message));
+      return;
+    }
+  }).catch((err: BusinessError) => {
+    if (cancelled) {
+      return;
+    }
+    httpRequest.destroy();
+    const errMsg = `请求异常: ${err.message}`;
+    console.error(`[ApiClient] TTS ${errMsg}`);
+    onError(errMsg, buildDebug('request', -1, '', errMsg));
+  });
+
+  // ★ 0.141-DEBUG：请求已发出（时序标记——若后续无「收到响应」消息，说明 HTTP 挂起等流式响应结束）
+  if (onProgress) {
+    onProgress(`请求已发出: URL=${endpoint}, Key长度=${config.audioKey.trim().length}, 等待服务器响应...`);
+  }
+
+  // 返回控制器，支持手动 cancel
+  const controller: StreamController = {
+    cancel: () => {
+      cancelled = true;
+      try {
+        httpRequest.destroy();
+      } catch (e) {
+        // 已销毁
+      }
+    }
+  };
+  return controller;
+}

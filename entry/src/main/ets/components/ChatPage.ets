@@ -10,6 +10,7 @@
 //   - DAG 链路回溯 + 上下文压缩（超 25 条消息自动摘要）
 //   - 长按消息菜单（复制、删除）
 //   - 深浅色主题适配
+//   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.136 恢复 HTTP 语音合成 + 分段流水线，失败时插入调试消息）
 //
 // 技术栈：鸿蒙 ArkUI V2（@ComponentV2 / @Local / @Param / @Computed）
 // 导航模式：NavPathStack（从 BBTreeCanvas 气泡画布页面跳入）
@@ -20,8 +21,10 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键�
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree } from '../common/ChatModel';
-import { streamChat, StreamController } from '../utils/ApiClient';
+import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
+import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig } from '../common/ChatModel'; // ★ 0.143：connectApiConfig
+import { streamChat, synthesizeTTS, StreamController, TTSDebugInfo } from '../utils/ApiClient';
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -44,6 +47,12 @@ class MdSegment {
 // 注意：PLACEHOLDER_LOADING 字面值与历史持久化数据一致，不可改动（旧数据的过滤判断依赖它）
 const PLACEHOLDER_LOADING = 'AI正在回复中，请稍候...';
 const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
+
+// ★ 0.133：播客模式系统 prompt（发送时临时追加到消息末尾，不持久化、不进入后续上下文）
+const PODCAST_PROMPT = '你的回答会用于语音朗读，请输出自然流畅的中文口语段落。禁止输出代码块、表格、列表、markdown 标记、特殊符号。只用连续自然的文字，适合耳朵收听。';
+
+// ★ 0.136：TTS 单段文本上限（HTTP 单段请求长度限制，留余量取 280；0.135 沿用值保留）
+const TTS_MAX_SEGMENT_LEN = 280;
 
 // ★ 新增：代码块组件，支持自动换行/横向滚动切换（0.122）
 @ComponentV2
@@ -114,7 +123,7 @@ export struct ChatPage {
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
-  apiConfig: ApiConfig = PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig()) as ApiConfig;
+  apiConfig: ApiConfig = connectApiConfig(); // ★ 0.143：换 key 'api-config-v2'（旧快照无 audioKey 字段致新增属性不落盘，工厂迁移历史配置）
   @Local inputText: string = '';
   @Local isLoading: boolean = false;
   @Local pendingImages: string[] = [];
@@ -128,6 +137,23 @@ export struct ChatPage {
   @Local deleteConfirmVisible: boolean = false;
   @Local textPreviewVisible: boolean = false;
   @Local textPreviewContent: string = '';
+  // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
+  @Local sendMode: string = 'normal';
+  @Local modeDropdownOpen: boolean = false;
+  // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
+  @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
+  @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
+  // ★ 0.136 恢复 0.134 分段流水线：逐段合成（HTTP 单段请求）+ 顺序播放（base64 → 临时文件 → AVPlayer）
+  private ttsSegments: string[] = [];        // 文本分段队列
+  private ttsRequestIndex: number = 0;       // 当前请求段索引（合成进度）
+  private ttsPlayIndex: number = 0;          // 当前播放段索引（播放进度）
+  private ttsAudioCache: string[] = [];      // 已合成段落的 base64 缓存（请求与播放解耦）
+  private ttsWaitingForAudio: boolean = false; // 播放器空闲等待音频（true=播完缓存，等下一段合成）
+  private ttsCurrentFd: number = -1;         // 当前播放的临时文件 fd（-1 无，播放完关闭）
+  private ttsCurrentPath: string = '';       // 当前播放的临时文件路径（播放完删除）
+  private ttsRequestController: StreamController | null = null; // 进行中的 HTTP 合成请求
+  private ttsGeneration: number = 0;         // ★ 朗读会话代际号（stopTTS 递增，使在飞异步回调全部失效）
+  private avPlayer: media.AVPlayer | null = null;
   private scroller: Scroller = new Scroller();
   private streamController: StreamController | null = null;
 
@@ -321,8 +347,9 @@ export struct ChatPage {
     if (this.streamController) {
       this.streamController.cancel();
     }
-    const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages]);
-    const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING); // ★ 0.132：占位常量
+    const isPodcast = this.sendMode === 'podcast'; // ★ 0.133：本次发送模式
+    const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
+    const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
     this.inputText = '';
@@ -333,6 +360,11 @@ export struct ChatPage {
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
     // ★ 替换为链路回溯 + 压缩（0.117）
     const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
+
+    // ★ 0.133：播客模式在消息末尾追加系统 prompt（只在本次请求临时追加，不持久化、不进入后续上下文）
+    if (isPodcast) {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
+    }
 
     this.streamController = streamChat(
       messagesToSend,
@@ -382,6 +414,361 @@ export struct ChatPage {
     this.scroller.scrollEdge(Edge.Bottom);
   }
 
+  // ============================================================
+  // ★ 0.133 新增：语音朗读（TTS 分段合成流水线播放）
+  // ============================================================
+
+  // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
+  showToastSafe(message: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: message });
+    } catch (e) {
+      // toast 失败静默忽略
+    }
+  }
+
+  // 长文本按句末标点切句，累积成 ≤ TTS_MAX_SEGMENT_LEN 的段（TTS 单次请求有长度上限）
+  splitTextForTTS(text: string): string[] {
+    const result: string[] = [];
+    if (text.trim().length === 0) {
+      return result;
+    }
+    // 1. 按句末标点 + 换行切句
+    const sentences: string[] = [];
+    let current = '';
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      current += ch;
+      if (ch === '。' || ch === '！' || ch === '？' || ch === '；' || ch === '\n' ||
+        ch === '!' || ch === '?' || ch === ';') {
+        sentences.push(current);
+        current = '';
+      }
+    }
+    if (current.length > 0) {
+      sentences.push(current);
+    }
+    // 2. 累积成段（≤ 上限）；超长句交给 splitLongSentence 处理
+    let seg = '';
+    for (let i = 0; i < sentences.length; i++) {
+      const s = sentences[i];
+      if (s.length > TTS_MAX_SEGMENT_LEN) {
+        if (seg.length > 0) {
+          result.push(seg);
+          seg = '';
+        }
+        const parts = this.splitLongSentence(s, TTS_MAX_SEGMENT_LEN);
+        for (let j = 0; j < parts.length; j++) {
+          result.push(parts[j]);
+        }
+        continue;
+      }
+      if (seg.length + s.length > TTS_MAX_SEGMENT_LEN) {
+        result.push(seg);
+        seg = s;
+      } else {
+        seg += s;
+      }
+    }
+    if (seg.length > 0) {
+      result.push(seg);
+    }
+    return result;
+  }
+
+  // 超长单句兜底：先按逗号类标点切小片累积，单片仍超上限则硬切
+  splitLongSentence(s: string, maxLen: number): string[] {
+    const pieces: string[] = [];
+    let cur = '';
+    for (let i = 0; i < s.length; i++) {
+      const ch = s.charAt(i);
+      cur += ch;
+      if (ch === '，' || ch === '、' || ch === ',' || ch === '：' || ch === ':') {
+        pieces.push(cur);
+        cur = '';
+      }
+    }
+    if (cur.length > 0) {
+      pieces.push(cur);
+    }
+    const parts: string[] = [];
+    let seg = '';
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i];
+      if (p.length > maxLen) {
+        if (seg.length > 0) {
+          parts.push(seg);
+          seg = '';
+        }
+        let start = 0;
+        while (start < p.length) {
+          const end = Math.min(start + maxLen, p.length);
+          parts.push(p.substring(start, end));
+          start = end;
+        }
+        continue;
+      }
+      if (seg.length + p.length > maxLen) {
+        parts.push(seg);
+        seg = p;
+      } else {
+        seg += p;
+      }
+    }
+    if (seg.length > 0) {
+      parts.push(seg);
+    }
+    return parts;
+  }
+
+  // 点击喇叭入口：三态判断 + 播新停旧 + 启动朗读会话
+  startTTS(msg: ChatMessage): void {
+    // 合成/加载中 → 防重复点击
+    if (this.ttsLoadingMessageId === msg.messageId) {
+      return;
+    }
+    // 正在播放这条消息 → 点击即停止
+    if (this.playingMessageId === msg.messageId) {
+      this.stopTTS();
+      return;
+    }
+    // 占位态不可读（AI 尚未开始输出）
+    if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
+      this.showToastSafe('AI 回复完成后才能朗读');
+      return;
+    }
+    if (msg.content.trim().length === 0) {
+      this.showToastSafe('消息内容为空，无法朗读');
+      return;
+    }
+    // 播新停旧：先终止当前朗读会话
+    this.stopTTS();
+    // ★ 0.136 恢复 0.134 分段流水线：逐段 HTTP 合成 + 顺序播放
+    this.playingMessageId = msg.messageId;
+    this.ttsLoadingMessageId = msg.messageId;
+    this.ttsSegments = this.splitTextForTTS(msg.content);
+    this.ttsRequestIndex = 0;
+    this.ttsPlayIndex = 0;
+    this.ttsAudioCache = [];
+    this.ttsWaitingForAudio = true; // ★ 0.142：初始即「等音频」——首段到达立即开播（原 false 死锁：onDone 不触发播放、无人再调 tryPlayNextAudio，0.141 过程消息定位实锤）
+    console.info(`[ChatPage] 开始朗读: ${msg.messageId}, 分段数=${this.ttsSegments.length}`);
+    this.requestNextSegment();
+  }
+
+  // 请求下一段合成（串行流水线：上一段回调后才请求下一段，controller 始终指向在飞请求）
+  requestNextSegment(): void {
+    if (this.ttsRequestIndex >= this.ttsSegments.length) {
+      this.ttsRequestController = null; // 全部段落已发出
+      return;
+    }
+    const gen = this.ttsGeneration;
+    const index = this.ttsRequestIndex;
+    this.ttsRequestIndex++;
+    this.ttsRequestController = synthesizeTTS(
+      this.ttsSegments[index],
+      this.apiConfig,
+      (audioBase64: string) => {
+        if (gen !== this.ttsGeneration) {
+          return; // 会话已停止/被新会话取代，丢弃过期结果
+        }
+        this.ttsAudioCache.push(audioBase64);
+        console.info(`[ChatPage] 第 ${index + 1}/${this.ttsSegments.length} 段合成完成`);
+        this.addTTSProgressMessage(`第 ${index + 1} 段音频已到达（base64 长度 ${audioBase64.length}），进入播放队列`); // ★ 0.141-DEBUG
+        // 播放器空闲（等音频）→ 立即开播
+        if (this.ttsWaitingForAudio) {
+          this.tryPlayNextAudio();
+        }
+        // 继续请求下一段（串行流水线）
+        this.requestNextSegment();
+      },
+      (err: string, debug: TTSDebugInfo) => {
+        if (gen !== this.ttsGeneration) {
+          return;
+        }
+        console.error(`[ChatPage] 第 ${index + 1} 段合成失败: ${err}`);
+        this.showToastSafe(`语音合成失败：${err.substring(0, 150)}`);
+        this.addTTSDebugMessage(debug); // ★ 0.136-DEBUG：失败详情以对话消息显示（用户方案）
+        this.stopTTS();
+      },
+      (info: string) => { // ★ 0.141-DEBUG：过程反馈（诊断沙漏卡点，修复后删）
+        if (gen !== this.ttsGeneration) {
+          return;
+        }
+        this.addTTSProgressMessage(`第 ${index + 1}/${this.ttsSegments.length} 段 ${info}`);
+      }
+    );
+  }
+
+  // 尝试播放下一段缓存音频（有缓存开播；缓存播完等合成或正常收尾）
+  tryPlayNextAudio(): void {
+    if (this.playingMessageId === '') {
+      return; // 会话已停止
+    }
+    if (this.ttsPlayIndex >= this.ttsAudioCache.length) {
+      if (this.ttsAudioCache.length >= this.ttsSegments.length) {
+        // 全部段落合成完且播完 → 正常结束
+        console.info('[ChatPage] 朗读完成（全部段落播完）');
+        this.stopTTS();
+      } else {
+        // 缓存播完但合成未完 → 等待下一段合成回调
+        this.ttsWaitingForAudio = true;
+      }
+      return;
+    }
+    this.ttsWaitingForAudio = false;
+    this.playSegment(this.ttsPlayIndex);
+  }
+
+  // 停止整个朗读会话：取消请求 + 释放播放器与临时文件 + 清空队列与状态（幂等，可安全重复调用）
+  stopTTS(): void {
+    this.ttsGeneration++; // 使所有在飞的异步回调失效（会话代际号）
+    if (this.ttsRequestController) {
+      this.ttsRequestController.cancel();
+      this.ttsRequestController = null;
+    }
+    this.cleanupSegment();
+    this.ttsSegments = [];
+    this.ttsRequestIndex = 0;
+    this.ttsPlayIndex = 0;
+    this.ttsAudioCache = [];
+    this.ttsWaitingForAudio = false;
+    this.playingMessageId = '';
+    this.ttsLoadingMessageId = '';
+  }
+
+  // 清理当前段的播放器 + 临时文件 + fd（播放完成/停止时调用，幂等）
+  cleanupSegment(): void {
+    const player = this.avPlayer;
+    this.avPlayer = null;
+    if (player) {
+      player.release().catch(() => {
+        // 释放失败忽略（播放器已不可用）
+      });
+    }
+    if (this.ttsCurrentFd >= 0) {
+      try {
+        fileIo.closeSync(this.ttsCurrentFd);
+      } catch (e) {
+        // 已关闭
+      }
+      this.ttsCurrentFd = -1;
+    }
+    if (this.ttsCurrentPath.length > 0) {
+      try {
+        fileIo.unlinkSync(this.ttsCurrentPath);
+      } catch (e) {
+        // 已删除
+      }
+      this.ttsCurrentPath = '';
+    }
+  }
+
+  // 播放一段音频：base64 解码 → cacheDir 临时文件 → AVPlayer fd:// 播放（0.134 流水线恢复）
+  async playSegment(index: number): Promise<void> {
+    const gen = this.ttsGeneration;
+    // 开播：清除加载态（喇叭图标 ⏳ → 🔊）
+    this.ttsLoadingMessageId = '';
+    try {
+      // 设备能力检查：media.AVPlayer 不是全设备支持（消除 SysCap 告警的官方推荐做法）
+      if (!canIUse('SystemCapability.Multimedia.Media.AVPlayer')) {
+        this.showToastSafe('当前设备不支持音频播放');
+        this.stopTTS();
+        return;
+      }
+      // base64 → 二进制 → cacheDir 临时文件
+      const audioBytes = buffer.from(this.ttsAudioCache[index], 'base64');
+      const ctx = this.getUIContext().getHostContext(); // ★ 0.136：V2 组件无 getContext()，用 getHostContext() 取 Context
+      const cacheDir = ctx ? ctx.cacheDir : '';
+      const path = `${cacheDir}/tts_${Date.now()}.mp3`;
+      const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.length) as ArrayBuffer);
+      if (gen !== this.ttsGeneration) {
+        // 写文件期间会话被停止 → 清理退出
+        fileIo.closeSync(file);
+        fileIo.unlinkSync(path);
+        return;
+      }
+      // fd 保持打开供播放器使用（fdSrc 模式），播放完成后 cleanupSegment 关闭
+      this.ttsCurrentFd = file.fd;
+      this.ttsCurrentPath = path;
+      this.addTTSProgressMessage(`第 ${index + 1} 段临时文件写入完成（${audioBytes.length} 字节），创建播放器...`); // ★ 0.141-DEBUG
+
+      const player = await media.createAVPlayer();
+      if (gen !== this.ttsGeneration) {
+        // 等待期间会话被停止/取代 → 释放新建的播放器并清理退出
+        player.release();
+        this.cleanupSegment();
+        return;
+      }
+      this.avPlayer = player;
+      player.on('stateChange', (state: string) => {
+        if (gen !== this.ttsGeneration) {
+          return; // 过期回调
+        }
+        if (state === 'initialized') {
+          player.prepare();
+        } else if (state === 'prepared') {
+          this.addTTSProgressMessage(`第 ${index + 1} 段播放器就绪，开始播放`); // ★ 0.141-DEBUG
+          player.play();
+        } else if (state === 'completed') {
+          // 本段播完：清理 → 播下一段
+          console.info(`[ChatPage] 第 ${index + 1} 段播放完成`);
+          this.cleanupSegment();
+          this.ttsPlayIndex++;
+          this.tryPlayNextAudio();
+        }
+      });
+      player.on('error', (err: BusinessError) => {
+        console.error(`[ChatPage] AVPlayer 错误: ${err.message}`);
+        this.showToastSafe('音频播放失败');
+        this.stopTTS();
+      });
+      player.fdSrc = { fd: file.fd }; // fd 播放模式，触发 initialized → prepare → play
+    } catch (err) {
+      console.error(`[ChatPage] TTS 播放失败: ${(err as Error).message}`);
+      this.showToastSafe('音频播放失败');
+      this.stopTTS();
+    }
+  }
+
+  // ★ 0.141-DEBUG：TTS 过程消息（诊断沙漏卡点）——把朗读链路每个关键阶段的实时进度
+  // 作为 AI 消息插入当前气泡（[TTS过程] 前缀）；定位修复出声后随调试链路整体删除
+  addTTSProgressMessage(info: string): void {
+    if (!this.currentBubble) {
+      return;
+    }
+    const msg = new ChatMessage(generateMessageId(), 'assistant', `[TTS过程] ${info}`, [], 0, 0);
+    this.currentBubble.messages = [...this.currentBubble.messages, msg];
+    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    console.info(`[ChatPage] TTS 过程: ${info}`);
+  }
+
+  // ★ 0.136-DEBUG：TTS 调试消息（用户方案）——失败时把完整调试信息作为 AI 消息插入当前气泡
+  // 复用现有气泡渲染（长按可复制/删除），持久化保存便于用户截图反馈；定位修复出声后整段删除
+  addTTSDebugMessage(debug: TTSDebugInfo): void {
+    if (!this.currentBubble) {
+      return;
+    }
+    const lines: string[] = [
+      '[TTS调试] 语音合成失败',
+      `URL: ${debug.endpoint}`,
+      `model: ${debug.model} | voice: ${debug.voice}`,
+      `文本长度: ${debug.inputLength}`,
+      `阶段: ${debug.stage}`
+    ];
+    if (debug.httpCode >= 0) {
+      lines.push(`HTTP ${debug.httpCode}`);
+    } else {
+      lines.push('HTTP 无响应（请求异常）');
+    }
+    lines.push(`响应体: ${debug.responseBody.length > 0 ? debug.responseBody : '（空）'}`);
+    lines.push(`错误: ${debug.error}`);
+    const msg = new ChatMessage(generateMessageId(), 'assistant', lines.join('\n'), [], 0, 0);
+    this.currentBubble.messages = [...this.currentBubble.messages, msg];
+    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    console.info('[ChatPage] 已插入 TTS 调试消息');
+  }
+
   // 进入对话页面：延迟滚到底部，显示最新消息
   aboutToAppear() {
     setTimeout(() => {
@@ -395,6 +782,7 @@ export struct ChatPage {
       this.streamController.cancel();
       this.streamController = null;
     }
+    this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
   }
 
   // 选择图片：调用相册多选，转 Base64 存入 pendingImages
@@ -431,6 +819,10 @@ export struct ChatPage {
   deleteMessage(messageId: string): void {
     if (!this.currentBubble) {
       return;
+    }
+    // ★ 0.133：删除正在朗读/合成中的消息 → 停止播放
+    if (this.playingMessageId === messageId || this.ttsLoadingMessageId === messageId) {
+      this.stopTTS();
     }
     this.currentBubble.messages = this.currentBubble.messages.filter(m => m.messageId !== messageId);
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
@@ -615,12 +1007,28 @@ export struct ChatPage {
                         .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
                       }
                     }
-                    // AI 消息 token 统计
-                    if (msg.role === 'assistant' && msg.outputTokens > 0) {
-                      Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
-                        .fontSize(11)
-                        .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
-                        .margin({ top: 4 })
+                    // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
+                    if (msg.role === 'assistant') {
+                      Row() {
+                        if (msg.outputTokens > 0) {
+                          Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
+                            .fontSize(11)
+                            .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
+                        }
+                        Blank()
+                          .layoutWeight(1)
+                        Button(this.ttsLoadingMessageId === msg.messageId ? '⏳' : (this.playingMessageId === msg.messageId ? '🔊' : '🔈'))
+                          .fontSize(14)
+                          .backgroundColor(Color.Transparent)
+                          .fontColor(this.playingMessageId === msg.messageId || this.ttsLoadingMessageId === msg.messageId
+                            ? '#1976D2' : (this.getThemeStore().isDark ? '#888' : '#999'))
+                          .padding({ left: 8, right: 4, top: 2, bottom: 2 })
+                          .onClick(() => {
+                            this.startTTS(msg);
+                          })
+                      }
+                      .width('100%')
+                      .margin({ top: 4 })
                     }
                   }
                   .alignItems(HorizontalAlign.Start)
@@ -694,6 +1102,16 @@ export struct ChatPage {
             .layoutWeight(1)
             .height(this.inputAreaHeight) // ★ 新增：动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
             .enterKeyType(EnterKeyType.NEW_LINE)
+
+          // ★ 0.133：发送模式下拉按钮（💬 正常对话 | 🎙 播客模式），点击弹出选择面板
+          Button(this.sendMode === 'podcast' ? '🎙' : '💬')
+            .fontSize(18)
+            .backgroundColor(Color.Transparent)
+            .fontColor(this.sendMode === 'podcast' ? '#1976D2' : '#666')
+            .margin({ left: 4, right: 2 })
+            .onClick(() => {
+              this.modeDropdownOpen = !this.modeDropdownOpen;
+            })
 
           Button('发送')
             .enabled(!this.isLoading)
@@ -890,6 +1308,65 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
           .alignContent(Alignment.Center)
+        }
+
+        // ★ 0.133：发送模式选择面板（半透明遮罩 + 右下角面板，浮于输入区上方）
+        if (this.modeDropdownOpen) {
+          Stack() {
+            // 遮罩：点击关闭面板
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+            .onClick(() => {
+              this.modeDropdownOpen = false;
+            })
+
+            // 面板：两个模式选项（当前模式高亮）
+            Column() {
+              Text('💬 正常对话')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .width('100%')
+                .padding(12)
+                .textAlign(TextAlign.Start)
+                .backgroundColor(this.sendMode === 'normal' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
+                .borderRadius(8)
+                .onClick(() => {
+                  this.sendMode = 'normal';
+                  this.modeDropdownOpen = false;
+                })
+              Text('🎙 播客模式')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .width('100%')
+                .padding(12)
+                .textAlign(TextAlign.Start)
+                .backgroundColor(this.sendMode === 'podcast' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
+                .borderRadius(8)
+                .onClick(() => {
+                  this.sendMode = 'podcast';
+                  this.modeDropdownOpen = false;
+                })
+              Text('口语化输出，适合朗读')
+                .fontSize(11)
+                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .width('100%')
+                .padding({ left: 12, bottom: 8 })
+                .textAlign(TextAlign.Start)
+            }
+            .width(180)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
+            .padding(4)
+            .margin({ bottom: 64, right: 16 }) // 抬到输入区上方（输入框一行 40vp + 底部 padding 16vp + 间隙 8vp）
+          }
+          .alignContent(Alignment.BottomEnd)
+          .width('100%')
+          .height('100%')
         }
       }
       .width('100%')
