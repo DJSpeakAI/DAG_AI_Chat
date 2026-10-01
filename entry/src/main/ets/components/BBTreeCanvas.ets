@@ -18,22 +18,22 @@ import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
 
 // 气泡树页面 — V2 全量迁移
+import { display } from '@kit.ArkUI'; // ★ 屏宽适配（0.123fix7）
 @ComponentV2
 export struct BBTreeCanvas {
   @Param pathStack: NavPathStack = new NavPathStack();
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
-  @Local dragBubbleId: string = '';
-  @Local dragOffsetX: number = 0;
-  @Local dragOffsetY: number = 0;
-  @Local isDragging: boolean = false;
   @Local canvasOffsetX: number = 0;
   @Local canvasOffsetY: number = 0;
   @Local canvasPanStartX: number = 0;
   @Local canvasPanStartY: number = 0;
   @Local canvasScale: number = 1.0;
   @Local pinchStartScale: number = 1.0;
+
+  // ★ 顶层安全边距常量，fitViewport 与 Pan 手势共用（0.126）
+  private readonly topSafePadding: number = 120;
 
   // ── 坐标变换（手动，弃用容器 scale/translate） ──
 
@@ -58,23 +58,19 @@ export struct BBTreeCanvas {
 
   /** 获取父圆心屏幕坐标 X（半径 30px 是屏幕像素，不随缩放变化） */
   getParentCX(bubble: BubbleNode): number {
-    const pDragX = bubble.parentID === this.dragBubbleId ? this.dragOffsetX : 0;
-    return this.c2sX(bubble.parentX + pDragX) + 30;
+    return this.c2sX(bubble.parentX) + 30;
   }
   /** 获取父圆心屏幕坐标 Y */
   getParentCY(bubble: BubbleNode): number {
-    const pDragY = bubble.parentID === this.dragBubbleId ? this.dragOffsetY : 0;
-    return this.c2sY(bubble.parentY + pDragY) + 30;
+    return this.c2sY(bubble.parentY) + 30;
   }
   /** 获取子圆心屏幕坐标 X */
   getChildCX(bubble: BubbleNode): number {
-    const cDragX = bubble.nodeID === this.dragBubbleId ? this.dragOffsetX : 0;
-    return this.c2sX(bubble.x + cDragX) + 30;
+    return this.c2sX(bubble.x) + 30;
   }
   /** 获取子圆心屏幕坐标 Y */
   getChildCY(bubble: BubbleNode): number {
-    const cDragY = bubble.nodeID === this.dragBubbleId ? this.dragOffsetY : 0;
-    return this.c2sY(bubble.y + cDragY) + 30;
+    return this.c2sY(bubble.y) + 30;
   }
   /** 连线中点 X（线段中心位置，用于居中渲染） */
   getEdgeMidX(bubble: BubbleNode): number {
@@ -111,28 +107,10 @@ export struct BBTreeCanvas {
     return false;
   }
 
-  // ★ 箭头屏幕坐标 X（子气泡边缘，靠近子节点一端）（0.123）
-  getArrowX(bubble: BubbleNode): number {
-    const angle = this.getEdgeAngle(bubble) * Math.PI / 180;
-    return this.getChildCX(bubble) - 30 * Math.cos(angle);
-  }
-  // ★ 箭头屏幕坐标 Y（0.123）
-  getArrowY(bubble: BubbleNode): number {
-    const angle = this.getEdgeAngle(bubble) * Math.PI / 180;
-    return this.getChildCY(bubble) - 30 * Math.sin(angle);
-  }
-
-  // ★ 纵向树形自动排版（0.123）
+  // ★ 纵向树形自动排版（0.124：全节点参与，无 isUserDragged 判断）
   autoLayout(): void {
     const root = this.store.nodeList.find(n => n.parentID === null);
     if (!root) return;
-
-    // 边界场景：全部节点都被手动拖拽过，直接跳过
-    const nonDragged = this.store.nodeList.filter(n => !n.isUserDragged);
-    if (nonDragged.length === 0) {
-      console.info('[0.123] 所有节点已被手动拖拽，跳过自动排版');
-      return;
-    }
 
     const horizontalSpacing = 120; // 同层级水平间距
     const verticalSpacing = 160;   // 层级间垂直间距
@@ -147,34 +125,24 @@ export struct BBTreeCanvas {
       }
     }
 
-    // 计算每个节点深度
-    const depthMap = new Map<string, number>();
-    const calcDepth = (node: BubbleNode, depth: number): void => {
-      depthMap.set(node.nodeID, depth);
-      const children = childrenMap.get(node.nodeID) || [];
-      for (const child of children) {
-        calcDepth(child, depth + 1);
+    // ★ 递归布局：子节点在父节点正下方居中排列（0.124）
+    const layoutChildren = (parent: BubbleNode, depth: number): void => {
+      const children = childrenMap.get(parent.nodeID);
+      if (!children || children.length === 0) return;
+
+      // ★ 均分居中排布（0.126）：同层子节点整体居中于父节点正下方
+      const childCount = children.length;
+      const totalWidth = (childCount - 1) * horizontalSpacing;
+      const startX = parent.x - totalWidth / 2;
+      for (let i = 0; i < childCount; i++) {
+        children[i].x = startX + i * horizontalSpacing;
+        children[i].y = (depth + 1) * verticalSpacing;
+        layoutChildren(children[i], depth + 1);
       }
     };
-    calcDepth(root, 0);
 
-    // 按深度分层，逐层分配坐标
-    const maxDepth = Math.max(...Array.from(depthMap.values()));
-    for (let depth = 0; depth <= maxDepth; depth++) {
-      const nodesAtDepth = this.store.nodeList.filter(n => depthMap.get(n.nodeID) === depth);
-      // 按当前 x 排序，保持左右顺序
-      nodesAtDepth.sort((a, b) => a.x - b.x);
-      // 计算总宽度，居中于 root.x
-      const totalWidth = (nodesAtDepth.length - 1) * horizontalSpacing;
-      const startX = root.x - totalWidth / 2;
-      for (let i = 0; i < nodesAtDepth.length; i++) {
-        const node = nodesAtDepth[i];
-        if (!node.isUserDragged) { // ★ 仅排版未拖拽节点
-          node.x = startX + i * horizontalSpacing;
-          node.y = depth * verticalSpacing;
-        }
-      }
-    }
+    root.y = 0;
+    layoutChildren(root, 0);
 
     // 更新所有子节点的 parentX/parentY
     for (const node of this.store.nodeList) {
@@ -189,9 +157,6 @@ export struct BBTreeCanvas {
 
     // 持久化
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-
-    // 视口自适应（优先平移，不改变缩放比例）
-    this.fitViewport();
   }
 
   // ★ 排版后视口自适应：平移使整棵树居中可见（0.123）
@@ -207,13 +172,29 @@ export struct BBTreeCanvas {
       maxY = Math.max(maxY, node.y);
     }
 
-    const centerX = (minX + maxX) / 2;
-    // 估算屏幕宽度（NavDestination 内容区约 360vp）
-    const screenWidth = 360;
-    // 水平居中：让 centerX 映射到屏幕中央
-    this.canvasOffsetX = screenWidth / 2 - centerX * this.canvasScale - 30;
-    // 垂直：根节点放在顶部留白 100vp 处
-    this.canvasOffsetY = 100 - minY * this.canvasScale;
+    const treeCenterX = (minX + maxX) / 2;
+    const treeCenterY = (minY + maxY) / 2;
+
+    const screenWidth = px2vp(display.getDefaultDisplaySync().width);
+    const screenHeight = px2vp(display.getDefaultDisplaySync().height);
+    const viewHeight = screenHeight - this.topSafePadding;
+
+    // ★ 自动缩放，让整棵树塞进可视画布（0.126）
+    const treeW = maxX - minX + 60;
+    const treeH = maxY - minY + 60;
+    const scaleX = screenWidth / treeW;
+    const scaleY = viewHeight / treeH;
+    this.canvasScale = Math.max(0.3, Math.min(scaleX, scaleY, 1.0)); // 约束 [0.3, 1.0]
+
+    // ★ 树中心对齐可视画布中心，-30 气泡半径补偿（0.126）
+    this.canvasOffsetX = screenWidth / 2 - treeCenterX * this.canvasScale - 30;
+    const calculatedY = this.topSafePadding + viewHeight / 2 - treeCenterY * this.canvasScale - 30;
+    this.canvasOffsetY = Math.max(this.topSafePadding, calculatedY); // ★ 不低于安全区，防 Pan 跳变
+  }
+
+  // ★ 页面加载自动适配全树视口（0.124）
+  aboutToAppear(): void {
+    this.fitViewport();
   }
 
   build() {
@@ -238,16 +219,6 @@ export struct BBTreeCanvas {
                 centerY: 1
               })
 
-            // ★ 箭头：靠近子节点一端，跟随 scale 缩放（0.123）
-            Text('▶')
-              .fontSize(10 * this.canvasScale)
-              .fontColor(this.isHighlightedLine(bubble) ? '#FF6600' : '#AAAAAA')
-              .textAlign(TextAlign.Center)
-              .position({
-                x: this.getArrowX(bubble) - 5 * this.canvasScale,
-                y: this.getArrowY(bubble) - 5 * this.canvasScale
-              })
-              .rotate({ angle: this.getEdgeAngle(bubble) })
           }
         }, (bubble: BubbleNode) => bubble.nodeID)
 
@@ -276,54 +247,13 @@ export struct BBTreeCanvas {
               })
           }
           .position({
-            x: this.c2sX(bubble.x + (bubble.nodeID === this.dragBubbleId ? this.dragOffsetX : 0)),
-            y: this.c2sY(bubble.y + (bubble.nodeID === this.dragBubbleId ? this.dragOffsetY : 0))
+            x: this.c2sX(bubble.x),
+            y: this.c2sY(bubble.y)
           })
-          // ── 拖拽手势（屏幕偏移 → 画布偏移） ──
-          .gesture(
-            PanGesture({ distance: 5 })
-              .onActionStart(() => {
-                this.dragBubbleId = bubble.nodeID;
-                this.dragOffsetX = 0;
-                this.dragOffsetY = 0;
-                this.isDragging = true;
-              })
-              .onActionUpdate((event: GestureEvent) => {
-                this.dragOffsetX = this.s2cDx(event.offsetX);
-                this.dragOffsetY = this.s2cDy(event.offsetY);
-              })
-              .onActionEnd(() => {
-                const draggedBubble = this.store.nodeList.find(b => b.nodeID === this.dragBubbleId);
-                if (draggedBubble) {
-                  const newX = Math.max(0, draggedBubble.x + this.dragOffsetX);
-                  const newY = Math.max(0, draggedBubble.y + this.dragOffsetY);
-                  draggedBubble.x = newX;
-                  draggedBubble.y = newY;
-                  draggedBubble.isUserDragged = true; // ★ 标记用户手动拖拽（0.123 自动排版跳过此节点）
-                  for (let i = 0; i < this.store.nodeList.length; i++) {
-                    const child = this.store.nodeList[i];
-                    if (child.parentID === this.dragBubbleId) {
-                      child.parentX = newX;
-                      child.parentY = newY;
-                    }
-                  }
-                }
-                this.dragBubbleId = '';
-                this.dragOffsetX = 0;
-                this.dragOffsetY = 0;
-                setTimeout(() => {
-                  this.isDragging = false;
-                }, 200);
-                this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-              })
-          )
           // ── 双击导航到对话 ──
           .gesture(
             TapGesture({ count: 2 })
               .onAction(() => {
-                if (this.isDragging) {
-                  return;
-                }
                 this.currentBubbleStore.nodeID = bubble.nodeID;
                 this.currentBubbleStore.bubbleX = bubble.x;
                 this.currentBubbleStore.bubbleY = bubble.y;
@@ -334,9 +264,6 @@ export struct BBTreeCanvas {
           .gesture(
             LongPressGesture({ duration: 500 })
               .onAction(() => {
-                if (this.isDragging) {
-                  return;
-                }
                 if (bubble.parentID === null) {
                   return;
                 }
@@ -382,6 +309,7 @@ export struct BBTreeCanvas {
       .width('100%')
       .height('100%')
       .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA') // ★ 深浅色适配（0.123）
+      .clip(true) // ★ 0.126：裁剪画布溢出内容，防止绘制跑到标题栏
       // ── 画布平移手势 ──
       .gesture(
         PanGesture({ distance: 5 })
@@ -413,26 +341,32 @@ export struct BBTreeCanvas {
       )
       // ❌ 不再使用容器级 .translate() 和 .scale()
 
-      // ★ 右上角悬浮【自动排版】按钮（0.123）
-      Row() {
-        Blank()
-        Text('自动排版')
-          .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
-          .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
-          .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-          .onClick(() => {
-            this.autoLayout();
-          })
-      }
-      .width('100%')
-      .padding({ top: 10, right: 12 })
-      .hitTestBehavior(HitTestMode.Transparent)
+      // ★ 右上角悬浮【显示全部】按钮（0.124：仅适配视口，不改动气泡坐标）
+      Text('显示全部')
+        .fontSize(14)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+        .borderRadius(8)
+        .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+        .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+        .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
+        .position({ x: 260, y: 10 })
+        .gesture(
+          TapGesture()
+            .onAction(() => {
+              this.fitViewport(); // ★ 0.124：仅适配视口，不改动气泡坐标
+            })
+        )
       } // ★ 外层 Stack 结束（0.123）
     }
     .title('气泡树')
+    .onShown(() => {
+      // ★ 0.126：从 ChatPage 返回时，若 needsRelayout 则重新布局 + 适配视口
+      if (this.store.needsRelayout) {
+        this.autoLayout();
+        this.fitViewport();
+        this.store.needsRelayout = false;
+      }
+    })
   }
 }

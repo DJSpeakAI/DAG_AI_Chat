@@ -458,6 +458,7 @@ export struct ChatPage {
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局
     this.pathStack.pop();
   }
 
