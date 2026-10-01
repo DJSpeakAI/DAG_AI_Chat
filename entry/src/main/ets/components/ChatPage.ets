@@ -40,6 +40,68 @@ class MdSegment {
   }
 }
 
+// ★ 新增：代码块组件，支持自动换行/横向滚动切换（0.122）
+@ComponentV2
+struct CodeBlockView {
+  @Param content: string = '';   // 代码内容
+  @Param isDark: boolean = false; // 深浅色主题
+  @Local wrap: boolean = true;    // 默认开启自动换行
+
+  build() {
+    Column() {
+      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化）
+      Row() {
+        // 切换图标：换行模式显示 ↩，滚动模式显示 ⇄
+        Text(this.wrap ? '↩' : '⇄')
+          .fontSize(11)
+          .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+          .margin({ right: 3 })
+
+        Text(this.wrap ? '自动换行' : '横向滚动')
+          .fontSize(11)
+          .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+      }
+      .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+      .borderRadius(4)
+      .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
+      .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+      .margin({ top: 4, bottom: 2 })
+      .onClick(() => {
+        this.wrap = !this.wrap;
+      })
+
+      // 代码内容：根据 wrap 状态切换渲染模式
+      if (this.wrap) {
+        // 换行模式：Text 自然换行，无需 Scroll
+        Text(this.content)
+          .fontSize(14)
+          .fontFamily('monospace')
+          .fontColor(this.isDark ? '#D4D4D4' : '#333333')
+          .padding(10)
+          .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
+          .borderRadius(6)
+          .width('100%')
+      } else {
+        // 滚动模式：横向滚动查看长代码
+        Scroll() {
+          Text(this.content)
+            .fontSize(14)
+            .fontFamily('monospace')
+            .fontColor(this.isDark ? '#D4D4D4' : '#333333')
+            .padding(10)
+            .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
+            .borderRadius(6)
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Auto)
+        .width('100%')
+      }
+    }
+    .margin({ top: 6, bottom: 6 })
+    .alignItems(HorizontalAlign.Start) // ★ 按钮左对齐（0.122 优化）
+  }
+}
+
 // 对话页面 — V2 全量迁移
 @ComponentV2
 export struct ChatPage {
@@ -483,20 +545,11 @@ export struct ChatPage {
                                 .copyOption(CopyOptions.LocalDevice)
                             }
                             if (seg.type === 1) {
-                              // 代码块：等宽字体 + 深色底 + 横向滚动
-                              Scroll() {
-                                Text(seg.content)
-                                  .fontSize(14)
-                                  .fontFamily('monospace')
-                                  .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
-                                  .padding(10)
-                                  .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
-                                  .borderRadius(6)
-                              }
-                              .scrollable(ScrollDirection.Horizontal)
-                              .scrollBar(BarState.Auto)
-                              .width('100%')
-                              .margin({ top: 6, bottom: 6 })
+                              // ★ 代码块：使用 CodeBlockView 组件，支持自动换行切换（0.122）
+                              CodeBlockView({
+                                content: seg.content,
+                                isDark: this.getThemeStore().isDark
+                              })
                             }
                             if (seg.type === 2) {
                               // 表格：带边框 + 表头区分 + 横向滚动
