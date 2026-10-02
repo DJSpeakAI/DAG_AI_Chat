@@ -146,7 +146,9 @@ struct CodeBlockView {
 
       // 代码内容：根据 wrap 状态切换渲染模式
       if (this.wrap) {
-        // 换行模式：Text 自然换行，无需 Scroll
+        // ★ 0.154：去掉 width('100%')——气泡链多层自适应父容器下百分比宽度解析异常，
+        // 导致代码块比气泡内容区宽、右侧显示被挡；改为无 width + 父约束折行
+        //（与气泡内普通文本段同模式：长代码自动折行且始终在气泡内，短代码背景随内容自适应）
         Text(this.content)
           .fontSize(14)
           .fontFamily('monospace')
@@ -154,7 +156,6 @@ struct CodeBlockView {
           .padding(10)
           .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
           .borderRadius(6)
-          .width('100%')
       } else {
         // 滚动模式：横向滚动查看长代码
         Scroll() {
@@ -168,7 +169,9 @@ struct CodeBlockView {
         }
         .scrollable(ScrollDirection.Horizontal)
         .scrollBar(BarState.Auto)
-        .width('100%')
+        // ★ 0.154：width('100%') 改为约束 maxWidth——视口被钳制在气泡内容区内，
+        // 长代码横向滚动正常、不再向右溢出气泡
+        .constraintSize({ maxWidth: '100%' })
       }
     }
     .margin({ top: 6, bottom: 6 })
