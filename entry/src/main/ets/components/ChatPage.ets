@@ -26,7 +26,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
 import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.155：containsChinese（划词语言检测）
@@ -1621,6 +1621,11 @@ export struct ChatPage {
       const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabForest.activeTabId);
       if (idx >= 0) {
         tabs[idx].treeJson = serializeBubbleTree(this.store);
+        // ★ 0.151-bugfix2：Tab 名同步为树根显示名（聊天后根的第一条消息变化，Tab 名跟随根气泡）
+        const root = this.store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+        if (root !== undefined) {
+          tabs[idx].name = getRootDisplayName(root);
+        }
         this.tabForest.tabsJson = serializeTabs(tabs);
       }
       // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）

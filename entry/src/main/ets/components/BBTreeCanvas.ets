@@ -15,7 +15,7 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
-import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs } from '../common/ChatModel';
+import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 
@@ -147,6 +147,11 @@ export struct BBTreeCanvas {
       const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabForest.activeTabId);
       if (idx >= 0) {
         tabs[idx].treeJson = serializeBubbleTree(this.store);
+        // ★ 0.151-bugfix2：Tab 名同步为树根显示名（Tab 名与树根绑定——画布改标题/聊天后 Tab 名跟随）
+        const root = this.store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+        if (root !== undefined) {
+          tabs[idx].name = getRootDisplayName(root);
+        }
         this.tabForest.tabsJson = serializeTabs(tabs);
       }
       // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
@@ -217,94 +222,12 @@ export struct BBTreeCanvas {
   }
 
   // ★ 纵向树形自动排版（0.124：全节点参与，无 isUserDragged 判断；★ 0.151：多根平铺支持）
+  // ★ 0.151-bugfix3：布局算法提取到 ChatModel.layoutFlatForest 单一来源
+  //   （applyCanvasModeSwitch tabs→flat 合并树也用它先排好再落盘），这里只负责调用 + 持久化
   autoLayout(): void {
-    const roots = this.store.nodeList.filter((n: BubbleNode) => n.parentID === null);
-    if (roots.length === 0) return;
-
-    const horizontalSpacing = 160; // ★ 0.147：气泡加宽（maxWidth 132），同层间距 120 → 160 防重叠
-    const verticalSpacing = 160;   // 层级间垂直间距
-
-    // 构建父→子映射
-    const childrenMap = new Map<string, BubbleNode[]>();
-    for (const node of this.store.nodeList) {
-      if (node.parentID !== null) {
-        const children = childrenMap.get(node.parentID) || [];
-        children.push(node);
-        childrenMap.set(node.parentID, children);
-      }
-    }
-
-    // ★ 递归布局：子节点在父节点正下方居中排列（0.124）
-    const layoutChildren = (parent: BubbleNode, depth: number): void => {
-      const children = childrenMap.get(parent.nodeID);
-      if (!children || children.length === 0) return;
-
-      // ★ 均分居中排布（0.126）：同层子节点整体居中于父节点正下方
-      const childCount = children.length;
-      const totalWidth = (childCount - 1) * horizontalSpacing;
-      const startX = parent.x - totalWidth / 2;
-      for (let i = 0; i < childCount; i++) {
-        children[i].x = startX + i * horizontalSpacing;
-        children[i].y = (depth + 1) * verticalSpacing;
-        layoutChildren(children[i], depth + 1);
-      }
-    };
-
-    // ★ 0.151：多根支持（需求 2.1「多棵树的根气泡画布同一行对齐并排」）
-    //   单根：保持原 x（兼容现状——根位置用户可感知不动），只置 y=0
-    //   多根：按子树结构宽度并排排列 y=0（树间额外间隙 120）
-    if (roots.length === 1) {
-      roots[0].y = 0;
-      layoutChildren(roots[0], 0);
-    } else {
-      const treeGap = 120; // 树间额外间隙
-      let cursorX = 0;
-      for (let r = 0; r < roots.length; r++) {
-        const root = roots[r];
-        root.x = cursorX;
-        root.y = 0;
-        layoutChildren(root, 0);
-        cursorX += this.subtreeWidth(root, childrenMap, horizontalSpacing) + treeGap;
-      }
-    }
-
-    // 更新所有子节点的 parentX/parentY
-    for (const node of this.store.nodeList) {
-      if (node.parentID !== null) {
-        const parent = this.store.nodeList.find(n => n.nodeID === node.parentID);
-        if (parent) {
-          node.parentX = parent.x;
-          node.parentY = parent.y;
-        }
-      }
-    }
-
+    layoutFlatForest(this.store.nodeList); // 空树/无根时内部直接 return（无操作）
     // 持久化（★ 0.151：按模式分池）
     this.saveTree();
-  }
-
-  // ★ 0.151：子树结构宽度估算——BFS 按层统计节点数，每层宽 = (count-1)*spacing + 气泡宽 132
-  // （layoutChildren 均分居中，布局后每层实际宽度即此值；供多根并排时计算树占位）
-  subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, spacing: number): number {
-    let maxWidth = 132; // 单节点（气泡 maxWidth 132）
-    let layer: BubbleNode[] = [root];
-    while (layer.length > 0) {
-      const width = (layer.length - 1) * spacing + 132;
-      if (width > maxWidth) {
-        maxWidth = width;
-      }
-      const next: BubbleNode[] = [];
-      for (const node of layer) {
-        const children = childrenMap.get(node.nodeID);
-        if (children) {
-          for (const child of children) {
-            next.push(child);
-          }
-        }
-      }
-      layer = next;
-    }
-    return maxWidth;
   }
 
   // ★ 排版后视口自适应：缩放 + 平移使整棵树居中可见（0.130 重构）
@@ -335,23 +258,14 @@ export struct BBTreeCanvas {
     this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 25;
   }
 
-  // ★ 0.151：模式 A【添加根气泡】——新增顶级根节点（=一棵新树），放现有根最大 x 右侧 y=0
+  // ★ 0.151：模式 A【添加根气泡】——新增顶级根节点（=一棵新树）
+  // ★ 0.151-bugfix3：新根加入后统一 autoLayout 重排（多根 y=0 并排）——旧逻辑只把新根
+  //   放 maxX+200、y=0，不重排既有根（默认气泡 y=200 与新根 y=0 不同排，用户实测 bug1）；
+  //   autoLayout 末尾自带 saveTree，无需单独保存
   addRootBubble(): void {
-    let maxX = 0;
-    let hasRoot = false;
-    for (const node of this.store.nodeList) {
-      if (node.parentID === null) {
-        hasRoot = true;
-        if (node.x > maxX) {
-          maxX = node.x;
-        }
-      }
-    }
-    const x = hasRoot ? maxX + 200 : 200;
-    const root = new BubbleNode(generateNodeId(), null, [], x, 0);
+    const root = new BubbleNode(generateNodeId(), null, [], 200, 0); // x 初始值无所谓，autoLayout 会重排
     this.store.nodeList.push(root);
-    this.saveTree(); // ★ 0.151：按模式分池保存
-    // 新根无子树无需 autoLayout，直接适配视口让新根可见
+    this.autoLayout();
     this.fitViewport();
   }
 
@@ -379,7 +293,7 @@ export struct BBTreeCanvas {
     const tabs = parseTabs(this.tabForest.tabsJson);
     const root = new BubbleNode(generateNodeId(), null, [], 200, 0);
     const tree = new BubbleTree([root]);
-    tabs.push({ id: tabId, name: `树 ${tabs.length + 1}`, treeJson: serializeBubbleTree(tree) });
+    tabs.push({ id: tabId, name: getRootDisplayName(root), treeJson: serializeBubbleTree(tree) }); // ★ 0.151-bugfix2：Tab 名 = 树根显示名（空白新根 =「空气泡」，与根气泡文字一致；重命名 Tab 即给树起名）
     this.tabForest.tabsJson = serializeTabs(tabs);
     this.tabForest.activeTabId = tabId;
     // 工作区加载新 Tab 的树
@@ -446,15 +360,33 @@ export struct BBTreeCanvas {
     this.tabRenameVisible = true;
   }
 
-  // ★ 0.151：模式 B 保存 Tab 重命名（截 12 字上限；空名不覆盖）并持久化
+  // ★ 0.151-bugfix2：保存 Tab 重命名（截 12 字上限；空名不覆盖）——Tab 名与树根绑定：
+  // 同步写入该 Tab 树根的 nodeTitle（切回平铺根气泡显示同名，往返切换名字不丢）
   saveTabRename(): void {
     const tabs = parseTabs(this.tabForest.tabsJson);
     const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabRenameId);
     if (idx >= 0) {
       const trimmed = this.tabRenameText.trim();
       if (trimmed.length > 0) {
-        tabs[idx].name = trimmed.substring(0, 12);
+        const newName = trimmed.substring(0, 12);
+        tabs[idx].name = newName;
+        // 同步写入该 Tab 树根的 nodeTitle（treeJson 内，保证切回平铺时根气泡显示同名）
+        const loaded = deserializeBubbleTree(tabs[idx].treeJson);
+        if (loaded !== null) {
+          const root = loaded.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+          if (root !== undefined) {
+            root.nodeTitle = newName;
+            tabs[idx].treeJson = serializeBubbleTree(loaded);
+          }
+        }
         this.tabForest.tabsJson = serializeTabs(tabs);
+        // 重命名的是当前 Tab：工作区根标题同步刷新（画布气泡文字立即变）
+        if (this.tabRenameId === this.tabForest.activeTabId) {
+          const liveRoot = this.store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+          if (liveRoot !== undefined) {
+            liveRoot.nodeTitle = newName;
+          }
+        }
       }
     }
     this.tabRenameVisible = false;

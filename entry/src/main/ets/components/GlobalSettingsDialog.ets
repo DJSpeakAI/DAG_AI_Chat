@@ -568,8 +568,8 @@ export struct GlobalSettingsDialog {
           this.editCanvasMode = 'tabs';
         })
 
-        // 提示：切换规则（两池隔离）
-        Text('💡 切换仅改变画布展示方式，两模式数据各自保留、互不删除：平铺模式的树保留在平铺里，选项卡模式的 Tab 树保留在 Tab 里。切换在点「保存」后生效。')
+        // 提示：切换规则（数据互通）
+        Text('💡 两模式是同一批树数据的两种展示：切到选项卡时每棵树自动变成一个 Tab（Tab 名 = 树根名）；切回平铺时全部 Tab 的树合并平铺显示。切换在点「保存」后生效。')
           .fontSize(11)
           .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
           .margin({ top: 6 })

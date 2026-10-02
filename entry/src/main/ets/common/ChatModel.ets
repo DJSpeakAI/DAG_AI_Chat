@@ -232,15 +232,16 @@ export function connectAiPreference(): AiPreference {
 }
 
 // ============================================================
-// ★ 0.151：画布多树模式数据层（两池隔离设计）
+// ★ 0.151：画布多树模式数据层（互通设计，0.151-bugfix2 用户实测纠正）
 // ============================================================
-//   - 平铺池 = PersistData.bubbleTreeJson（现状不动，存平铺视图的全部树）
+//   - 平铺池 = PersistData.bubbleTreeJson（存平铺视图的全部树）
 //   - Tab 池 = TabForestStore.tabsJson（存选项卡视图每个 Tab 的独立树）
-//   - 'bubble-tree' 单例 = 当前视图工作区：切模式/切 Tab 只换工作区内容，
-//     两池数据永不互搬互删（满足需求 3「切换只是 UI 形态变更，数据不自动删除」）
-// 需求 2.4.2「选项卡→平铺：底层树根气泡统一平铺渲染」采用两池隔离解释：
-// 平铺视图只渲染平铺池的树，Tab 树留在 forest 不混入（与 2.4.1 对称、
-// 与约束 1「不自动把旧树映射为 Tab」自洽）。
+//   - 'bubble-tree' 单例 = 当前视图工作区：切模式/切 Tab 只换工作区内容
+// 两模式是同一批树数据的两种视图（互通）：
+//   - flat→tabs：平铺的每棵树（每个根气泡）自动拆成一个 Tab，Tab 名 = 树根显示名
+//   - tabs→flat：全部 Tab 的树合并平铺渲染（需求 2.4.2 字面语义）
+//   - 当前模式的池是权威数据源，切换时全量重建另一池
+//   - Tab 名与树根标题绑定：重命名 Tab = 改树根 nodeTitle，往返切换名字不丢
 // ============================================================
 
 // ★ 0.151：画布模式类型（'flat' 多根平铺 / 'tabs' 选项卡多树）
@@ -296,10 +297,172 @@ export function serializeTabs(tabs: TabMeta[]): string {
   return JSON.stringify(tabs);
 }
 
-// ★ 0.151：模式切换核心——切换 'bubble-tree' 工作区内容（两池隔离，数据不丢）
+// ★ 0.151-bugfix2：树根显示名（与 BBTreeCanvas.getDisplayName 同规则）——Tab 名与树根绑定：
+// nodeTitle 非空取标题（15 字截断）；否则取第一条 user 消息前 15 字（超长加…）；否则「空气泡」
+export function getRootDisplayName(root: BubbleNode): string {
+  const title = root.nodeTitle.trim();
+  if (title.length > 0) {
+    return title.length > 15 ? title.substring(0, 15) : title;
+  }
+  const firstUser = root.messages.find((m: ChatMessage): boolean => m.role === 'user');
+  if (firstUser !== undefined) {
+    const raw = firstUser.content.trim();
+    if (raw.length > 15) {
+      return raw.substring(0, 15) + '…';
+    }
+    return raw;
+  }
+  return '空气泡';
+}
+
+// ★ 0.151-bugfix2：按根拆树——nodeList 按根 BFS 收集子树，每棵树生成一个 TabMeta
+// （applyCanvasModeSwitch 的 flat→tabs 与旧版遗留迁移共用；excludeRootIds 传根 nodeID
+// 集合可跳过同源树，迁移去重用）
+function buildTabsFromNodeList(nodeList: BubbleNode[], excludeRootIds?: Set<string>): TabMeta[] {
+  const childrenMap = new Map<string, BubbleNode[]>();
+  for (const node of nodeList) {
+    if (node.parentID !== null) {
+      const siblings = childrenMap.get(node.parentID);
+      if (siblings) {
+        siblings.push(node);
+      } else {
+        childrenMap.set(node.parentID, [node]);
+      }
+    }
+  }
+  const roots = nodeList.filter((n: BubbleNode): boolean => n.parentID === null);
+  const tabs: TabMeta[] = [];
+  for (let r = 0; r < roots.length; r++) {
+    const root = roots[r];
+    if (excludeRootIds !== undefined && excludeRootIds.has(root.nodeID)) {
+      continue; // 同源树（已存在于目标池），不重复并入
+    }
+    // BFS 收集该根的全部后代节点（子树完整迁移，parentID 原值保持）
+    const subtree: BubbleNode[] = [root];
+    let layer: BubbleNode[] = [root];
+    while (layer.length > 0) {
+      const next: BubbleNode[] = [];
+      for (const node of layer) {
+        const children = childrenMap.get(node.nodeID);
+        if (children) {
+          for (const child of children) {
+            next.push(child);
+          }
+        }
+      }
+      for (const node of next) {
+        subtree.push(node);
+      }
+      layer = next;
+    }
+    tabs.push({
+      id: `tab_${Date.now()}_${r}_${Math.floor(Math.random() * 10000)}`, // 循环索引参与 id，同毫秒多 Tab 绝不撞号
+      name: getRootDisplayName(root), // Tab 名 = 树根显示名（与画布气泡文字一致，用户一眼对上）
+      treeJson: serializeBubbleTree(new BubbleTree(subtree))
+    });
+  }
+  return tabs;
+}
+
+// ★ 0.151-bugfix3：子树结构宽度估算——BFS 按层统计节点数，每层宽 = (count-1)*spacing + 气泡宽 132
+// （layoutChildren 均分居中，布局后每层实际宽度即此值；供多根并排时计算树占位）
+function subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, spacing: number): number {
+  let maxWidth = 132; // 单节点（气泡 maxWidth 132）
+  let layer: BubbleNode[] = [root];
+  while (layer.length > 0) {
+    const width = (layer.length - 1) * spacing + 132;
+    if (width > maxWidth) {
+      maxWidth = width;
+    }
+    const next: BubbleNode[] = [];
+    for (const node of layer) {
+      const children = childrenMap.get(node.nodeID);
+      if (children) {
+        for (const child of children) {
+          next.push(child);
+        }
+      }
+    }
+    layer = next;
+  }
+  return maxWidth;
+}
+
+// ★ 0.151-bugfix3：多根平铺布局纯函数（从 BBTreeCanvas.autoLayout 提取，单一来源防两份漂移）
+// 供两处调用：① BBTreeCanvas.autoLayout（画布重排：新建根 / 切 Tab /「显示全部」等）
+//            ② applyCanvasModeSwitch tabs→flat（合并树【先排好再持久化】——修复 bug2：
+//               各 Tab 树坐标独立，直接拼接必然重叠；旧版靠 needsRelayout 事后重排，
+//               但它是 AppStorageV2 内存态，保存后不关弹窗直接杀应用 / ChatPage 弹窗
+//               切模式后直接退出 → 重启后重叠坐标已落盘无人重排）
+// 算法：单根保持原 x 只置 y=0（兼容现状）；多根按子树宽度并排 y=0（树间间隙 120）；
+//       子节点在父正下方均分居中；末尾统一刷新 parentX/parentY（连线端点）
+export function layoutFlatForest(nodeList: BubbleNode[]): void {
+  const roots = nodeList.filter((n: BubbleNode) => n.parentID === null);
+  if (roots.length === 0) return;
+
+  const horizontalSpacing = 160; // ★ 0.147：气泡加宽（maxWidth 132），同层间距 160 防重叠
+  const verticalSpacing = 160;   // 层级间垂直间距
+
+  // 构建父→子映射
+  const childrenMap = new Map<string, BubbleNode[]>();
+  for (const node of nodeList) {
+    if (node.parentID !== null) {
+      const children = childrenMap.get(node.parentID) || [];
+      children.push(node);
+      childrenMap.set(node.parentID, children);
+    }
+  }
+
+  // ★ 递归布局：子节点在父节点正下方居中排列（0.124）
+  const layoutChildren = (parent: BubbleNode, depth: number): void => {
+    const children = childrenMap.get(parent.nodeID);
+    if (!children || children.length === 0) return;
+
+    // ★ 均分居中排布（0.126）：同层子节点整体居中于父节点正下方
+    const childCount = children.length;
+    const totalWidth = (childCount - 1) * horizontalSpacing;
+    const startX = parent.x - totalWidth / 2;
+    for (let i = 0; i < childCount; i++) {
+      children[i].x = startX + i * horizontalSpacing;
+      children[i].y = (depth + 1) * verticalSpacing;
+      layoutChildren(children[i], depth + 1);
+    }
+  };
+
+  // ★ 0.151：多根支持（需求 2.1「多棵树的根气泡画布同一行对齐并排」）
+  if (roots.length === 1) {
+    roots[0].y = 0;
+    layoutChildren(roots[0], 0);
+  } else {
+    const treeGap = 120; // 树间额外间隙
+    let cursorX = 0;
+    for (let r = 0; r < roots.length; r++) {
+      const root = roots[r];
+      root.x = cursorX;
+      root.y = 0;
+      layoutChildren(root, 0);
+      cursorX += subtreeWidth(root, childrenMap, horizontalSpacing) + treeGap;
+    }
+  }
+
+  // 更新所有子节点的 parentX/parentY
+  for (const node of nodeList) {
+    if (node.parentID !== null) {
+      const parent = nodeList.find((n: BubbleNode) => n.nodeID === node.parentID);
+      if (parent) {
+        node.parentX = parent.x;
+        node.parentY = parent.y;
+      }
+    }
+  }
+}
+
+// ★ 0.151-bugfix2：模式切换核心——同一批树数据的两种视图互转（互通语义，用户实测纠正）
 // 调用时机：全局设置弹窗「保存」按钮（用户确认切换后执行一次）
-//   flat→tabs：平铺树存回平铺池；工作区加载当前选中 Tab 的树（无 Tab = 空树）
-//   tabs→flat：工作区（当前 Tab 树）存回该 Tab 的 treeJson；工作区加载平铺池的树
+//   flat→tabs：平铺工作区按根拆树，每棵树自动变成一个 Tab（Tab 名 = 树根显示名），
+//              全量重建 Tab 池；activeTab = 第一个 Tab；工作区加载第一棵树
+//   tabs→flat：当前工作区先存回 activeTab；全部 Tab 的树合并成多根 BubbleTree，
+//              全量重建平铺池；工作区加载合并树（needsRelayout 触发多根并排布局）
 // 同时清空 currentBubble（旧选中节点在新工作区必然失效，防 ChatPage 数据错乱）+ 置 needsRelayout
 export function applyCanvasModeSwitch(newMode: CanvasMode): void {
   const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
@@ -308,24 +471,42 @@ export function applyCanvasModeSwitch(newMode: CanvasMode): void {
   const current = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
 
   if (newMode === 'tabs') {
-    // 平铺 → 选项卡：平铺树入池保存
+    // 平铺 → 选项卡：工作区（全部树）存回平铺池
     persist.bubbleTreeJson = serializeBubbleTree(store);
-    // 工作区加载当前选中 Tab 的树（无 Tab = 空树，等用户点 ➕ 创建）
-    const tabs = parseTabs(forest.tabsJson);
-    const active = tabs.find((t: TabMeta): boolean => t.id === forest.activeTabId);
-    const loaded = active ? deserializeBubbleTree(active.treeJson) : null;
-    store.nodeList = loaded ? loaded.nodeList : [];
+    // 按根拆树：每个根的子树 = 一个 Tab（互通：树还是那批树，只是换个组织方式）
+    const tabs = buildTabsFromNodeList(store.nodeList);
+    forest.tabsJson = serializeTabs(tabs);
+    // 选中第一个 Tab，工作区加载第一棵树（无树 = 空工作区，等用户点 ➕ 创建）
+    forest.activeTabId = tabs.length > 0 ? tabs[0].id : '';
+    const first = tabs.length > 0 ? deserializeBubbleTree(tabs[0].treeJson) : null;
+    store.nodeList = first ? first.nodeList : [];
   } else {
-    // 选项卡 → 平铺：工作区（当前 Tab 树）存回该 Tab 的 treeJson
+    // 选项卡 → 平铺：当前工作区先存回 activeTab（若有未落盘修改）
     const tabs = parseTabs(forest.tabsJson);
     const idx = tabs.findIndex((t: TabMeta): boolean => t.id === forest.activeTabId);
     if (idx >= 0) {
       tabs[idx].treeJson = serializeBubbleTree(store);
       forest.tabsJson = serializeTabs(tabs);
     }
-    // 工作区加载平铺池的树
-    const loaded = deserializeBubbleTree(persist.bubbleTreeJson);
-    store.nodeList = loaded ? loaded.nodeList : [];
+    // 合并全部 Tab 的树 → 多根平铺（互通：需求 2.4.2「统一平铺渲染」字面语义；
+    // nodeID 为时间戳+随机全局唯一，各 Tab 树直接拼接无冲突）
+    const merged: BubbleNode[] = [];
+    for (const tab of tabs) {
+      const loaded = deserializeBubbleTree(tab.treeJson);
+      if (loaded) {
+        for (const node of loaded.nodeList) {
+          merged.push(node);
+        }
+      }
+    }
+    // ★ 0.151-bugfix3：合并树【先排好再持久化】——各 Tab 树坐标独立（各自布局过），
+    // 直接拼接必然重叠（用户实测 bug2）；旧版靠 needsRelayout 事后重排，但它是
+    // AppStorageV2 内存态，保存后不关弹窗直接杀应用 / ChatPage 弹窗切模式后直接退出
+    // → 重启后重叠坐标已落盘无人重排。数据层直接排好，任何路径拿到的都是正确坐标
+    layoutFlatForest(merged);
+    // 全量重建平铺池 + 工作区加载合并树
+    persist.bubbleTreeJson = serializeBubbleTree(new BubbleTree(merged));
+    store.nodeList = merged;
   }
   // 清空当前选中（旧选中节点在新工作区必然失效，防 ChatPage 数据错乱）
   current.nodeID = '';
@@ -333,4 +514,89 @@ export function applyCanvasModeSwitch(newMode: CanvasMode): void {
   current.bubbleY = 0;
   // 触发画布重布局（BBTreeCanvas onShown / 弹窗 onClose 消费）
   store.needsRelayout = true;
+}
+
+// ★ 0.151-bugfix2：互通迁移完成标记——PersistenceV2 独立全新 key（0.143 教训：往已有
+// 磁盘快照的类新增字段会因旧快照缺字段不落盘，全新 key 首次创建即含全部字段）
+@ObservedV2
+export class CanvasInteropFlag {
+  @Trace migrated: boolean = false; // 旧版两池隔离遗留数据的一次性迁移完成标记
+}
+
+// ★ 0.151-bugfix2：连接互通迁移标记持久化实例
+export function connectCanvasInteropFlag(): CanvasInteropFlag {
+  return PersistenceV2.connect(CanvasInteropFlag, 'canvas-interop-v1', () => new CanvasInteropFlag()) as CanvasInteropFlag;
+}
+
+// ★ 0.151-bugfix2：旧版两池隔离 → 互通版的一次性数据迁移（应用冷启动执行一次）
+// 背景：0.151 初版把两模式解释为「两池隔离、互不混入」，Tab 池与平铺池各自独立积累了
+// 数据（用户实测：平铺 3 棵树 + Tab 池 1 个手动建的 Tab，两批不同源）。互通版切换会
+// 全量重建目标池，若不迁移、用户首次切换即丢非权威池的独立数据。
+// 迁移规则：把非权威池的树并入权威池（按根 nodeID 去重——同源树不重复并入）：
+//   - 当前 tabs 模式：权威 = Tab 池，平铺池的树拆成 Tab 并入
+//   - 当前 flat 模式：权威 = 平铺池，Tab 池的树合并进平铺池
+// 幂等双保险：migrated 标记保证仅执行一次；根 nodeID 去重保证重复执行也无害
+export function migrateLegacyPoolsIfNeeded(canvasMode: CanvasMode): void {
+  const flag = connectCanvasInteropFlag();
+  if (flag.migrated) {
+    return;
+  }
+  const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
+  const forest = connectTabForest();
+  const flatTree = deserializeBubbleTree(persist.bubbleTreeJson);
+  const tabs = parseTabs(forest.tabsJson);
+
+  if (canvasMode === 'tabs') {
+    // 权威 = Tab 池：收集各 Tab 树的根 nodeID（去重键），平铺池的树拆成 Tab 并入
+    if (flatTree !== null && flatTree.nodeList.length > 0) {
+      const tabRootIds = new Set<string>();
+      for (const tab of tabs) {
+        const loadedTab = deserializeBubbleTree(tab.treeJson);
+        if (loadedTab !== null) {
+          const tabRoot = loadedTab.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+          if (tabRoot !== undefined) {
+            tabRootIds.add(tabRoot.nodeID);
+          }
+        }
+      }
+      const appended = buildTabsFromNodeList(flatTree.nodeList, tabRootIds);
+      if (appended.length > 0) {
+        for (const tab of appended) {
+          tabs.push(tab);
+        }
+        forest.tabsJson = serializeTabs(tabs);
+      }
+    }
+  } else {
+    // 权威 = 平铺池：Tab 池的树整棵并入平铺池（根 nodeID 去重）
+    if (tabs.length > 0) {
+      const flatIds = new Set<string>();
+      const merged: BubbleNode[] = [];
+      if (flatTree !== null) {
+        for (const node of flatTree.nodeList) {
+          flatIds.add(node.nodeID);
+          merged.push(node);
+        }
+      }
+      let appended = 0;
+      for (const tab of tabs) {
+        const loadedTab = deserializeBubbleTree(tab.treeJson);
+        if (loadedTab === null) {
+          continue;
+        }
+        const tabRoot = loadedTab.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+        if (tabRoot === undefined || flatIds.has(tabRoot.nodeID)) {
+          continue; // 空树或同源树，不并入
+        }
+        for (const node of loadedTab.nodeList) {
+          merged.push(node);
+        }
+        appended++;
+      }
+      if (appended > 0) {
+        persist.bubbleTreeJson = serializeBubbleTree(new BubbleTree(merged));
+      }
+    }
+  }
+  flag.migrated = true;
 }

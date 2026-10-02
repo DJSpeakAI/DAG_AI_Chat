@@ -20,7 +20,7 @@ import { ChatPage } from '../components/ChatPage';
 import { SettingsPage } from '../components/SettingsPage';
 import { WordBankPage } from '../components/WordBankPage'; // ★ 0.145：单词库页面路由
 import { KnowledgeBankPage } from '../components/KnowledgeBankPage'; // ★ 0.146：知识库页面路由
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs } from '../common/ChatModel';
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.131：深浅色适配
 
 // 首页入口 — V2 全量迁移
@@ -37,8 +37,11 @@ struct Index {
   aboutToAppear() {
     // PersistenceV2: 持久化 JSON 字符串
     const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
-    // ★ 0.151：按画布模式分支恢复工作区（两池隔离：平铺池 bubbleTreeJson / Tab 池 tabsJson）
+    // ★ 0.151：按画布模式分支恢复工作区（★ 0.151-bugfix2：互通设计——当前模式的池是权威数据源）
     const canvasModeStore = connectCanvasMode();
+    // ★ 0.151-bugfix2：旧版两池隔离遗留数据一次性迁移（互通版切换会全量重建目标池，
+    // 不迁移则首次切换即丢非权威池的独立数据；migrated 标记保证仅执行一次）
+    migrateLegacyPoolsIfNeeded(canvasModeStore.mode);
     if (canvasModeStore.mode === 'tabs') {
       // 选项卡模式：工作区加载当前选中 Tab 的树（无 Tab = 空树，等用户点 ➕ 创建）
       const forest = connectTabForest();
