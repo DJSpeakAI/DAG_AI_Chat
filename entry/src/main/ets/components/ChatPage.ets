@@ -29,7 +29,7 @@ import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133�
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig } from '../common/ChatModel'; // ★ 0.143：connectApiConfig
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
-import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）
+import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.155：containsChinese（划词语言检测）
 import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
 import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
@@ -1135,6 +1135,16 @@ export struct ChatPage {
     }
   }
 
+  // ★ 0.155：翻译浮窗发音文本——中译英结果（查询词含中文）播英文译文（explain 字段），
+  // 原英译中路径不变（缩略词播全称、普通词播原文）
+  wordPopupSpeakText(): string {
+    const r = this.wordPopupResult;
+    if (r !== null && containsChinese(this.wordPopupQuery) && r.explain.length > 0) {
+      return r.explain;
+    }
+    return wordSpeaker.textFor(this.wordPopupQuery, r !== null ? r.fullName : '');
+  }
+
   // 「加入单词库」：查词结果转 WordItem 入库；重复时显示「单词已存在」
   addCurrentWordToBank(): void {
     if (this.wordPopupResult === null) {
@@ -2063,23 +2073,26 @@ export struct ChatPage {
                       .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
                     // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                     // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
-                    Text(wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '🔊' : '🔈'))
+                    // ★ 0.155：发音文本统一走 wordPopupSpeakText()——中译英播英文译文、原路径播全称/原文
+                    Text(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? '⏳' : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? '🔊' : '🔈'))
                       .fontSize(14)
-                      .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                      .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
                       .margin({ left: 6 })
                       .onClick(() => {
                         this.stopTTS();
-                        const full = this.wordPopupResult !== null ? this.wordPopupResult.fullName : '';
                         const ctx = this.getUIContext().getHostContext();
-                        wordSpeaker.speak(wordSpeaker.textFor(this.wordPopupQuery, full), this.apiConfig, ctx ? ctx.cacheDir : '');
+                        wordSpeaker.speak(this.wordPopupSpeakText(), this.apiConfig, ctx ? ctx.cacheDir : '');
                       })
                   }
                   .margin({ bottom: 4 })
                 }
-                Text(this.wordPopupResult.explain)
-                  .fontSize(14)
-                  .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
-                  .margin({ bottom: 12 })
+                // ★ 0.155：explain 空时不渲染（防 AI 返回空释义留空白行；与 fullName 条件渲染同模式）
+                if (this.wordPopupResult.explain.length > 0) {
+                  Text(this.wordPopupResult.explain)
+                    .fontSize(14)
+                    .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                    .margin({ bottom: 12 })
+                }
               }
 
               // 「单词已存在」提示（重复添加时显示）

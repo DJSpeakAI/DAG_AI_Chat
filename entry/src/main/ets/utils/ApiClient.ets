@@ -3,7 +3,7 @@
 // ============================================================
 // 本文件封装了与火山引擎（Volcano）AI 大模型的通信逻辑：
 //   - streamChat()：流式对话请求，AI 边生成边返回（SSE 协议）
-//   - queryWord()：AI 查词，结果入单词库（★ 0.145）
+//   - queryWord()：AI 查词，结果入单词库（★ 0.145；★ 0.155：划词含中文走中译英，美式音标+英文格式）
 //   - queryKnowledge()：AI 知识卡片草稿提炼（★ 0.146）
 //   - synthesizeTTS()：语音合成，HTTP 分段请求（★ 0.136/0.139）
 //   - StreamController：流式请求控制器，支持手动 cancel 终止请求
@@ -361,6 +361,26 @@ export function streamChat(
 // System prompt for word lookup (strict JSON, no markdown wrapper)
 const WORD_QUERY_PROMPT = '你是英文词典助手。用户会给你一个英文单词或缩写。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"...","usPhonetic":"...","explain":"..."}。字段规则：word=用户查询的原文；fullName=仅当查询对象是缩写（如 OS、AI、CPU）时返回其英文全称（如 Operating System），普通单词必须返回空字符串；usPhonetic=美式音标并用斜杠包裹（缩写时返回全称的音标，普通单词返回该词音标）；explain=简明中文释义（缩写时返回全称的中文释义）。';
 
+// ★ 0.155：检测文本是否含中文字符（CJK 统一表意区 0x4E00-0x9FFF）。
+// 划词含中文（纯中文或中英混合）→ 走中译英 prompt；纯英文 → 原英译中 prompt。
+// 混合词组无论第一个字符是中文还是英文，输出统一归一为「美式音标 + 英文词组」，
+// 与用户规则「以第一个字符为准」在结果上等价（两种方向最终都输出英文词组）。
+export function containsChinese(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0x4E00 && code <= 0x9FFF) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ★ 0.155：中译英查词 prompt——划词含中文时使用。
+// 中文部分译成对应英文单词、已有英文保持原样、按原词序组合成英文词组；
+// 输出统一为「美式音标 + 英文词组」：usPhonetic=整体音标、explain=英文词组
+//（浮窗按 音标→英文 顺序展示）；word=英文词组（入单词库的词条名）。
+const WORD_QUERY_ZH_PROMPT = '你是中英互译词典助手。用户会给你一段划选文本，其中包含中文（可能混有英文单词）。请把其中的中文部分翻译成对应的英文单词，已有的英文部分保持原样，按原顺序组合成英文词组。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"","usPhonetic":"...","explain":"..."}。字段规则：word=翻译后的完整英文词组；fullName=固定返回空字符串；usPhonetic=整个英文词组的美式音标并用斜杠包裹；explain=翻译后的完整英文词组（与 word 相同）。';
+
 // Parse the raw AI reply into a WordQueryResult.
 // Extracts the first '{' to the last '}' so a stray markdown fence or
 // extra prose around the JSON does not break parsing. Returns null when
@@ -401,8 +421,11 @@ export function queryWord(
   onDone: (result: WordQueryResult) => void,
   onError: (error: string) => void
 ): StreamController {
+  // ★ 0.155：划词含中文（纯中文/中英混合）→ 中译英 prompt（美式音标+英文格式）；
+  // 纯英文 → 原英译中 prompt（中文释义格式）
+  const prompt = containsChinese(word) ? WORD_QUERY_ZH_PROMPT : WORD_QUERY_PROMPT;
   const messages: ChatMessage[] = [
-    new ChatMessage(generateMessageId(), 'system', WORD_QUERY_PROMPT),
+    new ChatMessage(generateMessageId(), 'system', prompt),
     new ChatMessage(generateMessageId(), 'user', word)
   ];
   let full = '';
