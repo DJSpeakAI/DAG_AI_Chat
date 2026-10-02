@@ -5,6 +5,7 @@
 //   - connectKnowledgeBank(): PersistenceV2 connect with preset card
 //   - addKnowledgeCard(): insert a card at the head
 //   - pickRandomKnowledgeCards(): pick n random cards for the AI-bubble review area
+//   - removeKnowledgeCard(): delete a card by id (knowledge bank page delete)
 //
 // The knowledge bank is persisted under its OWN PersistenceV2 key
 // ('knowledge-bank'), fully isolated from the bubble tree / word bank —
@@ -49,4 +50,10 @@ export function pickRandomKnowledgeCards(store: KnowledgeBankStore, count: numbe
     pool[j] = tmp;
   }
   return pool.slice(0, count);
+}
+
+// Remove a card by its unique id. Cards may share titles (user authored
+// via the editor), so id is the only safe key for deletion.
+export function removeKnowledgeCard(store: KnowledgeBankStore, cardId: string): void {
+  store.cards = store.cards.filter((c: KnowledgeCard) => c.id !== cardId);
 }

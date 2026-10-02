@@ -1207,6 +1207,15 @@ export struct ChatPage {
             .onClick(() => {
               this.pathStack.pushPath({ name: 'WordBankPage' });
             })
+          // ★ 0.146：知识库入口（单词库图标右侧，点击进入知识库页面）
+          Button('📖')
+            .fontSize(16)
+            .backgroundColor(Color.Transparent)
+            .fontColor('#666')
+            .margin({ right: 8 })
+            .onClick(() => {
+              this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+            })
           Button('⚙')
             .fontSize(18)
             .backgroundColor(Color.Transparent)
