@@ -2356,14 +2356,16 @@ export struct ChatPage {
         if (this.pendingImages.length > 0) {
           Row() {
             ForEach(this.pendingImages, (img: string, index: number) => {
-              Stack() {
+              // ★ 0.160-fix2: × invisible on device — two suspects fixed at once:
+              // ①Button default padding (≈32vp) squeezes the label out of a forced 22x22 box
+              //   (content area goes negative) → use Text instead (no default padding);
+              // ②position() absolute layout suspect → Stack TopEnd alignment + offset instead
+              Stack({ alignContent: Alignment.TopEnd }) {
                 Image(img)
                   .width(60)
                   .height(60)
                   .borderRadius(8)
-                // ★ 0.160 bugfix: same redo as knowledge-dialog × — enlarge to 22x22 bold and move
-                // inside the Stack top-right (old 18x18 at y:-2 overflowed the border, unrecognizable)
-                Button('×')
+                Text('×')
                   .fontSize(15)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#FFFFFF')
@@ -2371,7 +2373,8 @@ export struct ChatPage {
                   .width(22)
                   .height(22)
                   .borderRadius(11)
-                  .position({ x: 36, y: 2 })
+                  .textAlign(TextAlign.Center)
+                  .offset({ x: -2, y: 2 })
                   .onClick(() => {
                     this.removeImage(index);
                   })
@@ -2514,7 +2517,9 @@ export struct ChatPage {
                     this.selectKnowledgeImage();
                   })
               } else {
-                Stack() {
+                // ★ 0.160-fix2: same double fix as pendingImages × — Text (Button default
+                // padding ≈32vp squeezes label out of 22x22) + TopEnd align instead of position()
+                Stack({ alignContent: Alignment.TopEnd }) {
                   Image(this.knowledgeImageUri)
                     .width(80)
                     .height(80)
@@ -2522,9 +2527,7 @@ export struct ChatPage {
                     .onClick(() => {
                       this.openKnowledgeImagePreview();
                     })
-                  // ★ 0.160 重做：× 删除钮加大（22x22）并收进 Stack 内右上角——
-                  // 旧版 18x18 + position(68,-4) 溢出边界且 × 字符过小，用户辨识不出是删除按钮
-                  Button('×')
+                  Text('×')
                     .fontSize(15)
                     .fontWeight(FontWeight.Bold)
                     .fontColor('#FFFFFF')
@@ -2532,7 +2535,8 @@ export struct ChatPage {
                     .width(22)
                     .height(22)
                     .borderRadius(11)
-                    .position({ x: 56, y: 2 })
+                    .textAlign(TextAlign.Center)
+                    .offset({ x: -2, y: 2 })
                     .onClick(() => {
                       this.knowledgeImageUri = '';
                     })
