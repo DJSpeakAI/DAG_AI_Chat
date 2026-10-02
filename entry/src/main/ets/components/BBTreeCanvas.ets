@@ -486,7 +486,7 @@ export struct BBTreeCanvas {
       .width('100%')
       .height('100%')
       .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA') // ★ 深浅色适配（0.123）
-      .clip(true) // ★ 0.126：裁剪画布溢出内容，防止绘制跑到标题栏
+      .clip(true) // ★ 0.126：裁剪画布溢出内容，防止绘制跑到顶部自绘标题行（0.151-D）
       // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
       .onAreaChange((oldVal: Area, newVal: Area) => {
         this.viewW = newVal.width as number;
@@ -526,68 +526,75 @@ export struct BBTreeCanvas {
       )
       // ❌ 不再使用容器级 .translate() 和 .scale()
 
-      // ★ 右上角悬浮【显示全部】按钮（0.124：仅适配视口，不改动气泡坐标）
-      Text('显示全部')
-        .fontSize(14)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-        .borderRadius(8)
-        .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
-        .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
-        .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-        .position({ x: '100%', y: this.canvasModeStore.mode === 'tabs' ? 54 : 10 }) // ★ 0.151：tabs 模式让位顶部 Tab 栏（高 44）下移；0.131/V1：右缘自适应（替代写死 x:260，任意屏宽都贴右侧）
-        .markAnchor({ x: '100%', y: 0 }) // ★ 锚点为按钮右缘，使 position 100% 对齐父容器右缘
-        .translate({ x: -12 }) // ★ 距右缘 12vp 边距
-        .gesture(
-          TapGesture()
-            .onAction(() => {
-              this.fitViewport(); // ★ 0.124：仅适配视口，不改动气泡坐标
+      // ★ 0.151-D：顶部自绘标题行（弃用 NavDestination 默认标题栏 .title('气泡树') → hideTitleBar，
+      // 沿用 ChatPage 0.159 topBarTitle 先例：内容区自绘、宽度参照系=屏幕宽、按钮右对齐间距收紧）
+      // 平铺模式：← 返回 + 「气泡树」标题 + [＋ All ⚙] 一行（需求 1/2/4：三按钮与返回按钮齐平、icon 化）
+      if (this.canvasModeStore.mode === 'flat') {
+        Row() {
+          // 自定义返回按钮（替代被 hideTitleBar 隐藏的系统返回）——返回 Index
+          Button('←')
+            .fontSize(18)
+            .backgroundColor(Color.Transparent)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .padding({ left: 4, right: 4 })
+            .margin({ right: 4 })
+            .onClick(() => {
+              this.pathStack.pop();
             })
-        )
-
-      // ★ 0.150：右上角悬浮【⚙ 设置】按钮（「显示全部」正下方同款样式；唤起全局设置弹窗，
-      // 与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步、重启保留）
-      Text('⚙')
-        .fontSize(16)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .borderRadius(8)
-        .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
-        .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
-        .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-        .position({ x: '100%', y: this.canvasModeStore.mode === 'tabs' ? 96 : 52 }) // ★ 0.151：tabs 模式随「显示全部」同步下移；原：「显示全部」（y:10 + 高约 34）正下方，间距 8vp
-        .markAnchor({ x: '100%', y: 0 })
-        .translate({ x: -12 }) // 距右缘 12vp 边距（与「显示全部」对齐）
-        .gesture(
-          TapGesture()
-            .onAction(() => {
+          Text('气泡树')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          Blank()
+            .layoutWeight(1)
+          // ＋ 添加根气泡（仅平铺模式；点击新增顶级根节点 = 一棵新树）
+          Text('+')
+            .fontSize(18)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .width(32)
+            .height(32)
+            .textAlign(TextAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .margin({ right: 6 })
+            .onClick(() => {
+              this.addRootBubble();
+            })
+          // All 显示全部（0.124：仅适配视口，不改动气泡坐标）
+          Text('All')
+            .fontSize(13)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .margin({ right: 6 })
+            .onClick(() => {
+              this.fitViewport();
+            })
+          // ⚙ 设置（唤起全局设置弹窗，与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步、重启保留）
+          Text('⚙')
+            .fontSize(16)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .onClick(() => {
               this.globalSettingsVisible = true;
             })
-        )
-
-      // ★ 0.151：模式 A 右上角【添加根气泡】按钮（仅 flat 模式显示；点击新增顶级根节点 = 一棵新树）
-      if (this.canvasModeStore.mode === 'flat') {
-        Text('添加根气泡')
-          .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
-          .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
-          .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-          .position({ x: '100%', y: 96 }) // 「⚙」（y:52 + 高约 34）正下方，间距 10vp
-          .markAnchor({ x: '100%', y: 0 })
-          .translate({ x: -12 }) // 距右缘 12vp 边距（与「显示全部」对齐）
-          .gesture(
-            TapGesture()
-              .onAction(() => {
-                this.addRootBubble();
-              })
-          )
+        }
+        .width('100%')
+        .height(44)
+        .position({ x: 0, y: 0 }) // 顶部全宽（外层 Stack 默认居中对齐，需 position 钉在左上）
+        .padding({ left: 4, right: 12 })
+        .backgroundColor(this.getThemeStore().isDark ? 'rgba(26,26,26,0.92)' : 'rgba(250,250,250,0.92)')
       }
 
-      // ★ 0.151：模式 B 顶部 Tab 选项卡栏（仅 tabs 模式显示；一个 Tab = 一棵独立树；
-      // Scroll 横向滚动支持 10/20 个 Tab；Tab 名溢出省略号截断；✕ 删除；长按重命名；末尾 ➕ 新增）
+      // ★ 0.151-D：选项卡模式标题行（仅 tabs 模式显示；需求 3：取消左上角返回按钮；
+      // 需求 4：所有按钮与选项卡齐平一行 = Tab 栏 + [＋ All ⚙]）
+      // 一个 Tab = 一棵独立树；Scroll 横向滚动支持 10/20 个 Tab；Tab 名溢出省略号截断；✕ 删除；长按重命名
       if (this.canvasModeStore.mode === 'tabs') {
         Row() {
           // Tab 列表（横向滚动区域）
@@ -637,19 +644,43 @@ export struct BBTreeCanvas {
           .height(44)
           .align(Alignment.Start)
 
-          // ➕ 新增 Tab（自带一棵全新树：空白根气泡）
+          // ＋ 新增 Tab（自带一棵全新树：空白根气泡；0.151-D 压至 32×32 与平铺 ＋ 同款）
           Text('＋')
             .fontSize(18)
             .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-            .width(36)
-            .height(36)
+            .width(32)
+            .height(32)
             .textAlign(TextAlign.Center)
             .borderRadius(8)
             .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
             .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
-            .margin({ left: 8, right: 12 })
+            .margin({ left: 6 })
             .onClick(() => {
               this.addTab();
+            })
+          // All 显示全部（0.151-D：与选项卡齐平一行；0.124：仅适配视口，不改动气泡坐标）
+          Text('All')
+            .fontSize(13)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .margin({ left: 6 })
+            .onClick(() => {
+              this.fitViewport();
+            })
+          // ⚙ 设置（0.151-D：与选项卡齐平一行；唤起全局设置弹窗，与 ChatPage 顶栏 ⚙ 共用同一持久化实例）
+          Text('⚙')
+            .fontSize(16)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .margin({ left: 6, right: 12 })
+            .onClick(() => {
+              this.globalSettingsVisible = true;
             })
         }
         .width('100%')
@@ -841,7 +872,9 @@ export struct BBTreeCanvas {
       }
       } // ★ 外层 Stack 结束（0.123）
     }
-    .title('气泡树')
+    // ★ 0.151-D：弃用默认标题栏（.title('气泡树')）——其左上角系统返回按钮即需求 3 要取消的
+    // 「返回气泡树」按钮；改 hideTitleBar + 内容区自绘标题行（平铺：←+标题+按钮组；选项卡：Tab 栏+按钮组）
+    .hideTitleBar(true)
     .onBackPressed(() => {
       // ★ 0.150：全局设置弹窗打开时拦截返回键——递增计数器触发弹窗内 requestClose
       // （有未保存修改时二次确认，不直接丢弃）；无弹窗返回 false 走默认行为（退出应用）
