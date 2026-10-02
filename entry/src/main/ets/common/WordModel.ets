@@ -20,18 +20,26 @@ import { Type } from '@kit.ArkUI'; // @Type decorator: required by PersistenceV2
 // A single word entry stored in the word bank
 @ObservedV2
 export class WordItem {
+  @Trace id: string = '';          // ★ 0.148: unique entry id — the edit/delete key (word text may change via edit)
   @Trace word: string = '';       // the word itself (e.g. "OS")
   @Trace fullName: string = '';   // full English term for abbreviations; MUST be '' for normal words
   @Trace usPhonetic: string = ''; // American phonetic transcription (e.g. "/ˈɒpəreɪtɪŋ/")
   @Trace explain: string = '';    // concise Chinese explanation
+  @Trace createTime: number = 0;  // ★ 0.148: creation timestamp (ms) — bank page sorting field
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
-  constructor(word: string = '', fullName: string = '', usPhonetic: string = '', explain: string = '') {
+  // ★ 0.148: id/createTime are APPENDED AT THE TAIL so legacy 4-arg call sites
+  // (ChatPage translate-popup add, preset samples) stay source-compatible;
+  // addWordToBank() auto-fills both when they are left empty.
+  constructor(word: string = '', fullName: string = '', usPhonetic: string = '', explain: string = '',
+    id: string = '', createTime: number = 0) {
     this.word = word;
     this.fullName = fullName;
     this.usPhonetic = usPhonetic;
     this.explain = explain;
+    this.id = id;
+    this.createTime = createTime;
   }
 }
 
