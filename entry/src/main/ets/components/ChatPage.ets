@@ -10,7 +10,7 @@
 //   - DAG 链路回溯 + 上下文压缩（超 25 条消息自动摘要）
 //   - ★ 0.145：划词翻译——长按气泡文本直接唤起系统选择模式 + 自研悬浮操作栏（翻译|复制|全选），
 //     点「翻译」弹 AI 查词浮窗（不建气泡、不进 DAG），可一键加入单词库（独立 PersistenceV2 持久化）
-//   - ★ 0.145：AI 消息气泡底部生词复习表格（词库随机 2 词，横向滚动）+ 顶栏单词库入口
+//   - ★ 0.145：AI 消息气泡底部生词复习区（词库随机 2 词，词条式自适应宽度）+ 顶栏单词库入口
 //   - ★ 0.146：划词菜单「入知识库」（AI 提炼草稿 → 卡片编辑弹窗二次编辑 → 入库）+ AI 气泡底部知识卡片展示（📖 区分）
 //   - 深浅色主题适配
 //   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.139 openspeech 2.0 协议 + 分段流水线，0.143 收尾清理调试链路）
@@ -71,17 +71,6 @@ class KnowledgeReviewCacheEntry {
     this.version = version;
     this.items = items;
   }
-}
-
-// ★ 0.145：复习表格单元格样式（表头/数据行复用）——maxLines(1) 文字不换行，
-// 超长内容由外层横向 Scroll 承载（左右拖拽查看）
-@Extend(Text)
-function reviewCell(color: string, width: number) {
-  .fontSize(12)
-  .fontColor(color)
-  .maxLines(1)
-  .width(width)
-  .padding({ left: 6, right: 6, top: 4, bottom: 4 })
 }
 
 // ★ 0.132：AI 消息占位文字常量（两态：加载中 / 深度思考中）
@@ -1392,59 +1381,95 @@ export struct ChatPage {
                            // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
                             }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.header.length}_${seg.rows.length}`)
 
-                         // ★ 0.145：生词复习表格——词库非空时在 AI 气泡底部展示：细横线分隔 + 随机 2 词横向滚动表格
+                         // ★ 0.145：生词复习区——词库非空时在 AI 气泡底部展示随机 2 词（词条式布局，与下方知识卡片风格统一）
                          // （仅 AI 气泡渲染，本分支天然不含用户消息；缓存按消息 ID，词库长度变化时重抽）
+                         // ★ UI 定稿：普通词 2 行（词+音标/释义）、缩略词 3 行（+全称）；行内超宽横向滑动，不换行不省略，行高恒定
                          if (this.wordBank.words.length > 0) {
                            Divider()
                              .strokeWidth(0.5)
                              .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                              .margin({ top: 8, bottom: 6 })
-                           Scroll() {
-                             Column() {
-                               // 表头行（列宽：原文单词 90 / 全称 150 / 美式音标 130 / 中文释义 170）
-                               Row() {
-                                 Text('原文单词').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 90)
-                                 Text('全称').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 150)
-                                 Text('美式音标').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 130)
-                                 Text('中文释义').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 170)
-                               }
-                               // 数据行——fullName 为空时全称单元格留空（不渲染占位文字，固定列宽保持对齐）
-                               ForEach(this.getReviewWords(msg.messageId), (w: WordItem) => {
-                                 Row() {
-                                   Text(w.word).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 90)
-                                   Text(w.fullName).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 150)
-                                   Text(w.usPhonetic).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 130)
-                                   Text(w.explain).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 170)
+                           Column() {
+                             ForEach(this.getReviewWords(msg.messageId), (w: WordItem, idx: number) => {
+                               Scroll() {
+                                 Column() {
+                                   Row() {
+                                     Text('📚 ' + w.word)
+                                       .fontSize(13)
+                                       .fontWeight(FontWeight.Bold)
+                                       .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                       .maxLines(1)
+                                     if (w.usPhonetic.length > 0) {
+                                       // Phonetic right beside the word — same line, never ellipsized (user rule)
+                                       Text(w.usPhonetic)
+                                         .fontSize(12)
+                                         .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                         .maxLines(1)
+                                         .margin({ left: 6 })
+                                     }
+                                   }
+                                   if (w.fullName.length > 0) {
+                                     Text(w.fullName)
+                                       .fontSize(12)
+                                       .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                                       .maxLines(1)
+                                       .margin({ top: 1 })
+                                   }
+                                   Text(w.explain)
+                                     .fontSize(12)
+                                     .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                                     .maxLines(1)
+                                     .margin({ top: 2 })
                                  }
-                               }, (w: WordItem) => w.word)
-                             }
-                             .alignItems(HorizontalAlign.Start)
+                                 .alignItems(HorizontalAlign.Start)
+                               }
+                               .scrollable(ScrollDirection.Horizontal)
+                               .scrollBar(BarState.Off)
+                               .align(Alignment.Start)
+                               .width('100%')
+                               .margin({ top: idx > 0 ? 6 : 0 })
+                             }, (w: WordItem) => w.word)
                            }
-                            .scrollable(ScrollDirection.Horizontal) // 文字不换行，超宽内容左右拖拽查看
-                            .scrollBar(BarState.Auto)
-                          }
+                           .alignItems(HorizontalAlign.Start)
+                         }
 
                           // ★ 0.146：知识卡片复习区——库非空时在 AI 气泡底部展示随机 1 张
-                          // （与上方单词复习表格并列，📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID）
+                          // （与上方单词复习区并列，📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID）
+                          // ★ UI 定稿：卡片 2 行（标题+图片icon/定义）；有图才显示 🖼️ 指示（不用小缩略图）；行内超宽横向滑动
                           if (this.knowledgeBank.cards.length > 0) {
                             Divider()
                               .strokeWidth(0.5)
                               .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                               .margin({ top: 6, bottom: 6 })
-                            Column() {
-                              Text('📖 ' + this.getKnowledgeCard(msg.messageId).title)
-                                .fontSize(13)
-                                .fontWeight(FontWeight.Bold)
-                                .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
-                                .maxLines(1)
-                              Text(this.getKnowledgeCard(msg.messageId).definition)
-                                .fontSize(12)
-                                .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
-                                .maxLines(2)
-                                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                                .margin({ top: 2 })
+                            Scroll() {
+                              Column() {
+                                Row() {
+                                  Text('📖 ' + this.getKnowledgeCard(msg.messageId).title)
+                                    .fontSize(13)
+                                    .fontWeight(FontWeight.Bold)
+                                    .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                    .maxLines(1)
+                                  if (this.getKnowledgeCard(msg.messageId).imageUri.length > 0) {
+                                    // Image indicator icon — only shown when the card has an image (user rule)
+                                    Text('🖼️')
+                                      .fontSize(12)
+                                      .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                      .maxLines(1)
+                                      .margin({ left: 6 })
+                                  }
+                                }
+                                Text(this.getKnowledgeCard(msg.messageId).definition)
+                                  .fontSize(12)
+                                  .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                                  .maxLines(1)
+                                  .margin({ top: 2 })
+                              }
+                              .alignItems(HorizontalAlign.Start)
                             }
-                            .alignItems(HorizontalAlign.Start)
+                            .scrollable(ScrollDirection.Horizontal)
+                            .scrollBar(BarState.Off)
+                            .align(Alignment.Start)
+                            .width('100%')
                           }
                           }
                           .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
