@@ -33,6 +33,13 @@ export struct BBTreeCanvas {
   // ★ 0.130 画布可视区真实宽高（onAreaChange 获取，替代整屏尺寸 + 写死标题栏高度估算）
   @Local viewW: number = 0;
   @Local viewH: number = 0;
+  // ★ 0.147：长按气泡操作菜单状态（修改标题 / 删除气泡）
+  @Local menuVisible: boolean = false;
+  @Local menuNodeId: string = '';
+  // ★ 0.147：标题编辑弹窗状态
+  @Local titleEditVisible: boolean = false;
+  @Local titleEditNodeId: string = '';
+  @Local titleEditText: string = '';
 
   // ── 坐标变换（手动，弃用容器 scale/translate） ──
 
@@ -53,23 +60,24 @@ export struct BBTreeCanvas {
     return dy / this.canvasScale;
   }
 
-  // ── 连线计算（屏幕坐标，已扣除气泡半径 30px） ──
-
-  /** 获取父圆心屏幕坐标 X（半径 30px 是屏幕像素，不随缩放变化） */
+  // ── 连线计算（屏幕坐标，端点补偿到气泡中心区域） ──
+  // ★ 0.147：气泡改圆角矩形（宽 72~132、高约 50），补偿取 maxWidth/2 与高度/2，
+  // 保证任意内容宽度下连线端点都落在气泡内部（多余部分被气泡实心覆盖）
+  /** 获取父气泡中心屏幕坐标 X（+66 为 maxWidth 132 的一半，不随缩放变化） */
   getParentCX(bubble: BubbleNode): number {
-    return this.c2sX(bubble.parentX) + 30;
+    return this.c2sX(bubble.parentX) + 66;
   }
-  /** 获取父圆心屏幕坐标 Y */
+  /** 获取父气泡中心屏幕坐标 Y（+25 为气泡高度约 50 的一半） */
   getParentCY(bubble: BubbleNode): number {
-    return this.c2sY(bubble.parentY) + 30;
+    return this.c2sY(bubble.parentY) + 25;
   }
-  /** 获取子圆心屏幕坐标 X */
+  /** 获取子气泡中心屏幕坐标 X */
   getChildCX(bubble: BubbleNode): number {
-    return this.c2sX(bubble.x) + 30;
+    return this.c2sX(bubble.x) + 66;
   }
-  /** 获取子圆心屏幕坐标 Y */
+  /** 获取子气泡中心屏幕坐标 Y */
   getChildCY(bubble: BubbleNode): number {
-    return this.c2sY(bubble.y) + 30;
+    return this.c2sY(bubble.y) + 25;
   }
   /** 连线中点 X（线段中心位置，用于居中渲染） */
   getEdgeMidX(bubble: BubbleNode): number {
@@ -97,6 +105,75 @@ export struct BBTreeCanvas {
     return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
   }
 
+  // ★ 0.147：气泡显示标题——手动标题优先；否则自动取第一条用户提问（截 15 字符，超出加省略号）；无用户消息显示「空气泡」
+  getBubbleTitle(bubble: BubbleNode): string {
+    if (bubble.nodeTitle !== '') {
+      return bubble.nodeTitle;
+    }
+    for (const msg of bubble.messages) {
+      if (msg.role === 'user') {
+        const raw = msg.content.trim();
+        if (raw.length > 15) {
+          return raw.substring(0, 15) + '…';
+        }
+        return raw;
+      }
+    }
+    return '空气泡';
+  }
+
+  // ★ 0.147：保存手动标题（截 15 字符上限）并持久化；清空保存即恢复自动标题
+  saveNodeTitle(): void {
+    const node = this.store.nodeList.find((n: BubbleNode) => n.nodeID === this.titleEditNodeId);
+    if (node !== undefined) {
+      node.nodeTitle = this.titleEditText.trim().substring(0, 15);
+      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    }
+    this.titleEditVisible = false;
+  }
+
+  // ★ 0.147：删除确认（原长按 AlertDialog 逻辑提取成方法，菜单【删除气泡】项复用；根节点不可删）
+  confirmDeleteBubble(bubble: BubbleNode): void {
+    if (bubble.parentID === null) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: '删除节点',
+      message: '确认删除此节点及其所有子节点？',
+      primaryButton: {
+        value: '取消',
+        action: () => {}
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: '#F44336',
+        action: () => {
+          const idsToDelete: string[] = [bubble.nodeID];
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (let i = 0; i < this.store.nodeList.length; i++) {
+              const node = this.store.nodeList[i];
+              const pid = node.parentID !== null ? node.parentID : '';
+              if (idsToDelete.includes(pid) && !idsToDelete.includes(node.nodeID)) {
+                idsToDelete.push(node.nodeID);
+                changed = true;
+              }
+            }
+          }
+          const newList: BubbleNode[] = [];
+          for (let i = 0; i < this.store.nodeList.length; i++) {
+            if (!idsToDelete.includes(this.store.nodeList[i].nodeID)) {
+              newList.push(this.store.nodeList[i]);
+            }
+          }
+          this.store.nodeList = newList;
+          this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+        }
+      }
+    });
+  }
+
   // ★ 判断连线是否属于选中分支（0.123）
   isHighlightedLine(bubble: BubbleNode): boolean {
     // 选中节点自身的入边高亮
@@ -111,7 +188,7 @@ export struct BBTreeCanvas {
     const root = this.store.nodeList.find(n => n.parentID === null);
     if (!root) return;
 
-    const horizontalSpacing = 120; // 同层级水平间距
+    const horizontalSpacing = 160; // ★ 0.147：气泡加宽（maxWidth 132），同层间距 120 → 160 防重叠
     const verticalSpacing = 160;   // 层级间垂直间距
 
     // 构建父→子映射
@@ -177,13 +254,13 @@ export struct BBTreeCanvas {
     const treeCenterY = (minY + maxY) / 2;
 
     // ★ 自动缩放：以画布真实尺寸为准，去掉 0.3 下限，任何大小的树都完整可见（0.130）
-    const treeW = maxX - minX + 60;
-    const treeH = maxY - minY + 60;
+    const treeW = maxX - minX + 132; // ★ 0.147：气泡 maxWidth 132 余量（原 60 圆直径）
+    const treeH = maxY - minY + 50;  // ★ 0.147：气泡高度约 50 余量
     this.canvasScale = Math.min(this.viewW / treeW, this.viewH / treeH, 1.0);
 
-    // ★ 树几何中心对齐画布正中，-30 气泡左上角定位补偿；去掉 Math.max 截断，树再大中心也对齐（0.130）
-    this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - 30;
-    this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 30;
+    // ★ 树几何中心对齐画布正中，-66/-25 气泡左上角→中心补偿（0.147 随矩形尺寸更新）；去掉 Math.max 截断，树再大中心也对齐（0.130）
+    this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - 66;
+    this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 25;
   }
 
   build() {
@@ -212,34 +289,42 @@ export struct BBTreeCanvas {
         }, (bubble: BubbleNode) => bubble.nodeID)
 
         // ── 气泡层（屏幕坐标） ──
+        // ★ 0.147：圆形 60×60 → 圆角矩形（节点标题 + 消息计数），minWidth 72 / maxWidth 132 防尺寸极端
         ForEach(this.store.nodeList, (bubble: BubbleNode) => {
           Column() {
-            Text(`${bubble.messages.length}`)
-              .fontSize(20)
+            Text(this.getBubbleTitle(bubble))
+              .fontSize(13)
               .fontColor('#FFFFFF')
-              .width(60)
-              .height(60)
-              .borderRadius(30) // ★ 圆角（0.123）
-              .backgroundColor(this.getThemeStore().isDark ? '#42A5F5' : '#1976D2') // ★ 深浅色适配（0.123）
-              .textAlign(TextAlign.Center)
-              // ★ 阴影样式（0.123）
-              .shadow({
-                radius: this.getThemeStore().isDark ? 8 : 6,
-                color: this.getThemeStore().isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)',
-                offsetX: 0,
-                offsetY: 2
-              })
-              // 0.101 高亮：当前选中气泡加橙色边框
-              .border({
-                width: bubble.nodeID === this.currentBubbleStore.nodeID ? 3 : 0,
-                color: bubble.nodeID === this.currentBubbleStore.nodeID ? '#FF6600' : Color.Transparent
-              })
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .constraintSize({ maxWidth: 112 })
+            Text(`${bubble.messages.length} 条`)
+              .fontSize(10)
+              .fontColor('rgba(255,255,255,0.75)')
+              .margin({ top: 2 })
           }
+          .constraintSize({ minWidth: 72, maxWidth: 132 })
+          .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+          .borderRadius(12)
+          .backgroundColor(this.getThemeStore().isDark ? '#42A5F5' : '#1976D2') // ★ 深浅色适配（0.123）
+          .alignItems(HorizontalAlign.Center)
+          // ★ 阴影样式（0.123）
+          .shadow({
+            radius: this.getThemeStore().isDark ? 8 : 6,
+            color: this.getThemeStore().isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.3)',
+            offsetX: 0,
+            offsetY: 2
+          })
+          // 0.101 高亮：当前选中气泡加橙色边框
+          .border({
+            width: bubble.nodeID === this.currentBubbleStore.nodeID ? 3 : 0,
+            color: bubble.nodeID === this.currentBubbleStore.nodeID ? '#FF6600' : Color.Transparent
+          })
           .position({
             x: this.c2sX(bubble.x),
             y: this.c2sY(bubble.y)
           })
-          // ── 双击导航到对话 ──
+          // ── 双击导航到对话（保留原有逻辑） ──
           .gesture(
             TapGesture({ count: 2 })
               .onAction(() => {
@@ -249,49 +334,12 @@ export struct BBTreeCanvas {
                 this.pathStack.pushPath({ name: 'ChatPage' });
               })
           )
-          // ── 长按删除 ──
+          // ── 长按弹操作菜单（★ 0.147：原直接弹删除确认改为两项菜单） ──
           .gesture(
             LongPressGesture({ duration: 500 })
               .onAction(() => {
-                if (bubble.parentID === null) {
-                  return;
-                }
-                // ★ 0.131：全局静态 AlertDialog.show 自 API 12 起废弃，改走 UIContext
-                this.getUIContext().showAlertDialog({
-                  title: '删除节点',
-                  message: '确认删除此节点及其所有子节点？',
-                  primaryButton: {
-                    value: '取消',
-                    action: () => {}
-                  },
-                  secondaryButton: {
-                    value: '删除',
-                    fontColor: '#F44336',
-                    action: () => {
-                      const idsToDelete: string[] = [bubble.nodeID];
-                      let changed = true;
-                      while (changed) {
-                        changed = false;
-                        for (let i = 0; i < this.store.nodeList.length; i++) {
-                          const node = this.store.nodeList[i];
-                          const pid = node.parentID !== null ? node.parentID : '';
-                          if (idsToDelete.includes(pid) && !idsToDelete.includes(node.nodeID)) {
-                            idsToDelete.push(node.nodeID);
-                            changed = true;
-                          }
-                        }
-                      }
-                      const newList: BubbleNode[] = [];
-                      for (let i = 0; i < this.store.nodeList.length; i++) {
-                        if (!idsToDelete.includes(this.store.nodeList[i].nodeID)) {
-                          newList.push(this.store.nodeList[i]);
-                        }
-                      }
-                      this.store.nodeList = newList;
-                      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-                    }
-                  }
-                });
+                this.menuNodeId = bubble.nodeID;
+                this.menuVisible = true;
               })
           )
         }, (bubble: BubbleNode) => bubble.nodeID)
@@ -357,6 +405,112 @@ export struct BBTreeCanvas {
               this.fitViewport(); // ★ 0.124：仅适配视口，不改动气泡坐标
             })
         )
+      // ★ 0.147：长按气泡操作菜单（修改标题 / 删除气泡）
+      if (this.menuVisible) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.25)')
+            .onClick(() => {
+              this.menuVisible = false;
+            })
+          Column() {
+            Text('修改气泡标题')
+              .fontSize(15)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 14, bottom: 14 })
+              .onClick(() => {
+                this.menuVisible = false;
+                const node = this.store.nodeList.find((n: BubbleNode) => n.nodeID === this.menuNodeId);
+                if (node !== undefined) {
+                  this.titleEditNodeId = node.nodeID;
+                  this.titleEditText = this.getBubbleTitle(node); // 预填当前标题，清空保存即恢复自动标题
+                  this.titleEditVisible = true;
+                }
+              })
+            Divider()
+              .color(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+            Text('删除气泡')
+              .fontSize(15)
+              .fontColor('#F44336')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 14, bottom: 14 })
+              .onClick(() => {
+                this.menuVisible = false;
+                const node = this.store.nodeList.find((n: BubbleNode) => n.nodeID === this.menuNodeId);
+                if (node !== undefined) {
+                  this.confirmDeleteBubble(node);
+                }
+              })
+          }
+          .width('62%')
+          .borderRadius(12)
+          .backgroundColor(this.getThemeStore().isDark ? '#2A2A2A' : '#FFFFFF')
+          .shadow({ radius: 12, color: 'rgba(0,0,0,0.3)', offsetX: 0, offsetY: 4 })
+        }
+      }
+
+      // ★ 0.147：标题编辑弹窗（最多 15 字，清空保存恢复自动标题）
+      if (this.titleEditVisible) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.25)')
+            .onClick(() => {
+              this.titleEditVisible = false;
+            })
+          Column() {
+            Text('修改气泡标题')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .margin({ bottom: 12 })
+            TextInput({ text: this.titleEditText, placeholder: '输入标题（最多15字，清空恢复自动）' })
+              .fontSize(14)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .maxLength(15)
+              .onChange((value: string) => {
+                this.titleEditText = value;
+              })
+              .width('100%')
+              .height(44)
+              .borderRadius(8)
+              .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#F5F5F5')
+              .margin({ bottom: 16 })
+            Row({ space: 12 }) {
+              Button('取消')
+                .fontSize(14)
+                .height(38)
+                .layoutWeight(1)
+                .backgroundColor(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .onClick(() => {
+                  this.titleEditVisible = false;
+                })
+              Button('确定')
+                .fontSize(14)
+                .height(38)
+                .layoutWeight(1)
+                .backgroundColor('#1976D2')
+                .fontColor('#FFFFFF')
+                .onClick(() => {
+                  this.saveNodeTitle();
+                })
+            }
+            .width('100%')
+          }
+          .width('70%')
+          .padding(20)
+          .borderRadius(12)
+          .backgroundColor(this.getThemeStore().isDark ? '#2A2A2A' : '#FFFFFF')
+          .shadow({ radius: 12, color: 'rgba(0,0,0,0.3)', offsetX: 0, offsetY: 4 })
+        }
+      }
       } // ★ 外层 Stack 结束（0.123）
     }
     .title('气泡树')

@@ -54,9 +54,10 @@ export class BubbleNode {
   @Trace parentY: number; // 冗余存储父节点 y
   @Trace historySummary: string; // ★ 新增：分支链路摘要（0.117）
   @Trace historySummaryCount: number; // ★ 新增：上次生成摘要时的链路消息总数（0.117）
+  @Trace nodeTitle: string; // ★ 0.147：节点标题（空串=自动取第一条用户提问，非空=用户手动覆盖）
 
   constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number, parentX: number = 0, parentY: number = 0,
-              historySummary: string = '', historySummaryCount: number = 0) {
+              historySummary: string = '', historySummaryCount: number = 0, nodeTitle: string = '') {
     this.nodeID = nodeID;
     this.parentID = parentID;
     this.messages = messages;
@@ -66,6 +67,7 @@ export class BubbleNode {
     this.parentY = parentY;
     this.historySummary = historySummary;
     this.historySummaryCount = historySummaryCount;
+    this.nodeTitle = nodeTitle;
   }
 }
 
@@ -106,6 +108,7 @@ interface SerializedNode {
   parentY: number;
   historySummary?: string; // ★ 新增（0.117）
   historySummaryCount?: number; // ★ 新增（0.117）
+  nodeTitle?: string; // ★ 0.147（可选字段，旧数据无此字段，反序列化时 ?? '' 兜底）
 }
 interface SerializedTree {
   nodeList: SerializedNode[];
@@ -135,7 +138,8 @@ export function serializeBubbleTree(tree: BubbleTree): string {
         parentX: node.parentX,
         parentY: node.parentY,
         historySummary: node.historySummary,
-        historySummaryCount: node.historySummaryCount
+        historySummaryCount: node.historySummaryCount,
+        nodeTitle: node.nodeTitle // ★ 0.147
       };
     })
   };
@@ -155,7 +159,7 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
           msg.isPodcastMode ?? false); // ★ 0.133：旧数据无此字段自动补 false，不报错不丢失
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
-        node.historySummary ?? '', node.historySummaryCount ?? 0);
+        node.historySummary ?? '', node.historySummaryCount ?? 0, node.nodeTitle ?? ''); // ★ 0.147：旧数据无此字段自动补空串
     });
     return new BubbleTree(nodeList);
   } catch (e) {
