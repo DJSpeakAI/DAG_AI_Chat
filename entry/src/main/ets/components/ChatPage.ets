@@ -2201,11 +2201,21 @@ export struct ChatPage {
                                     .maxLines(1)
                                   if (this.getKnowledgeCard(msg.messageId).imageUri.length > 0) {
                                     // Image indicator icon — only shown when the card has an image (user rule)
+                                    // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
+                                    // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
                                     Text('🖼️')
                                       .fontSize(12)
                                       .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
                                       .maxLines(1)
                                       .margin({ left: 6 })
+                                      .onClick(() => {
+                                        const card = this.getKnowledgeCard(msg.messageId); // cache hit — same card as rendered above
+                                        if (card.imageUri.length > 0) {
+                                          this.imageViewerImages = [card.imageUri];
+                                          this.imageViewerIndex = 0;
+                                          this.imageViewerVisible = true;
+                                        }
+                                      })
                                   }
                                 }
                                 Text(this.getKnowledgeCard(msg.messageId).definition)
