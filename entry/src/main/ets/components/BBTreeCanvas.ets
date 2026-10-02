@@ -17,6 +17,7 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
+import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -41,6 +42,10 @@ export struct BBTreeCanvas {
   @Local titleEditVisible: boolean = false;
   @Local titleEditNodeId: string = '';
   @Local titleEditText: string = '';
+
+  // ★ 0.150：全局设置弹窗状态（画布右上角 ⚙ 唤起；与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步）
+  @Local globalSettingsVisible: boolean = false;
+  @Local globalSettingsCloseReq: number = 0; // 外部请求关闭计数器（onBackPressed 递增 → 弹窗 @Monitor 触发 requestClose）
 
   // ── 坐标变换（手动，弃用容器 scale/translate） ──
 
@@ -406,6 +411,37 @@ export struct BBTreeCanvas {
               this.fitViewport(); // ★ 0.124：仅适配视口，不改动气泡坐标
             })
         )
+
+      // ★ 0.150：右上角悬浮【⚙ 设置】按钮（「显示全部」正下方同款样式；唤起全局设置弹窗，
+      // 与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步、重启保留）
+      Text('⚙')
+        .fontSize(16)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .borderRadius(8)
+        .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+        .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+        .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
+        .position({ x: '100%', y: 52 }) // 「显示全部」（y:10 + 高约 34）正下方，间距 8vp
+        .markAnchor({ x: '100%', y: 0 })
+        .translate({ x: -12 }) // 距右缘 12vp 边距（与「显示全部」对齐）
+        .gesture(
+          TapGesture()
+            .onAction(() => {
+              this.globalSettingsVisible = true;
+            })
+        )
+
+      // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起；遮罩点击不关闭，✕/返回键走弹窗内未保存确认）
+      if (this.globalSettingsVisible) {
+        GlobalSettingsDialog({
+          onClose: () => {
+            this.globalSettingsVisible = false;
+          },
+          closeReq: this.globalSettingsCloseReq
+        })
+      }
+
       // ★ 0.147：长按气泡操作菜单（修改标题 / 删除气泡）
       if (this.menuVisible) {
         Stack({ alignContent: Alignment.Center }) {
@@ -515,6 +551,15 @@ export struct BBTreeCanvas {
       } // ★ 外层 Stack 结束（0.123）
     }
     .title('气泡树')
+    .onBackPressed(() => {
+      // ★ 0.150：全局设置弹窗打开时拦截返回键——递增计数器触发弹窗内 requestClose
+      // （有未保存修改时二次确认，不直接丢弃）；无弹窗返回 false 走默认行为（退出应用）
+      if (this.globalSettingsVisible) {
+        this.globalSettingsCloseReq++;
+        return true;
+      }
+      return false;
+    })
     .onShown(() => {
       // ★ 0.126：从 ChatPage 返回时，若 needsRelayout 则重新布局 + 适配视口
       if (this.store.needsRelayout) {

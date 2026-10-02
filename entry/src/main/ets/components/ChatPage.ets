@@ -26,7 +26,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
 import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig } from '../common/ChatModel'; // ★ 0.143：connectApiConfig
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.155：containsChinese（划词语言检测）
@@ -36,6 +36,7 @@ import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { ThemeStore } from '../entryability/EntryAbility';
+import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -381,6 +382,7 @@ export struct ChatPage {
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.143：换 key 'api-config-v2'（旧快照无 audioKey 字段致新增属性不落盘，工厂迁移历史配置）
+  aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：AI 偏好（称呼 + 鼓励开关，独立 key 'ai-preference-v1'）
   @Local inputText: string = '';
   @Local isLoading: boolean = false;
   @Local pendingImages: string[] = [];
@@ -435,6 +437,9 @@ export struct ChatPage {
   @Local tableZoomHeader: string[] = [];
   @Local tableZoomRows: string[][] = [];
   @Local tableZoomWrap: boolean = false;  // 放大视图默认不换行（与气泡内表格默认一致）
+  // ★ 0.150：全局设置弹窗状态（顶栏 ⚙ 唤起；遮罩不关闭，✕/返回键走弹窗内未保存确认）
+  @Local globalSettingsVisible: boolean = false;
+  @Local globalSettingsCloseReq: number = 0; // 外部请求关闭计数器（handleBack 递增 → 弹窗 @Monitor 触发 requestClose）
   // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
@@ -736,6 +741,12 @@ export struct ChatPage {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', MEDIUM_REPLY_PROMPT));
     }
 
+    // ★ 0.150：AI 偏好 prompt（称呼 + 鼓励，按全局设置弹窗 Tab2 用户设置拼接；不持久化，与长度 prompt 同机制）
+    const prefPrompt = this.buildPreferencePrompt();
+    if (prefPrompt.length > 0) {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+    }
+
     // ★ 0.133：播客模式在消息末尾追加系统 prompt（只在本次请求临时追加，不持久化、不进入后续上下文）
     if (isPodcast) {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
@@ -811,6 +822,11 @@ export struct ChatPage {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', LONG_REPLY_PROMPT));
     } else {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', MEDIUM_REPLY_PROMPT));
+    }
+    // ★ 0.150：AI 偏好 prompt（与 sendMessage 同机制，刷新时同样生效）
+    const prefPrompt = this.buildPreferencePrompt();
+    if (prefPrompt.length > 0) {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
     }
     // 播客模式：沿用该消息原发起模式，重新追加播客 prompt
     if (msg.isPodcastMode) {
@@ -1591,6 +1607,22 @@ export struct ChatPage {
     this.pathStack.pop();
   }
 
+  // ★ 0.150：AI 偏好 prompt 拼接——按用户设置（全局设置弹窗 Tab2）生成 system 指令（称呼 + 鼓励），
+  // sendMessage/regenerateMessage 在长度 prompt 之后追加（不持久化、不进入后续上下文，与播客 prompt 同机制）。
+  // 规则：称呼填写时短/中/长全部回复模式都带；鼓励仅在中/长回复且开关开启时生成（短回复不生成）；
+  // 鼓励要求结合对话上下文、措辞多样化、适度轻微夸张、篇幅简短（需求原文约束，靠提示词实现，前端不内置文案库）
+  buildPreferencePrompt(): string {
+    let prompt = '';
+    const nickname = this.aiPreference.aiNickname.trim();
+    if (nickname.length > 0) {
+      prompt += `请在回答中自然地称呼用户为「${nickname}」。`;
+    }
+    if (this.aiPreference.encourageEnabled && this.replyLengthMode !== 'short') {
+      prompt += '在回答的最开头（称呼之后、主体内容之前）附加 1~2 句简短的鼓励话语：必须结合本次对话的具体内容或学习主题（如代码、数学、论文等）给出针对性鼓励，禁止通用套话；每次措辞多样化，避免重复之前用过的表述；允许轻微夸张但不要生硬；篇幅务必简短，不挤占主体回答内容。';
+    }
+    return prompt;
+  }
+
   // ★ 0.159：返回逻辑统一入口——顶栏自定义返回按钮与系统返回手势（onBackPressed）共用；
   // 有弹窗打开时逐个关闭并返回 true（消费返回事件），全关时返回 false（由调用方执行导航）
   handleBack(): boolean {
@@ -1612,6 +1644,10 @@ export struct ChatPage {
     }
     if (this.tableZoomVisible) {
       this.tableZoomVisible = false; // 表格放大弹窗（0.153）
+      return true;
+    }
+    if (this.globalSettingsVisible) {
+      this.globalSettingsCloseReq++; // ★ 0.150：全局设置弹窗——递增计数器触发弹窗内 requestClose（有未保存修改时二次确认，不直接丢弃）
       return true;
     }
     return false; // 无弹窗，由调用方执行默认返回
@@ -1668,7 +1704,7 @@ export struct ChatPage {
         .padding({ left: 4, right: 4 })
         .margin({ right: 6 })
         .onClick(() => {
-          this.pathStack.pushPath({ name: 'SettingsPage' });
+          this.globalSettingsVisible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
         })
       Button('+ 添加子气泡')
         .fontSize(13)
@@ -2680,6 +2716,16 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
           .alignContent(Alignment.Center)
+        }
+
+        // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起；遮罩点击不关闭，✕/返回键走弹窗内未保存确认）
+        if (this.globalSettingsVisible) {
+          GlobalSettingsDialog({
+            onClose: () => {
+              this.globalSettingsVisible = false;
+            },
+            closeReq: this.globalSettingsCloseReq
+          })
         }
 
         // ★ 0.153：表格放大弹窗（表格「放大」按钮打开，全屏查看 + 换行切换）

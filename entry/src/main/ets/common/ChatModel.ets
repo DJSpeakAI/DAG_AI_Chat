@@ -216,3 +216,17 @@ export function connectApiConfig(): ApiConfig {
     return fresh;
   }) as ApiConfig;
 }
+
+// ★ 0.150：AI 对话偏好（自定义称呼 + 自动鼓励开关）——PersistenceV2 持久化，跨重启保存
+// 独立 key 与 ApiConfig 隔离（0.143 教训：往已有磁盘快照的类新增字段会因旧快照缺字段不落盘；
+// 全新 key 首次创建即含全部字段，无此坑——与单词库/知识库独立 key 模式一致）
+@ObservedV2
+export class AiPreference {
+  @Trace aiNickname: string = '';          // 自定义称呼（空 = 不添加称呼文本；短/中/长全部回复模式都生效）
+  @Trace encourageEnabled: boolean = true; // 自动鼓励开关（默认开启；仅中/长回复生成鼓励，短回复不生成）
+}
+
+// ★ 0.150：连接 AI 偏好持久化实例（全新 key，无历史迁移需求）
+export function connectAiPreference(): AiPreference {
+  return PersistenceV2.connect(AiPreference, 'ai-preference-v1', () => new AiPreference()) as AiPreference;
+}
