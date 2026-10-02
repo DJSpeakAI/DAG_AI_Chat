@@ -425,10 +425,10 @@ export struct ChatPage {
   private knowledgeReviewCache: Map<string, KnowledgeReviewCacheEntry> = new Map(); // 复习区知识卡片缓存
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
-  @Local modeDropdownOpen: boolean = false;
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
   @Local replyLengthMode: string = 'medium';
-  @Local lengthDropdownOpen: boolean = false;
+  // ★ 0.151-D：⋮ 三点气泡菜单开关（合并原模式下拉 0.133 + 长度下拉 0.144 两个面板为一棵树形菜单）
+  @Local modeMenuOpen: boolean = false;
   // ★ 0.153：代码块放大弹窗状态（代码块左上角「放大」按钮打开，全屏查看 + 换行切换）
   @Local codeZoomVisible: boolean = false;
   @Local codeZoomContent: string = '';
@@ -1594,6 +1594,9 @@ export struct ChatPage {
     if (!this.currentBubble) {
       return;
     }
+    if (this.isLoading) {
+      return; // ★ 0.151-D：流式回复进行中禁止新建——切换当前气泡会导致流式回调写错气泡
+    }
     const newBubble = new BubbleNode(
       generateNodeId(),
       this.currentBubbleId,
@@ -1605,8 +1608,15 @@ export struct ChatPage {
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
     this.saveTree(); // ★ 0.151：按模式分池保存
-    this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局
-    this.pathStack.pop();
+    this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局（返回画布时 onShown 消费）
+    // ★ 0.151-D 需求 3：直接进入新子气泡的对话页（跳过「返回画布 + 双击气泡」两步）——
+    // 只切换 currentBubbleStore 即可：消息列表由 @Computed currentMessages 驱动，立即切到新气泡的空对话
+    this.currentBubbleStore.nodeID = newBubble.nodeID;
+    this.currentBubbleStore.bubbleX = newBubble.x;
+    this.currentBubbleStore.bubbleY = newBubble.y;
+    this.inputText = '';     // 新气泡新对话，清空输入框
+    this.pendingImages = []; // 清空未发送的图片附件
+    this.stopTTS(); // ★ 0.151-D：原停 TTS 依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此补停
   }
 
   // ★ 0.151-bugfix：按模式分池保存工作区（两池隔离核心写路径，与 BBTreeCanvas.saveTree 同逻辑）
@@ -1732,14 +1742,6 @@ export struct ChatPage {
         .margin({ right: 6 })
         .onClick(() => {
           this.globalSettingsVisible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
-        })
-      Button('+ 添加子气泡')
-        .fontSize(13)
-        .backgroundColor('#1976D2')
-        .fontColor('#FFFFFF')
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .onClick(() => {
-          this.addBubble();
         })
     }
     .width('100%')
@@ -2195,17 +2197,22 @@ export struct ChatPage {
           .padding({ left: 16, right: 16, top: 8 })
         }
 
-        // 输入区域 — 图片按钮 + 输入框 + 回复长度 + 模式 + 发送按钮
+        // 输入区域 — ＋添加子气泡 + 输入框 + 相机图片 + ⋮模式菜单 + 发送按钮（★ 0.151-D 需求重排）
         Row() {
-          // ★ 0.144：图片附件按钮（暂用相机图标占位，后续有资源换图片图标；图标缩小+内边距压最小，不挤压输入框）
-          Button('📷')
-            .fontSize(16)
-            .backgroundColor(Color.Transparent)
-            .fontColor('#666')
-            .padding({ left: 2, right: 2 })
+          // ★ 0.151-D：添加子气泡按钮挪到左下角行首（原顶栏文字按钮改 ＋ icon，样式与 BBTreeCanvas 画布 ＋ 同款；
+          // 点击在当前气泡下新建子气泡）
+          Text('+')
+            .fontSize(18)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .width(32)
+            .height(32)
+            .textAlign(TextAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
             .margin({ right: 2 })
             .onClick(() => {
-              this.selectImages();
+              this.addBubble();
             })
 
           TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
@@ -2214,28 +2221,25 @@ export struct ChatPage {
             .enterKeyType(EnterKeyType.NEW_LINE)
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 
-          // ★ 0.144：回复长度下拉按钮（📏），默认中回复灰色、短/长高亮；与模式下拉互斥展开；图标缩小+内边距压最小
-          Button('📏')
+          // ★ 0.151-D：图片附件按钮（🖼️「图片」icon 替换原相机占位图标，用户指定；点击相册多选添加图片）
+          Button('🖼️')
             .fontSize(16)
             .backgroundColor(Color.Transparent)
-            .fontColor(this.replyLengthMode !== 'medium' ? '#1976D2' : '#666')
             .padding({ left: 2, right: 2 })
             .margin({ left: 0, right: 2 })
             .onClick(() => {
-              this.lengthDropdownOpen = !this.lengthDropdownOpen;
-              this.modeDropdownOpen = false;
+              this.selectImages();
             })
 
-          // ★ 0.133：发送模式下拉按钮（💬 正常对话 | 🎙 播客模式），点击弹出选择面板；★ 0.144：图标缩小+内边距压最小
-          Button(this.sendMode === 'podcast' ? '🎙' : '💬')
+          // ★ 0.151-D：💬 气泡菜单按钮（气泡+三点形态，用户指定替换竖排 ⋮；emoji 自带色、按钮不做状态高亮，
+          // 当前所选状态看菜单内高亮）——点击弹出树形菜单（上组对话模式 + 下组回复长度）
+          Button('💬')
             .fontSize(16)
             .backgroundColor(Color.Transparent)
-            .fontColor(this.sendMode === 'podcast' ? '#1976D2' : '#666')
             .padding({ left: 2, right: 2 })
             .margin({ left: 0, right: 2 })
             .onClick(() => {
-              this.modeDropdownOpen = !this.modeDropdownOpen;
-              this.lengthDropdownOpen = false; // ★ 0.144：互斥——打开模式下拉时收起长度下拉
+              this.modeMenuOpen = !this.modeMenuOpen;
             })
 
           Button('发送')
@@ -2901,8 +2905,10 @@ export struct ChatPage {
 
         // ★ 0.145：文本预览弹窗已移除——长按气泡文本直接进入系统选择模式 + 自研悬浮操作栏（bindSelectionMenu）
 
-        // ★ 0.133：发送模式选择面板（半透明遮罩 + 右下角面板，浮于输入区上方）
-        if (this.modeDropdownOpen) {
+        // ★ 0.151-D：⋮ 三点气泡菜单面板（合并原发送模式面板 0.133 + 回复长度面板 0.144 为一棵树形菜单：
+        // 上组=对话模式（💬 正常对话 / 🎙 播客模式），下组=回复长度（短/中/长）；当前选中高亮；
+        // 半透明遮罩 + 右下角面板，浮于输入区上方）
+        if (this.modeMenuOpen) {
           Stack() {
             // 遮罩：点击关闭面板
             Column() {
@@ -2912,11 +2918,18 @@ export struct ChatPage {
             .height('100%')
             .backgroundColor('rgba(0,0,0,0.4)')
             .onClick(() => {
-              this.modeDropdownOpen = false;
+              this.modeMenuOpen = false;
             })
 
-            // 面板：两个模式选项（当前模式高亮）
+            // 面板：树形两组选项（组标题 + 选项行，当前选中高亮）
             Column() {
+              // ── 上组：对话模式（★ 0.151-D 需求 3：对话模式在上面） ──
+              Text('对话模式')
+                .fontSize(11)
+                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .width('100%')
+                .padding({ left: 12, top: 8 })
+                .textAlign(TextAlign.Start)
               Text('💬 正常对话')
                 .fontSize(14)
                 .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
@@ -2927,7 +2940,7 @@ export struct ChatPage {
                 .borderRadius(8)
                 .onClick(() => {
                   this.sendMode = 'normal';
-                  this.modeDropdownOpen = false;
+                  this.modeMenuOpen = false;
                 })
               Text('🎙 播客模式')
                 .fontSize(14)
@@ -2939,7 +2952,7 @@ export struct ChatPage {
                 .borderRadius(8)
                 .onClick(() => {
                   this.sendMode = 'podcast';
-                  this.modeDropdownOpen = false;
+                  this.modeMenuOpen = false;
                 })
               Text('口语化输出，适合朗读')
                 .fontSize(11)
@@ -2947,35 +2960,16 @@ export struct ChatPage {
                 .width('100%')
                 .padding({ left: 12, bottom: 8 })
                 .textAlign(TextAlign.Start)
-            }
-            .width(180)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
-            .padding(4)
-            .margin({ bottom: 64, right: 16 }) // 抬到输入区上方（输入框一行 40vp + 底部 padding 16vp + 间隙 8vp）
-          }
-          .alignContent(Alignment.BottomEnd)
-          .width('100%')
-          .height('100%')
-        }
-
-        // ★ 0.144：回复长度选择面板（结构复制播客面板，三档选项 + 小字提示，浮于输入区上方）
-        if (this.lengthDropdownOpen) {
-          Stack() {
-            // 遮罩：点击关闭面板
-            Column() {
-              Blank()
-            }
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
-            .onClick(() => {
-              this.lengthDropdownOpen = false;
-            })
-
-            // 面板：三个长度选项（当前档位高亮）
-            Column() {
+              Divider()
+                .color(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+                .margin({ top: 4, bottom: 4 })
+              // ── 下组：回复长度（★ 0.151-D 需求 3：短中长在下面） ──
+              Text('回复长度')
+                .fontSize(11)
+                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .width('100%')
+                .padding({ left: 12, top: 4 })
+                .textAlign(TextAlign.Start)
               Text('短回复')
                 .fontSize(14)
                 .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
@@ -2986,7 +2980,7 @@ export struct ChatPage {
                 .borderRadius(8)
                 .onClick(() => {
                   this.replyLengthMode = 'short';
-                  this.lengthDropdownOpen = false;
+                  this.modeMenuOpen = false;
                 })
               Text('中回复')
                 .fontSize(14)
@@ -2998,7 +2992,7 @@ export struct ChatPage {
                 .borderRadius(8)
                 .onClick(() => {
                   this.replyLengthMode = 'medium';
-                  this.lengthDropdownOpen = false;
+                  this.modeMenuOpen = false;
                 })
               Text('长回复')
                 .fontSize(14)
@@ -3010,7 +3004,7 @@ export struct ChatPage {
                 .borderRadius(8)
                 .onClick(() => {
                   this.replyLengthMode = 'long';
-                  this.lengthDropdownOpen = false;
+                  this.modeMenuOpen = false;
                 })
               Text('输出长度为 AI 参考约束，无法保证严格固定字数')
                 .fontSize(11)
@@ -3019,12 +3013,12 @@ export struct ChatPage {
                 .padding({ left: 12, bottom: 8 })
                 .textAlign(TextAlign.Start)
             }
-            .width(180)
+            .width(200)
             .borderRadius(12)
             .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
             .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
             .padding(4)
-            .margin({ bottom: 64, right: 120 }) // 锚在长度按钮上方（右移避开模式按钮与发送按钮占位）
+            .margin({ bottom: 64, right: 16 }) // 抬到输入区上方（⋮ 按钮正上方）
           }
           .alignContent(Alignment.BottomEnd)
           .width('100%')
