@@ -98,6 +98,73 @@ struct CodeBlockView {
   @Param isDark: boolean = false; // 深浅色主题
   @Local wrap: boolean = true;    // 默认开启自动换行
   @Event onZoom: (content: string) => void = (content: string) => {}; // ★ 0.153：放大回调（父组件打开全屏代码弹窗）
+  // ★ 0.156：划词桥接——代码块 Text 复用 ChatPage 的选择工具栏（翻译/入知识库/复制/全选）与状态链路
+  @Param textKey: string = '';                                    // 划词 key（父组件生成，如 `${msgId}|c${segIdx}`）
+  @Param selController: TextController | undefined = undefined;   // 父组件注册的 TextController（关闭选择菜单用）
+  @Param selectAllKey: string = '';                               // 全选受控态（`${key}|${nonce}`，命中时本块全选）
+  // ★ 0.157 崩溃修复：弃用 @BuilderParam 传父组件工具栏——@Builder 经 @BuilderParam 传入后在子组件上下文执行，
+  // this 不再指向 ChatPage，工具栏内 this.getThemeStore() 变 undefined → 长按代码块 TypeError 崩溃（真机实证）。
+  // 改为：本组件自带工具栏 UI（主题色用自身 isDark @Param），按钮动作经 @Event 回调父组件（this 归位正确）
+  @Event onTranslate: () => void = () => {};       // 翻译按钮（父组件 onToolbarTranslate）
+  @Event onAddKnowledge: () => void = () => {};    // 入知识库按钮（父组件 onToolbarAddKnowledge）
+  @Event onCopy: () => void = () => {};            // 复制按钮（父组件 onToolbarCopy）
+  @Event onSelectAll: () => void = () => {};       // 全选按钮（父组件 onToolbarSelectAll）
+  @Event onMenuAppear: (key: string) => void = (key: string) => {}; // 菜单弹出（父组件记录 selKey）
+  @Event onMenuDisappear: () => void = () => {};                    // 菜单关闭（父组件清理选中状态）
+  @Event onSelChange: (key: string, content: string, start: number, end: number) => void =
+    (key: string, content: string, start: number, end: number) => {}; // 选中变化（父组件按偏移截取选中文本）
+
+  // ★ 0.157：代码块专用选择工具栏——UI 与 ChatPage.SelectionToolbar 保持一致（样式改动两处同步），
+  // 主题色取自身 isDark、按钮动作走 @Event，规避 @BuilderParam 的 this 上下文丢失
+  @Builder
+  codeToolbar() {
+    Row() {
+      Text('翻译')
+        .fontSize(14)
+        .fontColor('#1976D2')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onTranslate();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.isDark ? '#555555' : '#DDDDDD')
+      Text('入知识库')
+        .fontSize(14)
+        .fontColor('#1976D2')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onAddKnowledge();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.isDark ? '#555555' : '#DDDDDD')
+      Text('复制')
+        .fontSize(14)
+        .fontColor(this.isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onCopy();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.isDark ? '#555555' : '#DDDDDD')
+      Text('全选')
+        .fontSize(14)
+        .fontColor(this.isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onSelectAll();
+        })
+    }
+    .backgroundColor(this.isDark ? '#2C2C2C' : '#FFFFFF')
+    .borderRadius(8)
+    .border({ width: 0.5, color: this.isDark ? '#555555' : '#CCCCCC' })
+    .shadow({ radius: 12, color: 'rgba(0,0,0,0.25)', offsetX: 0, offsetY: 4 })
+  }
 
   build() {
     Column() {
@@ -149,23 +216,57 @@ struct CodeBlockView {
         // ★ 0.154：去掉 width('100%')——气泡链多层自适应父容器下百分比宽度解析异常，
         // 导致代码块比气泡内容区宽、右侧显示被挡；改为无 width + 父约束折行
         //（与气泡内普通文本段同模式：长代码自动折行且始终在气泡内，短代码背景随内容自适应）
-        Text(this.content)
+        // ★ 0.156：划词五件套——与普通文本段同模式（copyOption + 自研菜单 + 选中回调 + 全选受控）
+        Text(this.content, { controller: this.selController })
           .fontSize(14)
           .fontFamily('monospace')
           .fontColor(this.isDark ? '#D4D4D4' : '#333333')
           .padding(10)
           .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
           .borderRadius(6)
+          .copyOption(CopyOptions.LocalDevice)
+          .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
+            onAppear: () => {
+              this.onMenuAppear(this.textKey);
+            },
+            onDisappear: () => {
+              this.onMenuDisappear();
+            }
+          })
+          .onTextSelectionChange((start: number, end: number) => {
+            this.onSelChange(this.textKey, this.content, start, end);
+          })
+          .selection(
+            this.selectAllKey.startsWith(`${this.textKey}|`) ? 0 : 1,
+            this.selectAllKey.startsWith(`${this.textKey}|`) ? this.content.length : 0
+          )
       } else {
         // 滚动模式：横向滚动查看长代码
         Scroll() {
-          Text(this.content)
+          // ★ 0.156：划词五件套——同 wrap 模式（长按进入选择，拖动与横向滚动手势互不冲突）
+          Text(this.content, { controller: this.selController })
             .fontSize(14)
             .fontFamily('monospace')
             .fontColor(this.isDark ? '#D4D4D4' : '#333333')
             .padding(10)
             .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
             .borderRadius(6)
+            .copyOption(CopyOptions.LocalDevice)
+            .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
+              onAppear: () => {
+                this.onMenuAppear(this.textKey);
+              },
+              onDisappear: () => {
+                this.onMenuDisappear();
+              }
+            })
+            .onTextSelectionChange((start: number, end: number) => {
+              this.onSelChange(this.textKey, this.content, start, end);
+            })
+            .selection(
+              this.selectAllKey.startsWith(`${this.textKey}|`) ? 0 : 1,
+              this.selectAllKey.startsWith(`${this.textKey}|`) ? this.content.length : 0
+            )
         }
         .scrollable(ScrollDirection.Horizontal)
         .scrollBar(BarState.Auto)
@@ -1367,50 +1468,105 @@ export struct ChatPage {
     this.pathStack.pop();
   }
 
+  // ★ 0.159：返回逻辑统一入口——顶栏自定义返回按钮与系统返回手势（onBackPressed）共用；
+  // 有弹窗打开时逐个关闭并返回 true（消费返回事件），全关时返回 false（由调用方执行导航）
+  handleBack(): boolean {
+    if (this.imageViewerVisible) {
+      this.imageViewerVisible = false; // 图片预览（0.120）
+      return true;
+    }
+    if (this.wordPopupVisible) {
+      this.closeWordPopup(); // 翻译浮窗，取消查词请求（0.145）
+      return true;
+    }
+    if (this.knowledgeEditVisible) {
+      this.closeKnowledgeEdit(); // 知识编辑弹窗，取消提炼请求（0.146）
+      return true;
+    }
+    if (this.codeZoomVisible) {
+      this.codeZoomVisible = false; // 代码块放大弹窗（0.153）
+      return true;
+    }
+    if (this.tableZoomVisible) {
+      this.tableZoomVisible = false; // 表格放大弹窗（0.153）
+      return true;
+    }
+    return false; // 无弹窗，由调用方执行默认返回
+  }
+
+  // ★ 0.159：顶栏改内容区自绘行——0.158 用 .title() 自定义标题行时，title 内容区宽度参照系含系统返回按钮占位，
+  // width('100%') 解析后比可用区宽 → 按钮组溢出屏幕右侧（真机截图实证）；
+  // 改为 hideTitleBar + 内容区自绘：返回按钮 + 「对话」标题 + 按钮组同一行，宽度参照系=屏幕宽（可靠）；
+  // 按钮右对齐、间距收紧（压 Button 默认内边距 + margin 4~6vp，用户要求：不平均分布、宽度集中），
+  // 右侧留白 16vp 与消息区 List 左右 padding 对齐
+  @Builder
+  topBarTitle() {
+    Row() {
+      // 自定义返回按钮（替代被 hideTitleBar 隐藏的系统返回）——弹窗打开时先关弹窗，否则退回画布
+      Button('←')
+        .fontSize(18)
+        .backgroundColor(Color.Transparent)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 4, right: 4 })
+        .margin({ right: 4 })
+        .onClick(() => {
+          if (!this.handleBack()) {
+            this.pathStack.pop();
+          }
+        })
+      Text('对话')
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+      Blank()
+        .layoutWeight(1)
+      Button('📚')
+        .fontSize(15)
+        .backgroundColor(Color.Transparent)
+        .fontColor('#666')
+        .padding({ left: 4, right: 4 })
+        .margin({ right: 4 })
+        .onClick(() => {
+          this.pathStack.pushPath({ name: 'WordBankPage' });
+        })
+      Button('📖')
+        .fontSize(15)
+        .backgroundColor(Color.Transparent)
+        .fontColor('#666')
+        .padding({ left: 4, right: 4 })
+        .margin({ right: 4 })
+        .onClick(() => {
+          this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+        })
+      Button('⚙')
+        .fontSize(17)
+        .backgroundColor(Color.Transparent)
+        .fontColor('#666')
+        .padding({ left: 4, right: 4 })
+        .margin({ right: 6 })
+        .onClick(() => {
+          this.pathStack.pushPath({ name: 'SettingsPage' });
+        })
+      Button('+ 添加子气泡')
+        .fontSize(13)
+        .backgroundColor('#1976D2')
+        .fontColor('#FFFFFF')
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .onClick(() => {
+          this.addBubble();
+        })
+    }
+    .width('100%')
+    .padding({ left: 8, right: 16, top: 8, bottom: 4 })
+  }
+
   build() {
     NavDestination() {
       Stack() {
         Column() {
-        // 顶栏：添加子气泡按钮在右上角
-        Row() {
-          Blank()
-            .layoutWeight(1)
-          // ★ 0.145：单词库入口（设置图标旁，点击进入单词库页面）
-          Button('📚')
-            .fontSize(16)
-            .backgroundColor(Color.Transparent)
-            .fontColor('#666')
-            .margin({ right: 8 })
-            .onClick(() => {
-              this.pathStack.pushPath({ name: 'WordBankPage' });
-            })
-          // ★ 0.146：知识库入口（单词库图标右侧，点击进入知识库页面）
-          Button('📖')
-            .fontSize(16)
-            .backgroundColor(Color.Transparent)
-            .fontColor('#666')
-            .margin({ right: 8 })
-            .onClick(() => {
-              this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
-            })
-          Button('⚙')
-            .fontSize(18)
-            .backgroundColor(Color.Transparent)
-            .fontColor('#666')
-            .margin({ right: 8 })
-            .onClick(() => {
-              this.pathStack.pushPath({ name: 'SettingsPage' });
-            })
-          Button('+ 添加子气泡')
-            .fontSize(14)
-            .backgroundColor('#1976D2')
-            .fontColor('#FFFFFF')
-            .onClick(() => {
-              this.addBubble();
-            })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 4 })
+        // ★ 0.159：顶栏自绘行（返回按钮 + 「对话」标题 + 按钮组）——弃用 .title()（其内容区宽度参照系
+        // 含系统返回按钮占位导致按钮组溢出屏幕右侧），hideTitleBar 后在内容区顶部渲染，宽度参照系=屏幕宽
+        this.topBarTitle()
 
         // 消息列表 — 直接由 @Computed currentMessages 驱动
         if (this.currentMessages.length === 0) {
@@ -1523,10 +1679,29 @@ export struct ChatPage {
                             }
                             if (seg.type === 1) {
                               // ★ 代码块：使用 CodeBlockView 组件，支持自动换行切换（0.122）
+                              // ★ 0.156：划词桥接——key 用 `c${idx}` 前缀（与文本段纯数字 idx 空间隔离），
+                              // controller 注册进父组件 map，工具栏/翻译/复制/全选链路完全复用
                               CodeBlockView({
                                 content: seg.content,
                                 isDark: this.getThemeStore().isDark,
-                                onZoom: (content: string) => { this.openCodeZoom(content); } // ★ 0.153：左上角「放大」按钮回调
+                                onZoom: (content: string) => { this.openCodeZoom(content); }, // ★ 0.153：左上角「放大」按钮回调
+                                textKey: `${msg.messageId}|c${idx}`,
+                                selController: this.getOrCreateTextController(`${msg.messageId}|c${idx}`),
+                                selectAllKey: this.selectAllKey,
+                                // ★ 0.157：工具栏按钮动作经 @Event 回调（替代 @BuilderParam，修复子组件 this 丢失崩溃）
+                                onTranslate: () => { this.onToolbarTranslate(); },
+                                onAddKnowledge: () => { this.onToolbarAddKnowledge(); },
+                                onCopy: () => { this.onToolbarCopy(); },
+                                onSelectAll: () => { this.onToolbarSelectAll(); },
+                                onMenuAppear: (key: string) => {
+                                  this.selKey = key;
+                                },
+                                onMenuDisappear: () => {
+                                  this.clearSelectionState();
+                                },
+                                onSelChange: (key: string, content: string, start: number, end: number) => {
+                                  this.handleSelectionChange(key, content, start, end);
+                                }
                               })
                             }
                             if (seg.type === 2) {
@@ -1558,7 +1733,9 @@ export struct ChatPage {
                                     // 表头行
                                     Row() {
                                       ForEach(seg.header, (cell: string, ci: number) => {
-                                        Text(cell)
+                                        // ★ 0.156：划词五件套——单元格内长按划词（翻译/复制/全选）；
+                                        // key 用 `t${idx}h${ci}` 前缀（t=表格，与文本段纯数字 idx 空间隔离）
+                                        Text(cell, { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}h${ci}`) })
                                           .fontSize(14)
                                           .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
                                           .padding(8)
@@ -1567,13 +1744,30 @@ export struct ChatPage {
                                           .maxLines(1)
                                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                                           .textAlign(TextAlign.Center)
+                                          .copyOption(CopyOptions.LocalDevice)
+                                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                                            onAppear: () => {
+                                              this.selKey = `${msg.messageId}|t${idx}h${ci}`;
+                                            },
+                                            onDisappear: () => {
+                                              this.clearSelectionState();
+                                            }
+                                          })
+                                          .onTextSelectionChange((start: number, end: number) => {
+                                            this.handleSelectionChange(`${msg.messageId}|t${idx}h${ci}`, cell, start, end);
+                                          })
+                                          .selection(
+                                            this.selectAllKey.startsWith(`${msg.messageId}|t${idx}h${ci}|`) ? 0 : 1,
+                                            this.selectAllKey.startsWith(`${msg.messageId}|t${idx}h${ci}|`) ? cell.length : 0
+                                          )
                                       }, (cell: string, ci: number) => `h_${ci}`)
                                     }
                                     // 数据行
                                     ForEach(seg.rows, (row: string[], ri: number) => {
                                       Row() {
                                         ForEach(row, (cell: string, ci: number) => {
-                                          Text(cell)
+                                          // ★ 0.156：划词五件套——同表头（key 含行列号，每格独立 controller）
+                                          Text(cell, { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}r${ri}c${ci}`) })
                                             .fontSize(14)
                                             .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
                                             .padding(8)
@@ -1582,6 +1776,22 @@ export struct ChatPage {
                                             .maxLines(1)
                                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                                             .textAlign(TextAlign.Center)
+                                            .copyOption(CopyOptions.LocalDevice)
+                                            .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                                              onAppear: () => {
+                                                this.selKey = `${msg.messageId}|t${idx}r${ri}c${ci}`;
+                                              },
+                                              onDisappear: () => {
+                                                this.clearSelectionState();
+                                              }
+                                            })
+                                            .onTextSelectionChange((start: number, end: number) => {
+                                              this.handleSelectionChange(`${msg.messageId}|t${idx}r${ri}c${ci}`, cell, start, end);
+                                            })
+                                            .selection(
+                                              this.selectAllKey.startsWith(`${msg.messageId}|t${idx}r${ri}c${ci}|`) ? 0 : 1,
+                                              this.selectAllKey.startsWith(`${msg.messageId}|t${idx}r${ri}c${ci}|`) ? cell.length : 0
+                                            )
                                         }, (cell: string, ci: number) => `r_${ri}_${ci}`)
                                       }
                                     }, (row: string[], ri: number) => `row_${ri}`)
@@ -2256,7 +2466,9 @@ export struct ChatPage {
               // 代码内容：纵向滚动；换行模式 Text 自然换行，滚动模式内层横向滚动
               Scroll() {
                 if (this.codeZoomWrap) {
-                  Text(this.codeZoomContent)
+                  // ★ 0.156：划词五件套——放大弹窗内代码同样可划词（key cz|w 与气泡内代码块空间隔离；
+                  // 弹窗面板为固定宽度容器，width('100%') 无 0.154 的气泡链解析问题，保留）
+                  Text(this.codeZoomContent, { controller: this.getOrCreateTextController('cz|w') })
                     .fontSize(14)
                     .fontFamily('monospace')
                     .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
@@ -2264,15 +2476,48 @@ export struct ChatPage {
                     .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
                     .borderRadius(6)
                     .width('100%')
+                    .copyOption(CopyOptions.LocalDevice)
+                    .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                      onAppear: () => {
+                        this.selKey = 'cz|w';
+                      },
+                      onDisappear: () => {
+                        this.clearSelectionState();
+                      }
+                    })
+                    .onTextSelectionChange((start: number, end: number) => {
+                      this.handleSelectionChange('cz|w', this.codeZoomContent, start, end);
+                    })
+                    .selection(
+                      this.selectAllKey.startsWith('cz|w|') ? 0 : 1,
+                      this.selectAllKey.startsWith('cz|w|') ? this.codeZoomContent.length : 0
+                    )
                 } else {
                   Scroll() {
-                    Text(this.codeZoomContent)
+                    // ★ 0.156：划词五件套——滚动模式同 wrap（key cz|s 独立 controller）
+                    Text(this.codeZoomContent, { controller: this.getOrCreateTextController('cz|s') })
                       .fontSize(14)
                       .fontFamily('monospace')
                       .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
                       .padding(10)
                       .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
                       .borderRadius(6)
+                      .copyOption(CopyOptions.LocalDevice)
+                      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                        onAppear: () => {
+                          this.selKey = 'cz|s';
+                        },
+                        onDisappear: () => {
+                          this.clearSelectionState();
+                        }
+                      })
+                      .onTextSelectionChange((start: number, end: number) => {
+                        this.handleSelectionChange('cz|s', this.codeZoomContent, start, end);
+                      })
+                      .selection(
+                        this.selectAllKey.startsWith('cz|s|') ? 0 : 1,
+                        this.selectAllKey.startsWith('cz|s|') ? this.codeZoomContent.length : 0
+                      )
                   }
                   .scrollable(ScrollDirection.Horizontal)
                   .scrollBar(BarState.Auto)
@@ -2357,7 +2602,8 @@ export struct ChatPage {
                     // 表头行
                     Row() {
                       ForEach(this.tableZoomHeader, (cell: string, ci: number) => {
-                        Text(cell)
+                        // ★ 0.156：划词五件套——放大弹窗表格单元格可划词（key tzh${ci}；wrap 模式完整显示，划词无截断）
+                        Text(cell, { controller: this.getOrCreateTextController(`tzh${ci}`) })
                           .fontSize(14)
                           .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
                           .padding(8)
@@ -2366,13 +2612,30 @@ export struct ChatPage {
                           .maxLines(this.tableZoomWrap ? 999 : 1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .textAlign(TextAlign.Center)
+                          .copyOption(CopyOptions.LocalDevice)
+                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                            onAppear: () => {
+                              this.selKey = `tzh${ci}`;
+                            },
+                            onDisappear: () => {
+                              this.clearSelectionState();
+                            }
+                          })
+                          .onTextSelectionChange((start: number, end: number) => {
+                            this.handleSelectionChange(`tzh${ci}`, cell, start, end);
+                          })
+                          .selection(
+                            this.selectAllKey.startsWith(`tzh${ci}|`) ? 0 : 1,
+                            this.selectAllKey.startsWith(`tzh${ci}|`) ? cell.length : 0
+                          )
                       }, (cell: string, ci: number) => `zh_${ci}`)
                     }
                     // 数据行
                     ForEach(this.tableZoomRows, (row: string[], ri: number) => {
                       Row() {
                         ForEach(row, (cell: string, ci: number) => {
-                          Text(cell)
+                          // ★ 0.156：划词五件套——同表头（key tzr${ri}c${ci}，每格独立 controller）
+                          Text(cell, { controller: this.getOrCreateTextController(`tzr${ri}c${ci}`) })
                             .fontSize(14)
                             .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
                             .padding(8)
@@ -2381,6 +2644,22 @@ export struct ChatPage {
                             .maxLines(this.tableZoomWrap ? 999 : 1)
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                             .textAlign(TextAlign.Center)
+                            .copyOption(CopyOptions.LocalDevice)
+                            .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                              onAppear: () => {
+                                this.selKey = `tzr${ri}c${ci}`;
+                              },
+                              onDisappear: () => {
+                                this.clearSelectionState();
+                              }
+                            })
+                            .onTextSelectionChange((start: number, end: number) => {
+                              this.handleSelectionChange(`tzr${ri}c${ci}`, cell, start, end);
+                            })
+                            .selection(
+                              this.selectAllKey.startsWith(`tzr${ri}c${ci}|`) ? 0 : 1,
+                              this.selectAllKey.startsWith(`tzr${ri}c${ci}|`) ? cell.length : 0
+                            )
                         }, (cell: string, ci: number) => `zr_${ri}_${ci}`)
                       }
                     }, (row: string[], ri: number) => `zrow_${ri}`)
@@ -2540,30 +2819,12 @@ export struct ChatPage {
       .width('100%')
       .height('100%')
     }
-    .title('对话')
-    // ★ 新增：图片/文本预览打开时拦截系统返回手势，不跳转Canvas（0.120）
+    // ★ 0.159：弃用 .title() 自定义标题行——title 内容区宽度参照系含系统返回按钮占位，width('100%')
+    // 解析后比可用区宽 → 按钮组溢出屏幕右侧（真机实证）；改 hideTitleBar + 内容区自绘顶栏行（topBarTitle）
+    .hideTitleBar(true)
+    // ★ 0.120/0.159：返回拦截统一走 handleBack——有弹窗打开时先关弹窗（消费返回），否则默认返回
     .onBackPressed(() => {
-      if (this.imageViewerVisible) {
-        this.imageViewerVisible = false;
-        return true; // 消费返回事件，阻止页面导航
-      }
-      if (this.wordPopupVisible) {
-        this.closeWordPopup(); // ★ 0.145：翻译浮窗打开时拦截返回，关闭浮窗并取消查词请求
-        return true;
-      }
-      if (this.knowledgeEditVisible) {
-        this.closeKnowledgeEdit(); // ★ 0.146：编辑弹窗打开时拦截返回，关闭弹窗并取消提炼请求
-        return true;
-      }
-      if (this.codeZoomVisible) {
-        this.codeZoomVisible = false; // ★ 0.153：代码块放大弹窗打开时拦截返回
-        return true;
-      }
-      if (this.tableZoomVisible) {
-        this.tableZoomVisible = false; // ★ 0.153：表格放大弹窗打开时拦截返回
-        return true;
-      }
-      return false; // 预览未打开，恢复原生返回逻辑
+      return this.handleBack();
     })
   }
 }
