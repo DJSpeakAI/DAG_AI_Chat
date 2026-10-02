@@ -428,6 +428,10 @@ export struct ChatPage {
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // ★ 0.146：知识库（独立 PersistenceV2 key，与气泡树/单词库隔离）
   private knowledgeQueryController: StreamController | null = null; // 进行中的提炼请求（弹窗关闭时取消）
   private knowledgeReviewCache: Map<string, KnowledgeReviewCacheEntry> = new Map(); // 复习区知识卡片缓存
+  // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 2 词 + 知识库 1 卡）；
+  // 弹窗打开时抽一次固定（渲染不重抽、不闪烁），样式与气泡底部复习区一致
+  @Local editReviewWords: WordItem[] = [];
+  @Local editReviewCard: KnowledgeCard = new KnowledgeCard();
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
@@ -1450,6 +1454,14 @@ export struct ChatPage {
   // ★ 0.146：知识库卡片（入知识库 → AI 草稿 → 编辑弹窗 → 入库）
   // ============================================================
 
+  // ★ 0.160：抽取弹窗内复习区内容（打开弹窗时调一次固定；词库/知识库为空时对应项为空，
+  // 渲染层按空判不显示——与气泡底部复习区同款防御）
+  refreshEditReview(): void {
+    this.editReviewWords = pickRandomWords(this.wordBank, 2);
+    const cards = pickRandomKnowledgeCards(this.knowledgeBank, 1);
+    this.editReviewCard = cards.length > 0 ? cards[0] : new KnowledgeCard();
+  }
+
   // 「入知识库」：关闭菜单 → 打开编辑弹窗 → 发起 AI 提炼。
   // AI 结果只填充输入框（草稿），不直接入库——用户拥有最终编辑权。
   onToolbarAddKnowledge(): void {
@@ -1464,6 +1476,7 @@ export struct ChatPage {
     this.knowledgeImageUri = '';
     this.knowledgeEditLoading = true;
     this.knowledgeEditError = '';
+    this.refreshEditReview(); // ★ 0.160：抽一组复习内容——提炼等待期顺便学习
     if (this.knowledgeQueryController) {
       this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
     }
@@ -1758,6 +1771,7 @@ export struct ChatPage {
     this.knowledgeImageUri = img; // 标注合成图直接作卡片配图
     this.knowledgeEditLoading = true;
     this.knowledgeEditError = '';
+    this.refreshEditReview(); // ★ 0.160：抽一组复习内容——提炼等待期顺便学习
     if (this.knowledgeQueryController) {
       this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
     }
@@ -2502,20 +2516,110 @@ export struct ChatPage {
                     .onClick(() => {
                       this.openKnowledgeImagePreview();
                     })
+                  // ★ 0.160 重做：× 删除钮加大（22x22）并收进 Stack 内右上角——
+                  // 旧版 18x18 + position(68,-4) 溢出边界且 × 字符过小，用户辨识不出是删除按钮
                   Button('×')
-                    .fontSize(12)
+                    .fontSize(15)
+                    .fontWeight(FontWeight.Bold)
                     .fontColor('#FFFFFF')
                     .backgroundColor('#F44336')
-                    .width(18)
-                    .height(18)
-                    .borderRadius(9)
-                    .position({ x: 68, y: -4 })
+                    .width(22)
+                    .height(22)
+                    .borderRadius(11)
+                    .position({ x: 56, y: 2 })
                     .onClick(() => {
                       this.knowledgeImageUri = '';
                     })
                 }
                 .width(80)
                 .height(80)
+                .margin({ bottom: 12 })
+              }
+
+              // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 2 词 + 知识库 1 卡），
+              // 与气泡底部复习区同款样式；打开弹窗时抽一次固定，词库/知识库为空时对应块不渲染
+              if (this.editReviewWords.length > 0) {
+                Divider()
+                  .strokeWidth(0.5)
+                  .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                  .margin({ bottom: 6 })
+                ForEach(this.editReviewWords, (w: WordItem, idx: number) => {
+                  Column() {
+                    Row() {
+                      Text('📚 ' + w.word)
+                        .fontSize(13)
+                        .fontWeight(FontWeight.Bold)
+                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                        .maxLines(1)
+                      if (w.usPhonetic.length > 0) {
+                        Text(w.usPhonetic)
+                          .fontSize(12)
+                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                          .maxLines(1)
+                          .margin({ left: 6 })
+                        // 发音按钮（与气泡复习区同款三态；缩略词播全称）
+                        Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
+                          .fontSize(12)
+                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                          .margin({ left: 4 })
+                          .onClick(() => {
+                            this.stopTTS();
+                            const ctx = this.getUIContext().getHostContext();
+                            wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), this.apiConfig, ctx ? ctx.cacheDir : '');
+                          })
+                      }
+                    }
+                    if (w.fullName.length > 0) {
+                      Text(w.fullName)
+                        .fontSize(12)
+                        .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                        .maxLines(1)
+                        .margin({ top: 1 })
+                    }
+                    Text(w.explain)
+                      .fontSize(12)
+                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                      .maxLines(1)
+                      .margin({ top: 2 })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+                  .margin({ bottom: idx === this.editReviewWords.length - 1 ? 0 : 6 })
+                }, (w: WordItem) => w.word)
+              }
+              if (this.editReviewCard.title.length > 0 || this.editReviewCard.definition.length > 0) {
+                Divider()
+                  .strokeWidth(0.5)
+                  .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                  .margin({ top: 6, bottom: 6 })
+                Column() {
+                  Row() {
+                    Text('📖 ' + this.editReviewCard.title)
+                      .fontSize(13)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                      .maxLines(1)
+                    if (this.editReviewCard.imageUri.length > 0) {
+                      Text('🖼️')
+                        .fontSize(12)
+                        .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                        .maxLines(1)
+                        .margin({ left: 6 })
+                        .onClick(() => {
+                          this.imageViewerImages = [this.editReviewCard.imageUri];
+                          this.imageViewerIndex = 0;
+                          this.imageViewerVisible = true;
+                        })
+                    }
+                  }
+                  Text(this.editReviewCard.definition)
+                    .fontSize(12)
+                    .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                    .maxLines(1)
+                    .margin({ top: 2 })
+                }
+                .alignItems(HorizontalAlign.Start)
+                .width('100%')
                 .margin({ bottom: 12 })
               }
 
