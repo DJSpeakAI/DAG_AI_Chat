@@ -371,7 +371,6 @@ export struct SettingsPage {
             this.apiConfig.audioModel = this.editAudioModel.trim(); // ★ 0.133
             this.apiConfig.audioEndpoint = this.editAudioEndpoint.trim(); // ★ 0.133
             this.apiConfig.audioKey = this.editAudioKey.trim(); // ★ 0.140：音频 Key 写入持久化
-            console.info('[SettingsPage] API config saved');
             this.pathStack.pop();
           })
         }

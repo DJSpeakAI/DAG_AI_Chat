@@ -72,7 +72,6 @@ export class WordSpeaker {
         if (g !== this.gen) {
           return;
         }
-        console.error(`[WordSpeaker] 发音合成失败: ${err}`);
         this.stop();
       }
     );
@@ -121,12 +120,10 @@ export class WordSpeaker {
   private async playAudio(audioBase64: string, g: number): Promise<void> {
     try {
       if (!canIUse('SystemCapability.Multimedia.Media.AVPlayer')) {
-        console.error('[WordSpeaker] 当前设备不支持音频播放');
         this.stop();
         return;
       }
       if (this.cacheDir.length === 0) {
-        console.error('[WordSpeaker] cacheDir 不可用');
         this.stop();
         return;
       }
@@ -165,12 +162,10 @@ export class WordSpeaker {
         }
       });
       player.on('error', (err: BusinessError) => {
-        console.error(`[WordSpeaker] AVPlayer 错误: ${err.message}`);
         this.stop();
       });
       player.fdSrc = { fd: file.fd }; // triggers initialized → prepare → play
     } catch (err) {
-      console.error(`[WordSpeaker] 播放失败: ${(err as Error).message}`);
       this.stop();
     }
   }

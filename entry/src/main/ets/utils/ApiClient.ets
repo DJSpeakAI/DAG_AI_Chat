@@ -244,15 +244,12 @@ export function streamChat(
     const complete = merged.subarray(0, lastNl + 1);
     const dataStr = buffer.from(complete.buffer, complete.byteOffset, complete.byteLength).toString();
     pendingBytes = merged.subarray(lastNl + 1); // 不完整尾部留待下个 chunk
-    // ④ 日志：收到数据
-    console.info(`[ApiClient] ④ dataReceive 长度=${dataStr.length}, 预览=${dataStr.substring(0, 200)}`);
     // 追加到累积 buffer 并解析 SSE 事件
     sseBuffer += dataStr;
     const parsed = parseSSEChunk(sseBuffer);
     sseBuffer = parsed.remainder;
     // 逐个回调文本分片
     for (let i = 0; i < parsed.texts.length; i++) {
-      console.info(`[ApiClient] chunk=${parsed.texts[i]}`);
       onChunk(parsed.texts[i]);
     }
     // ★ 0.132：逐个回调思考内容分片
@@ -266,18 +263,11 @@ export function streamChat(
     }
   });
 
-  // ③ 日志：响应头（含状态码）
-  httpRequest.on('headersReceive', (header: Object) => { // ★ 0.131：单数 headerReceive 已废弃，改复数
-    console.info(`[ApiClient] ③ headersReceive: ${JSON.stringify(header)}`);
-  });
-
   // 流式结束回调
   httpRequest.on('dataEnd', () => {
     if (cancelled) {
       return;
     }
-    // ⑤ 日志：流结束
-    console.info('[ApiClient] ⑤ dataEnd 流结束');
     // ★ 0.132：刷出字节缓冲中未达行尾的剩余字节（服务端最后一条事件可能无结尾换行）
     if (pendingBytes.length > 0) {
       sseBuffer += buffer.from(pendingBytes.buffer, pendingBytes.byteOffset, pendingBytes.byteLength).toString();
@@ -311,18 +301,7 @@ export function streamChat(
     stream_options: streamOpts
   };
 
-  // ① 日志：请求构建完成
-  const maskedKey = config.apiKey.length > 8
-    ? `${config.apiKey.substring(0, 4)}...${config.apiKey.substring(config.apiKey.length - 4)}`
-    : config.apiKey;
-  console.info(`[ApiClient] ① 请求构建:`);
-  console.info(`[ApiClient]   URL: ${config.endpoint}`);
-  console.info(`[ApiClient]   API Key(脱敏): ${maskedKey}`);
-  console.info(`[ApiClient]   Model: ${config.model}`);
-  console.info(`[ApiClient]   Body: ${JSON.stringify(body)}`);
-
-  // ② 发起流式请求
-  console.info('[ApiClient] ② 调用 requestInStream...');
+  // 发起流式请求
   httpRequest.requestInStream(config.endpoint, {
     method: http.RequestMethod.POST,
     header: {
@@ -332,17 +311,10 @@ export function streamChat(
     extraData: JSON.stringify(body),
     connectTimeout: 30000,
     readTimeout: 60000,
-  }).then(() => {
-    // ⑥ 日志：Promise resolve
-    console.info('[ApiClient] ⑥ requestInStream Promise resolved（请求成功）');
   }).catch((err: Error) => {
     if (cancelled) {
       return;
     }
-    // ⑦ 日志：请求失败
-    console.error(`[ApiClient] ⑦ requestInStream 失败: ${err.message}`);
-    console.error(`[ApiClient]   err.name: ${err.name}`);
-    console.error(`[ApiClient]   err.stack: ${err.stack}`);
     onError(err.message);
     cleanupRequest(httpRequest);
   });
@@ -498,13 +470,72 @@ function parseKnowledgeQueryResult(raw: string): KnowledgeQueryResult | null {
   }
 }
 
+// ★ 0.153：增量提取流式 JSON 字段值——AI 输出 {"title":"...","definition":"..."} 流到一半时，
+// 从累积文本中提取已到达的字段内容实时上屏（处理 \" \\ \n 转义；字段未开始返回 ''）
+function extractPartialField(raw: string, field: string): string {
+  const key = `"${field}"`;
+  const idx = raw.indexOf(key);
+  if (idx < 0) {
+    return '';
+  }
+  let i = idx + key.length;
+  while (i < raw.length && (raw[i] === ' ' || raw[i] === ':')) {
+    i++;
+  }
+  if (i < raw.length && raw[i] === '"') {
+    i++;
+  }
+  let result = '';
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (ch === '\\') {
+      if (i + 1 >= raw.length) {
+        break; // 转义字符被 chunk 切断，等下个 chunk 拼齐再提取
+      }
+      const next = raw[i + 1];
+      result += next === 'n' ? '\n' : next;
+      i += 2;
+      continue;
+    }
+    if (ch === '"') {
+      break; // 字段值闭合，提取完成
+    }
+    result += ch;
+    i++;
+  }
+  return result;
+}
+
+// ★ 0.153：解析方舟 API 错误体 {"error":{"message":"..."}}——返回简要错误信息；非错误体返回 null
+function parseApiErrorMessage(raw: string): string | null {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  try {
+    const obj = JSON.parse(raw.substring(start, end + 1)) as Record<string, Object>;
+    const errObj = obj['error'];
+    if (typeof errObj === 'object' && errObj !== null) {
+      const msg = (errObj as Record<string, Object>)['message'];
+      if (typeof msg === 'string' && msg.length > 0) {
+        return msg.substring(0, 120); // 简要错误信息（截断防刷屏）
+      }
+    }
+  } catch (e) {
+    return null; // 非 JSON 内容走「本地处理异常」分类
+  }
+  return null;
+}
+
 // AI card draft: stream request whose chunks are accumulated silently
 // and parsed once on completion. Independent from chat bubbles / DAG.
 export function queryKnowledge(
   text: string,
   config: ApiConfig,
   onDone: (result: KnowledgeQueryResult) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  onPartial?: (title: string, definition: string) => void // ★ 0.153：流式实时填充弹窗输入框
 ): StreamController {
   const messages: ChatMessage[] = [
     new ChatMessage(generateMessageId(), 'system', KNOWLEDGE_QUERY_PROMPT),
@@ -514,14 +545,26 @@ export function queryKnowledge(
   return streamChat(
     messages,
     config,
-    (chunk: string) => { full += chunk; }, // accumulate silently — no typewriter UI for drafting
+    (chunk: string) => {
+      full += chunk;
+      // ★ 0.153：每个 chunk 后增量提取已到内容，实时填充弹窗输入框
+      if (onPartial !== undefined) {
+        onPartial(extractPartialField(full, 'title'), extractPartialField(full, 'definition'));
+      }
+    },
     () => {
       const result = parseKnowledgeQueryResult(full);
       if (result !== null) {
         onDone(result);
-      } else {
-        onError('AI 返回内容无法解析为卡片，请重试');
+        return;
       }
+      // ★ 0.153：检测方舟错误体（{"error":{"message":"..."}}）→ 归类「AI服务返回错误」
+      const apiErr = parseApiErrorMessage(full);
+      if (apiErr !== null) {
+        onError(`AI服务错误：${apiErr}`);
+        return;
+      }
+      onError('AI 返回内容无法解析为卡片，请重试');
     },
     onError
   );
@@ -550,7 +593,8 @@ export function queryKnowledgeFromImage(
   imageUri: string,
   config: ApiConfig,
   onDone: (result: KnowledgeQueryResult) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  onPartial?: (title: string, definition: string) => void // ★ 0.153：流式实时填充弹窗输入框
 ): StreamController {
   const messages: ChatMessage[] = [
     new ChatMessage(generateMessageId(), 'system', KNOWLEDGE_IMAGE_QUERY_PROMPT),
@@ -560,14 +604,26 @@ export function queryKnowledgeFromImage(
   return streamChat(
     messages,
     config,
-    (chunk: string) => { full += chunk; }, // accumulate silently — no typewriter UI for drafting
+    (chunk: string) => {
+      full += chunk;
+      // ★ 0.153：每个 chunk 后增量提取已到内容，实时填充弹窗输入框
+      if (onPartial !== undefined) {
+        onPartial(extractPartialField(full, 'title'), extractPartialField(full, 'definition'));
+      }
+    },
     () => {
       const result = parseKnowledgeQueryResult(full);
       if (result !== null) {
         onDone(result);
-      } else {
-        onError('AI 无法从图片中解析出卡片内容，请重试');
+        return;
       }
+      // ★ 0.153：检测方舟错误体（{"error":{"message":"..."}}）→ 归类「AI服务返回错误」
+      const apiErr = parseApiErrorMessage(full);
+      if (apiErr !== null) {
+        onError(`AI服务错误：${apiErr}`);
+        return;
+      }
+      onError('AI 无法从图片中解析出卡片内容，请重试');
     },
     onError
   );
@@ -618,7 +674,6 @@ export function synthesizeTTS(
   // 端点兜底：旧版本持久化的方舟/播客端点（0.134-0.137 已证伪）→ 用官方 2.0 端点
   let endpoint = config.audioEndpoint.trim();
   if (endpoint.length === 0 || !endpoint.startsWith('https://')) {
-    console.info(`[ApiClient] TTS 端点无效（${endpoint}），使用官方 2.0 端点`);
     endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
   }
 
@@ -643,7 +698,6 @@ export function synthesizeTTS(
   // ★ 0.140：音频 Key 空值检查——豆包语音 Key 与方舟 Key 相互独立，未填写直接明确报错（不拿空 Key 撞服务器）
   if (config.audioKey.trim().length === 0) {
     const errMsg = '音频 API Key 未填写：请在设置页「音频 API Key」填入豆包语音控制台新建的 Key（与对话 Key 相互独立）';
-    console.error(`[ApiClient] TTS ${errMsg}`);
     onError(errMsg);
     return { cancel: () => { cancelled = true; } };
   }
@@ -676,7 +730,6 @@ export function synthesizeTTS(
       const errMsg = bodyText.length > 0
         ? `HTTP ${code}: ${bodyText.substring(0, 150)}`
         : `HTTP ${code}（响应体为空）`;
-      console.error(`[ApiClient] TTS 失败: ${errMsg}`);
       onError(errMsg);
       return;
     }
@@ -692,7 +745,6 @@ export function synthesizeTTS(
         const msgMatch = /"message"\s*:\s*"([^"]*)"/.exec(bodyText);
         const bizMsg = msgMatch ? msgMatch[1] : '未知业务错误';
         const errMsg = `业务错误 code=${codeMatch[1]}: ${bizMsg}`;
-        console.error(`[ApiClient] TTS 失败: ${errMsg}`);
         onError(errMsg);
         return;
       }
@@ -738,7 +790,6 @@ export function synthesizeTTS(
     }
     httpRequest.destroy();
     const errMsg = `请求异常: ${err.message}`;
-    console.error(`[ApiClient] TTS ${errMsg}`);
     onError(errMsg);
   });
 

@@ -94,7 +94,6 @@ export struct AnnotationPage {
       this.imgH = info.size.height;
       this.tryFitCanvas();
     } catch (e) {
-      console.error(`[0.152] AnnotationPage 解码截图失败: ${JSON.stringify(e)}`);
       this.loadError = '截图解码失败，请返回重试';
     }
   }

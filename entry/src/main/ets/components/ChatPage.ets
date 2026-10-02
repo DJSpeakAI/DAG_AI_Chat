@@ -40,7 +40,7 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
-import { ThemeStore } from '../entryability/EntryAbility';
+import { ThemeStore, AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -158,10 +158,10 @@ struct CodeBlockView {
       pasteboard.getSystemPasteboard().setData(data).then(() => {
         this.showToastSafe('复制成功');
       }).catch((err: Error) => {
-        console.error(`[0.149] 代码块复制写入剪贴板失败: ${err.message}`);
+        // 写入失败静默忽略（复制为辅助功能，不打断主流程）
       });
     } catch (e) {
-      console.error(`[0.149] 代码块复制异常: ${JSON.stringify(e)}`);
+      // 复制异常静默忽略（防崩溃）
     }
   }
 
@@ -428,6 +428,13 @@ export struct ChatPage {
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // ★ 0.146：知识库（独立 PersistenceV2 key，与气泡树/单词库隔离）
   private knowledgeQueryController: StreamController | null = null; // 进行中的提炼请求（弹窗关闭时取消）
   private knowledgeReviewCache: Map<string, KnowledgeReviewCacheEntry> = new Map(); // 复习区知识卡片缓存
+  // ★ 0.153：提炼弹窗秒表——发起请求从 0 计数每秒 +1，弹窗标题展示「AI提炼中：XX秒」；
+  // 成功/取消/报错/超时/切后台立刻停止清零；180s 业务超时自动 abort；组件销毁必须清除防泄漏
+  @Local knowledgeExtractSeconds: number = 0;
+  private knowledgeExtractTimer: number = -1; // 计时器 ID（-1 = 未启动）
+  // ★ 0.153：全局前后台标志（EntryAbility onForeground/onBackground 维护）——
+  // NavDestination 无 onPageHide 生命周期，借 @Monitor 监听此标志实现切后台中断提炼
+  @Local appLifecycle: AppLifecycleStore = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
   // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 2 词 + 知识库 1 卡）；
   // 弹窗打开时抽一次固定（渲染不重抽、不闪烁），样式与气泡底部复习区一致
   @Local editReviewWords: WordItem[] = [];
@@ -687,34 +694,26 @@ export struct ChatPage {
     }
 
     const totalCount = allMessages.length;
-    console.info(`[0.117] 链路消息总数: ${totalCount}`);
 
     // 3. 未超阈值，直接返回
     if (totalCount <= THRESHOLD) {
-      console.info(`[0.117] 未触发压缩，直接返回 ${totalCount} 条消息`);
       return allMessages;
     }
 
-    // 4. 超阈值，执行压缩
-    console.info(`[0.117] 触发压缩: ${totalCount} > ${THRESHOLD}`);
-
-    // 判断是否需要重新生成摘要
+    // 4. 超阈值，执行压缩——判断是否需要重新生成摘要
     const needRegenerate = currentNode.historySummary.length === 0 ||
       (totalCount - currentNode.historySummaryCount >= SUMMARY_COUNT);
 
     if (needRegenerate) {
       const toSummarize = allMessages.slice(0, SUMMARY_COUNT);
-      console.info(`[0.117] 生成新摘要，摘要消息数: ${toSummarize.length}`);
       try {
         const summary = await this.generateSummaryWithLLM(toSummarize);
         currentNode.historySummary = summary;
         currentNode.historySummaryCount = totalCount;
         this.saveTree(); // ★ 0.151：按模式分池保存
       } catch (e) {
-        console.error(`[0.117] 摘要生成失败: ${e}`);
+        // 摘要生成失败静默降级（沿用旧摘要继续组装，不阻断对话）
       }
-    } else {
-      console.info(`[0.117] 使用已有摘要，无需重新生成`);
     }
 
     // 5. 组装最终消息：[1 条摘要虚拟消息 + 最近 15 条原始消息]
@@ -722,8 +721,6 @@ export struct ChatPage {
       `【历史摘要】${currentNode.historySummary}`);
     const recentMessages = allMessages.slice(allMessages.length - RECENT_COUNT);
     const result: ChatMessage[] = [summaryMsg, ...recentMessages];
-
-    console.info(`[0.117] 最终发给 AI 的消息数: ${result.length} (1 摘要 + ${recentMessages.length} 原始)`);
     return result;
   }
 
@@ -1060,7 +1057,6 @@ export struct ChatPage {
         if (gen !== this.ttsGeneration) {
           return;
         }
-        console.error(`[ChatPage] 第 ${index + 1} 段合成失败: ${err}`);
         this.showToastSafe(`语音合成失败：${err.substring(0, 150)}`);
         this.stopTTS();
       }
@@ -1183,13 +1179,11 @@ export struct ChatPage {
         }
       });
       player.on('error', (err: BusinessError) => {
-        console.error(`[ChatPage] AVPlayer 错误: ${err.message}`);
         this.showToastSafe('音频播放失败');
         this.stopTTS();
       });
       player.fdSrc = { fd: file.fd }; // fd 播放模式，触发 initialized → prepare → play
     } catch (err) {
-      console.error(`[ChatPage] TTS 播放失败: ${(err as Error).message}`);
       this.showToastSafe('音频播放失败');
       this.stopTTS();
     }
@@ -1210,6 +1204,7 @@ export struct ChatPage {
       this.streamController = null;
     }
     this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
+    this.stopExtractTimer(); // ★ 0.153：组件销毁清除提炼计时器，防内存泄漏
   }
 
   // 选择图片：调用相册多选，转 Base64 存入 pendingImages
@@ -1225,10 +1220,10 @@ export struct ChatPage {
         fileIo.readSync(file.fd, arrayBuffer);
         fileIo.closeSync(file);
         const base64 = buffer.from(arrayBuffer).toString('base64');
-        this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
+          this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
       }
     } catch (err) {
-      console.error(`[ChatPage] selectImages error: ${(err as Error).message}`);
+      // 选图取消/读取失败静默忽略（防崩溃）
     }
   }
 
@@ -1360,10 +1355,10 @@ export struct ChatPage {
     try {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
       pasteboard.getSystemPasteboard().setData(data).catch((err: Error) => {
-        console.error(`[0.145] 复制写入剪贴板失败: ${err.message}`);
+        // 写入失败静默忽略（复制为辅助功能，不打断主流程）
       });
     } catch (e) {
-      console.error(`[0.145] 复制失败: ${JSON.stringify(e)}`);
+      // 复制异常静默忽略（防崩溃）
     }
   }
 
@@ -1462,6 +1457,63 @@ export struct ChatPage {
     this.editReviewCard = cards.length > 0 ? cards[0] : new KnowledgeCard();
   }
 
+  // ★ 0.153：启动提炼秒表——清零后每秒 +1；累计 180s 业务超时自动 abort + 红色提示
+  startExtractTimer(): void {
+    this.stopExtractTimer();
+    this.knowledgeExtractSeconds = 0;
+    this.knowledgeExtractTimer = setInterval(() => {
+      this.knowledgeExtractSeconds++;
+      if (this.knowledgeExtractSeconds >= 180) {
+        // 业务超时：终止 SSE 请求 + 停止计时 + 弹窗红色提示
+        if (this.knowledgeQueryController) {
+          this.knowledgeQueryController.cancel();
+          this.knowledgeQueryController = null;
+        }
+        this.knowledgeEditLoading = false;
+        this.knowledgeEditError = '请求超时：AI处理时间超出3分钟，请尝试裁剪图片、减少图片内文字内容后重试。';
+        this.stopExtractTimer();
+      }
+    }, 1000);
+  }
+
+  // ★ 0.153：停止并清零提炼秒表（成功/取消/报错/超时/切后台统一收口）
+  stopExtractTimer(): void {
+    if (this.knowledgeExtractTimer >= 0) {
+      clearInterval(this.knowledgeExtractTimer);
+      this.knowledgeExtractTimer = -1;
+    }
+    this.knowledgeExtractSeconds = 0;
+  }
+
+  // ★ 0.153：提炼错误三分类友好中文提示（禁止直接展示英文原始报错）
+  // ① Operation timeout 底层网络超时 ② AI 服务返回业务错误 ③ 本地代码异常
+  friendlyKnowledgeError(raw: string): string {
+    if (raw.toLowerCase().includes('timeout')) {
+      return '后台网络超时：APP切后台后，系统限制网络，本次AI生成中断。请保持应用在前台重试。';
+    }
+    if (raw.startsWith('AI服务错误：')) {
+      return `AI服务返回错误：${raw.substring(7)}，请检查API Key/模型配置。`;
+    }
+    return '本地处理异常：生成卡片失败，请重试。';
+  }
+
+  // ★ 0.153：应用切后台监听（NavDestination 无 onPageHide 生命周期，借 EntryAbility
+  // 维护的全局标志 + AppStorageV2 + @Monitor 实现）——提炼进行中直接 abort
+  // （鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）；
+  // 停止计时 + 弹窗提示，回前台可查看提示后重试
+  @Monitor('appLifecycle.isBackground')
+  onAppBackgroundChange(): void {
+    if (this.appLifecycle.isBackground && this.knowledgeEditLoading) {
+      if (this.knowledgeQueryController) {
+        this.knowledgeQueryController.cancel();
+        this.knowledgeQueryController = null;
+      }
+      this.knowledgeEditLoading = false;
+      this.knowledgeEditError = '提炼已暂停：应用切到后台，鸿蒙系统会限制后台网络，无法稳定接收结果。';
+      this.stopExtractTimer();
+    }
+  }
+
   // 「入知识库」：关闭菜单 → 打开编辑弹窗 → 发起 AI 提炼。
   // AI 结果只填充输入框（草稿），不直接入库——用户拥有最终编辑权。
   onToolbarAddKnowledge(): void {
@@ -1480,15 +1532,22 @@ export struct ChatPage {
     if (this.knowledgeQueryController) {
       this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
     }
+    this.startExtractTimer(); // ★ 0.153：秒表从 0 开始计数
     this.knowledgeQueryController = queryKnowledge(text, this.apiConfig,
       (result: KnowledgeQueryResult) => {
         this.knowledgeEditLoading = false;
         this.knowledgeCardTitle = result.title;
         this.knowledgeCardDefinition = result.definition;
+        this.stopExtractTimer(); // ★ 0.153：成功停止计时清零
       },
       (error: string) => {
         this.knowledgeEditLoading = false;
-        this.knowledgeEditError = error;
+        this.knowledgeEditError = this.friendlyKnowledgeError(error); // ★ 0.153：三分类友好中文提示
+        this.stopExtractTimer();
+      },
+      (title: string, definition: string) => { // ★ 0.153：流式实时填充弹窗输入框
+        this.knowledgeCardTitle = title;
+        this.knowledgeCardDefinition = definition;
       });
   }
 
@@ -1500,6 +1559,7 @@ export struct ChatPage {
       this.knowledgeQueryController.cancel();
       this.knowledgeQueryController = null;
     }
+    this.stopExtractTimer(); // ★ 0.153：【取消】abort 请求 + 停止计时清零
   }
 
   // 【保存入库】：输入框内容转 KnowledgeCard 入库（用户确认后的最终卡片）。
@@ -1531,7 +1591,7 @@ export struct ChatPage {
         this.knowledgeImageUri = `data:image/jpeg;base64,${base64}`;
       }
     } catch (err) {
-      console.error(`[ChatPage] selectKnowledgeImage error: ${(err as Error).message}`);
+      // 选图取消/读取失败静默忽略（防崩溃）
     }
   }
 
@@ -1725,7 +1785,6 @@ export struct ChatPage {
       this.pathStack.pushPath({ name: 'AnnotationPage' });
     } catch (e) {
       // 截图失败友好提示（对应需求「捕获失败/黑屏做友好提示」的兜底）
-      console.error(`[0.152] 截图失败: ${JSON.stringify(e)}`);
       this.showToastSafe('截图失败，请重试');
     }
   }
@@ -1775,15 +1834,22 @@ export struct ChatPage {
     if (this.knowledgeQueryController) {
       this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
     }
+    this.startExtractTimer(); // ★ 0.153：秒表从 0 开始计数
     this.knowledgeQueryController = queryKnowledgeFromImage(img, this.apiConfig,
       (result: KnowledgeQueryResult) => {
         this.knowledgeEditLoading = false;
         this.knowledgeCardTitle = result.title;
         this.knowledgeCardDefinition = result.definition;
+        this.stopExtractTimer(); // ★ 0.153：成功停止计时清零
       },
       (error: string) => {
         this.knowledgeEditLoading = false;
-        this.knowledgeEditError = error;
+        this.knowledgeEditError = this.friendlyKnowledgeError(error); // ★ 0.153：三分类友好中文提示
+        this.stopExtractTimer();
+      },
+      (title: string, definition: string) => { // ★ 0.153：流式实时填充弹窗输入框
+        this.knowledgeCardTitle = title;
+        this.knowledgeCardDefinition = definition;
       });
   }
 
@@ -2464,19 +2530,12 @@ export struct ChatPage {
 
             // 弹窗主体：标题输入框 → 定义输入框 → 图片区 → 保存/取消
             Column() {
-              Text('知识库卡片')
+              // ★ 0.153：提炼中标题展示秒表计时（每秒 +1），空闲恢复静态标题
+              Text(this.knowledgeEditLoading ? `AI提炼中：${this.knowledgeExtractSeconds}秒` : '知识库卡片')
                 .fontSize(16)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(this.knowledgeEditLoading ? '#1976D2' : (this.getThemeStore().isDark ? '#FFFFFF' : '#333333'))
                 .margin({ bottom: 12 })
-
-              // AI 提炼中提示
-              if (this.knowledgeEditLoading) {
-                Text('AI 提炼中...')
-                  .fontSize(13)
-                  .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
-                  .margin({ bottom: 8 })
-              }
 
               // AI 提炼失败提示（输入框仍可手动填写）
               if (!this.knowledgeEditLoading && this.knowledgeEditError.length > 0) {
@@ -2659,12 +2718,21 @@ export struct ChatPage {
                   .layoutWeight(1)
                   .backgroundColor('#1976D2')
                   .fontColor('#FFFFFF')
-                  .enabled(!this.knowledgeEditLoading) // 提炼中禁用保存（等草稿到了再编辑保存）
+                  // ★ 0.153：提炼中/报错/业务超时均置灰不可点击（修复报错态仍可点击的 BUG）；
+                  // 仅请求成功结束（loading=false 且无错误）才启用
+                  .enabled(!this.knowledgeEditLoading && this.knowledgeEditError.length === 0)
                   .onClick(() => {
                     this.saveKnowledgeCard();
                   })
               }
               .width('100%')
+
+              // ★ 0.153：底部小字提示——取消仅停止后续内容生成（已发送部分不撤回）
+              Text('提示：请求提交后，输入内容已发送AI服务，取消仅停止后续内容生成。')
+                .fontSize(11)
+                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .margin({ top: 8 })
+                .width('100%')
             }
             .width('85%')
             .padding(20)
@@ -3389,6 +3457,8 @@ export struct ChatPage {
     .onShown(() => {
       this.consumeAnnotationResult();
     })
+    // ★ 0.153：切后台中断提炼已改由 onAppBackgroundChange（@Monitor 监听全局
+    // 前后台标志）实现——NavDestination 组件无 onPageHide 生命周期属性
     // ★ 0.120/0.159：返回拦截统一走 handleBack——有弹窗打开时先关弹窗（消费返回），否则默认返回
     .onBackPressed(() => {
       return this.handleBack();

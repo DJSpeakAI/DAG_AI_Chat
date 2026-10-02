@@ -201,9 +201,7 @@ export struct GlobalSettingsDialog {
     if (this.editCanvasMode !== this.canvasModeStore.mode) {
       applyCanvasModeSwitch(this.editCanvasMode);
       this.canvasModeStore.mode = this.editCanvasMode;
-      console.info(`[GlobalSettingsDialog] canvas mode switched to ${this.editCanvasMode}`);
     }
-    console.info('[GlobalSettingsDialog] settings saved (API config + AI preference + canvas mode)');
     this.showToastSafe('已保存');
   }
 

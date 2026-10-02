@@ -167,7 +167,7 @@ export struct KnowledgeBankPage {
         this.editorImageUri = `data:image/jpeg;base64,${base64}`;
       }
     } catch (err) {
-      console.error(`[KnowledgeBankPage] selectEditorImage error: ${(err as Error).message}`);
+      // 选图取消/读取失败静默忽略（防崩溃）
     }
   }
 

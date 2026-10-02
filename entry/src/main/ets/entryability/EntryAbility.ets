@@ -11,10 +11,7 @@
 // ============================================================
 
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppStorageV2, window } from '@kit.ArkUI';
-
-const DOMAIN = 0x0000;
 
 // ★ 全局主题状态（UI 运行时状态，非持久化数据模型）
 @ObservedV2
@@ -22,31 +19,32 @@ export class ThemeStore {
   @Trace isDark: boolean = false;
 }
 
+// ★ 0.153：全局前后台状态（UI 运行时状态，非持久化）——NavDestination 组件没有
+// onPageHide 生命周期，ChatPage 借此标志 + @Monitor 感知切后台，中断进行中的 AI 提炼
+@ObservedV2
+export class AppLifecycleStore {
+  @Trace isBackground: boolean = false;
+}
+
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    hilog.info(DOMAIN, 'DAG_AI_Chat', '%{public}s', 'Ability onCreate');
   }
 
   onDestroy(): void {
-    hilog.info(DOMAIN, 'DAG_AI_Chat', '%{public}s', 'Ability onDestroy');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     // Main window is created, set main page for this ability
-    hilog.info(DOMAIN, 'DAG_AI_Chat', '%{public}s', 'Ability onWindowStageCreate');
-
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
-        hilog.error(DOMAIN, 'DAG_AI_Chat', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
         return;
       }
-      hilog.info(DOMAIN, 'DAG_AI_Chat', 'Succeeded in loading the content.');
     });
 
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
-      hilog.error(DOMAIN, 'DAG_AI_Chat', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
+      // 设置失败静默忽略（跟随系统默认色模式）
     }
 
     // ★ 初始化主题状态：读取当前系统深浅色模式
@@ -54,7 +52,7 @@ export default class EntryAbility extends UIAbility {
       const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
       themeStore.isDark = this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
     } catch (err) {
-      hilog.error(DOMAIN, 'DAG_AI_Chat', 'Failed to init theme. Cause: %{public}s', JSON.stringify(err));
+      // 主题初始化失败静默忽略（默认浅色）
     }
   }
 
@@ -62,21 +60,21 @@ export default class EntryAbility extends UIAbility {
   onConfigurationUpdate(newConfig: Configuration): void {
     const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
     themeStore.isDark = newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-    hilog.info(DOMAIN, 'DAG_AI_Chat', 'Color mode updated: %{public}s', themeStore.isDark ? 'dark' : 'light');
   }
 
   onWindowStageDestroy(): void {
-    // Main window is destroyed, release UI related resources
-    hilog.info(DOMAIN, 'DAG_AI_Chat', '%{public}s', 'Ability onWindowStageDestroy');
   }
 
   onForeground(): void {
-    // Ability has brought to foreground
-    hilog.info(DOMAIN, 'DAG_AI_Chat', '%{public}s', 'Ability onForeground');
+    // ★ 0.153：回前台——清除全局后台标志
+    const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
+    lifecycle.isBackground = false;
   }
 
   onBackground(): void {
-    // Ability has back to background
-    hilog.info(DOMAIN, 'DAG_AI_Chat', '%{public}s', 'Ability onBackground');
+    // ★ 0.153：切后台——置全局后台标志（ChatPage @Monitor 感知后中断 AI 提炼：
+    // 鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）
+    const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
+    lifecycle.isBackground = true;
   }
 }

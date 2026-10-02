@@ -1,6 +1,6 @@
 # DAG AI Chat — 气泡树多分支 AI 对话工具
 
-> **版本：0.15 (MVP 持续迭代)**  
+> **版本：0.16 (MVP 持续迭代)**  
 > 鸿蒙 HarmonyOS ArkUI V2 原生应用，气泡树（DAG）多分支 AI 对话，接入火山方舟大模型 API。
 
 ---
@@ -70,23 +70,27 @@ DAG_AI_Chat/
 │       │   ├── pages/
 │       │   │   └── Index.ets              # 首页入口（Navigation 导航 + 持久化恢复）
 │       │   ├── components/
-│       │   │   ├── BBTreeCanvas.ets       # 气泡树画布（组件渲染 + 自动排版 + 视口适配）
-│       │   │   ├── ChatPage.ets           # 对话页（消息列表 + 划词翻译 + TTS + 复习区）
+│       │   │   ├── BBTreeCanvas.ets       # 气泡树画布（组件渲染 + 自动排版 + 视口适配 + 平铺/选项卡双模式）
+│       │   │   ├── ChatPage.ets           # 对话页（消息列表 + 划词翻译 + TTS + 复习区 + 知识提炼弹窗）
 │       │   │   ├── SettingsPage.ets       # 设置页（API 配置 + 模型选择 + 诊断）
+│       │   │   ├── GlobalSettingsDialog.ets # 全局设置弹窗（API 配置 + AI 偏好 + 画布模式，0.150/0.151）
 │       │   │   ├── WordBankPage.ets       # 单词库页（0.145）
-│       │   │   └── KnowledgeBankPage.ets  # 知识库页（0.146）
+│       │   │   ├── KnowledgeBankPage.ets  # 知识库页（0.146）
+│       │   │   └── AnnotationPage.ets     # 屏幕圈选标注页（0.152）
 │       │   ├── common/
-│       │   │   ├── ChatModel.ets          # 对话数据模型（ChatMessage / BubbleNode / 序列化）
+│       │   │   ├── ChatModel.ets          # 对话数据模型（ChatMessage / BubbleNode / 序列化 / Tab 森林）
 │       │   │   ├── WordModel.ets          # 单词库数据模型（0.145）
-│       │   │   └── KnowledgeModel.ets     # 知识库数据模型（0.146）
+│       │   │   ├── KnowledgeModel.ets     # 知识库数据模型（0.146）
+│       │   │   └── AnnotationModel.ets    # 标注数据模型（0.152）
 │       │   ├── utils/
 │       │   │   ├── ApiClient.ets          # API 客户端（SSE 流式 + 查词 + 知识提炼 + TTS 合成）
 │       │   │   ├── WordStoreUtil.ets      # 单词库持久化操作（0.145）
 │       │   │   ├── KnowledgeStoreUtil.ets # 知识库持久化操作（0.146）
 │       │   │   ├── WordSpeaker.ets        # 单词发音 TTS 单例（0.149）
-│       │   │   └── MathRender.ets         # LaTeX 数学符号本地渲染（0.151）
+│       │   │   ├── MathRender.ets         # LaTeX 数学符号本地渲染（0.151）
+│       │   │   └── SyntaxHighlight.ets    # 代码块语法高亮（0.149）
 │       │   ├── entryability/
-│       │   │   └── EntryAbility.ets       # 入口 Ability（含全局 ThemeStore 深浅色）
+│       │   │   └── EntryAbility.ets       # 入口 Ability（全局 ThemeStore 深浅色 + AppLifecycleStore 前后台标志）
 │       │   └── entrybackupability/
 │       │       └── EntryBackupAbility.ets # 备份恢复扩展 Ability
 │       ├── resources/
@@ -168,21 +172,23 @@ export class ApiConfig {
 
 ### 4.2 对话页面（ChatPage.ets）
 - 流式对话：SSE 实时追加 AI 回复（打字机效果）
-- Markdown 渲染：代码块（换行/横滚切换）、表格
+- Markdown 渲染：代码块（换行/横滚切换 + 放大弹窗）、表格（放大 + 换行切换）、语法高亮（0.149）
 - LaTeX 数学符号本地渲染（0.151/0.152：\frac、\sqrt、上下标、pmatrix 矩阵等）
-- 划词翻译：自定义选词工具栏（翻译 / 入知识库 / 复制 / 全选），屏蔽系统菜单
+- 划词翻译：自定义选词工具栏（翻译 / 入知识库 / 删除 / 复制 / 全选），屏蔽系统菜单
 - 单词入库 + AI 气泡底部生词复习区（随机 2 词）
 - 知识卡片提炼 + AI 气泡底部知识复习区
+- 提炼弹窗体验优化（0.153）：秒表计时、180s 业务超时、切后台自动中断、异常三分类中文提示、保存按钮状态规则、流式实时填充
 - TTS 朗读：AI 回复分段语音合成播放；单词发音三处共用单例（0.149）
 - 回复长度选择（短/中/长）+ 播客模式
 - 多模态图片：相册多选 → Base64 → 全屏预览（滑动/缩放/右滑关闭）
+- 屏幕圈选标注 → 截图入知识库（多模态提炼，0.152）
 - 消息删除防误触（首次确认 + 「不再提示」勾选）
 
 ### 4.3 API 客户端（ApiClient.ets）
 - streamChat：火山方舟 OpenAI 兼容 v3，SSE 流式解析
-- queryWord / queryKnowledge：复用流式请求累积全文，严格 JSON 解析
+- queryWord / queryKnowledge：复用流式请求累积全文，严格 JSON 解析；支持 onPartial 流式部分字段回调（0.153）
 - synthesizeTTS：openspeech 语音合成 2.0，HTTP 分段请求
-- StreamController 支持手动取消；全链路诊断日志
+- StreamController 支持手动取消
 - 数据卫生：TTS 调试遗留消息不进入 LLM 上下文
 
 ### 4.4 设置页面（SettingsPage.ets）
@@ -205,7 +211,12 @@ export class ApiConfig {
 | Key | 内容 |
 |-----|------|
 | `persist-data` | 气泡树 JSON（`serializeBubbleTree` / `deserializeBubbleTree`，可选字段 `??` 兜底兼容旧数据） |
-| `api-config-v2` | API 配置（0.143 换 key 迁移修复新增属性不落盘） |
+| `api-config-v2` | API 配置（0.143 换 key 迁移修复新增属性不落盘，工厂函数内自动迁移旧 `api-config`） |
+| `ai-preference-v1` | AI 偏好（称呼 / 鼓励开关，0.150） |
+| `canvas-mode-v1` | 画布模式（平铺 / 选项卡，0.151） |
+| `tab-forest-v1` | 选项卡模式 Tab 森林（0.151） |
+| `canvas-interop-v1` | 画布互操作标志（0.151） |
+| `annotation-pref-v1` | 标注首次提示 flag（0.152） |
 | `word-bank` | 单词库（独立持久化，0.145） |
 | `knowledge-bank` | 知识库（独立持久化，0.146） |
 
@@ -245,46 +256,29 @@ export class ApiConfig {
 AppStorageV2（全局响应式存储）
 ├── BubbleTree ('bubble-tree')        # 气泡树数据
 ├── CurrentBubble ('current-bubble')  # 当前选中气泡 ID + 坐标
-└── ThemeStore ('theme-store')        # 深浅色主题
+├── ThemeStore ('theme-store')        # 深浅色主题
+└── AppLifecycleStore ('app-lifecycle')  # 前后台标志（0.153，切后台中断提炼）
 
 PersistenceV2（磁盘持久化）
 ├── PersistData ('persist-data')      # 气泡树 JSON 字符串
 ├── ApiConfig ('api-config-v2')       # API 配置（工厂函数内迁移旧 key 数据）
+├── AiPreference ('ai-preference-v1') # AI 偏好
+├── CanvasModeStore ('canvas-mode-v1') / TabForestStore ('tab-forest-v1')  # 画布模式 / Tab 森林
+├── AnnotationPrefStore ('annotation-pref-v1')  # 标注首次提示 flag
 ├── WordBankStore ('word-bank')       # 单词库
 └── KnowledgeBankStore ('knowledge-bank')  # 知识库
 
 @ComponentV2 组件内
 ├── @Local                            # 组件局部状态
 ├── @Computed                         # 计算属性
+├── @Monitor                          # 状态变化监听（如切后台中断提炼）
 ├── @Param                            # 父组件传参（pathStack）
 └── @ObservedV2 + @Trace              # 深度响应式（ChatMessage, BubbleNode, BubbleTree）
 ```
 
 ---
 
-## 七、版本历史
-
-| 版本 | 说明 |
-|------|------|
-| 0.1 (MVP) | 气泡树对话 + 火山方舟流式 API + 多模态图片 + 本地持久化 |
-| 0.114~0.118 | 图片全屏预览、输入框自适应、DAG 链路回溯 + 上下文压缩 |
-| 0.121~0.124 | Markdown 渲染、代码块换行、深浅色适配、纵向自动排版 |
-| 0.126~0.131 | 视口自适应、弃用 API 迁移、全项目代码清理 |
-| 0.132 | 流式渲染 ForEach key 复用 bug 修复（打字机效果恢复，真机验证闭环） |
-| 0.133 | 播客模式发送标记 |
-| 0.136~0.142 | TTS 语音朗读全链路打通：HTTP 合成 + 分段播放 + 调试消息 + 死锁修复 |
-| 0.139 | TTS 迁移 openspeech 语音合成-2.0 端点 |
-| 0.143 | PersistenceV2 换 key 迁移（api-config-v2，修复 audioKey 不落盘） |
-| 0.145 | 单词库 MVP：划词翻译 + 入库 + 生词复习区 + 单词库页 |
-| 0.146 | 知识库：划词提炼知识卡片 + 复习区 + 知识库页 |
-| 0.147 | 画布气泡节点增强：标题 + 圆角矩形 + 长按菜单 |
-| 0.149 | 单词发音 TTS 单例（复习区 / 单词库 / 翻译弹窗三处共用） |
-| 0.151 | LaTeX 数学符号本地渲染（MathRender 零依赖转换器） |
-| 0.152 | pmatrix 矩阵环境 + 全角 / 零宽字符规范化 |
-
----
-
-## 八、运行环境
+## 七、运行环境
 
 - **IDE**：DevEco Studio
 - **SDK**：HarmonyOS NEXT（compatibleSdkVersion 6.1.1，API 24+；targetSdkVersion 26.0.0）
@@ -293,10 +287,12 @@ PersistenceV2（磁盘持久化）
 
 ---
 
-## 九、快速开始
+## 八、快速开始
 
 1. 用 DevEco Studio 打开项目
 2. 在设置页填入火山方舟 API Key（对话）
 3. 选择预置模型（推荐 `Doubao-Seed-2.1-lite`）
 4. 点击「测试」验证 API 连通性
 5. 开始对话，在气泡树上探索多分支对话
+
+> 版本迭代历史已迁至根目录 `MEMORY.md`（迭代记录章节）。
