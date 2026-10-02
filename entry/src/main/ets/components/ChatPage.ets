@@ -878,6 +878,18 @@ export struct ChatPage {
             ForEach(this.currentMessages, (msg: ChatMessage) => {
               ListItem() {
                 Row() {
+                  // ★ 0.147：AI 消息气泡贴右（0.145），删除按钮移到气泡左侧——否则 × 被挤到屏幕最右缘
+                  if (msg.role === 'assistant') {
+                    Button('×')
+                      .fontSize(16)
+                      .fontColor('#F44336')
+                      .backgroundColor(Color.Transparent)
+                      .padding({ left: 2, right: 2 }) // ★ 0.148：压掉 Button 默认大内边距（≈32vp），给气泡留宽度
+                      .margin({ right: 4 })
+                      .onClick(() => {
+                        this.deleteMessage(msg.messageId);
+                      })
+                  }
                   Column() {
                     // 图片缩略图（在文字上方）
                     if (msg.imageUrl.length > 0) {
@@ -907,7 +919,10 @@ export struct ChatPage {
                           .borderRadius(8)
                           .backgroundColor(this.getThemeStore().isDark ? '#0D47A1' : '#E3F2FD')
                           .copyOption(CopyOptions.LocalDevice)
+                          .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本自动换行，防溢出屏幕
                       } else {
+                        // ★ 0.146：包裹容器——气泡与操作行组成同宽块，token 统计行左缘对齐气泡左缘（用户要求）
+                        Column() {
                         // ★ AI 消息：Markdown 分段渲染（0.121）
                         Column() {
                           ForEach(this.parseMarkdown(msg.content), (seg: MdSegment, idx: number) => {
@@ -967,44 +982,53 @@ export struct ChatPage {
                            // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
                            }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.header.length}_${seg.rows.length}`)
                         }
+                        .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
                         .borderRadius(8)
                         .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
-                      }
-                    }
-                    // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
-                    if (msg.role === 'assistant') {
-                      Row() {
-                        if (msg.outputTokens > 0) {
-                          Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
-                            .fontSize(11)
-                            .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
-                        }
-                        Blank()
-                          .layoutWeight(1)
-                        Button(this.ttsLoadingMessageId === msg.messageId ? '⏳' : (this.playingMessageId === msg.messageId ? '🔊' : '🔈'))
-                          .fontSize(14)
-                          .backgroundColor(Color.Transparent)
-                          .fontColor(this.playingMessageId === msg.messageId || this.ttsLoadingMessageId === msg.messageId
-                            ? '#1976D2' : (this.getThemeStore().isDark ? '#888' : '#999'))
-                          .padding({ left: 8, right: 4, top: 2, bottom: 2 })
-                          .onClick(() => {
-                            this.startTTS(msg);
-                          })
-                      }
-                      .width('100%')
-                      .margin({ top: 4 })
-                    }
-                  }
-                  .alignItems(HorizontalAlign.Start)
+                        .alignItems(HorizontalAlign.Start) // ★ 0.145：气泡内段落保持左对齐（阅读习惯），气泡整体位置由外层 alignItems 控制
 
-                  Button('×')
-                    .fontSize(16)
-                    .fontColor('#F44336')
-                    .backgroundColor(Color.Transparent)
-                    .onClick(() => {
-                      this.deleteMessage(msg.messageId);
-                    })
+                        // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
+                        // ★ 0.146：移入包裹容器——行宽自适应，左缘对齐气泡内文字（margin left 10 = 气泡 padding 10）
+                        if (msg.role === 'assistant') {
+                          Row() {
+                            if (msg.outputTokens > 0) {
+                              Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
+                                .fontSize(11)
+                                .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
+                            }
+                            Blank()
+                              .width(12) // ★ 0.146：固定间距（原 layoutWeight(1) 在自适应行内失效）
+                            Button(this.ttsLoadingMessageId === msg.messageId ? '⏳' : (this.playingMessageId === msg.messageId ? '🔊' : '🔈'))
+                              .fontSize(14)
+                              .backgroundColor(Color.Transparent)
+                              .fontColor(this.playingMessageId === msg.messageId || this.ttsLoadingMessageId === msg.messageId
+                                ? '#1976D2' : (this.getThemeStore().isDark ? '#888' : '#999'))
+                              .padding({ left: 8, right: 4, top: 2, bottom: 2 })
+                              .onClick(() => {
+                                this.startTTS(msg);
+                              })
+                          }
+                          .margin({ top: 4, right: 10 }) // ★ 0.148：右对齐后 right 10 = 气泡 padding 10，喇叭与气泡内文字右缘对齐
+                        }
+                        }
+                        .alignItems(HorizontalAlign.End) // ★ 0.148：包裹容器内操作行贴气泡右缘（用户要求统计行+喇叭右对齐）；气泡为最宽子元素不受影响
+                      }
+                      }
+                  }
+                  .alignItems(msg.role === 'user' ? HorizontalAlign.Start : HorizontalAlign.End) // ★ 0.145：AI 回复气泡贴右（用户要求右对齐）；用户消息保持靠左
+
+                  // ★ 0.147：用户消息气泡靠左，删除按钮保持气泡右侧
+                  if (msg.role === 'user') {
+                    Button('×')
+                      .fontSize(16)
+                      .fontColor('#F44336')
+                      .backgroundColor(Color.Transparent)
+                      .padding({ left: 2, right: 2 }) // ★ 0.148：与 AI 分支 × 保持一致的紧凑内边距
+                      .onClick(() => {
+                        this.deleteMessage(msg.messageId);
+                      })
+                  }
                 }
                 .width('100%')
                 .justifyContent(msg.role === 'user' ? FlexAlign.Start : FlexAlign.End)
