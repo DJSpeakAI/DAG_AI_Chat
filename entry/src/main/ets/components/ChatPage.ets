@@ -11,6 +11,7 @@
 //   - ★ 0.145：划词翻译——长按气泡文本直接唤起系统选择模式 + 自研悬浮操作栏（翻译|复制|全选），
 //     点「翻译」弹 AI 查词浮窗（不建气泡、不进 DAG），可一键加入单词库（独立 PersistenceV2 持久化）
 //   - ★ 0.145：AI 消息气泡底部生词复习表格（词库随机 2 词，横向滚动）+ 顶栏单词库入口
+//   - ★ 0.146：划词菜单「入知识库」（AI 提炼草稿 → 卡片编辑弹窗二次编辑 → 入库）+ AI 气泡底部知识卡片展示（📖 区分）
 //   - 深浅色主题适配
 //   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.139 openspeech 2.0 协议 + 分段流水线，0.143 收尾清理调试链路）
 //
@@ -27,8 +28,10 @@ import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播
 import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig } from '../common/ChatModel'; // ★ 0.143：connectApiConfig
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
-import { streamChat, synthesizeTTS, queryWord, StreamController } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）
+import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
+import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）
 import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
+import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -54,6 +57,17 @@ class ReviewCacheEntry {
   version: number;
   items: WordItem[];
   constructor(version: number, items: WordItem[]) {
+    this.version = version;
+    this.items = items;
+  }
+}
+
+// ★ 0.146：知识卡片复习缓存条目——与 ReviewCacheEntry 同模式（version=库长度，变化时重抽），
+// 类型为 KnowledgeCard。既防渲染跳变又保证不展示已删除的卡片。
+class KnowledgeReviewCacheEntry {
+  version: number;
+  items: KnowledgeCard[];
+  constructor(version: number, items: KnowledgeCard[]) {
     this.version = version;
     this.items = items;
   }
@@ -179,6 +193,16 @@ export struct ChatPage {
   private textControllers: Map<string, TextController> = new Map(); // 每个 Text 独立 controller（关闭选择菜单用）
   private wordQueryController: StreamController | null = null;      // 进行中的查词请求（浮窗关闭时取消）
   private reviewCache: Map<string, ReviewCacheEntry> = new Map();   // 生词复习缓存（msgId → 随机词组）
+  // ★ 0.146：知识库卡片编辑弹窗状态（AI 生成草稿 → 用户编辑确认 → 入库；AI 不直接入库）
+  @Local knowledgeEditVisible: boolean = false;  // 编辑弹窗可见
+  @Local knowledgeCardTitle: string = '';        // 标题输入框内容（AI 草稿自动填充，可自由编辑）
+  @Local knowledgeCardDefinition: string = '';   // 定义输入框内容（AI 草稿自动填充，可自由编辑）
+  @Local knowledgeImageUri: string = '';         // 卡片配图（base64 data URI；'' = 无图片，图片区不渲染）
+  @Local knowledgeEditLoading: boolean = false;  // AI 提炼进行中
+  @Local knowledgeEditError: string = '';        // AI 提炼错误信息（输入框仍可手动填写）
+  knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // ★ 0.146：知识库（独立 PersistenceV2 key，与气泡树/单词库隔离）
+  private knowledgeQueryController: StreamController | null = null; // 进行中的提炼请求（弹窗关闭时取消）
+  private knowledgeReviewCache: Map<string, KnowledgeReviewCacheEntry> = new Map(); // 复习区知识卡片缓存
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
   @Local modeDropdownOpen: boolean = false;
@@ -972,6 +996,105 @@ export struct ChatPage {
     return items;
   }
 
+  // ============================================================
+  // ★ 0.146：知识库卡片（入知识库 → AI 草稿 → 编辑弹窗 → 入库）
+  // ============================================================
+
+  // 「入知识库」：关闭菜单 → 打开编辑弹窗 → 发起 AI 提炼。
+  // AI 结果只填充输入框（草稿），不直接入库——用户拥有最终编辑权。
+  onToolbarAddKnowledge(): void {
+    const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
+    this.closeActiveSelectionMenu();
+    if (text.length === 0) {
+      return;
+    }
+    this.knowledgeEditVisible = true;
+    this.knowledgeCardTitle = '';
+    this.knowledgeCardDefinition = '';
+    this.knowledgeImageUri = '';
+    this.knowledgeEditLoading = true;
+    this.knowledgeEditError = '';
+    if (this.knowledgeQueryController) {
+      this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
+    }
+    this.knowledgeQueryController = queryKnowledge(text, this.apiConfig,
+      (result: KnowledgeQueryResult) => {
+        this.knowledgeEditLoading = false;
+        this.knowledgeCardTitle = result.title;
+        this.knowledgeCardDefinition = result.definition;
+      },
+      (error: string) => {
+        this.knowledgeEditLoading = false;
+        this.knowledgeEditError = error;
+      });
+  }
+
+  // 关闭编辑弹窗并取消进行中的提炼请求（【取消】按钮 / 系统返回；
+  // 遮罩不关闭弹窗——防误触丢草稿）
+  closeKnowledgeEdit(): void {
+    this.knowledgeEditVisible = false;
+    if (this.knowledgeQueryController) {
+      this.knowledgeQueryController.cancel();
+      this.knowledgeQueryController = null;
+    }
+  }
+
+  // 【保存入库】：输入框内容转 KnowledgeCard 入库（用户确认后的最终卡片）。
+  // 标题与定义全空时不入库（空卡片防御）。
+  saveKnowledgeCard(): void {
+    const title = this.knowledgeCardTitle.trim();
+    const definition = this.knowledgeCardDefinition.trim();
+    if (title.length === 0 && definition.length === 0) {
+      return;
+    }
+    const card = new KnowledgeCard(generateMessageId(), title, definition, this.knowledgeImageUri, Date.now());
+    addKnowledgeCard(this.knowledgeBank, card);
+    this.closeKnowledgeEdit();
+  }
+
+  // 选择卡片配图：相册单选 → base64 data URI（跟随图片消息的既有存储模式，重启不丢）
+  async selectKnowledgeImage(): Promise<void> {
+    try {
+      const picker = new photoAccessHelper.PhotoViewPicker();
+      const result = await picker.select({ maxSelectNumber: 1 });
+      if (result.photoUris.length > 0) {
+        const uri = result.photoUris[0];
+        const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+        const stat = fileIo.statSync(file.fd);
+        const arrayBuffer = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, arrayBuffer);
+        fileIo.closeSync(file);
+        const base64 = buffer.from(arrayBuffer).toString('base64');
+        this.knowledgeImageUri = `data:image/jpeg;base64,${base64}`;
+      }
+    } catch (err) {
+      console.error(`[ChatPage] selectKnowledgeImage error: ${(err as Error).message}`);
+    }
+  }
+
+  // 全屏预览卡片配图（复用图片浏览器；关闭预览后编辑弹窗仍在）
+  openKnowledgeImagePreview(): void {
+    if (this.knowledgeImageUri.length === 0) {
+      return;
+    }
+    this.imageViewerImages = [this.knowledgeImageUri];
+    this.imageViewerIndex = 0;
+    this.imageViewerVisible = true;
+  }
+
+  // 复习区知识卡片：按消息 ID 取随机 1 张（缓存命中直接返回；库长度变化时重抽）。
+  // 空库防御性返回空卡片——UI 外层 cards.length > 0 判断保证正常路径非空。
+  getKnowledgeCard(messageId: string): KnowledgeCard {
+    const version = this.knowledgeBank.cards.length;
+    const cached = this.knowledgeReviewCache.get(messageId);
+    if (cached && cached.version === version) {
+      return cached.items.length > 0 ? cached.items[0] : new KnowledgeCard();
+    }
+    const items = pickRandomKnowledgeCards(this.knowledgeBank, 1);
+    this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(version, items));
+    return items.length > 0 ? items[0] : new KnowledgeCard();
+  }
+
   // ★ 0.145：划词悬浮操作栏（bindSelectionMenu 自定义菜单——完全替代系统小艺菜单）
   @Builder
   SelectionToolbar() {
@@ -982,6 +1105,18 @@ export struct ChatPage {
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarTranslate();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+      // ★ 0.146：入知识库——选中原文交 AI 提炼草稿，编辑弹窗二次修改后入库
+      Text('入知识库')
+        .fontSize(14)
+        .fontColor('#1976D2')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarAddKnowledge();
         })
       Divider()
         .vertical(true)
@@ -1276,11 +1411,34 @@ export struct ChatPage {
                              }
                              .alignItems(HorizontalAlign.Start)
                            }
-                           .scrollable(ScrollDirection.Horizontal) // 文字不换行，超宽内容左右拖拽查看
-                           .scrollBar(BarState.Auto)
-                         }
-                         }
-                         .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
+                            .scrollable(ScrollDirection.Horizontal) // 文字不换行，超宽内容左右拖拽查看
+                            .scrollBar(BarState.Auto)
+                          }
+
+                          // ★ 0.146：知识卡片复习区——库非空时在 AI 气泡底部展示随机 1 张
+                          // （与上方单词复习表格并列，📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID）
+                          if (this.knowledgeBank.cards.length > 0) {
+                            Divider()
+                              .strokeWidth(0.5)
+                              .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                              .margin({ top: 6, bottom: 6 })
+                            Column() {
+                              Text('📖 ' + this.getKnowledgeCard(msg.messageId).title)
+                                .fontSize(13)
+                                .fontWeight(FontWeight.Bold)
+                                .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                .maxLines(1)
+                              Text(this.getKnowledgeCard(msg.messageId).definition)
+                                .fontSize(12)
+                                .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                                .maxLines(2)
+                                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                                .margin({ top: 2 })
+                            }
+                            .alignItems(HorizontalAlign.Start)
+                          }
+                          }
+                          .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
                         .borderRadius(8)
                         .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
@@ -1425,6 +1583,128 @@ export struct ChatPage {
         }
         .width('100%')
         .height('100%')
+
+        // ★ 0.146：知识库卡片编辑弹窗（AI 生成草稿 → 用户二次编辑 → 保存入库）
+        // 遮罩不关闭弹窗——防误触丢草稿；关闭只走【取消】按钮 / 系统返回。
+        // 声明在图片浏览器之前：预览配图时 imageViewer 渲染在上层，关闭预览后编辑弹窗仍在。
+        if (this.knowledgeEditVisible) {
+          Stack() {
+            // 遮罩：仅挡底层交互
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+
+            // 弹窗主体：标题输入框 → 定义输入框 → 图片区 → 保存/取消
+            Column() {
+              Text('知识库卡片')
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .margin({ bottom: 12 })
+
+              // AI 提炼中提示
+              if (this.knowledgeEditLoading) {
+                Text('AI 提炼中...')
+                  .fontSize(13)
+                  .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+                  .margin({ bottom: 8 })
+              }
+
+              // AI 提炼失败提示（输入框仍可手动填写）
+              if (!this.knowledgeEditLoading && this.knowledgeEditError.length > 0) {
+                Text(this.knowledgeEditError)
+                  .fontSize(13)
+                  .fontColor('#F44336')
+                  .margin({ bottom: 8 })
+              }
+
+              // 标题输入框（AI 草稿自动填充，可自由编辑增删）
+              TextInput({ text: this.knowledgeCardTitle, placeholder: '标题（概念名称）' })
+                .fontSize(14)
+                .onChange((value: string) => {
+                  this.knowledgeCardTitle = value;
+                })
+                .width('100%')
+                .margin({ bottom: 8 })
+
+              // 定义输入框（多行；AI 草稿自动填充，可自由编辑增删）
+              TextArea({ text: this.knowledgeCardDefinition, placeholder: '定义（精简核心描述）' })
+                .fontSize(14)
+                .onChange((value: string) => {
+                  this.knowledgeCardDefinition = value;
+                })
+                .width('100%')
+                .height(100)
+                .margin({ bottom: 8 })
+
+              // 图片区：无图片只显示【添加图片】按钮（占位框不渲染）；有图片显示缩略图（点击全屏预览，× 移除）
+              if (this.knowledgeImageUri.length === 0) {
+                Button('添加图片')
+                  .fontSize(13)
+                  .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                  .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                  .width('100%')
+                  .margin({ bottom: 12 })
+                  .onClick(() => {
+                    this.selectKnowledgeImage();
+                  })
+              } else {
+                Stack() {
+                  Image(this.knowledgeImageUri)
+                    .width(80)
+                    .height(80)
+                    .borderRadius(8)
+                    .onClick(() => {
+                      this.openKnowledgeImagePreview();
+                    })
+                  Button('×')
+                    .fontSize(12)
+                    .fontColor('#FFFFFF')
+                    .backgroundColor('#F44336')
+                    .width(18)
+                    .height(18)
+                    .borderRadius(9)
+                    .position({ x: 68, y: -4 })
+                    .onClick(() => {
+                      this.knowledgeImageUri = '';
+                    })
+                }
+                .width(80)
+                .height(80)
+                .margin({ bottom: 12 })
+              }
+
+              // 保存 / 取消
+              Row() {
+                Button('取消')
+                  .layoutWeight(1)
+                  .margin({ right: 8 })
+                  .onClick(() => {
+                    this.closeKnowledgeEdit();
+                  })
+                Button('保存入库')
+                  .layoutWeight(1)
+                  .backgroundColor('#1976D2')
+                  .fontColor('#FFFFFF')
+                  .enabled(!this.knowledgeEditLoading) // 提炼中禁用保存（等草稿到了再编辑保存）
+                  .onClick(() => {
+                    this.saveKnowledgeCard();
+                  })
+              }
+              .width('100%')
+            }
+            .width('85%')
+            .padding(20)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
 
         // 全屏图片浏览器
         if (this.imageViewerVisible) {
@@ -1702,6 +1982,10 @@ export struct ChatPage {
       }
       if (this.wordPopupVisible) {
         this.closeWordPopup(); // ★ 0.145：翻译浮窗打开时拦截返回，关闭浮窗并取消查词请求
+        return true;
+      }
+      if (this.knowledgeEditVisible) {
+        this.closeKnowledgeEdit(); // ★ 0.146：编辑弹窗打开时拦截返回，关闭弹窗并取消提炼请求
         return true;
       }
       return false; // 预览未打开，恢复原生返回逻辑

@@ -19,6 +19,7 @@ import { buffer, util } from '@kit.ArkTS'; // ★ 0.139：util（UUID 生成 + B
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.136：HTTP 请求异常回调类型
 import { ChatMessage, ApiConfig, generateMessageId } from '../common/ChatModel';
 import { WordQueryResult } from '../common/WordModel'; // ★ 0.145：AI 查词结果结构
+import { KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：AI 卡片草稿结果结构
 
 // ========== 接口定义 ==========
 // 多模态内容片段 — 文本
@@ -412,6 +413,77 @@ export function queryWord(
         onDone(result);
       } else {
         onError('AI 返回内容无法解析为词条，请重试');
+      }
+    },
+    onError
+  );
+}
+
+// ============================================================
+// ★ 0.146：知识库卡片草稿（AI 提炼）— queryKnowledge
+// ============================================================
+// Flow: user selects text in a bubble → taps "入知识库" in the selection
+// toolbar → the selected text goes to the AI with a strict prompt → the
+// AI returns {"title","definition"} → the card editor pre-fills both
+// fields. The AI output is a DRAFT only — nothing is saved to the bank
+// until the user confirms in the editor. It never creates chat bubbles
+// and never enters the DAG context.
+
+// System prompt for card drafting (strict JSON, no markdown wrapper).
+// Hard constraint: the AI may ONLY distill from the selected source text.
+const KNOWLEDGE_QUERY_PROMPT = '你是卡片提炼助手，仅基于用户提供的原文生成知识库卡片。规则：1. 只使用原文信息，严禁增加原文不存在的内容、例子、拓展解释；2. title填写术语/概念名称；definition写精简核心定义，压缩文字；3. 输出严格JSON，不要任何额外文字、注释、markdown，只返回json字符串，格式：{"title":"...","definition":"..."}。';
+
+// Parse the raw AI reply into a KnowledgeQueryResult.
+// Extracts the first '{' to the last '}' so a stray markdown fence or
+// extra prose around the JSON does not break parsing. Returns null when
+// no parsable object exists.
+function parseKnowledgeQueryResult(raw: string): KnowledgeQueryResult | null {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  try {
+    const obj = JSON.parse(raw.substring(start, end + 1)) as Record<string, Object>;
+    const title = typeof obj['title'] === 'string' ? obj['title'] as string : '';
+    const definition = typeof obj['definition'] === 'string' ? obj['definition'] as string : '';
+    // Both fields missing → treat as unparsable
+    if (title.length === 0 && definition.length === 0) {
+      return null;
+    }
+    const result: KnowledgeQueryResult = {
+      title: title,
+      definition: definition
+    };
+    return result;
+  } catch (e) {
+    return null;
+  }
+}
+
+// AI card draft: stream request whose chunks are accumulated silently
+// and parsed once on completion. Independent from chat bubbles / DAG.
+export function queryKnowledge(
+  text: string,
+  config: ApiConfig,
+  onDone: (result: KnowledgeQueryResult) => void,
+  onError: (error: string) => void
+): StreamController {
+  const messages: ChatMessage[] = [
+    new ChatMessage(generateMessageId(), 'system', KNOWLEDGE_QUERY_PROMPT),
+    new ChatMessage(generateMessageId(), 'user', text)
+  ];
+  let full = '';
+  return streamChat(
+    messages,
+    config,
+    (chunk: string) => { full += chunk; }, // accumulate silently — no typewriter UI for drafting
+    () => {
+      const result = parseKnowledgeQueryResult(full);
+      if (result !== null) {
+        onDone(result);
+      } else {
+        onError('AI 返回内容无法解析为卡片，请重试');
       }
     },
     onError
