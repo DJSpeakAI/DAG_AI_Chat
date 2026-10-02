@@ -8,7 +8,9 @@
 //   - 图片全屏预览（点击放大、右滑/点击关闭、双指缩放）
 //   - 输入框多行自适应（≤5 行自适应高度，>5 行内部滚动）
 //   - DAG 链路回溯 + 上下文压缩（超 25 条消息自动摘要）
-//   - 长按消息菜单（复制、删除）
+//   - ★ 0.145：划词翻译——长按气泡文本直接唤起系统选择模式 + 自研悬浮操作栏（翻译|复制|全选），
+//     点「翻译」弹 AI 查词浮窗（不建气泡、不进 DAG），可一键加入单词库（独立 PersistenceV2 持久化）
+//   - ★ 0.145：AI 消息气泡底部生词复习表格（词库随机 2 词，横向滚动）+ 顶栏单词库入口
 //   - 深浅色主题适配
 //   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.139 openspeech 2.0 协议 + 分段流水线，0.143 收尾清理调试链路）
 //
@@ -22,9 +24,11 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
-import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型
+import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig } from '../common/ChatModel'; // ★ 0.143：connectApiConfig
-import { streamChat, synthesizeTTS, StreamController } from '../utils/ApiClient';
+import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
+import { streamChat, synthesizeTTS, queryWord, StreamController } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）
+import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -41,6 +45,29 @@ class MdSegment {
     this.header = header;
     this.rows = rows;
   }
+}
+
+// ★ 0.145：生词复习缓存条目——按消息 ID 缓存随机抽取的复习词。
+// version 记录生成时的词库长度：加词/删词都会改变长度，此时重新抽取，
+// 既避免每次渲染重新随机导致表格内容跳变，又保证不展示已删除的词。
+class ReviewCacheEntry {
+  version: number;
+  items: WordItem[];
+  constructor(version: number, items: WordItem[]) {
+    this.version = version;
+    this.items = items;
+  }
+}
+
+// ★ 0.145：复习表格单元格样式（表头/数据行复用）——maxLines(1) 文字不换行，
+// 超长内容由外层横向 Scroll 承载（左右拖拽查看）
+@Extend(Text)
+function reviewCell(color: string, width: number) {
+  .fontSize(12)
+  .fontColor(color)
+  .maxLines(1)
+  .width(width)
+  .padding({ left: 6, right: 6, top: 4, bottom: 4 })
 }
 
 // ★ 0.132：AI 消息占位文字常量（两态：加载中 / 深度思考中）
@@ -136,12 +163,22 @@ export struct ChatPage {
   @Local imageViewerVisible: boolean = false;
   @Local imageViewerIndex: number = 0;
   @Local imageViewerImages: string[] = [];
-  // 长按菜单状态
-  @Local menuMessageId: string = '';
-  @Local menuVisible: boolean = false;
-  @Local deleteConfirmVisible: boolean = false;
-  @Local textPreviewVisible: boolean = false;
-  @Local textPreviewContent: string = '';
+  // ★ 0.145：划词翻译状态（替代原长按菜单/文本预览/删除确认——旧二级弹窗整体移除）
+  @Local selText: string = '';            // 当前选中文本（onTextSelectionChange 时从对应 Text 内容截取）
+  @Local selKey: string = '';             // 当前激活选择的 Text 标识（`${msgId}|u` 用户消息 / `${msgId}|${segIdx}` AI 段）
+  @Local selectAllKey: string = '';       // 全选受控态标识（`${selKey}|${nonce}`，nonce 递增确保重复点击仍触发属性重应用）
+  @Local selectAllNonce: number = 0;      // 全选触发计数（配合 selectAllKey）
+  @Local wordPopupVisible: boolean = false;   // 翻译浮窗可见
+  @Local wordPopupQuery: string = '';         // 浮窗展示的查询原文
+  @Local wordPopupLoading: boolean = false;   // AI 查词进行中
+  @Local wordPopupResult: WordQueryResult | null = null; // 查词结果（null=未出结果）
+  @Local wordPopupError: string = '';         // 查词错误信息
+  @Local wordPopupAdded: boolean = false;     // 当前结果已加入单词库（按钮转「已加入」防重复）
+  @Local wordExistsTip: boolean = false;      // 「单词已存在」提示（重复添加时显示）
+  wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
+  private textControllers: Map<string, TextController> = new Map(); // 每个 Text 独立 controller（关闭选择菜单用）
+  private wordQueryController: StreamController | null = null;      // 进行中的查词请求（浮窗关闭时取消）
+  private reviewCache: Map<string, ReviewCacheEntry> = new Map();   // 生词复习缓存（msgId → 随机词组）
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
   @Local modeDropdownOpen: boolean = false;
@@ -793,6 +830,188 @@ export struct ChatPage {
     this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
   }
 
+  // ============================================================
+  // ★ 0.145：划词翻译——选择状态管理
+  // ============================================================
+
+  // 惰性获取指定 Text 的控制器（ForEach 中每个可选 Text 一个独立实例，
+  // closeSelectionMenu 只作用于自己绑定的 Text，互不干扰）
+  getOrCreateTextController(key: string): TextController {
+    let ctrl = this.textControllers.get(key);
+    if (!ctrl) {
+      ctrl = new TextController();
+      this.textControllers.set(key, ctrl);
+    }
+    return ctrl;
+  }
+
+  // onTextSelectionChange 回调：记录激活的 Text 标识并截取选中文本。
+  // content 由闭包捕获（用户消息=msg.content，AI 段=seg.content），
+  // 位置是「该 Text 内容内」的偏移，直接 substring 即得选中词。
+  handleSelectionChange(key: string, content: string, start: number, end: number): void {
+    if (start < 0 || end > content.length || start >= end) {
+      return; // 无效区间（取消选择时的 0,0 回调）——保留既有状态，由 onDisappear 统一清理
+    }
+    this.selKey = key;
+    this.selText = content.substring(start, end);
+  }
+
+  // 选择菜单关闭时清理全部选择状态（点空白/点菜单按钮后由 onDisappear 触发）
+  clearSelectionState(): void {
+    this.selKey = '';
+    this.selText = '';
+    this.selectAllKey = '';
+  }
+
+  // 关闭当前激活 Text 的选择菜单（悬浮栏按钮点击后调用）
+  closeActiveSelectionMenu(): void {
+    if (this.selKey.length > 0) {
+      const ctrl = this.textControllers.get(this.selKey);
+      ctrl?.closeSelectionMenu();
+    }
+  }
+
+  // ============================================================
+  // ★ 0.145：悬浮操作栏按钮（翻译 | 复制 | 全选）
+  // ============================================================
+
+  // 「翻译」：关闭菜单 → 打开浮窗 → 发起 AI 查词（独立请求，不建气泡、不进 DAG）
+  onToolbarTranslate(): void {
+    const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
+    this.closeActiveSelectionMenu();
+    if (text.length === 0) {
+      return;
+    }
+    this.wordPopupVisible = true;
+    this.wordPopupQuery = text;
+    this.wordPopupLoading = true;
+    this.wordPopupResult = null;
+    this.wordPopupError = '';
+    this.wordPopupAdded = false;
+    this.wordExistsTip = false;
+    if (this.wordQueryController) {
+      this.wordQueryController.cancel(); // 上一次查词未完成 → 取消
+    }
+    this.wordQueryController = queryWord(text, this.apiConfig,
+      (result: WordQueryResult) => {
+        this.wordPopupLoading = false;
+        this.wordPopupResult = result;
+      },
+      (error: string) => {
+        this.wordPopupLoading = false;
+        this.wordPopupError = error;
+      });
+  }
+
+  // 「复制」：选中文本写入系统剪贴板
+  onToolbarCopy(): void {
+    const text = this.selText; // 先取值（同上）
+    this.closeActiveSelectionMenu();
+    if (text.length === 0) {
+      return;
+    }
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      pasteboard.getSystemPasteboard().setData(data).catch((err: Error) => {
+        console.error(`[0.145] 复制写入剪贴板失败: ${err.message}`);
+      });
+    } catch (e) {
+      console.error(`[0.145] 复制失败: ${JSON.stringify(e)}`);
+    }
+  }
+
+  // 「全选」：selection 属性受控驱动——nonce 递增拼进 key 使属性参数变化，
+  // 确保全选后拖动手柄再点全选仍能重新应用 (0, len)。菜单保持显示（可继续翻译/复制全文）
+  onToolbarSelectAll(): void {
+    const key = this.selKey; // 先取值（同上）
+    if (key.length === 0) {
+      return;
+    }
+    this.selectAllNonce++;
+    this.selectAllKey = `${key}|${this.selectAllNonce}`;
+  }
+
+  // ============================================================
+  // ★ 0.145：翻译浮窗
+  // ============================================================
+
+  // 关闭浮窗并取消进行中的查词请求
+  closeWordPopup(): void {
+    this.wordPopupVisible = false;
+    if (this.wordQueryController) {
+      this.wordQueryController.cancel();
+      this.wordQueryController = null;
+    }
+  }
+
+  // 「加入单词库」：查词结果转 WordItem 入库；重复时显示「单词已存在」
+  addCurrentWordToBank(): void {
+    if (this.wordPopupResult === null) {
+      return;
+    }
+    const r = this.wordPopupResult;
+    const item = new WordItem(r.word, r.fullName, r.usPhonetic, r.explain);
+    const ok = addWordToBank(this.wordBank, item);
+    if (ok) {
+      this.wordPopupAdded = true;
+      this.wordExistsTip = false;
+    } else {
+      this.wordExistsTip = true;
+    }
+  }
+
+  // 生词复习：按消息 ID 取随机 2 词（缓存命中直接返回；词库长度变化时重新抽取）
+  getReviewWords(messageId: string): WordItem[] {
+    const version = this.wordBank.words.length;
+    const cached = this.reviewCache.get(messageId);
+    if (cached && cached.version === version) {
+      return cached.items;
+    }
+    const items = pickRandomWords(this.wordBank, 2);
+    this.reviewCache.set(messageId, new ReviewCacheEntry(version, items));
+    return items;
+  }
+
+  // ★ 0.145：划词悬浮操作栏（bindSelectionMenu 自定义菜单——完全替代系统小艺菜单）
+  @Builder
+  SelectionToolbar() {
+    Row() {
+      Text('翻译')
+        .fontSize(14)
+        .fontColor('#1976D2')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarTranslate();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+      Text('复制')
+        .fontSize(14)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarCopy();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+      Text('全选')
+        .fontSize(14)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarSelectAll();
+        })
+    }
+    .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+    .borderRadius(8)
+    .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+    .shadow({ radius: 12, color: 'rgba(0,0,0,0.25)', offsetX: 0, offsetY: 4 })
+  }
+
   // 全屏图片浏览器：收集当前对话所有图片，定位点击的图片，打开 viewer
   openImageViewer(clickedUrl: string): void {
     if (!this.currentBubble) {
@@ -844,6 +1063,15 @@ export struct ChatPage {
         Row() {
           Blank()
             .layoutWeight(1)
+          // ★ 0.145：单词库入口（设置图标旁，点击进入单词库页面）
+          Button('📚')
+            .fontSize(16)
+            .backgroundColor(Color.Transparent)
+            .fontColor('#666')
+            .margin({ right: 8 })
+            .onClick(() => {
+              this.pathStack.pushPath({ name: 'WordBankPage' });
+            })
           Button('⚙')
             .fontSize(18)
             .backgroundColor(Color.Transparent)
@@ -911,7 +1139,8 @@ export struct ChatPage {
                     if (msg.content.length > 0) {
                       if (msg.role === 'user') {
                         // 用户消息：纯文本渲染（保持原有逻辑）
-                        Text(msg.content)
+                        // ★ 0.145：划词翻译——controller 供关闭菜单；长按进入系统选择模式并弹自研悬浮操作栏（替代原「选择文本/删除」弹窗，禁用小艺原生菜单）
+                        Text(msg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|u`) })
                           .fontSize(16)
                           .lineHeight(24)
                           .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#1976D2')
@@ -920,6 +1149,24 @@ export struct ChatPage {
                           .backgroundColor(this.getThemeStore().isDark ? '#0D47A1' : '#E3F2FD')
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本自动换行，防溢出屏幕
+                          // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
+                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                            onAppear: () => {
+                              this.selKey = `${msg.messageId}|u`;
+                            },
+                            onDisappear: () => {
+                              this.clearSelectionState();
+                            }
+                          })
+                          // ★ 0.145：选中变化回调——闭包捕获 msg.content，按段内偏移截取选中文本
+                          .onTextSelectionChange((start: number, end: number) => {
+                            this.handleSelectionChange(`${msg.messageId}|u`, msg.content, start, end);
+                          })
+                          // ★ 0.145：全选受控——selectAllKey 命中本段时全选（nonce 递增确保重复点击仍触发重应用）；未命中时 (1, 0) 不选中
+                          .selection(
+                            this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? 0 : 1,
+                            this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? msg.content.length : 0
+                          )
                       } else {
                         // ★ 0.146：包裹容器——气泡与操作行组成同宽块，token 统计行左缘对齐气泡左缘（用户要求）
                         Column() {
@@ -928,11 +1175,30 @@ export struct ChatPage {
                           ForEach(this.parseMarkdown(msg.content), (seg: MdSegment, idx: number) => {
                             if (seg.type === 0) {
                               // 普通文本段
-                              Text(seg.content)
+                              // ★ 0.145：划词翻译——AI 文本段同样长按划词（key 纳入段索引 idx，与用户消息 key 空间隔离）
+                              Text(seg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|${idx}`) })
                                 .fontSize(16)
                                 .lineHeight(24)
                                 .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#616161')
                                 .copyOption(CopyOptions.LocalDevice)
+                                // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
+                                .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                                  onAppear: () => {
+                                    this.selKey = `${msg.messageId}|${idx}`;
+                                  },
+                                  onDisappear: () => {
+                                    this.clearSelectionState();
+                                  }
+                                })
+                                // ★ 0.145：选中变化回调——闭包捕获 seg.content，按段内偏移截取选中文本
+                                .onTextSelectionChange((start: number, end: number) => {
+                                  this.handleSelectionChange(`${msg.messageId}|${idx}`, seg.content, start, end);
+                                })
+                                // ★ 0.145：全选受控——selectAllKey 命中本段时全选；未命中时 (1, 0) 不选中
+                                .selection(
+                                  this.selectAllKey.startsWith(`${msg.messageId}|${idx}|`) ? 0 : 1,
+                                  this.selectAllKey.startsWith(`${msg.messageId}|${idx}|`) ? seg.content.length : 0
+                                )
                             }
                             if (seg.type === 1) {
                               // ★ 代码块：使用 CodeBlockView 组件，支持自动换行切换（0.122）
@@ -980,9 +1246,41 @@ export struct ChatPage {
                             }
                            // ★ 0.132 修复：key 纳入 content/header/rows 尺寸——流式追加时 key 变化触发 item 重建，
                            // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
-                           }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.header.length}_${seg.rows.length}`)
-                        }
-                        .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
+                            }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.header.length}_${seg.rows.length}`)
+
+                         // ★ 0.145：生词复习表格——词库非空时在 AI 气泡底部展示：细横线分隔 + 随机 2 词横向滚动表格
+                         // （仅 AI 气泡渲染，本分支天然不含用户消息；缓存按消息 ID，词库长度变化时重抽）
+                         if (this.wordBank.words.length > 0) {
+                           Divider()
+                             .strokeWidth(0.5)
+                             .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                             .margin({ top: 8, bottom: 6 })
+                           Scroll() {
+                             Column() {
+                               // 表头行（列宽：原文单词 90 / 全称 150 / 美式音标 130 / 中文释义 170）
+                               Row() {
+                                 Text('原文单词').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 90)
+                                 Text('全称').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 150)
+                                 Text('美式音标').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 130)
+                                 Text('中文释义').reviewCell(this.getThemeStore().isDark ? '#BBBBBB' : '#666666', 170)
+                               }
+                               // 数据行——fullName 为空时全称单元格留空（不渲染占位文字，固定列宽保持对齐）
+                               ForEach(this.getReviewWords(msg.messageId), (w: WordItem) => {
+                                 Row() {
+                                   Text(w.word).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 90)
+                                   Text(w.fullName).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 150)
+                                   Text(w.usPhonetic).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 130)
+                                   Text(w.explain).reviewCell(this.getThemeStore().isDark ? '#E0E0E0' : '#333333', 170)
+                                 }
+                               }, (w: WordItem) => w.word)
+                             }
+                             .alignItems(HorizontalAlign.Start)
+                           }
+                           .scrollable(ScrollDirection.Horizontal) // 文字不换行，超宽内容左右拖拽查看
+                           .scrollBar(BarState.Auto)
+                         }
+                         }
+                         .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
                         .borderRadius(8)
                         .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
@@ -1032,12 +1330,8 @@ export struct ChatPage {
                 }
                 .width('100%')
                 .justifyContent(msg.role === 'user' ? FlexAlign.Start : FlexAlign.End)
-                .gesture(
-                  LongPressGesture().onAction(() => {
-                    this.menuMessageId = msg.messageId;
-                    this.menuVisible = true;
-                  })
-                )
+                // ★ 0.145：移除整行长按手势——划词改为长按气泡文本本身（bindSelectionMenu 自研悬浮栏），
+                // 原「选择文本/删除」二级弹窗随之移除（删除仍走 × 按钮）
               }
             }, (msg: ChatMessage) => msg.messageId)
           }
@@ -1173,90 +1467,84 @@ export struct ChatPage {
           )
         }
 
-        // 长按菜单弹窗
-        if (this.menuVisible) {
+        // ★ 0.145：翻译浮窗（替代原长按菜单/删除确认/文本预览三个二级弹窗）
+        // 点悬浮操作栏「翻译」弹出：小型浮窗展示 AI 查词结果，不新建气泡、不进 DAG；点遮罩关闭
+        if (this.wordPopupVisible) {
           Stack() {
+            // 遮罩：点击关闭浮窗（同时取消进行中的查词请求）
             Column() {
               Blank()
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
+            .backgroundColor('rgba(0,0,0,0.25)')
             .onClick(() => {
-              this.menuVisible = false;
+              this.closeWordPopup();
             })
 
+            // 浮窗主体：标题(查询原文) → 查询中/错误/结果 → 加入单词库
             Column() {
-              Button('选择文本')
-                .width('100%')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor(Color.Transparent)
+              // 查询原文（即渲染顺序首项「单词」）
+              Text(this.wordPopupQuery)
+                .fontSize(20)
+                .fontWeight(FontWeight.Bold)
                 .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-                .onClick(() => {
-                  const msg = this.currentBubble?.messages.find(m => m.messageId === this.menuMessageId);
-                  this.textPreviewContent = msg?.content ?? '';
-                  this.textPreviewVisible = true;
-                  this.menuVisible = false;
-                })
+                .maxLines(1)
+                .margin({ bottom: 12 })
 
-              Button('删除')
-                .width('100%')
-                .height(44)
-                .fontSize(16)
-                .backgroundColor(Color.Transparent)
-                .fontColor('#F44336')
-                .onClick(() => {
-                  this.menuVisible = false;
-                  this.deleteConfirmVisible = true;
-                })
-            }
-            .width('50%')
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-            .padding(4)
-          }
-          .width('100%')
-          .height('100%')
-          .alignContent(Alignment.Center)
-        }
-
-        // 删除确认弹窗
-        if (this.deleteConfirmVisible) {
-          Stack() {
-            Column() {
-              Blank()
-            }
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
-            .onClick(() => {
-              this.deleteConfirmVisible = false;
-            })
-
-            Column() {
-              Text('确认删除这条消息？')
-                .fontSize(16)
-                .margin({ bottom: 16 })
-
-              Row() {
-                Button('取消')
-                  .layoutWeight(1)
-                  .margin({ right: 8 })
-                  .onClick(() => {
-                    this.deleteConfirmVisible = false;
-                  })
-
-                Button('确认')
-                  .layoutWeight(1)
-                  .backgroundColor('#F44336')
-                  .fontColor('#FFFFFF')
-                  .onClick(() => {
-                    this.deleteMessage(this.menuMessageId);
-                    this.deleteConfirmVisible = false;
-                  })
+              // 查询中态
+              if (this.wordPopupLoading) {
+                Text('查询中...')
+                  .fontSize(14)
+                  .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+                  .margin({ bottom: 12 })
               }
-              .width('100%')
+
+              // 错误态
+              if (!this.wordPopupLoading && this.wordPopupError.length > 0) {
+                Text(this.wordPopupError)
+                  .fontSize(14)
+                  .fontColor('#F44336')
+                  .margin({ bottom: 12 })
+              }
+
+              // 结果态：渲染顺序固定 单词(标题)→全称→音标→释义；fullName 为空时全称行不渲染（禁止空白占位）
+              if (!this.wordPopupLoading && this.wordPopupResult !== null) {
+                if (this.wordPopupResult.fullName.length > 0) {
+                  Text(this.wordPopupResult.fullName)
+                    .fontSize(14)
+                    .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                    .margin({ bottom: 4 })
+                }
+                if (this.wordPopupResult.usPhonetic.length > 0) {
+                  Text(this.wordPopupResult.usPhonetic)
+                    .fontSize(14)
+                    .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                    .margin({ bottom: 4 })
+                }
+                Text(this.wordPopupResult.explain)
+                  .fontSize(14)
+                  .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                  .margin({ bottom: 12 })
+              }
+
+              // 「单词已存在」提示（重复添加时显示）
+              if (this.wordExistsTip) {
+                Text('单词已存在')
+                  .fontSize(12)
+                  .fontColor('#F44336')
+                  .margin({ bottom: 4 })
+              }
+
+              // 加入单词库按钮（已加入后转灰禁用防重复）
+              Button(this.wordPopupAdded ? '已加入' : '加入单词库')
+                .width('100%')
+                .backgroundColor(this.wordPopupAdded ? (this.getThemeStore().isDark ? '#2C2C2C' : '#E0E0E0') : '#1976D2')
+                .fontColor(this.wordPopupAdded ? (this.getThemeStore().isDark ? '#888888' : '#999999') : '#FFFFFF')
+                .enabled(!this.wordPopupAdded && this.wordPopupResult !== null)
+                .onClick(() => {
+                  this.addCurrentWordToBank();
+                })
             }
             .width('70%')
             .padding(20)
@@ -1268,53 +1556,9 @@ export struct ChatPage {
           .alignContent(Alignment.Center)
         }
 
-        // 文本预览弹窗（选择文本）
-        if (this.textPreviewVisible) {
-          Stack() {
-            Column() {
-              Blank()
-            }
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
-            .onClick(() => {
-              this.textPreviewVisible = false;
-            })
+        // ★ 0.145：删除确认弹窗已移除——消息删除仅走气泡旁 × 按钮（直接删除，与 0.145 前行为一致）
 
-            Column() {
-              Text('选择文本')
-                .fontSize(16)
-                .fontWeight(FontWeight.Medium)
-                .margin({ bottom: 12 })
-
-              Scroll() {
-                Text(this.textPreviewContent)
-                  .fontSize(14)
-                  .copyOption(CopyOptions.LocalDevice)
-                  .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
-                  .padding(8)
-              }
-              .width('100%')
-              .height(200)
-              .borderRadius(8)
-              .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
-
-              Button('关闭')
-                .width('100%')
-                .margin({ top: 12 })
-                .onClick(() => {
-                  this.textPreviewVisible = false;
-                })
-            }
-            .width('80%')
-            .padding(20)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-          }
-          .width('100%')
-          .height('100%')
-          .alignContent(Alignment.Center)
-        }
+        // ★ 0.145：文本预览弹窗已移除——长按气泡文本直接进入系统选择模式 + 自研悬浮操作栏（bindSelectionMenu）
 
         // ★ 0.133：发送模式选择面板（半透明遮罩 + 右下角面板，浮于输入区上方）
         if (this.modeDropdownOpen) {
@@ -1456,8 +1700,8 @@ export struct ChatPage {
         this.imageViewerVisible = false;
         return true; // 消费返回事件，阻止页面导航
       }
-      if (this.textPreviewVisible) {
-        this.textPreviewVisible = false;
+      if (this.wordPopupVisible) {
+        this.closeWordPopup(); // ★ 0.145：翻译浮窗打开时拦截返回，关闭浮窗并取消查词请求
         return true;
       }
       return false; // 预览未打开，恢复原生返回逻辑

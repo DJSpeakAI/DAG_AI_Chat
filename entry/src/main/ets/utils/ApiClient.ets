@@ -17,7 +17,8 @@
 import { http } from '@kit.NetworkKit'; // ★ 0.136：webSocket 已随播客路径移除（TTS 回归 HTTP）
 import { buffer, util } from '@kit.ArkTS'; // ★ 0.139：util（UUID 生成 + Base64Helper 解码，openspeech 2.0 协议需要）
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.136：HTTP 请求异常回调类型
-import { ChatMessage, ApiConfig } from '../common/ChatModel';
+import { ChatMessage, ApiConfig, generateMessageId } from '../common/ChatModel';
+import { WordQueryResult } from '../common/WordModel'; // ★ 0.145：AI 查词结果结构
 
 // ========== 接口定义 ==========
 // 多模态内容片段 — 文本
@@ -341,6 +342,81 @@ export function streamChat(
   return controller;
 }
 // ★ 删除未使用的 testApiConnection + testApiWithDiagnostics（0.122 清理）
+
+// ============================================================
+// ★ 0.145：AI 查词（Word Lookup）— 划词翻译浮窗数据源
+// ============================================================
+// Reuses streamChat to accumulate the full reply, then parses a strict
+// JSON payload. The prompt forces:
+//   - abbreviations (OS / AI / CPU ...): fullName = English full term,
+//     usPhonetic/explain describe the FULL term
+//   - normal words: fullName = "" (empty string, never a placeholder)
+// The result feeds the translate popup and can be added to the word
+// bank. It never creates chat bubbles and never enters the DAG context.
+
+// System prompt for word lookup (strict JSON, no markdown wrapper)
+const WORD_QUERY_PROMPT = '你是英文词典助手。用户会给你一个英文单词或缩写。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"...","usPhonetic":"...","explain":"..."}。字段规则：word=用户查询的原文；fullName=仅当查询对象是缩写（如 OS、AI、CPU）时返回其英文全称（如 Operating System），普通单词必须返回空字符串；usPhonetic=美式音标并用斜杠包裹（缩写时返回全称的音标，普通单词返回该词音标）；explain=简明中文释义（缩写时返回全称的中文释义）。';
+
+// Parse the raw AI reply into a WordQueryResult.
+// Extracts the first '{' to the last '}' so a stray markdown fence or
+// extra prose around the JSON does not break parsing. Returns null when
+// no parsable object exists.
+function parseWordQueryResult(raw: string, fallbackWord: string): WordQueryResult | null {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  try {
+    const obj = JSON.parse(raw.substring(start, end + 1)) as Record<string, Object>;
+    const word = typeof obj['word'] === 'string' ? obj['word'] as string : fallbackWord;
+    const fullName = typeof obj['fullName'] === 'string' ? obj['fullName'] as string : '';
+    const usPhonetic = typeof obj['usPhonetic'] === 'string' ? obj['usPhonetic'] as string : '';
+    const explain = typeof obj['explain'] === 'string' ? obj['explain'] as string : '';
+    // Both phonetic and explanation missing → treat as unparsable
+    if (usPhonetic.length === 0 && explain.length === 0) {
+      return null;
+    }
+    const result: WordQueryResult = {
+      word: word,
+      fullName: fullName,
+      usPhonetic: usPhonetic,
+      explain: explain
+    };
+    return result;
+  } catch (e) {
+    return null;
+  }
+}
+
+// AI word lookup: stream request whose chunks are accumulated silently
+// and parsed once on completion. Independent from chat bubbles / DAG.
+export function queryWord(
+  word: string,
+  config: ApiConfig,
+  onDone: (result: WordQueryResult) => void,
+  onError: (error: string) => void
+): StreamController {
+  const messages: ChatMessage[] = [
+    new ChatMessage(generateMessageId(), 'system', WORD_QUERY_PROMPT),
+    new ChatMessage(generateMessageId(), 'user', word)
+  ];
+  let full = '';
+  return streamChat(
+    messages,
+    config,
+    (chunk: string) => { full += chunk; }, // accumulate silently — no typewriter UI for lookup
+    () => {
+      const result = parseWordQueryResult(full, word);
+      if (result !== null) {
+        onDone(result);
+      } else {
+        onError('AI 返回内容无法解析为词条，请重试');
+      }
+    },
+    onError
+  );
+}
 
 // ============================================================
 // ★ 0.139 重写：TTS（文本转语音）— openspeech /api/v3/tts/unidirectional（豆包语音合成 2.0）

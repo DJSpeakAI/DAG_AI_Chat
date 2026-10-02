@@ -16,6 +16,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BBTreeCanvas } from '../components/BBTreeCanvas';
 import { ChatPage } from '../components/ChatPage';
 import { SettingsPage } from '../components/SettingsPage';
+import { WordBankPage } from '../components/WordBankPage'; // ★ 0.145：单词库页面路由
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.131：深浅色适配
 
@@ -61,6 +62,8 @@ struct Index {
       ChatPage({ pathStack: this.pathStack })
     } else if (name === 'SettingsPage') {
       SettingsPage({ pathStack: this.pathStack })
+    } else if (name === 'WordBankPage') { // ★ 0.145：单词库页面
+      WordBankPage({ pathStack: this.pathStack })
     }
   }
 
