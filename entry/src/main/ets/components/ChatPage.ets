@@ -1374,6 +1374,27 @@ export struct ChatPage {
     this.selectAllKey = `${key}|${this.selectAllNonce}`;
   }
 
+  // ★ 0.160：「删除」——划词就地删本条消息（AI 超长回复时免滚到 × 按钮的冗余备份入口）。
+  // 从 selKey 前缀提取消息 ID，复用 × 按钮的 requestDeleteMessage 入口——
+  // 防误触确认状态天然共享（同一 deleteSkipConfirm 会话级变量：任一入口首次删除弹确认、
+  // 勾选「此次对话不再提示」后两个入口都不再弹；重进对话页统一重置）。
+  // 放大弹窗内的划词（代码放大 key 前缀 cz、表格放大 key 无 | 分隔）不对应消息，直接忽略。
+  onToolbarDelete(): void {
+    const key = this.selKey; // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
+    this.closeActiveSelectionMenu();
+    const sep = key.indexOf('|');
+    if (sep <= 0) {
+      return; // 表格放大弹窗 key（tzh*/tzr*，无 |）或空——非消息文本
+    }
+    const messageId = key.substring(0, sep);
+    if (messageId === 'cz') {
+      return; // 代码放大弹窗内文本——非消息文本
+    }
+    if (messageId.length > 0) {
+      this.requestDeleteMessage(messageId);
+    }
+  }
+
   // ============================================================
   // ★ 0.145：翻译浮窗
   // ============================================================
@@ -1568,6 +1589,19 @@ export struct ChatPage {
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarSelectAll();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+      // ★ 0.160：划词删除——AI 超长回复时免滚到 × 按钮就地删本条消息；
+      // 红色警示（破坏性操作），确认防误触与 × 按钮共享状态
+      Text('删除')
+        .fontSize(14)
+        .fontColor('#D32F2F')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarDelete();
         })
     }
     .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
