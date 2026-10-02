@@ -2167,7 +2167,10 @@ export struct ChatPage {
                             }
                            // ★ 0.132 修复：key 纳入 content/header/rows 尺寸——流式追加时 key 变化触发 item 重建，
                            // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
-                            }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.header.length}_${seg.rows.length}`)
+                           // ★ 0.160 bugfix: key 再纳入 content 前 12 字符——0.132 的 length 维度存在等长碰撞边界：
+                           // THINKING 占位与正文恰好等长时 key 相同 → item 复用 → 卡占位（用户实测：token 已写入但
+                           // 气泡永显「AI 正在深度思考中...」，持久化 content 实为正文）。前缀维度保证占位↔正文切换 key 必变。
+                             }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.content.substring(0, 12)}_${seg.header.length}_${seg.rows.length}`)
 
                          // ★ 0.145：生词复习区——词库非空时在 AI 气泡底部展示随机 2 词（词条式布局，与下方知识卡片风格统一）
                          // （仅 AI 气泡渲染，本分支天然不含用户消息；缓存按消息 ID，词库长度变化时重抽）
