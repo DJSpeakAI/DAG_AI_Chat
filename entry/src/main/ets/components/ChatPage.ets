@@ -481,6 +481,75 @@ export struct ChatPage {
     this.scroller.scrollEdge(Edge.Bottom);
   }
 
+  // ★ 0.149：刷新按钮——原位重新生成指定 AI 回复（置加载占位后按链路上下文重新请求，
+  // buildBranchMessageList 自动剔除占位使旧回复不进入新请求；消息不删、位置不变）
+  async regenerateMessage(msg: ChatMessage): Promise<void> {
+    if (this.isLoading || !this.currentBubble) {
+      return;
+    }
+    if (this.streamController) {
+      this.streamController.cancel();
+    }
+    // 置加载占位：UI 立即显示加载态，且构建上下文时该条被自动剔除（旧回复不进入新请求）
+    msg.content = PLACEHOLDER_LOADING;
+    msg.inputTokens = 0;
+    msg.outputTokens = 0;
+    this.isLoading = true;
+    const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
+    // 回复长度档位 prompt（与 sendMessage 同机制，不持久化）
+    if (this.replyLengthMode === 'short') {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', SHORT_REPLY_PROMPT));
+    } else if (this.replyLengthMode === 'long') {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', LONG_REPLY_PROMPT));
+    } else {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', MEDIUM_REPLY_PROMPT));
+    }
+    // 播客模式：沿用该消息原发起模式，重新追加播客 prompt
+    if (msg.isPodcastMode) {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
+    }
+    this.streamController = streamChat(
+      messagesToSend,
+      this.apiConfig,
+      (chunk: string) => {
+        // onChunk：首次收到数据时清除占位文字（兼容加载/思考两态），然后追加 AI content
+        if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
+          msg.content = '';
+        }
+        msg.content += chunk;
+        this.scroller.scrollEdge(Edge.Bottom);
+      },
+      (inputTokens: number, outputTokens: number) => {
+        // onDone：解锁 + 存储 token
+        this.isLoading = false;
+        this.streamController = null;
+        if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
+          msg.content = '（AI 未返回文本内容，请重试或更换模型）';
+        }
+        msg.inputTokens = inputTokens;
+        msg.outputTokens = outputTokens;
+        this.scroller.scrollEdge(Edge.Bottom);
+        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      },
+      (errMsg: string) => {
+        // onError：解锁 + 错误提示
+        this.isLoading = false;
+        this.streamController = null;
+        msg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
+        this.scroller.scrollEdge(Edge.Bottom);
+        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      },
+      (reasoning: string) => {
+        // onReasoning：深度思考内容到达，占位切换为思考态（不持久化，仅 UI 反馈）
+        if (msg.content === PLACEHOLDER_LOADING) {
+          msg.content = PLACEHOLDER_THINKING;
+        }
+        this.scroller.scrollEdge(Edge.Bottom);
+      }
+    );
+    this.scroller.scrollEdge(Edge.Bottom);
+  }
+
   // ============================================================
   // ★ 0.133 新增：语音朗读（TTS 分段合成流水线播放）
   // ============================================================
@@ -1482,6 +1551,15 @@ export struct ChatPage {
                         // ★ 0.146：移入包裹容器——行宽自适应，左缘对齐气泡内文字（margin left 10 = 气泡 padding 10）
                         if (msg.role === 'assistant') {
                           Row() {
+                            // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复（置于 token 统计左侧）
+                            Button('🔄')
+                              .fontSize(14)
+                              .backgroundColor(Color.Transparent)
+                              .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
+                              .padding({ left: 0, right: 4, top: 2, bottom: 2 })
+                              .onClick(() => {
+                                this.regenerateMessage(msg);
+                              })
                             if (msg.outputTokens > 0) {
                               Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
                                 .fontSize(11)
