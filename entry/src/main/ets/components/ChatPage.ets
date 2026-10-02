@@ -97,29 +97,52 @@ struct CodeBlockView {
   @Param content: string = '';   // 代码内容
   @Param isDark: boolean = false; // 深浅色主题
   @Local wrap: boolean = true;    // 默认开启自动换行
+  @Event onZoom: (content: string) => void = (content: string) => {}; // ★ 0.153：放大回调（父组件打开全屏代码弹窗）
 
   build() {
     Column() {
-      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化）
+      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大）
       Row() {
-        // 切换图标：换行模式显示 ↩，滚动模式显示 ⇄
-        Text(this.wrap ? '↩' : '⇄')
-          .fontSize(11)
-          .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
-          .margin({ right: 3 })
+        // 换行切换按钮：换行模式显示 ↩，滚动模式显示 ⇄
+        Row() {
+          Text(this.wrap ? '↩' : '⇄')
+            .fontSize(11)
+            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+            .margin({ right: 3 })
 
-        Text(this.wrap ? '自动换行' : '横向滚动')
-          .fontSize(11)
-          .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+          Text(this.wrap ? '自动换行' : '横向滚动')
+            .fontSize(11)
+            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+        }
+        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+        .borderRadius(4)
+        .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
+        .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .onClick(() => {
+          this.wrap = !this.wrap;
+        })
+
+        // ★ 0.153：放大按钮——打开全屏代码查看弹窗（父组件渲染）
+        Row() {
+          Text('⤢')
+            .fontSize(11)
+            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+            .margin({ right: 3 })
+
+          Text('放大')
+            .fontSize(11)
+            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+        }
+        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+        .borderRadius(4)
+        .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
+        .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .margin({ left: 6 })
+        .onClick(() => {
+          this.onZoom(this.content);
+        })
       }
-      .padding({ left: 6, right: 6, top: 3, bottom: 3 })
-      .borderRadius(4)
-      .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
-      .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
       .margin({ top: 4, bottom: 2 })
-      .onClick(() => {
-        this.wrap = !this.wrap;
-      })
 
       // 代码内容：根据 wrap 状态切换渲染模式
       if (this.wrap) {
@@ -205,6 +228,15 @@ export struct ChatPage {
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
   @Local replyLengthMode: string = 'medium';
   @Local lengthDropdownOpen: boolean = false;
+  // ★ 0.153：代码块放大弹窗状态（代码块左上角「放大」按钮打开，全屏查看 + 换行切换）
+  @Local codeZoomVisible: boolean = false;
+  @Local codeZoomContent: string = '';
+  @Local codeZoomWrap: boolean = true;    // 放大视图默认换行（与气泡内代码块默认一致）
+  // ★ 0.153：表格放大弹窗状态（表格默认不换行 + 固定列宽对齐；放大视图支持换行切换）
+  @Local tableZoomVisible: boolean = false;
+  @Local tableZoomHeader: string[] = [];
+  @Local tableZoomRows: string[][] = [];
+  @Local tableZoomWrap: boolean = false;  // 放大视图默认不换行（与气泡内表格默认一致）
   // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
@@ -225,6 +257,44 @@ export struct ChatPage {
   // ★ 获取 ThemeStore（通过 AppStorageV2 共享，0.103 功能）
   getThemeStore(): ThemeStore {
     return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
+  }
+
+  // ★ 0.153：估算表格各列固定宽度（vp）——按每列最大内容长度计算，保证表头/数据行列边界严格对齐
+  // fontSize 14 下中文≈14vp/字符、英文≈7.5vp/字符，按中文保守估算：列偏宽不错位不截断，超宽靠横向滚动兜底
+  getTableColWidths(header: string[], rows: string[][]): number[] {
+    let colCount = header.length;
+    for (const row of rows) {
+      if (row.length > colCount) {
+        colCount = row.length;
+      }
+    }
+    const widths: number[] = [];
+    for (let ci = 0; ci < colCount; ci++) {
+      let maxLen = ci < header.length ? header[ci].length : 0;
+      for (const row of rows) {
+        if (ci < row.length && row[ci].length > maxLen) {
+          maxLen = row[ci].length;
+        }
+      }
+      // 每字符 14vp + padding 16vp，clamp [48, 240]：窄列保底、超宽列上限防单列独占屏宽
+      widths.push(Math.min(240, Math.max(48, maxLen * 14 + 16)));
+    }
+    return widths;
+  }
+
+  // ★ 0.153：打开代码块放大弹窗（换行模式重置为 true，与气泡内代码块默认一致）
+  openCodeZoom(content: string): void {
+    this.codeZoomContent = content;
+    this.codeZoomWrap = true;
+    this.codeZoomVisible = true;
+  }
+
+  // ★ 0.153：打开表格放大弹窗（换行模式重置为 false，与气泡内表格默认一致）
+  openTableZoom(header: string[], rows: string[][]): void {
+    this.tableZoomHeader = header;
+    this.tableZoomRows = rows;
+    this.tableZoomWrap = false;
+    this.tableZoomVisible = true;
   }
 
   // V2 @Computed：从 store 读取当前气泡 ID，自动响应式
@@ -1442,45 +1512,74 @@ export struct ChatPage {
                               // ★ 代码块：使用 CodeBlockView 组件，支持自动换行切换（0.122）
                               CodeBlockView({
                                 content: seg.content,
-                                isDark: this.getThemeStore().isDark
+                                isDark: this.getThemeStore().isDark,
+                                onZoom: (content: string) => { this.openCodeZoom(content); } // ★ 0.153：左上角「放大」按钮回调
                               })
                             }
                             if (seg.type === 2) {
-                              // 表格：带边框 + 表头区分 + 横向滚动
-                              Scroll() {
-                                Column() {
-                                  // 表头行
-                                  Row() {
-                                    ForEach(seg.header, (cell: string, ci: number) => {
-                                      Text(cell)
-                                        .fontSize(14)
-                                        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-                                        .padding(8)
-                                        .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
-                                        .layoutWeight(1)
-                                        .textAlign(TextAlign.Center)
-                                    }, (cell: string, ci: number) => `h_${ci}`)
-                                  }
-                                  // 数据行
-                                  ForEach(seg.rows, (row: string[], ri: number) => {
+                              // ★ 0.153：表格重做——固定列宽对齐（layoutWeight 在横向 Scroll 内失去统一基准导致列错位）
+                              // + 默认不换行（单行 + 超宽省略）+ 左上角「放大」按钮（全屏查看 + 换行切换）
+                              Column() {
+                                // 左上角放大按钮（样式与代码块按钮统一）
+                                Row() {
+                                  Text('⤢')
+                                    .fontSize(11)
+                                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                                    .margin({ right: 3 })
+                                  Text('放大')
+                                    .fontSize(11)
+                                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                                }
+                                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                                .borderRadius(4)
+                                .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+                                .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
+                                .margin({ top: 4, bottom: 2 })
+                                .onClick(() => {
+                                  this.openTableZoom(seg.header, seg.rows);
+                                })
+
+                                // 表格主体：横向滚动 + 固定列宽（各行边界严格对齐）
+                                Scroll() {
+                                  Column() {
+                                    // 表头行
                                     Row() {
-                                      ForEach(row, (cell: string, ci: number) => {
+                                      ForEach(seg.header, (cell: string, ci: number) => {
                                         Text(cell)
                                           .fontSize(14)
-                                          .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
+                                          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
                                           .padding(8)
                                           .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
-                                          .layoutWeight(1)
+                                          .width(this.getTableColWidths(seg.header, seg.rows)[ci])
+                                          .maxLines(1)
+                                          .textOverflow({ overflow: TextOverflow.Ellipsis })
                                           .textAlign(TextAlign.Center)
-                                      }, (cell: string, ci: number) => `r_${ri}_${ci}`)
+                                      }, (cell: string, ci: number) => `h_${ci}`)
                                     }
-                                  }, (row: string[], ri: number) => `row_${ri}`)
+                                    // 数据行
+                                    ForEach(seg.rows, (row: string[], ri: number) => {
+                                      Row() {
+                                        ForEach(row, (cell: string, ci: number) => {
+                                          Text(cell)
+                                            .fontSize(14)
+                                            .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
+                                            .padding(8)
+                                            .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                                            .width(this.getTableColWidths(seg.header, seg.rows)[ci])
+                                            .maxLines(1)
+                                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                                            .textAlign(TextAlign.Center)
+                                        }, (cell: string, ci: number) => `r_${ri}_${ci}`)
+                                      }
+                                    }, (row: string[], ri: number) => `row_${ri}`)
+                                  }
                                 }
+                                .scrollable(ScrollDirection.Horizontal)
+                                .scrollBar(BarState.Auto)
+                                .width('100%')
+                                .margin({ top: 6, bottom: 6 })
                               }
-                              .scrollable(ScrollDirection.Horizontal)
-                              .scrollBar(BarState.Auto)
-                              .width('100%')
-                              .margin({ top: 6, bottom: 6 })
+                              .alignItems(HorizontalAlign.Start)
                             }
                            // ★ 0.132 修复：key 纳入 content/header/rows 尺寸——流式追加时 key 变化触发 item 重建，
                            // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
@@ -2083,6 +2182,213 @@ export struct ChatPage {
           .alignContent(Alignment.Center)
         }
 
+        // ★ 0.153：代码块放大弹窗（左上角「放大」按钮打开，全屏查看 + 换行/横向滚动切换）
+        if (this.codeZoomVisible) {
+          Stack() {
+            // 遮罩：点击关闭
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.5)')
+            .onClick(() => {
+              this.codeZoomVisible = false;
+            })
+
+            // 面板
+            Column() {
+              // 标题行：标题 + 换行切换 + 关闭
+              Row() {
+                Text('代码块')
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+
+                Blank()
+
+                // 换行切换按钮（样式与气泡内代码块按钮统一）
+                Row() {
+                  Text(this.codeZoomWrap ? '↩' : '⇄')
+                    .fontSize(11)
+                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                    .margin({ right: 3 })
+                  Text(this.codeZoomWrap ? '自动换行' : '横向滚动')
+                    .fontSize(11)
+                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                }
+                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                .borderRadius(4)
+                .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+                .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
+                .onClick(() => {
+                  this.codeZoomWrap = !this.codeZoomWrap;
+                })
+
+                // 关闭按钮
+                Text('✕')
+                  .fontSize(16)
+                  .fontColor(this.getThemeStore().isDark ? '#AAAAAA' : '#999999')
+                  .margin({ left: 12 })
+                  .onClick(() => {
+                    this.codeZoomVisible = false;
+                  })
+              }
+              .width('100%')
+              .margin({ bottom: 10 })
+
+              // 代码内容：纵向滚动；换行模式 Text 自然换行，滚动模式内层横向滚动
+              Scroll() {
+                if (this.codeZoomWrap) {
+                  Text(this.codeZoomContent)
+                    .fontSize(14)
+                    .fontFamily('monospace')
+                    .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
+                    .padding(10)
+                    .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
+                    .borderRadius(6)
+                    .width('100%')
+                } else {
+                  Scroll() {
+                    Text(this.codeZoomContent)
+                      .fontSize(14)
+                      .fontFamily('monospace')
+                      .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
+                      .padding(10)
+                      .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
+                      .borderRadius(6)
+                  }
+                  .scrollable(ScrollDirection.Horizontal)
+                  .scrollBar(BarState.Auto)
+                  .width('100%')
+                }
+              }
+              .scrollable(ScrollDirection.Vertical)
+              .scrollBar(BarState.Auto)
+              .layoutWeight(1)
+              .width('100%')
+            }
+            .width('94%')
+            .height('88%')
+            .padding(16)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
+
+        // ★ 0.153：表格放大弹窗（表格「放大」按钮打开，全屏查看 + 换行切换）
+        if (this.tableZoomVisible) {
+          Stack() {
+            // 遮罩：点击关闭
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.5)')
+            .onClick(() => {
+              this.tableZoomVisible = false;
+            })
+
+            // 面板
+            Column() {
+              // 标题行：标题 + 换行切换 + 关闭
+              Row() {
+                Text('表格')
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+
+                Blank()
+
+                // 换行切换按钮：不换行=单行+横向滚动，换行=固定列宽内折行
+                Row() {
+                  Text(this.tableZoomWrap ? '↩' : '⇄')
+                    .fontSize(11)
+                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                    .margin({ right: 3 })
+                  Text(this.tableZoomWrap ? '换行' : '不换行')
+                    .fontSize(11)
+                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                }
+                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                .borderRadius(4)
+                .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+                .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
+                .onClick(() => {
+                  this.tableZoomWrap = !this.tableZoomWrap;
+                })
+
+                // 关闭按钮
+                Text('✕')
+                  .fontSize(16)
+                  .fontColor(this.getThemeStore().isDark ? '#AAAAAA' : '#999999')
+                  .margin({ left: 12 })
+                  .onClick(() => {
+                    this.tableZoomVisible = false;
+                  })
+              }
+              .width('100%')
+              .margin({ bottom: 10 })
+
+              // 表格内容：纵向滚动（外层）+ 横向滚动（内层）+ 固定列宽对齐
+              Scroll() {
+                Scroll() {
+                  Column() {
+                    // 表头行
+                    Row() {
+                      ForEach(this.tableZoomHeader, (cell: string, ci: number) => {
+                        Text(cell)
+                          .fontSize(14)
+                          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                          .padding(8)
+                          .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                          .width(this.getTableColWidths(this.tableZoomHeader, this.tableZoomRows)[ci])
+                          .maxLines(this.tableZoomWrap ? 999 : 1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          .textAlign(TextAlign.Center)
+                      }, (cell: string, ci: number) => `zh_${ci}`)
+                    }
+                    // 数据行
+                    ForEach(this.tableZoomRows, (row: string[], ri: number) => {
+                      Row() {
+                        ForEach(row, (cell: string, ci: number) => {
+                          Text(cell)
+                            .fontSize(14)
+                            .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
+                            .padding(8)
+                            .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                            .width(this.getTableColWidths(this.tableZoomHeader, this.tableZoomRows)[ci])
+                            .maxLines(this.tableZoomWrap ? 999 : 1)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .textAlign(TextAlign.Center)
+                        }, (cell: string, ci: number) => `zr_${ri}_${ci}`)
+                      }
+                    }, (row: string[], ri: number) => `zrow_${ri}`)
+                  }
+                }
+                .scrollable(ScrollDirection.Horizontal)
+                .scrollBar(BarState.Auto)
+              }
+              .scrollable(ScrollDirection.Vertical)
+              .scrollBar(BarState.Auto)
+              .layoutWeight(1)
+              .width('100%')
+            }
+            .width('94%')
+            .height('88%')
+            .padding(16)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
+
         // ★ 0.145：文本预览弹窗已移除——长按气泡文本直接进入系统选择模式 + 自研悬浮操作栏（bindSelectionMenu）
 
         // ★ 0.133：发送模式选择面板（半透明遮罩 + 右下角面板，浮于输入区上方）
@@ -2231,6 +2537,14 @@ export struct ChatPage {
       }
       if (this.knowledgeEditVisible) {
         this.closeKnowledgeEdit(); // ★ 0.146：编辑弹窗打开时拦截返回，关闭弹窗并取消提炼请求
+        return true;
+      }
+      if (this.codeZoomVisible) {
+        this.codeZoomVisible = false; // ★ 0.153：代码块放大弹窗打开时拦截返回
+        return true;
+      }
+      if (this.tableZoomVisible) {
+        this.tableZoomVisible = false; // ★ 0.153：表格放大弹窗打开时拦截返回
         return true;
       }
       return false; // 预览未打开，恢复原生返回逻辑
