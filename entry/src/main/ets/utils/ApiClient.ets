@@ -99,6 +99,11 @@ interface SSEResponseUsage {
 // ========== 消息转换 ==========
 // 把项目 ChatMessage[] 转为火山 OpenAI 兼容格式
 // 支持多模态：有图片时 content 为数组，无图片时 content 为 string
+// ★ 0.160 bugfix: role mapping is three-way — user→user, system→system, rest→assistant.
+// Previously every non-user role was coerced to 'assistant', so injected system prompts
+// (history summary / reply-length / preference / podcast) were sent as assistant turns;
+// models treat a trailing assistant message as their own unfinished reply and continue
+// it verbatim, leaking prompt text into chat answers.
 function buildMessages(messages: ChatMessage[]): VolcanoMessage[] {
   const result: VolcanoMessage[] = [];
   for (let i = 0; i < messages.length; i++) {
@@ -121,14 +126,19 @@ function buildMessages(messages: ChatMessage[]): VolcanoMessage[] {
         parts.push(imgPart);
       }
       const m: VolcanoMessage = {
-        role: msg.role === 'user' ? 'user' : 'assistant',
+        // ★ 0.160 bugfix: system role must pass through as 'system' — mapping it to
+        // 'assistant' made trailing injected prompts (length/preference/podcast/summary)
+        // look like the model's own unfinished reply, which the model would continue
+        // verbatim (prompt leakage into chat answers)
+        role: msg.role === 'user' ? 'user' : (msg.role === 'system' ? 'system' : 'assistant'),
         content: parts
       };
       result.push(m);
     } else {
       // 纯文本：content 为 string
       const m: VolcanoMessage = {
-        role: msg.role === 'user' ? 'user' : 'assistant',
+        // ★ 0.160 bugfix: same three-way mapping as the multimodal branch above
+        role: msg.role === 'user' ? 'user' : (msg.role === 'system' ? 'system' : 'assistant'),
         content: msg.content
       };
       result.push(m);
