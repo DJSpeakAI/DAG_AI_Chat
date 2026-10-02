@@ -2361,14 +2361,17 @@ export struct ChatPage {
                   .width(60)
                   .height(60)
                   .borderRadius(8)
+                // ★ 0.160 bugfix: same redo as knowledge-dialog × — enlarge to 22x22 bold and move
+                // inside the Stack top-right (old 18x18 at y:-2 overflowed the border, unrecognizable)
                 Button('×')
-                  .fontSize(12)
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Bold)
                   .fontColor('#FFFFFF')
                   .backgroundColor('#F44336')
-                  .width(18)
-                  .height(18)
-                  .borderRadius(9)
-                  .position({ x: 46, y: -2 })
+                  .width(22)
+                  .height(22)
+                  .borderRadius(11)
+                  .position({ x: 36, y: 2 })
                   .onClick(() => {
                     this.removeImage(index);
                   })
@@ -2547,6 +2550,9 @@ export struct ChatPage {
                   .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                   .margin({ bottom: 6 })
                 ForEach(this.editReviewWords, (w: WordItem, idx: number) => {
+                  // ★ 0.160 bugfix: wrap each entry in horizontal Scroll (same as bubble review area) —
+                  // long word/phonetic text overflowed the dialog boundary without it (user report)
+                  Scroll() {
                   Column() {
                     Row() {
                       Text('📚 ' + w.word)
@@ -2586,6 +2592,10 @@ export struct ChatPage {
                       .margin({ top: 2 })
                   }
                   .alignItems(HorizontalAlign.Start)
+                  }
+                  .scrollable(ScrollDirection.Horizontal)
+                  .scrollBar(BarState.Off)
+                  .align(Alignment.Start)
                   .width('100%')
                   .margin({ bottom: idx === this.editReviewWords.length - 1 ? 0 : 6 })
                 }, (w: WordItem) => w.word)
@@ -2595,6 +2605,9 @@ export struct ChatPage {
                   .strokeWidth(0.5)
                   .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                   .margin({ top: 6, bottom: 6 })
+                // ★ 0.160 bugfix: wrap card in horizontal Scroll (same as bubble review area) —
+                // long title/definition could not be swiped and overflowed the dialog (user report)
+                Scroll() {
                 Column() {
                   Row() {
                     Text('📖 ' + this.editReviewCard.title)
@@ -2622,6 +2635,10 @@ export struct ChatPage {
                     .margin({ top: 2 })
                 }
                 .alignItems(HorizontalAlign.Start)
+                }
+                .scrollable(ScrollDirection.Horizontal)
+                .scrollBar(BarState.Off)
+                .align(Alignment.Start)
                 .width('100%')
                 .margin({ bottom: 12 })
               }
