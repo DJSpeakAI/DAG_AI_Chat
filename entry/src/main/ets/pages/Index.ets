@@ -20,7 +20,7 @@ import { ChatPage } from '../components/ChatPage';
 import { SettingsPage } from '../components/SettingsPage';
 import { WordBankPage } from '../components/WordBankPage'; // ★ 0.145：单词库页面路由
 import { KnowledgeBankPage } from '../components/KnowledgeBankPage'; // ★ 0.146：知识库页面路由
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree } from '../common/ChatModel';
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.131：深浅色适配
 
 // 首页入口 — V2 全量迁移
@@ -37,21 +37,36 @@ struct Index {
   aboutToAppear() {
     // PersistenceV2: 持久化 JSON 字符串
     const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
-    // 尝试从 JSON 恢复 BubbleTree
-    const loaded = deserializeBubbleTree(persist.bubbleTreeJson);
-    if (loaded) {
-      AppStorageV2.connect(BubbleTree, 'bubble-tree', () => loaded);
+    // ★ 0.151：按画布模式分支恢复工作区（两池隔离：平铺池 bubbleTreeJson / Tab 池 tabsJson）
+    const canvasModeStore = connectCanvasMode();
+    if (canvasModeStore.mode === 'tabs') {
+      // 选项卡模式：工作区加载当前选中 Tab 的树（无 Tab = 空树，等用户点 ➕ 创建）
+      const forest = connectTabForest();
+      const tabs = parseTabs(forest.tabsJson);
+      const active = tabs.find((t: TabMeta): boolean => t.id === forest.activeTabId);
+      const tabTree = active ? deserializeBubbleTree(active.treeJson) : null;
+      if (tabTree) {
+        AppStorageV2.connect(BubbleTree, 'bubble-tree', () => tabTree);
+      } else {
+        AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree());
+      }
     } else {
-      // 首次启动，创建默认气泡树
-      AppStorageV2.connect(BubbleTree, 'bubble-tree', () => {
-        const rootId = generateNodeId();
-        return new BubbleTree([
-          new BubbleNode(rootId, null, [
-            new ChatMessage(generateMessageId(), 'user', '你好'),
-            new ChatMessage(generateMessageId(), 'assistant', '1')
-          ], 200, 200)
-        ]);
-      });
+      // 平铺模式（现状路径）：尝试从平铺池 JSON 恢复 BubbleTree
+      const loaded = deserializeBubbleTree(persist.bubbleTreeJson);
+      if (loaded) {
+        AppStorageV2.connect(BubbleTree, 'bubble-tree', () => loaded);
+      } else {
+        // 首次启动，创建默认气泡树
+        AppStorageV2.connect(BubbleTree, 'bubble-tree', () => {
+          const rootId = generateNodeId();
+          return new BubbleTree([
+            new BubbleNode(rootId, null, [
+              new ChatMessage(generateMessageId(), 'user', '你好'),
+              new ChatMessage(generateMessageId(), 'assistant', '1')
+            ], 200, 200)
+          ]);
+        });
+      }
     }
     // PersistenceV2：API 配置持久化，跨重启保存
     PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());

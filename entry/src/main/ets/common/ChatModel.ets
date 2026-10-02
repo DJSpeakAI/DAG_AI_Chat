@@ -14,7 +14,7 @@
 //   - @Trace：标记可观察属性，变化时通知依赖的组件更新
 // ============================================================
 
-import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要
+import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
 export type ChatRole = 'user' | 'assistant' | 'system'; // ★ 新增 'system'（0.117 摘要虚拟消息）
@@ -229,4 +229,108 @@ export class AiPreference {
 // ★ 0.150：连接 AI 偏好持久化实例（全新 key，无历史迁移需求）
 export function connectAiPreference(): AiPreference {
   return PersistenceV2.connect(AiPreference, 'ai-preference-v1', () => new AiPreference()) as AiPreference;
+}
+
+// ============================================================
+// ★ 0.151：画布多树模式数据层（两池隔离设计）
+// ============================================================
+//   - 平铺池 = PersistData.bubbleTreeJson（现状不动，存平铺视图的全部树）
+//   - Tab 池 = TabForestStore.tabsJson（存选项卡视图每个 Tab 的独立树）
+//   - 'bubble-tree' 单例 = 当前视图工作区：切模式/切 Tab 只换工作区内容，
+//     两池数据永不互搬互删（满足需求 3「切换只是 UI 形态变更，数据不自动删除」）
+// 需求 2.4.2「选项卡→平铺：底层树根气泡统一平铺渲染」采用两池隔离解释：
+// 平铺视图只渲染平铺池的树，Tab 树留在 forest 不混入（与 2.4.1 对称、
+// 与约束 1「不自动把旧树映射为 Tab」自洽）。
+// ============================================================
+
+// ★ 0.151：画布模式类型（'flat' 多根平铺 / 'tabs' 选项卡多树）
+export type CanvasMode = 'flat' | 'tabs';
+
+// ★ 0.151：画布模式持久化——跨重启保持；独立全新 key（0.143 教训：往已有磁盘
+// 快照的类新增字段会因旧快照缺字段不落盘，全新 key 首次创建即含全部字段）
+@ObservedV2
+export class CanvasModeStore {
+  @Trace mode: CanvasMode = 'flat'; // 默认平铺模式
+}
+
+// ★ 0.151：连接画布模式持久化实例（全新 key，无历史迁移需求）
+export function connectCanvasMode(): CanvasModeStore {
+  return PersistenceV2.connect(CanvasModeStore, 'canvas-mode-v1', () => new CanvasModeStore()) as CanvasModeStore;
+}
+
+// ★ 0.151：Tab 元数据——一个 Tab = 一棵完整独立的树
+export interface TabMeta {
+  id: string;       // Tab 唯一 ID
+  name: string;     // Tab 显示名（可重命名，溢出省略号截断）
+  treeJson: string; // 该 Tab 整棵树的序列化 JSON（与 PersistData.bubbleTreeJson 同格式）
+}
+
+// ★ 0.151：Tab 森林持久化——tabsJson 存 TabMeta[] 的 JSON 字符串（字符串持久化与
+// bubbleTreeJson 同模式，避免嵌套 @ObservedV2 类持久化风险）；activeTabId 记当前选中 Tab
+@ObservedV2
+export class TabForestStore {
+  @Trace tabsJson: string = '[]';  // TabMeta[] JSON
+  @Trace activeTabId: string = ''; // 当前选中 Tab ID（空 = 无 Tab）
+}
+
+// ★ 0.151：连接 Tab 森林持久化实例（全新 key，无历史迁移需求）
+export function connectTabForest(): TabForestStore {
+  return PersistenceV2.connect(TabForestStore, 'tab-forest-v1', () => new TabForestStore()) as TabForestStore;
+}
+
+// ★ 0.151：Tab 列表解析（JSON 容错：坏数据返回空数组，不崩溃）
+export function parseTabs(tabsJson: string): TabMeta[] {
+  if (!tabsJson || tabsJson.length === 0) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(tabsJson) as TabMeta[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ★ 0.151：Tab 列表序列化
+export function serializeTabs(tabs: TabMeta[]): string {
+  return JSON.stringify(tabs);
+}
+
+// ★ 0.151：模式切换核心——切换 'bubble-tree' 工作区内容（两池隔离，数据不丢）
+// 调用时机：全局设置弹窗「保存」按钮（用户确认切换后执行一次）
+//   flat→tabs：平铺树存回平铺池；工作区加载当前选中 Tab 的树（无 Tab = 空树）
+//   tabs→flat：工作区（当前 Tab 树）存回该 Tab 的 treeJson；工作区加载平铺池的树
+// 同时清空 currentBubble（旧选中节点在新工作区必然失效，防 ChatPage 数据错乱）+ 置 needsRelayout
+export function applyCanvasModeSwitch(newMode: CanvasMode): void {
+  const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
+  const store = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  const forest = connectTabForest();
+  const current = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
+
+  if (newMode === 'tabs') {
+    // 平铺 → 选项卡：平铺树入池保存
+    persist.bubbleTreeJson = serializeBubbleTree(store);
+    // 工作区加载当前选中 Tab 的树（无 Tab = 空树，等用户点 ➕ 创建）
+    const tabs = parseTabs(forest.tabsJson);
+    const active = tabs.find((t: TabMeta): boolean => t.id === forest.activeTabId);
+    const loaded = active ? deserializeBubbleTree(active.treeJson) : null;
+    store.nodeList = loaded ? loaded.nodeList : [];
+  } else {
+    // 选项卡 → 平铺：工作区（当前 Tab 树）存回该 Tab 的 treeJson
+    const tabs = parseTabs(forest.tabsJson);
+    const idx = tabs.findIndex((t: TabMeta): boolean => t.id === forest.activeTabId);
+    if (idx >= 0) {
+      tabs[idx].treeJson = serializeBubbleTree(store);
+      forest.tabsJson = serializeTabs(tabs);
+    }
+    // 工作区加载平铺池的树
+    const loaded = deserializeBubbleTree(persist.bubbleTreeJson);
+    store.nodeList = loaded ? loaded.nodeList : [];
+  }
+  // 清空当前选中（旧选中节点在新工作区必然失效，防 ChatPage 数据错乱）
+  current.nodeID = '';
+  current.bubbleX = 0;
+  current.bubbleY = 0;
+  // 触发画布重布局（BBTreeCanvas onShown / 弹窗 onClose 消费）
+  store.needsRelayout = true;
 }

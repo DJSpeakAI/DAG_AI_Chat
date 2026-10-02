@@ -21,7 +21,7 @@
 // ============================================================
 
 import { AppStorageV2 } from '@kit.ArkUI';
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference } from '../common/ChatModel';
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, CanvasMode, CanvasModeStore, connectCanvasMode, applyCanvasModeSwitch } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // 模型选项接口（与原 SettingsPage 一致，搬入保持组件自包含）
@@ -54,6 +54,7 @@ export struct GlobalSettingsDialog {
 
   apiConfig: ApiConfig = connectApiConfig();       // ★ 0.143：换 key 'api-config-v2' 工厂
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：全新 key 'ai-preference-v1'
+  canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：全新 key 'canvas-mode-v1'
 
   // Tab 切换（自绘两按钮 + 条件渲染，不用 Tabs 组件）
   @Local currentTab: number = 0; // 0=API 配置，1=AI 偏好
@@ -73,6 +74,8 @@ export struct GlobalSettingsDialog {
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourage: boolean = true; // 自动鼓励开关（默认开启）
+  // ★ 0.151 Tab2 编辑副本（画布模式；点保存才执行切换——切换涉及工作区数据搬移，不宜点选即切）
+  @Local editCanvasMode: CanvasMode = 'flat'; // 'flat' 平铺 / 'tabs' 选项卡
 
   // ★ 0.131：获取全局主题状态（与 ChatPage/BBTreeCanvas 相同模式）
   getThemeStore(): ThemeStore {
@@ -104,6 +107,8 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourage = this.aiPreference.encourageEnabled;
+    // ★ 0.151：画布模式编辑副本
+    this.editCanvasMode = this.canvasModeStore.mode;
 
     // ★ 0.139：旧值迁移——方舟端点组合（doubao-tts，两次真机实测 404）与播客 ID 一并迁移到 openspeech 2.0 协议
     // （原迁移逻辑在 SettingsPage aboutToAppear；SettingsPage 改弹窗后无入口，迁移职责随表单搬入本组件）
@@ -139,7 +144,7 @@ export struct GlobalSettingsDialog {
     // ★ 0.133：音频模型不做强制回显覆盖（用户可能保存过自定义 ID，保留原值）
   }
 
-  // ★ 0.135/0.150：是否有未保存的修改（✕ 关闭拦截判断；八项 = Tab1 六项 + Tab2 两项）
+  // ★ 0.135/0.150/0.151：是否有未保存的修改（✕ 关闭拦截判断；九项 = Tab1 六项 + Tab2 三项）
   hasUnsavedChanges(): boolean {
     return this.editKey.trim() !== this.apiConfig.apiKey ||
       this.editEndpoint.trim() !== this.apiConfig.endpoint ||
@@ -148,7 +153,8 @@ export struct GlobalSettingsDialog {
       this.editAudioEndpoint.trim() !== this.apiConfig.audioEndpoint ||
       this.editAudioKey.trim() !== this.apiConfig.audioKey || // ★ 0.140：音频 Key 纳入未保存判断
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
-      this.editEncourage !== this.aiPreference.encourageEnabled;   // ★ 0.150：鼓励开关
+      this.editEncourage !== this.aiPreference.encourageEnabled || // ★ 0.150：鼓励开关
+      this.editCanvasMode !== this.canvasModeStore.mode;           // ★ 0.151：画布模式
   }
 
   // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
@@ -191,7 +197,13 @@ export struct GlobalSettingsDialog {
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageEnabled = this.editEncourage;
-    console.info('[GlobalSettingsDialog] settings saved (API config + AI preference)');
+    // ★ 0.151：画布模式切换——先执行工作区切换（两池数据各归其位），再写 mode 持久化
+    if (this.editCanvasMode !== this.canvasModeStore.mode) {
+      applyCanvasModeSwitch(this.editCanvasMode);
+      this.canvasModeStore.mode = this.editCanvasMode;
+      console.info(`[GlobalSettingsDialog] canvas mode switched to ${this.editCanvasMode}`);
+    }
+    console.info('[GlobalSettingsDialog] settings saved (API config + AI preference + canvas mode)');
     this.showToastSafe('已保存');
   }
 
@@ -488,6 +500,79 @@ export struct GlobalSettingsDialog {
           .fontSize(11)
           .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
           .margin({ top: 4 })
+      }
+      .width('100%')
+      .margin({ bottom: 24 })
+
+      // ★ 0.151：画布多树模式单选（平铺 / 选项卡）
+      Column() {
+        Text('画布多树模式')
+          .fontSize(14)
+          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .margin({ bottom: 6 })
+
+        // 选项 1：多根平铺模式（默认）
+        Row() {
+          Text(this.editCanvasMode === 'flat' ? '●' : '○')
+            .fontSize(16)
+            .fontColor(this.editCanvasMode === 'flat' ? '#1976D2' : (this.getThemeStore().isDark ? '#777777' : '#999'))
+          Column() {
+            Text('多根平铺模式')
+              .fontSize(14)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            Text('多棵树的根气泡同一行并排，右上角「添加根气泡」可新增树')
+              .fontSize(11)
+              .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+              .margin({ top: 2 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          .margin({ left: 10 })
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(8)
+        .backgroundColor(this.editCanvasMode === 'flat'
+          ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+          : (this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5'))
+        .onClick(() => {
+          this.editCanvasMode = 'flat';
+        })
+
+        // 选项 2：选项卡多树模式
+        Row() {
+          Text(this.editCanvasMode === 'tabs' ? '●' : '○')
+            .fontSize(16)
+            .fontColor(this.editCanvasMode === 'tabs' ? '#1976D2' : (this.getThemeStore().isDark ? '#777777' : '#999'))
+          Column() {
+            Text('选项卡多树模式')
+              .fontSize(14)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            Text('画布顶部 Tab 栏，一个 Tab = 一棵独立树，可增删改名')
+              .fontSize(11)
+              .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+              .margin({ top: 2 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          .margin({ left: 10 })
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(8)
+        .backgroundColor(this.editCanvasMode === 'tabs'
+          ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+          : (this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5'))
+        .margin({ top: 8 })
+        .onClick(() => {
+          this.editCanvasMode = 'tabs';
+        })
+
+        // 提示：切换规则（两池隔离）
+        Text('💡 切换仅改变画布展示方式，两模式数据各自保留、互不删除：平铺模式的树保留在平铺里，选项卡模式的 Tab 树保留在 Tab 里。切换在点「保存」后生效。')
+          .fontSize(11)
+          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .margin({ top: 6 })
       }
       .width('100%')
       .margin({ bottom: 16 })

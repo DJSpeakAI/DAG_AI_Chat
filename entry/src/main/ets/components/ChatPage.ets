@@ -26,7 +26,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
 import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.155：containsChinese（划词语言检测）
@@ -383,6 +383,8 @@ export struct ChatPage {
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.143：换 key 'api-config-v2'（旧快照无 audioKey 字段致新增属性不落盘，工厂迁移历史配置）
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：AI 偏好（称呼 + 鼓励开关，独立 key 'ai-preference-v1'）
+  canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：画布模式（'flat'/'tabs'，独立 key 'canvas-mode-v1'）
+  tabForest: TabForestStore = connectTabForest();         // ★ 0.151：Tab 池（tabsJson + activeTabId，独立 key 'tab-forest-v1'）
   @Local inputText: string = '';
   @Local isLoading: boolean = false;
   @Local pendingImages: string[] = [];
@@ -693,7 +695,7 @@ export struct ChatPage {
         const summary = await this.generateSummaryWithLLM(toSummarize);
         currentNode.historySummary = summary;
         currentNode.historySummaryCount = totalCount;
-        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+        this.saveTree(); // ★ 0.151：按模式分池保存
       } catch (e) {
         console.error(`[0.117] 摘要生成失败: ${e}`);
       }
@@ -722,7 +724,7 @@ export struct ChatPage {
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
-    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    this.saveTree(); // ★ 0.151：按模式分池保存
     this.inputText = '';
     this.pendingImages = [];
     this.getUIContext().getFocusController().clearFocus(); // ★ 0.131：替代 TextAreaController.stopEditing（API 12+ 全设备兼容），发送后收起键盘
@@ -776,7 +778,7 @@ export struct ChatPage {
         aiMsg.outputTokens = outputTokens;
         // 流式完成时滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
-        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+        this.saveTree(); // ★ 0.151：按模式分池保存
       },
       (errMsg: string) => {
         // onError：解锁 + 日志 + 错误气泡
@@ -785,7 +787,7 @@ export struct ChatPage {
         aiMsg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
         // 错误时也滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
-        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+        this.saveTree(); // ★ 0.151：按模式分池保存
       },
       (reasoning: string) => {
         // ★ 0.132 onReasoning：深度思考内容到达，占位切换为思考态
@@ -853,7 +855,7 @@ export struct ChatPage {
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
         this.scroller.scrollEdge(Edge.Bottom);
-        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+        this.saveTree(); // ★ 0.151：按模式分池保存
       },
       (errMsg: string) => {
         // onError：解锁 + 错误提示
@@ -861,7 +863,7 @@ export struct ChatPage {
         this.streamController = null;
         msg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
         this.scroller.scrollEdge(Edge.Bottom);
-        this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+        this.saveTree(); // ★ 0.151：按模式分池保存
       },
       (reasoning: string) => {
         // onReasoning：深度思考内容到达，占位切换为思考态（不持久化，仅 UI 反馈）
@@ -1258,7 +1260,7 @@ export struct ChatPage {
       this.stopTTS();
     }
     this.currentBubble.messages = this.currentBubble.messages.filter(m => m.messageId !== messageId);
-    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    this.saveTree(); // ★ 0.151：按模式分池保存
   }
 
   // ============================================================
@@ -1602,9 +1604,29 @@ export struct ChatPage {
       this.currentBubbleStore.bubbleY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
-    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    this.saveTree(); // ★ 0.151：按模式分池保存
     this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局
     this.pathStack.pop();
+  }
+
+  // ★ 0.151：按模式分池保存工作区（两池隔离核心写路径，与 BBTreeCanvas.saveTree 同逻辑）
+  // flat：工作区 = 平铺树 → 存回 bubbleTreeJson（现状路径）
+  // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson（无 activeTab 时退存平铺池兜底防丢数据）
+  // 不统一替换的话，tabs 模式下聊天会把 Tab 树写进 bubbleTreeJson 污染平铺数据
+  saveTree(): void {
+    if (this.canvasModeStore.mode === 'tabs') {
+      const tabs = parseTabs(this.tabForest.tabsJson);
+      const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabForest.activeTabId);
+      if (idx >= 0) {
+        tabs[idx].treeJson = serializeBubbleTree(this.store);
+        this.tabForest.tabsJson = serializeTabs(tabs);
+        return;
+      }
+      // 无 activeTab（异常兜底）：退存平铺池，避免数据丢失
+      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    } else {
+      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    }
   }
 
   // ★ 0.150：AI 偏好 prompt 拼接——按用户设置（全局设置弹窗 Tab2）生成 system 指令（称呼 + 鼓励），

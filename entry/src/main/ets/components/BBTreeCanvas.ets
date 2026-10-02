@@ -15,7 +15,7 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
-import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree } from '../common/ChatModel';
+import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 
@@ -46,6 +46,14 @@ export struct BBTreeCanvas {
   // ★ 0.150：全局设置弹窗状态（画布右上角 ⚙ 唤起；与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步）
   @Local globalSettingsVisible: boolean = false;
   @Local globalSettingsCloseReq: number = 0; // 外部请求关闭计数器（onBackPressed 递增 → 弹窗 @Monitor 触发 requestClose）
+
+  // ★ 0.151：画布多树模式状态（两池隔离：平铺池 bubbleTreeJson / Tab 池 tabsJson，工作区='bubble-tree' 单例）
+  canvasModeStore: CanvasModeStore = connectCanvasMode(); // 'flat' 平铺 / 'tabs' 选项卡
+  tabForest: TabForestStore = connectTabForest();         // Tab 池（tabsJson + activeTabId）
+  // ★ 0.151：Tab 重命名弹窗状态（长按 Tab 触发）
+  @Local tabRenameVisible: boolean = false;
+  @Local tabRenameId: string = '';
+  @Local tabRenameText: string = '';
 
   // ── 坐标变换（手动，弃用容器 scale/translate） ──
 
@@ -128,12 +136,31 @@ export struct BBTreeCanvas {
     return '空气泡';
   }
 
+  // ★ 0.151：按模式分池保存工作区（两池隔离核心写路径）
+  // flat：工作区 = 平铺树 → 存回 bubbleTreeJson（现状路径）
+  // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson（无 activeTab 时退存平铺池兜底防丢数据）
+  saveTree(): void {
+    if (this.canvasModeStore.mode === 'tabs') {
+      const tabs = parseTabs(this.tabForest.tabsJson);
+      const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabForest.activeTabId);
+      if (idx >= 0) {
+        tabs[idx].treeJson = serializeBubbleTree(this.store);
+        this.tabForest.tabsJson = serializeTabs(tabs);
+        return;
+      }
+      // 无 activeTab（异常兜底）：退存平铺池，避免数据丢失
+      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    } else {
+      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    }
+  }
+
   // ★ 0.147：保存手动标题（截 15 字符上限）并持久化；清空保存即恢复自动标题
   saveNodeTitle(): void {
     const node = this.store.nodeList.find((n: BubbleNode) => n.nodeID === this.titleEditNodeId);
     if (node !== undefined) {
       node.nodeTitle = this.titleEditText.trim().substring(0, 15);
-      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      this.saveTree(); // ★ 0.151：按模式分池保存
     }
     this.titleEditVisible = false;
   }
@@ -174,7 +201,7 @@ export struct BBTreeCanvas {
             }
           }
           this.store.nodeList = newList;
-          this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+          this.saveTree(); // ★ 0.151：按模式分池保存
         }
       }
     });
@@ -189,10 +216,10 @@ export struct BBTreeCanvas {
     return false;
   }
 
-  // ★ 纵向树形自动排版（0.124：全节点参与，无 isUserDragged 判断）
+  // ★ 纵向树形自动排版（0.124：全节点参与，无 isUserDragged 判断；★ 0.151：多根平铺支持）
   autoLayout(): void {
-    const root = this.store.nodeList.find(n => n.parentID === null);
-    if (!root) return;
+    const roots = this.store.nodeList.filter((n: BubbleNode) => n.parentID === null);
+    if (roots.length === 0) return;
 
     const horizontalSpacing = 160; // ★ 0.147：气泡加宽（maxWidth 132），同层间距 120 → 160 防重叠
     const verticalSpacing = 160;   // 层级间垂直间距
@@ -223,8 +250,23 @@ export struct BBTreeCanvas {
       }
     };
 
-    root.y = 0;
-    layoutChildren(root, 0);
+    // ★ 0.151：多根支持（需求 2.1「多棵树的根气泡画布同一行对齐并排」）
+    //   单根：保持原 x（兼容现状——根位置用户可感知不动），只置 y=0
+    //   多根：按子树结构宽度并排排列 y=0（树间额外间隙 120）
+    if (roots.length === 1) {
+      roots[0].y = 0;
+      layoutChildren(roots[0], 0);
+    } else {
+      const treeGap = 120; // 树间额外间隙
+      let cursorX = 0;
+      for (let r = 0; r < roots.length; r++) {
+        const root = roots[r];
+        root.x = cursorX;
+        root.y = 0;
+        layoutChildren(root, 0);
+        cursorX += this.subtreeWidth(root, childrenMap, horizontalSpacing) + treeGap;
+      }
+    }
 
     // 更新所有子节点的 parentX/parentY
     for (const node of this.store.nodeList) {
@@ -237,8 +279,32 @@ export struct BBTreeCanvas {
       }
     }
 
-    // 持久化
-    this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+    // 持久化（★ 0.151：按模式分池）
+    this.saveTree();
+  }
+
+  // ★ 0.151：子树结构宽度估算——BFS 按层统计节点数，每层宽 = (count-1)*spacing + 气泡宽 132
+  // （layoutChildren 均分居中，布局后每层实际宽度即此值；供多根并排时计算树占位）
+  subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, spacing: number): number {
+    let maxWidth = 132; // 单节点（气泡 maxWidth 132）
+    let layer: BubbleNode[] = [root];
+    while (layer.length > 0) {
+      const width = (layer.length - 1) * spacing + 132;
+      if (width > maxWidth) {
+        maxWidth = width;
+      }
+      const next: BubbleNode[] = [];
+      for (const node of layer) {
+        const children = childrenMap.get(node.nodeID);
+        if (children) {
+          for (const child of children) {
+            next.push(child);
+          }
+        }
+      }
+      layer = next;
+    }
+    return maxWidth;
   }
 
   // ★ 排版后视口自适应：缩放 + 平移使整棵树居中可见（0.130 重构）
@@ -267,6 +333,131 @@ export struct BBTreeCanvas {
     // ★ 树几何中心对齐画布正中，-66/-25 气泡左上角→中心补偿（0.147 随矩形尺寸更新）；去掉 Math.max 截断，树再大中心也对齐（0.130）
     this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - 66;
     this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 25;
+  }
+
+  // ★ 0.151：模式 A【添加根气泡】——新增顶级根节点（=一棵新树），放现有根最大 x 右侧 y=0
+  addRootBubble(): void {
+    let maxX = 0;
+    let hasRoot = false;
+    for (const node of this.store.nodeList) {
+      if (node.parentID === null) {
+        hasRoot = true;
+        if (node.x > maxX) {
+          maxX = node.x;
+        }
+      }
+    }
+    const x = hasRoot ? maxX + 200 : 200;
+    const root = new BubbleNode(generateNodeId(), null, [], x, 0);
+    this.store.nodeList.push(root);
+    this.saveTree(); // ★ 0.151：按模式分池保存
+    // 新根无子树无需 autoLayout，直接适配视口让新根可见
+    this.fitViewport();
+  }
+
+  // ★ 0.151：模式 B 切换 Tab——先存回当前 Tab 树，再加载目标 Tab 树 + 重布局 + 适配视口
+  switchTab(tabId: string): void {
+    if (tabId === this.tabForest.activeTabId) return;
+    this.saveTree(); // 当前工作区存回当前 Tab
+    this.tabForest.activeTabId = tabId;
+    const tabs = parseTabs(this.tabForest.tabsJson);
+    const target = tabs.find((t: TabMeta): boolean => t.id === tabId);
+    const loaded = target ? deserializeBubbleTree(target.treeJson) : null;
+    this.store.nodeList = loaded ? loaded.nodeList : [];
+    // 清空选中（旧 Tab 选中节点在新 Tab 必然失效）
+    this.currentBubbleStore.nodeID = '';
+    this.currentBubbleStore.bubbleX = 0;
+    this.currentBubbleStore.bubbleY = 0;
+    this.autoLayout();
+    this.fitViewport();
+  }
+
+  // ★ 0.151：模式 B 新增 Tab——自带一棵全新树（空白根气泡「空气泡」，对话为空）
+  addTab(): void {
+    this.saveTree(); // 先存回当前 Tab（若有）
+    const tabId = `tab_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const tabs = parseTabs(this.tabForest.tabsJson);
+    const root = new BubbleNode(generateNodeId(), null, [], 200, 0);
+    const tree = new BubbleTree([root]);
+    tabs.push({ id: tabId, name: `树 ${tabs.length + 1}`, treeJson: serializeBubbleTree(tree) });
+    this.tabForest.tabsJson = serializeTabs(tabs);
+    this.tabForest.activeTabId = tabId;
+    // 工作区加载新 Tab 的树
+    this.store.nodeList = [root];
+    this.currentBubbleStore.nodeID = '';
+    this.currentBubbleStore.bubbleX = 0;
+    this.currentBubbleStore.bubbleY = 0;
+    this.autoLayout();
+    this.fitViewport();
+  }
+
+  // ★ 0.151：模式 B 删除 Tab——确认后同步删除整棵树数据；删当前 Tab 切相邻（优先右侧），删非当前 Tab 工作区不动
+  deleteTab(tabId: string): void {
+    const tabs = parseTabs(this.tabForest.tabsJson);
+    const target = tabs.find((t: TabMeta): boolean => t.id === tabId);
+    if (target === undefined) return;
+    this.getUIContext().showAlertDialog({
+      title: '删除选项卡',
+      message: `确认删除「${target.name}」？该 Tab 对应的整棵树及其全部对话数据将同步删除。`,
+      primaryButton: {
+        value: '取消',
+        action: () => {}
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: '#F44336',
+        action: () => {
+          const current = parseTabs(this.tabForest.tabsJson);
+          const idx = current.findIndex((t: TabMeta): boolean => t.id === tabId);
+          if (idx < 0) return;
+          current.splice(idx, 1);
+          this.tabForest.tabsJson = serializeTabs(current);
+          if (tabId === this.tabForest.activeTabId) {
+            // 删的是当前 Tab：切到相邻 Tab（优先原位置右侧，否则左边；全空 = 空树）
+            if (current.length === 0) {
+              this.tabForest.activeTabId = '';
+              this.store.nodeList = [];
+            } else {
+              const nextIdx = Math.min(idx, current.length - 1);
+              const next = current[nextIdx];
+              this.tabForest.activeTabId = next.id;
+              const loaded = deserializeBubbleTree(next.treeJson);
+              this.store.nodeList = loaded ? loaded.nodeList : [];
+            }
+            this.currentBubbleStore.nodeID = '';
+            this.currentBubbleStore.bubbleX = 0;
+            this.currentBubbleStore.bubbleY = 0;
+            this.autoLayout();
+            this.fitViewport();
+          }
+          // 删的是非当前 Tab：工作区不动（当前树不受影响）
+        }
+      }
+    });
+  }
+
+  // ★ 0.151：模式 B 打开 Tab 重命名弹窗（长按 Tab 触发）
+  openTabRename(tabId: string): void {
+    const tabs = parseTabs(this.tabForest.tabsJson);
+    const target = tabs.find((t: TabMeta): boolean => t.id === tabId);
+    if (target === undefined) return;
+    this.tabRenameId = tabId;
+    this.tabRenameText = target.name;
+    this.tabRenameVisible = true;
+  }
+
+  // ★ 0.151：模式 B 保存 Tab 重命名（截 12 字上限；空名不覆盖）并持久化
+  saveTabRename(): void {
+    const tabs = parseTabs(this.tabForest.tabsJson);
+    const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabRenameId);
+    if (idx >= 0) {
+      const trimmed = this.tabRenameText.trim();
+      if (trimmed.length > 0) {
+        tabs[idx].name = trimmed.substring(0, 12);
+        this.tabForest.tabsJson = serializeTabs(tabs);
+      }
+    }
+    this.tabRenameVisible = false;
   }
 
   build() {
@@ -402,7 +593,7 @@ export struct BBTreeCanvas {
         .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
         .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
         .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-        .position({ x: '100%', y: 10 }) // ★ 0.131/V1：右缘自适应（替代写死 x:260，任意屏宽都贴右侧）
+        .position({ x: '100%', y: this.canvasModeStore.mode === 'tabs' ? 54 : 10 }) // ★ 0.151：tabs 模式让位顶部 Tab 栏（高 44）下移；0.131/V1：右缘自适应（替代写死 x:260，任意屏宽都贴右侧）
         .markAnchor({ x: '100%', y: 0 }) // ★ 锚点为按钮右缘，使 position 100% 对齐父容器右缘
         .translate({ x: -12 }) // ★ 距右缘 12vp 边距
         .gesture(
@@ -422,7 +613,7 @@ export struct BBTreeCanvas {
         .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
         .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
         .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
-        .position({ x: '100%', y: 52 }) // 「显示全部」（y:10 + 高约 34）正下方，间距 8vp
+        .position({ x: '100%', y: this.canvasModeStore.mode === 'tabs' ? 96 : 52 }) // ★ 0.151：tabs 模式随「显示全部」同步下移；原：「显示全部」（y:10 + 高约 34）正下方，间距 8vp
         .markAnchor({ x: '100%', y: 0 })
         .translate({ x: -12 }) // 距右缘 12vp 边距（与「显示全部」对齐）
         .gesture(
@@ -432,11 +623,111 @@ export struct BBTreeCanvas {
             })
         )
 
+      // ★ 0.151：模式 A 右上角【添加根气泡】按钮（仅 flat 模式显示；点击新增顶级根节点 = 一棵新树）
+      if (this.canvasModeStore.mode === 'flat') {
+        Text('添加根气泡')
+          .fontSize(14)
+          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .borderRadius(8)
+          .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+          .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+          .shadow({ radius: 4, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 2 })
+          .position({ x: '100%', y: 96 }) // 「⚙」（y:52 + 高约 34）正下方，间距 10vp
+          .markAnchor({ x: '100%', y: 0 })
+          .translate({ x: -12 }) // 距右缘 12vp 边距（与「显示全部」对齐）
+          .gesture(
+            TapGesture()
+              .onAction(() => {
+                this.addRootBubble();
+              })
+          )
+      }
+
+      // ★ 0.151：模式 B 顶部 Tab 选项卡栏（仅 tabs 模式显示；一个 Tab = 一棵独立树；
+      // Scroll 横向滚动支持 10/20 个 Tab；Tab 名溢出省略号截断；✕ 删除；长按重命名；末尾 ➕ 新增）
+      if (this.canvasModeStore.mode === 'tabs') {
+        Row() {
+          // Tab 列表（横向滚动区域）
+          Scroll() {
+            Row({ space: 8 }) {
+              ForEach(parseTabs(this.tabForest.tabsJson), (tab: TabMeta) => {
+                Row() {
+                  Text(tab.name)
+                    .fontSize(13)
+                    .fontColor(tab.id === this.tabForest.activeTabId ? '#1976D2' : (this.getThemeStore().isDark ? '#CCCCCC' : '#333333'))
+                    .fontWeight(tab.id === this.tabForest.activeTabId ? FontWeight.Bold : FontWeight.Normal)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .constraintSize({ maxWidth: 72 }) // ★ 需求 2.3.3：Tab 标签溢出截断省略号
+                  // ✕ 删除 Tab（确认后同步删除整棵树数据）
+                  Text('✕')
+                    .fontSize(11)
+                    .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                    .margin({ left: 4 })
+                    .onClick(() => {
+                      this.deleteTab(tab.id);
+                    })
+                }
+                .padding({ left: 10, right: 6, top: 8, bottom: 8 })
+                .borderRadius(8)
+                .backgroundColor(tab.id === this.tabForest.activeTabId
+                  ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+                  : (this.getThemeStore().isDark ? '#333333' : '#FFFFFF'))
+                .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+                .onClick(() => {
+                  this.switchTab(tab.id); // 点击切换 Tab（切树）
+                })
+                .gesture(
+                  // ★ 需求 2.3.4：长按 Tab 重命名
+                  LongPressGesture({ duration: 500 })
+                    .onAction(() => {
+                      this.openTabRename(tab.id);
+                    })
+                )
+              }, (tab: TabMeta) => tab.id)
+            }
+            .padding({ left: 12, right: 8 })
+          }
+          .scrollable(ScrollDirection.Horizontal) // ★ 需求 2.3.5：Tab 栏左右横向滚动
+          .scrollBar(BarState.Off)
+          .layoutWeight(1)
+          .height(44)
+          .align(Alignment.Start)
+
+          // ➕ 新增 Tab（自带一棵全新树：空白根气泡）
+          Text('＋')
+            .fontSize(18)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .width(36)
+            .height(36)
+            .textAlign(TextAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .margin({ left: 8, right: 12 })
+            .onClick(() => {
+              this.addTab();
+            })
+        }
+        .width('100%')
+        .height(44)
+        .position({ x: 0, y: 0 }) // 顶部全宽
+        .backgroundColor(this.getThemeStore().isDark ? 'rgba(26,26,26,0.92)' : 'rgba(250,250,250,0.92)')
+      }
+
       // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起；遮罩点击不关闭，✕/返回键走弹窗内未保存确认）
       if (this.globalSettingsVisible) {
         GlobalSettingsDialog({
           onClose: () => {
             this.globalSettingsVisible = false;
+            // ★ 0.151：画布前台切模式后关弹窗——工作区内容已换（applyCanvasModeSwitch），
+            // 立即重布局 + 适配视口（onShown 只在从 ChatPage 返回时触发，覆盖不了此场景）
+            if (this.store.needsRelayout) {
+              this.autoLayout();
+              this.fitViewport();
+              this.store.needsRelayout = false;
+            }
           },
           closeReq: this.globalSettingsCloseReq
         })
@@ -537,6 +828,64 @@ export struct BBTreeCanvas {
                 .fontColor('#FFFFFF')
                 .onClick(() => {
                   this.saveNodeTitle();
+                })
+            }
+            .width('100%')
+          }
+          .width('70%')
+          .padding(20)
+          .borderRadius(12)
+          .backgroundColor(this.getThemeStore().isDark ? '#2A2A2A' : '#FFFFFF')
+          .shadow({ radius: 12, color: 'rgba(0,0,0,0.3)', offsetX: 0, offsetY: 4 })
+        }
+      }
+
+      // ★ 0.151：Tab 重命名弹窗（长按 Tab 触发；最多 12 字，空名不覆盖）
+      if (this.tabRenameVisible) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.25)')
+            .onClick(() => {
+              this.tabRenameVisible = false;
+            })
+          Column() {
+            Text('重命名选项卡')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .margin({ bottom: 12 })
+            TextInput({ text: this.tabRenameText, placeholder: '输入名称（最多12字）' })
+              .fontSize(14)
+              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .maxLength(12)
+              .onChange((value: string) => {
+                this.tabRenameText = value;
+              })
+              .width('100%')
+              .height(44)
+              .borderRadius(8)
+              .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#F5F5F5')
+              .margin({ bottom: 16 })
+            Row({ space: 12 }) {
+              Button('取消')
+                .fontSize(14)
+                .height(38)
+                .layoutWeight(1)
+                .backgroundColor(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .onClick(() => {
+                  this.tabRenameVisible = false;
+                })
+              Button('确定')
+                .fontSize(14)
+                .height(38)
+                .layoutWeight(1)
+                .backgroundColor('#1976D2')
+                .fontColor('#FFFFFF')
+                .onClick(() => {
+                  this.saveTabRename();
                 })
             }
             .width('100%')
