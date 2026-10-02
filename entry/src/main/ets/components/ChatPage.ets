@@ -51,6 +51,11 @@ const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
 // ★ 0.133：播客模式系统 prompt（发送时临时追加到消息末尾，不持久化、不进入后续上下文）
 const PODCAST_PROMPT = '你的回答会用于语音朗读，请输出自然流畅的中文口语段落。禁止输出代码块、表格、列表、markdown 标记、特殊符号。只用连续自然的文字，适合耳朵收听。';
 
+// ★ 0.144：回复长度 prompt 约束（发送时以 system 消息临时插入，不持久化；档位状态仅内存，重启恢复默认「中」）
+const SHORT_REPLY_PROMPT = '你的回答尽量简短，只输出核心结论，不要多余解释，优先一句话给出答案。';
+const MEDIUM_REPLY_PROMPT = '回答简洁完整，条理清晰，避免冗余啰嗦。';
+const LONG_REPLY_PROMPT = '回答详细完整，分点展开，深度讲解原理，尽可能把内容讲透彻。';
+
 // ★ 0.136：TTS 单段文本上限（HTTP 单段请求长度限制，留余量取 280；0.135 沿用值保留）
 const TTS_MAX_SEGMENT_LEN = 280;
 
@@ -140,6 +145,9 @@ export struct ChatPage {
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
   @Local modeDropdownOpen: boolean = false;
+  // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
+  @Local replyLengthMode: string = 'medium';
+  @Local lengthDropdownOpen: boolean = false;
   // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
@@ -360,6 +368,15 @@ export struct ChatPage {
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
     // ★ 替换为链路回溯 + 压缩（0.117）
     const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
+
+    // ★ 0.144：按回复长度档位以 system 消息插入 prompt 约束（与播客 prompt 同机制，不持久化；长度在前、播客贴近 user 消息）
+    if (this.replyLengthMode === 'short') {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', SHORT_REPLY_PROMPT));
+    } else if (this.replyLengthMode === 'long') {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', LONG_REPLY_PROMPT));
+    } else {
+      messagesToSend.push(new ChatMessage(generateMessageId(), 'system', MEDIUM_REPLY_PROMPT));
+    }
 
     // ★ 0.133：播客模式在消息末尾追加系统 prompt（只在本次请求临时追加，不持久化、不进入后续上下文）
     if (isPodcast) {
@@ -1035,13 +1052,15 @@ export struct ChatPage {
           .padding({ left: 16, right: 16, top: 8 })
         }
 
-        // 输入区域 — 图片按钮 + 输入框 + 发送按钮
+        // 输入区域 — 图片按钮 + 输入框 + 回复长度 + 模式 + 发送按钮
         Row() {
+          // ★ 0.144：图片附件按钮（暂用相机图标占位，后续有资源换图片图标；图标缩小+内边距压最小，不挤压输入框）
           Button('📷')
-            .fontSize(20)
+            .fontSize(16)
             .backgroundColor(Color.Transparent)
             .fontColor('#666')
-            .margin({ right: 8 })
+            .padding({ left: 2, right: 2 })
+            .margin({ right: 2 })
             .onClick(() => {
               this.selectImages();
             })
@@ -1050,20 +1069,35 @@ export struct ChatPage {
             .layoutWeight(1)
             .height(this.inputAreaHeight) // ★ 新增：动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
             .enterKeyType(EnterKeyType.NEW_LINE)
+            .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 
-          // ★ 0.133：发送模式下拉按钮（💬 正常对话 | 🎙 播客模式），点击弹出选择面板
+          // ★ 0.144：回复长度下拉按钮（📏），默认中回复灰色、短/长高亮；与模式下拉互斥展开；图标缩小+内边距压最小
+          Button('📏')
+            .fontSize(16)
+            .backgroundColor(Color.Transparent)
+            .fontColor(this.replyLengthMode !== 'medium' ? '#1976D2' : '#666')
+            .padding({ left: 2, right: 2 })
+            .margin({ left: 0, right: 2 })
+            .onClick(() => {
+              this.lengthDropdownOpen = !this.lengthDropdownOpen;
+              this.modeDropdownOpen = false;
+            })
+
+          // ★ 0.133：发送模式下拉按钮（💬 正常对话 | 🎙 播客模式），点击弹出选择面板；★ 0.144：图标缩小+内边距压最小
           Button(this.sendMode === 'podcast' ? '🎙' : '💬')
-            .fontSize(18)
+            .fontSize(16)
             .backgroundColor(Color.Transparent)
             .fontColor(this.sendMode === 'podcast' ? '#1976D2' : '#666')
-            .margin({ left: 4, right: 2 })
+            .padding({ left: 2, right: 2 })
+            .margin({ left: 0, right: 2 })
             .onClick(() => {
               this.modeDropdownOpen = !this.modeDropdownOpen;
+              this.lengthDropdownOpen = false; // ★ 0.144：互斥——打开模式下拉时收起长度下拉
             })
 
           Button('发送')
             .enabled(!this.isLoading)
-            .margin({ left: 8 })
+            .margin({ left: 4 }) // ★ 0.144：收紧与模式按钮的间距，把宽度让给输入框
             .onClick(() => {
               this.sendMessage();
             })
@@ -1311,6 +1345,77 @@ export struct ChatPage {
             .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
             .padding(4)
             .margin({ bottom: 64, right: 16 }) // 抬到输入区上方（输入框一行 40vp + 底部 padding 16vp + 间隙 8vp）
+          }
+          .alignContent(Alignment.BottomEnd)
+          .width('100%')
+          .height('100%')
+        }
+
+        // ★ 0.144：回复长度选择面板（结构复制播客面板，三档选项 + 小字提示，浮于输入区上方）
+        if (this.lengthDropdownOpen) {
+          Stack() {
+            // 遮罩：点击关闭面板
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+            .onClick(() => {
+              this.lengthDropdownOpen = false;
+            })
+
+            // 面板：三个长度选项（当前档位高亮）
+            Column() {
+              Text('短回复')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .width('100%')
+                .padding(12)
+                .textAlign(TextAlign.Start)
+                .backgroundColor(this.replyLengthMode === 'short' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
+                .borderRadius(8)
+                .onClick(() => {
+                  this.replyLengthMode = 'short';
+                  this.lengthDropdownOpen = false;
+                })
+              Text('中回复')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .width('100%')
+                .padding(12)
+                .textAlign(TextAlign.Start)
+                .backgroundColor(this.replyLengthMode === 'medium' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
+                .borderRadius(8)
+                .onClick(() => {
+                  this.replyLengthMode = 'medium';
+                  this.lengthDropdownOpen = false;
+                })
+              Text('长回复')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .width('100%')
+                .padding(12)
+                .textAlign(TextAlign.Start)
+                .backgroundColor(this.replyLengthMode === 'long' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
+                .borderRadius(8)
+                .onClick(() => {
+                  this.replyLengthMode = 'long';
+                  this.lengthDropdownOpen = false;
+                })
+              Text('输出长度为 AI 参考约束，无法保证严格固定字数')
+                .fontSize(11)
+                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .width('100%')
+                .padding({ left: 12, bottom: 8 })
+                .textAlign(TextAlign.Start)
+            }
+            .width(180)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
+            .padding(4)
+            .margin({ bottom: 64, right: 120 }) // 锚在长度按钮上方（右移避开模式按钮与发送按钮占位）
           }
           .alignContent(Alignment.BottomEnd)
           .width('100%')
