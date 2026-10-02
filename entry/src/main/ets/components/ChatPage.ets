@@ -32,6 +32,7 @@ import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../comm
 import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）
 import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
 import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
+import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -679,6 +680,8 @@ export struct ChatPage {
     }
     // 播新停旧：先终止当前朗读会话
     this.stopTTS();
+    // ★ 0.149：与单词发音互斥——消息朗读开始前停掉单词 TTS
+    wordSpeaker.stop();
     // ★ 0.136 恢复 0.134 分段流水线：逐段 HTTP 合成 + 顺序播放
     this.playingMessageId = msg.messageId;
     this.ttsLoadingMessageId = msg.messageId;
@@ -1468,14 +1471,25 @@ export struct ChatPage {
                                        .fontWeight(FontWeight.Bold)
                                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
                                        .maxLines(1)
-                                     if (w.usPhonetic.length > 0) {
-                                       // Phonetic right beside the word — same line, never ellipsized (user rule)
-                                       Text(w.usPhonetic)
-                                         .fontSize(12)
-                                         .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
-                                         .maxLines(1)
-                                         .margin({ left: 6 })
-                                     }
+                                      if (w.usPhonetic.length > 0) {
+                                        // Phonetic right beside the word — same line, never ellipsized (user rule)
+                                        Text(w.usPhonetic)
+                                          .fontSize(12)
+                                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                          .maxLines(1)
+                                          .margin({ left: 6 })
+                                        // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
+                                        Button(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
+                                          .fontSize(12)
+                                          .backgroundColor(Color.Transparent)
+                                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                                          .padding({ left: 2, right: 2, top: 2, bottom: 2 })
+                                          .onClick(() => {
+                                            this.stopTTS();
+                                            const ctx = this.getUIContext().getHostContext();
+                                            wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), this.apiConfig, ctx ? ctx.cacheDir : '');
+                                          })
+                                      }
                                    }
                                    if (w.fullName.length > 0) {
                                      Text(w.fullName)
@@ -1909,10 +1923,25 @@ export struct ChatPage {
                     .margin({ bottom: 4 })
                 }
                 if (this.wordPopupResult.usPhonetic.length > 0) {
-                  Text(this.wordPopupResult.usPhonetic)
-                    .fontSize(14)
-                    .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
-                    .margin({ bottom: 4 })
+                  Row() {
+                    Text(this.wordPopupResult.usPhonetic)
+                      .fontSize(14)
+                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                    // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
+                    Button(wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '🔊' : '🔈'))
+                      .fontSize(14)
+                      .backgroundColor(Color.Transparent)
+                      .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                      .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+                      .margin({ left: 6 })
+                      .onClick(() => {
+                        this.stopTTS();
+                        const full = this.wordPopupResult !== null ? this.wordPopupResult.fullName : '';
+                        const ctx = this.getUIContext().getHostContext();
+                        wordSpeaker.speak(wordSpeaker.textFor(this.wordPopupQuery, full), this.apiConfig, ctx ? ctx.cacheDir : '');
+                      })
+                  }
+                  .margin({ bottom: 4 })
                 }
                 Text(this.wordPopupResult.explain)
                   .fontSize(14)

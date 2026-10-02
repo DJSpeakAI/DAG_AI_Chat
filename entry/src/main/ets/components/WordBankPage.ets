@@ -14,13 +14,16 @@
 
 import { AppStorageV2 } from '@kit.ArkUI';
 import { WordItem, WordBankStore } from '../common/WordModel';
+import { ApiConfig, connectApiConfig } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)
 import { connectWordBank, removeWordFromBank } from '../utils/WordStoreUtil';
+import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton
 import { ThemeStore } from '../entryability/EntryAbility'; // dark/light theme
 
 @ComponentV2
 export struct WordBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   wordBank: WordBankStore = connectWordBank(); // isolated PersistenceV2 instance
+  apiConfig: ApiConfig = connectApiConfig(); // ★ 0.149：TTS config for pronunciation
 
   // Global theme state (same pattern as ChatPage / SettingsPage)
   getThemeStore(): ThemeStore {
@@ -63,10 +66,23 @@ export struct WordBankPage {
                         .margin({ top: 2 })
                     }
                     if (w.usPhonetic.length > 0) {
-                      Text(w.usPhonetic)
-                        .fontSize(13)
-                        .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
-                        .margin({ top: 2 })
+                      Row() {
+                        Text(w.usPhonetic)
+                          .fontSize(13)
+                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                        // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
+                        Button(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
+                          .fontSize(13)
+                          .backgroundColor(Color.Transparent)
+                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                          .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+                          .margin({ left: 6 })
+                          .onClick(() => {
+                            const ctx = this.getUIContext().getHostContext();
+                            wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), this.apiConfig, ctx ? ctx.cacheDir : '');
+                          })
+                      }
+                      .margin({ top: 2 })
                     }
                     Text(w.explain)
                       .fontSize(13)
