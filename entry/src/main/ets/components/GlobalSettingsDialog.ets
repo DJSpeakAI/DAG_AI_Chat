@@ -56,8 +56,8 @@ export struct GlobalSettingsDialog {
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：全新 key 'ai-preference-v1'
   canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：全新 key 'canvas-mode-v1'
 
-  // Tab 切换（自绘两按钮 + 条件渲染，不用 Tabs 组件）
-  @Local currentTab: number = 0; // 0=API 配置，1=AI 偏好
+  // Tab 切换（自绘按钮 + 条件渲染，不用 Tabs 组件）
+  @Local currentTab: number = 0; // 0=API 配置，1=AI 偏好，2=画布（★ 0.151-bugfix4：画布多树模式独立成第三个 Tab）
 
   // Tab1 编辑副本（点保存才写入持久化；与原 SettingsPage 一致）
   @Local editKey: string = '';
@@ -503,7 +503,14 @@ export struct GlobalSettingsDialog {
       }
       .width('100%')
       .margin({ bottom: 24 })
+    }
+    .width('100%')
+  }
 
+  // ★ 0.151-bugfix4：Tab3 内容——画布多树模式（用户需求：从 AI 偏好 Tab 挪出，独立成顶部第三个选项卡）
+  @Builder
+  canvasTabContent() {
+    Column() {
       // ★ 0.151：画布多树模式单选（平铺 / 选项卡）
       Column() {
         Text('画布多树模式')
@@ -610,7 +617,7 @@ export struct GlobalSettingsDialog {
         .width('100%')
         .margin({ bottom: 12 })
 
-        // Tab 切换行（自绘两按钮，选中态高亮）
+        // Tab 切换行（自绘按钮，选中态高亮；★ 0.151-bugfix4：三 Tab——API 配置 / AI 偏好 / 画布）
         Row() {
           Text('API 配置')
             .fontSize(15)
@@ -637,6 +644,19 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 1;
             })
+          Text('画布')
+            .fontSize(15)
+            .fontWeight(this.currentTab === 2 ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.currentTab === 2 ? '#1976D2' : (this.getThemeStore().isDark ? '#AAAAAA' : '#666'))
+            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+            .borderRadius(6)
+            .backgroundColor(this.currentTab === 2
+              ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+              : Color.Transparent)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.currentTab = 2;
+            })
         }
         .width('100%')
         .margin({ bottom: 12 })
@@ -645,8 +665,10 @@ export struct GlobalSettingsDialog {
         Scroll() {
           if (this.currentTab === 0) {
             this.apiTabContent()
-          } else {
+          } else if (this.currentTab === 1) {
             this.prefTabContent()
+          } else {
+            this.canvasTabContent() // ★ 0.151-bugfix4：Tab3 画布多树模式
           }
         }
         .width('100%')

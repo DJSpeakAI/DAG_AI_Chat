@@ -170,14 +170,18 @@ export struct BBTreeCanvas {
     this.titleEditVisible = false;
   }
 
-  // ★ 0.147：删除确认（原长按 AlertDialog 逻辑提取成方法，菜单【删除气泡】项复用；根节点不可删）
+  // ★ 0.147：删除确认（原长按 AlertDialog 逻辑提取成方法，菜单【删除气泡】项复用）
+  // ★ 0.151-bugfix4：平铺模式放开根节点删除（= 删除整棵树）——旧版「根不可删」在单树时代
+  //   防误删唯一树，但平铺模式多树后用户无删树入口（长按根气泡删除静默无反应，用户实测 bug）；
+  //   选项卡模式仍禁删根（删整棵树走长按 Tab 删除）
   confirmDeleteBubble(bubble: BubbleNode): void {
-    if (bubble.parentID === null) {
-      return;
+    const isRoot = bubble.parentID === null;
+    if (isRoot && this.canvasModeStore.mode !== 'flat') {
+      return; // 选项卡模式：根不可删（删树走长按 Tab 删除）
     }
     this.getUIContext().showAlertDialog({
-      title: '删除节点',
-      message: '确认删除此节点及其所有子节点？',
+      title: isRoot ? '删除树' : '删除节点',
+      message: isRoot ? '确认删除此树（根气泡及其所有子节点）？' : '确认删除此节点及其所有子节点？',
       primaryButton: {
         value: '取消',
         action: () => {}
