@@ -71,11 +71,10 @@ export struct WordBankPage {
                           .fontSize(13)
                           .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
-                        Button(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
+                        // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行（用户指出单词本行距变大），Text 无默认高度、行距还原
+                        Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                           .fontSize(13)
-                          .backgroundColor(Color.Transparent)
                           .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
-                          .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                           .margin({ left: 6 })
                           .onClick(() => {
                             const ctx = this.getUIContext().getHostContext();

@@ -33,6 +33,7 @@ import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController 
 import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
 import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
+import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -179,6 +180,11 @@ export struct ChatPage {
   @Local wordPopupError: string = '';         // 查词错误信息
   @Local wordPopupAdded: boolean = false;     // 当前结果已加入单词库（按钮转「已加入」防重复）
   @Local wordExistsTip: boolean = false;      // 「单词已存在」提示（重复添加时显示）
+  // ★ 0.150：删除确认弹窗状态（防误触；「不再提示」仅本次对话会话内生效，重进对话页重置）
+  @Local deleteConfirmVisible: boolean = false; // 确认弹窗可见
+  @Local deleteConfirmMessageId: string = '';   // 待删除的消息 ID
+  @Local deleteConfirmNoAsk: boolean = false;   // 弹窗内「不再提示」勾选框当前状态（每次打开复位）
+  @Local deleteSkipConfirm: boolean = false;    // 本次会话内已勾选「不再提示」（aboutToAppear 重置）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
   private textControllers: Map<string, TextController> = new Map(); // 每个 Text 独立 controller（关闭选择菜单用）
   private wordQueryController: StreamController | null = null;      // 进行中的查词请求（浮窗关闭时取消）
@@ -256,7 +262,8 @@ export struct ChatPage {
 
     const flushText = () => {
       if (textBuffer.length > 0) {
-        segments.push(new MdSegment(0, textBuffer.join('\n')));
+        // ★ 0.151：parse 层做 LaTeX 数学符号转换，显示/划词/复制三者天然一致
+        segments.push(new MdSegment(0, renderMathText(textBuffer.join('\n'))));
         textBuffer = [];
       }
     };
@@ -291,7 +298,10 @@ export struct ChatPage {
           rows.push(this.parseTableRow(lines[i]));
           i++;
         }
-        segments.push(new MdSegment(2, '', '', header, rows));
+        // ★ 0.151：表格单元格同样做数学符号转换（如 |\neq| → |≠|）
+        const mathHeader: string[] = header.map((c: string) => renderMathText(c));
+        const mathRows: string[][] = rows.map((r: string[]) => r.map((c: string) => renderMathText(c)));
+        segments.push(new MdSegment(2, '', '', mathHeader, mathRows));
         continue;
       }
 
@@ -858,6 +868,7 @@ export struct ChatPage {
 
   // 进入对话页面：延迟滚到底部，显示最新消息
   aboutToAppear() {
+    this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
     setTimeout(() => {
       this.scroller.scrollEdge(Edge.Bottom);
     }, 100);
@@ -901,6 +912,28 @@ export struct ChatPage {
       }
     }
     this.pendingImages = newList;
+  }
+
+  // ★ 0.150：删除入口——首次点 × 弹确认防误触；本次会话内勾选过「不再提示」则直接删
+  requestDeleteMessage(messageId: string): void {
+    if (this.deleteSkipConfirm) {
+      this.deleteMessage(messageId);
+      return;
+    }
+    this.deleteConfirmMessageId = messageId;
+    this.deleteConfirmNoAsk = false; // 每次打开弹窗，勾选框复位
+    this.deleteConfirmVisible = true;
+  }
+
+  // ★ 0.150：确认弹窗「删除」——记住勾选状态并执行删除
+  confirmDeleteMessage(): void {
+    this.deleteSkipConfirm = this.deleteConfirmNoAsk;
+    this.deleteConfirmVisible = false;
+    const id = this.deleteConfirmMessageId;
+    this.deleteConfirmMessageId = '';
+    if (id.length > 0) {
+      this.deleteMessage(id);
+    }
   }
 
   deleteMessage(messageId: string): void {
@@ -1320,7 +1353,7 @@ export struct ChatPage {
                       .padding({ left: 2, right: 2 }) // ★ 0.148：压掉 Button 默认大内边距（≈32vp），给气泡留宽度
                       .margin({ right: 4 })
                       .onClick(() => {
-                        this.deleteMessage(msg.messageId);
+                        this.requestDeleteMessage(msg.messageId); // ★ 0.150：先弹确认防误触
                       })
                   }
                   Column() {
@@ -1479,11 +1512,10 @@ export struct ChatPage {
                                           .maxLines(1)
                                           .margin({ left: 6 })
                                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
-                                        Button(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
+                                        // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
+                                        Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                                           .fontSize(12)
-                                          .backgroundColor(Color.Transparent)
                                           .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
-                                          .padding({ left: 2, right: 2, top: 2, bottom: 2 })
                                           .onClick(() => {
                                             this.stopTTS();
                                             const ctx = this.getUIContext().getHostContext();
@@ -1608,7 +1640,7 @@ export struct ChatPage {
                       .backgroundColor(Color.Transparent)
                       .padding({ left: 2, right: 2 }) // ★ 0.148：与 AI 分支 × 保持一致的紧凑内边距
                       .onClick(() => {
-                        this.deleteMessage(msg.messageId);
+                        this.requestDeleteMessage(msg.messageId); // ★ 0.150：先弹确认防误触
                       })
                   }
                 }
@@ -1928,11 +1960,10 @@ export struct ChatPage {
                       .fontSize(14)
                       .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
                     // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
-                    Button(wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '🔊' : '🔈'))
+                    // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
+                    Text(wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '🔊' : '🔈'))
                       .fontSize(14)
-                      .backgroundColor(Color.Transparent)
                       .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(this.wordPopupQuery, this.wordPopupResult.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
-                      .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                       .margin({ left: 6 })
                       .onClick(() => {
                         this.stopTTS();
@@ -1977,7 +2008,80 @@ export struct ChatPage {
           .alignContent(Alignment.Center)
         }
 
-        // ★ 0.145：删除确认弹窗已移除——消息删除仅走气泡旁 × 按钮（直接删除，与 0.145 前行为一致）
+        // ★ 0.150：删除确认弹窗（防误触）——首次点 × 弹出；勾选「此次对话不再提示」后本次会话内直接删；
+        // 退回画布重进对话页后提醒重置（aboutToAppear 重置 deleteSkipConfirm）
+        if (this.deleteConfirmVisible) {
+          Stack() {
+            // 遮罩：点击关闭弹窗（不删除）
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.25)')
+            .onClick(() => {
+              this.deleteConfirmVisible = false;
+            })
+
+            // 弹窗主体：提示文案 → 勾选行 → 取消/删除按钮
+            Column() {
+              Text('删除这条消息？')
+                .fontSize(18)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .margin({ bottom: 8 })
+
+              Text('删除后不可恢复')
+                .fontSize(13)
+                .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+                .margin({ bottom: 16 })
+
+              // 勾选行：整行可点（Checkbox 只读展示，避免 Row/Checkbox 双触发）
+              Row() {
+                Checkbox()
+                  .select(this.deleteConfirmNoAsk)
+                  .selectedColor('#1976D2')
+                  .width(18)
+                  .height(18)
+                  .hitTestBehavior(HitTestMode.None)
+                Text('此次对话不再提示')
+                  .fontSize(13)
+                  .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                  .margin({ left: 6 })
+              }
+              .margin({ bottom: 16 })
+              .onClick(() => {
+                this.deleteConfirmNoAsk = !this.deleteConfirmNoAsk;
+              })
+
+              // 按钮行：取消（左）/ 删除（右，红色）
+              Row() {
+                Button('取消')
+                  .layoutWeight(1)
+                  .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#E0E0E0')
+                  .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                  .margin({ right: 8 })
+                  .onClick(() => {
+                    this.deleteConfirmVisible = false;
+                  })
+                Button('删除')
+                  .layoutWeight(1)
+                  .backgroundColor('#F44336')
+                  .fontColor('#FFFFFF')
+                  .onClick(() => {
+                    this.confirmDeleteMessage();
+                  })
+              }
+            }
+            .width('70%')
+            .padding(20)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
 
         // ★ 0.145：文本预览弹窗已移除——长按气泡文本直接进入系统选择模式 + 自研悬浮操作栏（bindSelectionMenu）
 
