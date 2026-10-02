@@ -34,6 +34,7 @@ import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordSt
 import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
+import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { ThemeStore } from '../entryability/EntryAbility';
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -95,9 +96,11 @@ const TTS_MAX_SEGMENT_LEN = 280;
 @ComponentV2
 struct CodeBlockView {
   @Param content: string = '';   // 代码内容
+  @Param lang: string = '';      // ★ 0.149：语言标识（parseMarkdown 已提取；空 = plaintext 不高亮）
   @Param isDark: boolean = false; // 深浅色主题
   @Local wrap: boolean = true;    // 默认开启自动换行
-  @Event onZoom: (content: string) => void = (content: string) => {}; // ★ 0.153：放大回调（父组件打开全屏代码弹窗）
+  @Event onZoom: (content: string, lang: string) => void =
+    (content: string, lang: string) => {}; // ★ 0.153：放大回调（父组件打开全屏代码弹窗）；★ 0.149 加传 lang
   // ★ 0.156：划词桥接——代码块 Text 复用 ChatPage 的选择工具栏（翻译/入知识库/复制/全选）与状态链路
   @Param textKey: string = '';                                    // 划词 key（父组件生成，如 `${msgId}|c${segIdx}`）
   @Param selController: TextController | undefined = undefined;   // 父组件注册的 TextController（关闭选择菜单用）
@@ -113,6 +116,57 @@ struct CodeBlockView {
   @Event onMenuDisappear: () => void = () => {};                    // 菜单关闭（父组件清理选中状态）
   @Event onSelChange: (key: string, content: string, start: number, end: number) => void =
     (key: string, content: string, start: number, end: number) => {}; // 选中变化（父组件按偏移截取选中文本）
+
+  // ★ 0.149：着色 token 序列（@Computed 依赖 content/lang 自动重算；流式增量输出实时刷新高亮）
+  // tokenizeCode 返回 null（语言不支持/超长兜底）时降级为单段全文本——渲染层只有一条 Span 拼接路径
+  @Computed
+  get renderTokens(): CodeToken[] {
+    const tokens = tokenizeCode(this.content, this.lang);
+    if (tokens === null) {
+      return [new CodeToken(this.content, 0)];
+    }
+    return tokens;
+  }
+
+  // ★ 0.149：token 配色（跟随 isDark 深浅色自动切换；关键字蓝/字符串绿/注释灰/数字橙）
+  tokenColor(kind: number): string {
+    if (kind === 1) {
+      return this.isDark ? '#569CD6' : '#0000C0'; // 关键字：蓝
+    }
+    if (kind === 2) {
+      return this.isDark ? '#98C379' : '#008000'; // 字符串：绿
+    }
+    if (kind === 3) {
+      return this.isDark ? '#8A8A8A' : '#808080'; // 注释：灰
+    }
+    if (kind === 4) {
+      return this.isDark ? '#D19A66' : '#B35C00'; // 数字：橙
+    }
+    return this.isDark ? '#D4D4D4' : '#333333';   // 普通代码文本：底色对应文字色
+  }
+
+  // ★ 0.149：一键复制全部代码 + toast 提示（需求：代码块顶部复制按钮）
+  copyAllCode(): void {
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.content);
+      pasteboard.getSystemPasteboard().setData(data).then(() => {
+        this.showToastSafe('复制成功');
+      }).catch((err: Error) => {
+        console.error(`[0.149] 代码块复制写入剪贴板失败: ${err.message}`);
+      });
+    } catch (e) {
+      console.error(`[0.149] 代码块复制异常: ${JSON.stringify(e)}`);
+    }
+  }
+
+  // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
+  showToastSafe(msg: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: msg });
+    } catch (e) {
+      // toast 失败静默忽略
+    }
+  }
 
   // ★ 0.157：代码块专用选择工具栏——UI 与 ChatPage.SelectionToolbar 保持一致（样式改动两处同步），
   // 主题色取自身 isDark、按钮动作走 @Event，规避 @BuilderParam 的 this 上下文丢失
@@ -170,6 +224,32 @@ struct CodeBlockView {
     Column() {
       // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大）
       Row() {
+        // ★ 0.149：语言标签（无语言标识的代码块标记为 plaintext，不高亮）
+        Text(this.lang.length > 0 ? this.lang : 'plaintext')
+          .fontSize(11)
+          .fontColor(this.isDark ? '#9E9E9E' : '#757575')
+          .margin({ right: 6 })
+
+        // ★ 0.149：复制按钮——一键复制全部代码文本 + toast 提示成功
+        Row() {
+          Text('⧉')
+            .fontSize(11)
+            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+            .margin({ right: 3 })
+
+          Text('复制')
+            .fontSize(11)
+            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+        }
+        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+        .borderRadius(4)
+        .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
+        .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .margin({ right: 6 })
+        .onClick(() => {
+          this.copyAllCode();
+        })
+
         // 换行切换按钮：换行模式显示 ↩，滚动模式显示 ⇄
         Row() {
           Text(this.wrap ? '↩' : '⇄')
@@ -206,7 +286,7 @@ struct CodeBlockView {
         .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
         .margin({ left: 6 })
         .onClick(() => {
-          this.onZoom(this.content);
+          this.onZoom(this.content, this.lang); // ★ 0.149：加传 lang（放大弹窗同步高亮）
         })
       }
       .margin({ top: 4, bottom: 2 })
@@ -217,7 +297,14 @@ struct CodeBlockView {
         // 导致代码块比气泡内容区宽、右侧显示被挡；改为无 width + 父约束折行
         //（与气泡内普通文本段同模式：长代码自动折行且始终在气泡内，短代码背景随内容自适应）
         // ★ 0.156：划词五件套——与普通文本段同模式（copyOption + 自研菜单 + 选中回调 + 全选受控）
-        Text(this.content, { controller: this.selController })
+        // ★ 0.149：语法高亮——Text 内 ForEach Span 按着色 token 渲染；token 顺序拼接与 content
+        // 完全一致，划词/全选/复制偏移不错位；keyGenerator 纳入内容长度，流式更新触发 Span 重建
+        Text('', { controller: this.selController }) {
+          ForEach(this.renderTokens, (t: CodeToken, i: number) => {
+            Span(t.text)
+              .fontColor(this.tokenColor(t.kind))
+          }, (t: CodeToken, i: number) => `${i}|${t.kind}|${t.text.length}`)
+        }
           .fontSize(14)
           .fontFamily('monospace')
           .fontColor(this.isDark ? '#D4D4D4' : '#333333')
@@ -244,7 +331,13 @@ struct CodeBlockView {
         // 滚动模式：横向滚动查看长代码
         Scroll() {
           // ★ 0.156：划词五件套——同 wrap 模式（长按进入选择，拖动与横向滚动手势互不冲突）
-          Text(this.content, { controller: this.selController })
+          // ★ 0.149：语法高亮——同 wrap 模式 ForEach Span 着色渲染
+          Text('', { controller: this.selController }) {
+            ForEach(this.renderTokens, (t: CodeToken, i: number) => {
+              Span(t.text)
+                .fontColor(this.tokenColor(t.kind))
+            }, (t: CodeToken, i: number) => `${i}|${t.kind}|${t.text.length}`)
+          }
             .fontSize(14)
             .fontFamily('monospace')
             .fontColor(this.isDark ? '#D4D4D4' : '#333333')
@@ -335,6 +428,7 @@ export struct ChatPage {
   // ★ 0.153：代码块放大弹窗状态（代码块左上角「放大」按钮打开，全屏查看 + 换行切换）
   @Local codeZoomVisible: boolean = false;
   @Local codeZoomContent: string = '';
+  @Local codeZoomLang: string = '';       // ★ 0.149：放大弹窗代码语言（与气泡内高亮一致）
   @Local codeZoomWrap: boolean = true;    // 放大视图默认换行（与气泡内代码块默认一致）
   // ★ 0.153：表格放大弹窗状态（表格默认不换行 + 固定列宽对齐；放大视图支持换行切换）
   @Local tableZoomVisible: boolean = false;
@@ -387,10 +481,39 @@ export struct ChatPage {
   }
 
   // ★ 0.153：打开代码块放大弹窗（换行模式重置为 true，与气泡内代码块默认一致）
-  openCodeZoom(content: string): void {
+  openCodeZoom(content: string, lang: string): void {
     this.codeZoomContent = content;
+    this.codeZoomLang = lang; // ★ 0.149：记录语言，放大弹窗同步语法高亮
     this.codeZoomWrap = true;
     this.codeZoomVisible = true;
+  }
+
+  // ★ 0.149：放大弹窗代码 token 化（与气泡内 CodeBlockView.renderTokens 同逻辑；
+  // null 时降级单段全文本单色渲染；codeZoomContent 为 @Local，变化触发 build 重跑自动重算）
+  zoomTokens(): CodeToken[] {
+    const tokens = tokenizeCode(this.codeZoomContent, this.codeZoomLang);
+    if (tokens === null) {
+      return [new CodeToken(this.codeZoomContent, 0)];
+    }
+    return tokens;
+  }
+
+  // ★ 0.149：放大弹窗 token 配色（与 CodeBlockView.tokenColor 保持一致，深浅色两套）
+  codeTokenColor(kind: number): string {
+    const dark = this.getThemeStore().isDark;
+    if (kind === 1) {
+      return dark ? '#569CD6' : '#0000C0'; // 关键字：蓝
+    }
+    if (kind === 2) {
+      return dark ? '#98C379' : '#008000'; // 字符串：绿
+    }
+    if (kind === 3) {
+      return dark ? '#8A8A8A' : '#808080'; // 注释：灰
+    }
+    if (kind === 4) {
+      return dark ? '#D19A66' : '#B35C00'; // 数字：橙
+    }
+    return dark ? '#D4D4D4' : '#333333';   // 普通代码文本
   }
 
   // ★ 0.153：打开表格放大弹窗（换行模式重置为 false，与气泡内表格默认一致）
@@ -1683,8 +1806,9 @@ export struct ChatPage {
                               // controller 注册进父组件 map，工具栏/翻译/复制/全选链路完全复用
                               CodeBlockView({
                                 content: seg.content,
+                                lang: seg.lang, // ★ 0.149：语言标识（parseMarkdown 已提取，语法高亮+顶部标签）
                                 isDark: this.getThemeStore().isDark,
-                                onZoom: (content: string) => { this.openCodeZoom(content); }, // ★ 0.153：左上角「放大」按钮回调
+                                onZoom: (content: string, lang: string) => { this.openCodeZoom(content, lang); }, // ★ 0.153：左上角「放大」按钮回调；★ 0.149 加传 lang
                                 textKey: `${msg.messageId}|c${idx}`,
                                 selController: this.getOrCreateTextController(`${msg.messageId}|c${idx}`),
                                 selectAllKey: this.selectAllKey,
@@ -2431,6 +2555,12 @@ export struct ChatPage {
                   .fontWeight(FontWeight.Bold)
                   .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
 
+                // ★ 0.149：语言标签（与气泡内代码块一致；无语言标识显示 plaintext）
+                Text(this.codeZoomLang.length > 0 ? this.codeZoomLang : 'plaintext')
+                  .fontSize(12)
+                  .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                  .margin({ left: 8 })
+
                 Blank()
 
                 // 换行切换按钮（样式与气泡内代码块按钮统一）
@@ -2468,7 +2598,13 @@ export struct ChatPage {
                 if (this.codeZoomWrap) {
                   // ★ 0.156：划词五件套——放大弹窗内代码同样可划词（key cz|w 与气泡内代码块空间隔离；
                   // 弹窗面板为固定宽度容器，width('100%') 无 0.154 的气泡链解析问题，保留）
-                  Text(this.codeZoomContent, { controller: this.getOrCreateTextController('cz|w') })
+                  // ★ 0.149：语法高亮——ForEach Span 着色（与气泡内同逻辑，token 拼接与 content 一致）
+                    Text('', { controller: this.getOrCreateTextController('cz|w') }) {
+                    ForEach(this.zoomTokens(), (t: CodeToken, i: number) => {
+                      Span(t.text)
+                        .fontColor(this.codeTokenColor(t.kind))
+                    }, (t: CodeToken, i: number) => `${i}|${t.kind}|${t.text.length}`)
+                  }
                     .fontSize(14)
                     .fontFamily('monospace')
                     .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
@@ -2495,7 +2631,13 @@ export struct ChatPage {
                 } else {
                   Scroll() {
                     // ★ 0.156：划词五件套——滚动模式同 wrap（key cz|s 独立 controller）
-                    Text(this.codeZoomContent, { controller: this.getOrCreateTextController('cz|s') })
+                    // ★ 0.149：语法高亮——同 wrap 模式 ForEach Span 着色渲染
+                      Text('', { controller: this.getOrCreateTextController('cz|s') }) {
+                      ForEach(this.zoomTokens(), (t: CodeToken, i: number) => {
+                        Span(t.text)
+                          .fontColor(this.codeTokenColor(t.kind))
+                      }, (t: CodeToken, i: number) => `${i}|${t.kind}|${t.text.length}`)
+                    }
                       .fontSize(14)
                       .fontFamily('monospace')
                       .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
