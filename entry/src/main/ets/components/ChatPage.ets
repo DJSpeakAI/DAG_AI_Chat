@@ -1609,10 +1609,12 @@ export struct ChatPage {
     this.pathStack.pop();
   }
 
-  // ★ 0.151：按模式分池保存工作区（两池隔离核心写路径，与 BBTreeCanvas.saveTree 同逻辑）
+  // ★ 0.151-bugfix：按模式分池保存工作区（两池隔离核心写路径，与 BBTreeCanvas.saveTree 同逻辑）
   // flat：工作区 = 平铺树 → 存回 bubbleTreeJson（现状路径）
-  // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson（无 activeTab 时退存平铺池兜底防丢数据）
-  // 不统一替换的话，tabs 模式下聊天会把 Tab 树写进 bubbleTreeJson 污染平铺数据
+  // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson；
+  //       无 activeTab 时【不写任何池】——此时工作区必为空（applyCanvasModeSwitch 保证），
+  //       若写平铺池会把空树覆盖平铺池真实数据（用户实测丢树根因：切 tabs 后点 ➕，
+  //       addTab 先走 saveTree 兜底、把空工作区写进 bubbleTreeJson，平铺池被清空）
   saveTree(): void {
     if (this.canvasModeStore.mode === 'tabs') {
       const tabs = parseTabs(this.tabForest.tabsJson);
@@ -1620,10 +1622,8 @@ export struct ChatPage {
       if (idx >= 0) {
         tabs[idx].treeJson = serializeBubbleTree(this.store);
         this.tabForest.tabsJson = serializeTabs(tabs);
-        return;
       }
-      // 无 activeTab（异常兜底）：退存平铺池，避免数据丢失
-      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
     } else {
       this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
     }
