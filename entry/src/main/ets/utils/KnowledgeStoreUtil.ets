@@ -6,7 +6,7 @@
 //     cards + one-shot seed merge for pre-existing devices (0.151)
 //   - genCardId(): unique card id generator (0.148)
 //   - addKnowledgeCard(): insert a card at the head; auto-fills id/createdAt (0.148)
-//   - updateKnowledgeCard(): edit title/definition by id (0.148; imageUri untouched)
+//   - updateKnowledgeCard(): edit title/definition/imageUri by id (0.148; ★ 0.160 imageUri added)
 //   - removeKnowledgeCard(): delete a card by id (knowledge bank page delete)
 //   - removeCardsByIds(): batch delete for multi-select mode (0.148)
 //   - pickRandomKnowledgeCards(): pick n random cards for the AI-bubble review area
@@ -121,15 +121,16 @@ export function addKnowledgeCard(store: KnowledgeBankStore, card: KnowledgeCard)
   store.cards = [card, ...store.cards];
 }
 
-// ★ 0.148: edit a card's title/definition by id (imageUri is NOT part of
-// the bank-page editor and stays untouched). Cards may share titles, so
-// no duplicate check here either.
+// ★ 0.148: edit a card's title/definition by id. ★ 0.160: imageUri is now
+// part of the bank-page editor (add / remove image) and is saved alongside.
+// Cards may share titles, so no duplicate check here either.
 export function updateKnowledgeCard(store: KnowledgeBankStore, cardId: string,
-  title: string, definition: string): void {
+  title: string, definition: string, imageUri: string): void {
   for (let i = 0; i < store.cards.length; i++) {
     if (store.cards[i].id === cardId) {
       store.cards[i].title = title.trim();
       store.cards[i].definition = definition.trim();
+      store.cards[i].imageUri = imageUri;
       return;
     }
   }

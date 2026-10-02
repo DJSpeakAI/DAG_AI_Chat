@@ -6,8 +6,9 @@
 //   - Add: "+" button at the top bar's right opens the editor dialog
 //     (title + definition); createdAt is auto-recorded on save
 //   - Edit: double-tap an entry (manual 300ms double-tap detection) opens
-//     the editor dialog pre-filled; imageUri is NOT part of the bank-page
-//     editor and stays untouched
+//     the editor dialog pre-filled; ★ 0.160: the editor now manages the
+//     card image too — add (gallery pick → base64), remove, replace, and
+//     fullscreen preview on thumbnail tap; committed only on 保存
 //   - Delete (single): "×" on the entry's right; first tap shows a confirm
 //     dialog with a "本次会话内不再提示" checkbox — session-level flag,
 //     page rebuild resets it
@@ -28,6 +29,9 @@ import { AppStorageV2 } from '@kit.ArkUI';
 import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { ThemeStore } from '../entryability/EntryAbility'; // dark/light theme
+import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
+import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
+import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
 
 @ComponentV2
 export struct KnowledgeBankPage {
@@ -60,6 +64,11 @@ export struct KnowledgeBankPage {
   @Local editorId: string = '';
   @Local editorTitle: string = '';
   @Local editorDefinition: string = '';
+  // ★ 0.160: editor image state — base64 data URI, same storage pattern as
+  // ChatPage's knowledge editor; empty string = no image
+  @Local editorImageUri: string = '';
+  // ★ 0.160: fullscreen preview of the editor image (tap thumbnail to open)
+  @Local editorImagePreviewVisible: boolean = false;
 
   // ★ 0.148: single-delete confirm dialog state
   @Local deleteConfirmVisible: boolean = false;
@@ -110,6 +119,7 @@ export struct KnowledgeBankPage {
     this.editorId = '';
     this.editorTitle = '';
     this.editorDefinition = '';
+    this.editorImageUri = ''; // ★ 0.160: new card starts with no image
     this.editorVisible = true;
   }
 
@@ -118,6 +128,7 @@ export struct KnowledgeBankPage {
     this.editorId = c.id;
     this.editorTitle = c.title;
     this.editorDefinition = c.definition;
+    this.editorImageUri = c.imageUri; // ★ 0.160: pre-fill the existing image for edit/remove
     this.editorVisible = true;
   }
 
@@ -131,11 +142,33 @@ export struct KnowledgeBankPage {
     if (this.editorIsAdd) {
       // addKnowledgeCard auto-fills id/createdAt; no duplicate check —
       // cards may legitimately share a title (0.146 spec)
-      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0));
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, this.editorImageUri, 0));
     } else {
-      updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition);
+      updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, this.editorImageUri);
     }
     this.editorVisible = false;
+  }
+
+  // ★ 0.160: pick a photo from the gallery → base64 data URI (same flow as
+  // ChatPage's knowledge editor: single select, read via fileIo, encode with
+  // buffer). Failure is silent — the editor keeps its previous image state.
+  async selectEditorImage(): Promise<void> {
+    try {
+      const picker = new photoAccessHelper.PhotoViewPicker();
+      const result = await picker.select({ maxSelectNumber: 1 });
+      if (result.photoUris.length > 0) {
+        const uri = result.photoUris[0];
+        const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+        const stat = fileIo.statSync(file.fd);
+        const arrayBuffer = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, arrayBuffer);
+        fileIo.closeSync(file);
+        const base64 = buffer.from(arrayBuffer).toString('base64');
+        this.editorImageUri = `data:image/jpeg;base64,${base64}`;
+      }
+    } catch (err) {
+      console.error(`[KnowledgeBankPage] selectEditorImage error: ${(err as Error).message}`);
+    }
   }
 
   // ---- single delete (session-level no-remind) ----
@@ -311,6 +344,45 @@ export struct KnowledgeBankPage {
           .onChange((value: string) => {
             this.editorDefinition = value;
           })
+        // ★ 0.160: image row — with image: thumbnail (tap = fullscreen preview)
+        // + remove + replace; without image: a single add button.
+        // The URI is only committed to the store on 保存 (same draft pattern
+        // as title/definition — cancel discards the image change too).
+        Row() {
+          if (this.editorImageUri.length > 0) {
+            Image(this.editorImageUri)
+              .height(56)
+              .width(84)
+              .objectFit(ImageFit.Cover)
+              .borderRadius(4)
+              .onClick(() => {
+                this.editorImagePreviewVisible = true;
+              })
+            Text('删除图片')
+              .fontSize(13)
+              .fontColor('#F44336')
+              .margin({ left: 12 })
+              .onClick(() => {
+                this.editorImageUri = '';
+              })
+            Text('换一张')
+              .fontSize(13)
+              .fontColor('#1976D2')
+              .margin({ left: 8 })
+              .onClick(() => {
+                this.selectEditorImage();
+              })
+          } else {
+            Text('🖼️ 添加图片')
+              .fontSize(13)
+              .fontColor('#1976D2')
+              .onClick(() => {
+                this.selectEditorImage();
+              })
+          }
+        }
+        .width('100%')
+        .margin({ top: 10 })
         Row() {
           Button('取消')
             .fontSize(14)
@@ -343,6 +415,23 @@ export struct KnowledgeBankPage {
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .backgroundColor('rgba(0,0,0,0.5)')
+  }
+
+  // ★ 0.160: fullscreen preview of the editor image — tap anywhere to close
+  @Builder
+  editorImagePreview() {
+    Column() {
+      Image(this.editorImageUri)
+        .objectFit(ImageFit.Contain)
+        .width('100%')
+        .height('100%')
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(Color.Black)
+    .onClick(() => {
+      this.editorImagePreviewVisible = false;
+    })
   }
 
   // ★ 0.148: single-delete confirm dialog — with the session-level
@@ -647,12 +736,21 @@ export struct KnowledgeBankPage {
         if (this.batchConfirmVisible) {
           this.batchConfirmDialog()
         }
+        // ★ 0.160: editor image fullscreen preview — topmost layer
+        if (this.editorImagePreviewVisible) {
+          this.editorImagePreview()
+        }
       }
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
+      // ★ 0.160: image preview closes first (topmost layer)
+      if (this.editorImagePreviewVisible) {
+        this.editorImagePreviewVisible = false;
+        return true;
+      }
       if (this.editorVisible) {
         this.editorVisible = false;
         return true;
