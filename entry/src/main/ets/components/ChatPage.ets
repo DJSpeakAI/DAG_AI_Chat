@@ -14,12 +14,15 @@
 //   - ★ 0.146：划词菜单「入知识库」（AI 提炼草稿 → 卡片编辑弹窗二次编辑 → 入库）+ AI 气泡底部知识卡片展示（📖 区分）
 //   - 深浅色主题适配
 //   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.139 openspeech 2.0 协议 + 分段流水线，0.143 收尾清理调试链路）
+//   - ★ 0.152：内置屏幕圈选标注（第四大产品亮点）——✏️ 画画Icon 截取当前屏幕画面进入涂鸦标注页，
+//     标注完成三操作（当前对话导入 / 创建子气泡分支 / 存入知识库）；底栏重排为 ＋ 输入框 ✏️ 发送▾，
+//     图片添加/对话模式/回复长度收进发送右侧 ▾ 下拉菜单；底层气泡/上下文链路（10+15）零改动
 //
 // 技术栈：鸿蒙 ArkUI V2（@ComponentV2 / @Local / @Param / @Computed）
 // 导航模式：NavPathStack（从 BBTreeCanvas 气泡画布页面跳入）
 // ============================================================
 
-import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）
+import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -29,9 +32,11 @@ import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133�
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
-import { streamChat, synthesizeTTS, queryWord, queryKnowledge, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.155：containsChinese（划词语言检测）
+import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
+import { streamChat, synthesizeTTS, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）
 import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
 import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
+import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
@@ -458,6 +463,11 @@ export struct ChatPage {
   private avPlayer: media.AVPlayer | null = null;
   private scroller: Scroller = new Scroller();
   private streamController: StreamController | null = null;
+  // ★ 0.152：屏幕圈选标注状态
+  annotationPref: AnnotationPrefStore = connectAnnotationPref();       // 首次使用提示 flag（PersistenceV2 独立 key，跨重启只提示一次）
+  annotationDraft: AnnotationDraftStore = connectAnnotationDraft();   // 截图草稿（ChatPage → AnnotationPage）
+  annotationResult: AnnotationResultStore = connectAnnotationResult(); // 标注结果（AnnotationPage → ChatPage，onShown 消费）
+  @Local annotationNotifyVisible: boolean = false; // 首次使用说明弹窗可见
 
   // ★ 获取 ThemeStore（通过 AppStorageV2 共享，0.103 功能）
   getThemeStore(): ThemeStore {
@@ -1619,6 +1629,116 @@ export struct ChatPage {
     this.stopTTS(); // ★ 0.151-D：原停 TTS 依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此补停
   }
 
+  // ============================================================
+  // ★ 0.152：屏幕圈选标注——截图入口 + 结果消费
+  // ============================================================
+  // 截图路线：UIContext.getComponentSnapshot().get（APP 内组件快照，截取自身界面）——
+  // 无需系统截屏权限（CAPTURE_SCREEN 为 system_basic 级，三方应用不可申请），
+  // 也天然不存在「系统隐私页黑屏」问题；截图失败保留友好提示兜底。
+  // 图片策略：base64 data URI 全程传递（与相册图片消息/知识卡片配图同模式），
+  // 不写系统相册、不产生临时文件——随消息/卡片生命周期存续，无 24h 清理负担。
+
+  // ✏️ 画画按钮入口：首次使用先弹说明（需求文案：用于屏幕圈选标注提问，不会后台录制屏幕），
+  // 确认后记 flag 永不再弹；非首次直接进入截图流程
+  startAnnotation(): void {
+    if (this.annotationPref.notifyShown) {
+      this.continueAnnotation();
+      return;
+    }
+    this.annotationNotifyVisible = true;
+  }
+
+  // 首次说明弹窗「知道了」：记 flag + 继续截图
+  confirmAnnotationNotify(): void {
+    this.annotationPref.notifyShown = true;
+    this.annotationNotifyVisible = false;
+    this.continueAnnotation();
+  }
+
+  // 收起软键盘后延时截图——键盘弹出时内容区被压缩，立即截会截到压缩布局
+  continueAnnotation(): void {
+    this.getUIContext().getFocusController().clearFocus();
+    setTimeout(() => {
+      this.captureAndEnterAnnotation();
+    }, 300); // 300ms 等键盘收起 + 布局恢复
+  }
+
+  // 截取当前页面内容区 → base64 → 写入草稿 store → 进入标注页
+  async captureAndEnterAnnotation(): Promise<void> {
+    try {
+      // get 失败（组件 id 无效/系统资源不足）会 reject → 走 catch 友好提示
+      const pm: image.PixelMap = await this.getUIContext().getComponentSnapshot().get('chatSnapshotRoot');
+      const packer = image.createImagePacker();
+      // packToData（API 13+）：packing(PixelMap) 已废弃的替代，PixelMap → ArrayBuffer
+      const data: ArrayBuffer = await packer.packToData(pm, { format: 'image/jpeg', quality: 90 });
+      packer.release();
+      pm.release(); // 截图 PixelMap 已打包完，释放
+      const base64 = buffer.from(data).toString('base64');
+      this.annotationDraft.imageUri = `data:image/jpeg;base64,${base64}`;
+      this.pathStack.pushPath({ name: 'AnnotationPage' });
+    } catch (e) {
+      // 截图失败友好提示（对应需求「捕获失败/黑屏做友好提示」的兜底）
+      console.error(`[0.152] 截图失败: ${JSON.stringify(e)}`);
+      this.showToastSafe('截图失败，请重试');
+    }
+  }
+
+  // 标注页 pop 回来时消费结果（NavDestination.onShown 触发；action 空 = 非标注返回，直接跳过）
+  consumeAnnotationResult(): void {
+    const action = this.annotationResult.action;
+    if (action.length === 0) {
+      return;
+    }
+    const img = this.annotationResult.imageUri;
+    // 立即清空结果 store（一次性消费，防重复触发）
+    this.annotationResult.action = '';
+    this.annotationResult.imageUri = '';
+    if (action === 'import') {
+      // ① 当前对话导入：图片挂到输入区（可追加文字后点发送，走现有 sendMessage 链路）
+      this.pendingImages = [...this.pendingImages, img];
+    } else if (action === 'branch') {
+      // ② 创建子气泡分支：调现有 addBubble（新建子节点 + 切换 + 继承父链路），
+      //    图片挂到新气泡输入区；发送时 buildBranchMessageList 沿 parentID 回溯——
+      //    10+15 上下文规则与底层消息链路零改动
+      if (this.isLoading) {
+        // 流式回复中禁止切气泡（addBubble 现有防御：切换会导致流式回调写错气泡）——
+        // 降级为导入当前对话并提示，图片不丢
+        this.pendingImages = [...this.pendingImages, img];
+        this.showToastSafe('AI 正在回复，图片已导入当前对话，回复完成后可再创建子气泡');
+        return;
+      }
+      this.addBubble(); // 内部会清空 pendingImages
+      this.pendingImages = [img];
+    } else if (action === 'knowledge') {
+      // ③ 存入知识库：打开卡片编辑弹窗，标注图作配图，AI 多模态提炼草稿（用户二次编辑后入库）
+      this.openKnowledgeFromImage(img);
+    }
+  }
+
+  // 圈选截图 → 知识库卡片：编辑弹窗预填配图 + 多模态 AI 提炼标题/定义草稿
+  //（与 onToolbarAddKnowledge 同流程，仅数据源从划词文本换成标注图）
+  openKnowledgeFromImage(img: string): void {
+    this.knowledgeEditVisible = true;
+    this.knowledgeCardTitle = '';
+    this.knowledgeCardDefinition = '';
+    this.knowledgeImageUri = img; // 标注合成图直接作卡片配图
+    this.knowledgeEditLoading = true;
+    this.knowledgeEditError = '';
+    if (this.knowledgeQueryController) {
+      this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
+    }
+    this.knowledgeQueryController = queryKnowledgeFromImage(img, this.apiConfig,
+      (result: KnowledgeQueryResult) => {
+        this.knowledgeEditLoading = false;
+        this.knowledgeCardTitle = result.title;
+        this.knowledgeCardDefinition = result.definition;
+      },
+      (error: string) => {
+        this.knowledgeEditLoading = false;
+        this.knowledgeEditError = error;
+      });
+  }
+
   // ★ 0.151-bugfix：按模式分池保存工作区（两池隔离核心写路径，与 BBTreeCanvas.saveTree 同逻辑）
   // flat：工作区 = 平铺树 → 存回 bubbleTreeJson（现状路径）
   // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson；
@@ -1685,6 +1805,10 @@ export struct ChatPage {
     }
     if (this.globalSettingsVisible) {
       this.globalSettingsCloseReq++; // ★ 0.150：全局设置弹窗——递增计数器触发弹窗内 requestClose（有未保存修改时二次确认，不直接丢弃）
+      return true;
+    }
+    if (this.annotationNotifyVisible) {
+      this.annotationNotifyVisible = false; // ★ 0.152：屏幕圈选首次说明弹窗（未确认则下次再提示）
       return true;
     }
     return false; // 无弹窗，由调用方执行默认返回
@@ -2197,7 +2321,8 @@ export struct ChatPage {
           .padding({ left: 16, right: 16, top: 8 })
         }
 
-        // 输入区域 — ＋添加子气泡 + 输入框 + 相机图片 + ⋮模式菜单 + 发送按钮（★ 0.151-D 需求重排）
+        // 输入区域 — ＋添加子气泡 + 输入框 + ✏️画画Icon + 发送▾（★ 0.152 需求重排：
+        // 图片添加/对话模式/回复长度收进发送右侧 ▾ 下拉菜单，底栏只留核心三键）
         Row() {
           // ★ 0.151-D：添加子气泡按钮挪到左下角行首（原顶栏文字按钮改 ＋ icon，样式与 BBTreeCanvas 画布 ＋ 同款；
           // 点击在当前气泡下新建子气泡）
@@ -2221,25 +2346,15 @@ export struct ChatPage {
             .enterKeyType(EnterKeyType.NEW_LINE)
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 
-          // ★ 0.151-D：图片附件按钮（🖼️「图片」icon 替换原相机占位图标，用户指定；点击相册多选添加图片）
-          Button('🖼️')
+          // ★ 0.152：画画Icon（屏幕圈选标注，核心新增亮点）——点击截取当前屏幕画面进入涂鸦标注页；
+          // 原底栏 🖼️ 图片按钮与 💬 模式按钮移入发送右侧 ▾ 下拉菜单
+          Button('✏️')
             .fontSize(16)
             .backgroundColor(Color.Transparent)
             .padding({ left: 2, right: 2 })
             .margin({ left: 0, right: 2 })
             .onClick(() => {
-              this.selectImages();
-            })
-
-          // ★ 0.151-D：💬 气泡菜单按钮（气泡+三点形态，用户指定替换竖排 ⋮；emoji 自带色、按钮不做状态高亮，
-          // 当前所选状态看菜单内高亮）——点击弹出树形菜单（上组对话模式 + 下组回复长度）
-          Button('💬')
-            .fontSize(16)
-            .backgroundColor(Color.Transparent)
-            .padding({ left: 2, right: 2 })
-            .margin({ left: 0, right: 2 })
-            .onClick(() => {
-              this.modeMenuOpen = !this.modeMenuOpen;
+              this.startAnnotation();
             })
 
           Button('发送')
@@ -2248,12 +2363,24 @@ export struct ChatPage {
             .onClick(() => {
               this.sendMessage();
             })
+
+          // ★ 0.152：发送右侧小三角下拉按钮——弹出菜单：对话模式（2项）/ 回复长度（3项）/ 图片添加
+          Text('▾')
+            .fontSize(12)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .width(18)
+            .height(32)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.modeMenuOpen = !this.modeMenuOpen;
+            })
         }
         .width('100%')
         .padding({ left: 6, right: 6, top: 8, bottom: 8 }) // ★ 0.143：输入区顶部留白——消息列表/图片预览与输入框原本贴边，加 top 12 与列表顶部 padding 呼应
         }
         .width('100%')
         .height('100%')
+        .id('chatSnapshotRoot') // ★ 0.152：屏幕圈选截图锚点（componentSnapshot.get 截取顶栏+消息列表+输入区当前画面）
 
         // ★ 0.146：知识库卡片编辑弹窗（AI 生成草稿 → 用户二次编辑 → 保存入库）
         // 遮罩不关闭弹窗——防误触丢草稿；关闭只走【取消】按钮 / 系统返回。
@@ -2905,9 +3032,10 @@ export struct ChatPage {
 
         // ★ 0.145：文本预览弹窗已移除——长按气泡文本直接进入系统选择模式 + 自研悬浮操作栏（bindSelectionMenu）
 
-        // ★ 0.151-D：⋮ 三点气泡菜单面板（合并原发送模式面板 0.133 + 回复长度面板 0.144 为一棵树形菜单：
-        // 上组=对话模式（💬 正常对话 / 🎙 播客模式），下组=回复长度（短/中/长）；当前选中高亮；
-        // 半透明遮罩 + 右下角面板，浮于输入区上方）
+        // ★ 0.151-D：⋮ 三点气泡菜单面板（合并原发送模式面板 0.133 + 回复长度面板 0.144 为一棵树形菜单）
+        // ★ 0.152：触发按钮改为发送右侧 ▾ 小三角（原底栏 💬 按钮移除）；菜单三组：
+        // 上组=对话模式（💬 正常对话 / 🎙 播客模式），中组=回复长度（短/中/长），下组=图片添加（原 🖼️ 按钮收编）；
+        // 当前选中高亮；半透明遮罩 + 右下角面板，浮于输入区上方
         if (this.modeMenuOpen) {
           Stack() {
             // 遮罩：点击关闭面板
@@ -3012,6 +3140,21 @@ export struct ChatPage {
                 .width('100%')
                 .padding({ left: 12, bottom: 8 })
                 .textAlign(TextAlign.Start)
+              Divider()
+                .color(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+                .margin({ top: 4, bottom: 4 })
+              // ── 第三组：图片添加（★ 0.152：原底栏 🖼️ 按钮收进下拉菜单） ──
+              Text('🖼️ 添加图片')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .width('100%')
+                .padding(12)
+                .textAlign(TextAlign.Start)
+                .borderRadius(8)
+                .onClick(() => {
+                  this.modeMenuOpen = false;
+                  this.selectImages(); // 相册多选 → base64 挂到输入区（原链路不变）
+                })
             }
             .width(200)
             .borderRadius(12)
@@ -3024,13 +3167,56 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
         }
+
+        // ★ 0.152：屏幕圈选首次使用说明弹窗（需求文案原文；确认后记 flag 永不再弹）
+        // 遮罩不关闭弹窗——确认只走「知道了」按钮（一次性授权说明，防误触跳过）
+        if (this.annotationNotifyVisible) {
+          Stack() {
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.4)')
+
+            Column() {
+              Text('屏幕圈选标注')
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .margin({ bottom: 10 })
+              Text('用于屏幕圈选标注提问，不会后台录制屏幕。')
+                .fontSize(14)
+                .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                .margin({ bottom: 16 })
+              Button('知道了')
+                .fontSize(14)
+                .width('100%')
+                .backgroundColor('#1976D2')
+                .fontColor('#FFFFFF')
+                .onClick(() => {
+                  this.confirmAnnotationNotify();
+                })
+            }
+            .width('75%')
+            .padding(20)
+            .borderRadius(12)
+            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
       }
       .width('100%')
       .height('100%')
     }
-    // ★ 0.159：弃用 .title() 自定义标题行——title 内容区宽度参照系含系统返回按钮占位，width('100%')
-    // 解析后比可用区宽 → 按钮组溢出屏幕右侧（真机实证）；改 hideTitleBar + 内容区自绘顶栏行（topBarTitle）
     .hideTitleBar(true)
+    // ★ 0.152：标注页 pop 返回时消费标注结果（import/branch/knowledge 三分支；
+    // onShown 首次进入及其他页面返回时 action 为空直接跳过）
+    .onShown(() => {
+      this.consumeAnnotationResult();
+    })
     // ★ 0.120/0.159：返回拦截统一走 handleBack——有弹窗打开时先关弹窗（消费返回），否则默认返回
     .onBackPressed(() => {
       return this.handleBack();

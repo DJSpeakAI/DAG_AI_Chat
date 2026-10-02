@@ -5,6 +5,7 @@
 //   - streamChat()：流式对话请求，AI 边生成边返回（SSE 协议）
 //   - queryWord()：AI 查词，结果入单词库（★ 0.145；★ 0.155：划词含中文走中译英，美式音标+英文格式）
 //   - queryKnowledge()：AI 知识卡片草稿提炼（★ 0.146）
+//   - queryKnowledgeFromImage()：AI 知识卡片草稿提炼·多模态版，屏幕圈选截图入知识库（★ 0.152）
 //   - synthesizeTTS()：语音合成，HTTP 分段请求（★ 0.136/0.139）
 //   - StreamController：流式请求控制器，支持手动 cancel 终止请求
 //   - parseSSEChunk()：解析 SSE（Server-Sent Events）数据块
@@ -510,6 +511,52 @@ export function queryKnowledge(
         onDone(result);
       } else {
         onError('AI 返回内容无法解析为卡片，请重试');
+      }
+    },
+    onError
+  );
+}
+
+// ============================================================
+// ★ 0.152：屏幕圈选 → 知识库卡片草稿（多模态版）— queryKnowledgeFromImage
+// ============================================================
+// Flow: user annotates a screenshot in AnnotationPage → taps "存入知识库"
+// → the annotated image (base64 data URI) goes to the vision-capable chat
+// model with a strict prompt → the AI reads the circled region and returns
+// {"title","definition"} → the card editor pre-fills both fields. Same
+// contract as queryKnowledge: the AI output is a DRAFT only, nothing is
+// saved until the user confirms in the editor; it never creates chat
+// bubbles and never enters the DAG context.
+
+// System prompt for image-based card drafting (strict JSON, no markdown).
+// Hard constraint: the AI may ONLY distill from what is visible in the
+// image, focusing on the region the user circled/highlighted.
+const KNOWLEDGE_IMAGE_QUERY_PROMPT = '你是卡片提炼助手，用户会提供一张带画笔圈选标注的屏幕截图。请识别图中被圈选或标注区域的核心内容，仅基于图中可见信息生成知识库卡片。规则：1. 只使用图中可见的内容，严禁增加图中不存在的信息、例子或拓展解释；2. title填写图中核心术语或概念名称；definition写精简核心定义，压缩文字；3. 输出严格JSON，不要任何额外文字、注释、markdown，只返回json字符串，格式：{"title":"...","definition":"..."}。';
+
+// AI card draft from an annotated image: multimodal stream request (user
+// message carries the image). Reuses parseKnowledgeQueryResult — the JSON
+// contract is identical to the text-based queryKnowledge.
+export function queryKnowledgeFromImage(
+  imageUri: string,
+  config: ApiConfig,
+  onDone: (result: KnowledgeQueryResult) => void,
+  onError: (error: string) => void
+): StreamController {
+  const messages: ChatMessage[] = [
+    new ChatMessage(generateMessageId(), 'system', KNOWLEDGE_IMAGE_QUERY_PROMPT),
+    new ChatMessage(generateMessageId(), 'user', '请提取图中圈选标注区域的内容，生成知识库卡片', [imageUri]) // ★ 0.152：图片走 imageUrl 数组（streamChat 多模态链路，与相册图片消息同机制）
+  ];
+  let full = '';
+  return streamChat(
+    messages,
+    config,
+    (chunk: string) => { full += chunk; }, // accumulate silently — no typewriter UI for drafting
+    () => {
+      const result = parseKnowledgeQueryResult(full);
+      if (result !== null) {
+        onDone(result);
+      } else {
+        onError('AI 无法从图片中解析出卡片内容，请重试');
       }
     },
     onError

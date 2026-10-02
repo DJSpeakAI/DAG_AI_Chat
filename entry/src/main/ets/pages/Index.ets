@@ -8,7 +8,7 @@
 //   - 配置 NavPathStack 导航路由（气泡画布 / 对话页 / 设置页）
 //
 // 页面导航关系：
-//   Index → BBTreeCanvas（气泡画布）→ ChatPage（对话页）
+//   Index → BBTreeCanvas（气泡画布）→ ChatPage（对话页）→ AnnotationPage（屏幕标注，★ 0.152）
 //                                  → SettingsPage（设置页）
 //                                  → WordBankPage（单词库，★ 0.145）
 //                                  → KnowledgeBankPage（知识库，★ 0.146）
@@ -20,6 +20,7 @@ import { ChatPage } from '../components/ChatPage';
 import { SettingsPage } from '../components/SettingsPage';
 import { WordBankPage } from '../components/WordBankPage'; // ★ 0.145：单词库页面路由
 import { KnowledgeBankPage } from '../components/KnowledgeBankPage'; // ★ 0.146：知识库页面路由
+import { AnnotationPage } from '../components/AnnotationPage'; // ★ 0.152：屏幕圈选标注页路由
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.131：深浅色适配
 
@@ -87,6 +88,8 @@ struct Index {
       WordBankPage({ pathStack: this.pathStack })
     } else if (name === 'KnowledgeBankPage') { // ★ 0.146：知识库页面
       KnowledgeBankPage({ pathStack: this.pathStack })
+    } else if (name === 'AnnotationPage') { // ★ 0.152：屏幕圈选标注页
+      AnnotationPage({ pathStack: this.pathStack })
     }
   }
 
