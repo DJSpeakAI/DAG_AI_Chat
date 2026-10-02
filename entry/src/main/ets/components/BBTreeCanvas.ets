@@ -253,13 +253,19 @@ export struct BBTreeCanvas {
     const treeCenterY = (minY + maxY) / 2;
 
     // ★ 自动缩放：以画布真实尺寸为准，去掉 0.3 下限，任何大小的树都完整可见（0.130）
-    const treeW = maxX - minX + 132; // ★ 0.147：气泡 maxWidth 132 余量（原 60 圆直径）
-    const treeH = maxY - minY + 50;  // ★ 0.147：气泡高度约 50 余量
+    // ★ 0.151-bugfix5：+32 四周呼吸边距（16×2）——树铺满画布时气泡不贴屏幕边缘
+    const treeW = maxX - minX + 132 + 32; // ★ 0.147：气泡 maxWidth 132 余量（原 60 圆直径）
+    const treeH = maxY - minY + 50 + 32;  // ★ 0.147：气泡高度约 50 余量
     this.canvasScale = Math.min(this.viewW / treeW, this.viewH / treeH, 1.0);
 
     // ★ 树几何中心对齐画布正中，-66/-25 气泡左上角→中心补偿（0.147 随矩形尺寸更新）；去掉 Math.max 截断，树再大中心也对齐（0.130）
-    this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - 66;
-    this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 25;
+    // ★ 0.151-bugfix5：补偿必须乘 scale——treeCenterX 是气泡左上角坐标中心，视觉中心 = treeCenterX + 66，
+    //   居中要求 (treeCenterX + 66) * scale + offsetX = viewW/2，即 offsetX = viewW/2 - treeCenterX*scale - 66*scale；
+    //   旧版写死 -66（未乘 scale），scale<1 时整棵树左偏 66×(1-scale)、上偏 25×(1-scale)
+    //   （scale=1 单树时代无偏差从未暴露；多树并排树宽超屏、scale≈0.6 时最左气泡左缘
+    //   到 -27vp 屏幕外，用户实测「左边一棵树一半超出屏幕」根因）
+    this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - 66 * this.canvasScale;
+    this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - 25 * this.canvasScale;
   }
 
   // ★ 0.151：模式 A【添加根气泡】——新增顶级根节点（=一棵新树）
