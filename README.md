@@ -1,52 +1,64 @@
-# DAG AI Chat — 气泡树 AI 对话应用
+# DAG AI Chat — 气泡树多分支 AI 对话工具
 
-> **版本：0.1 (MVP)**  
-> 鸿蒙 HarmonyOS ArkUI V2 气泡树多分支 AI 对话应用，接入火山方舟大模型 API，支持流式对话、多模态图片上传、对话树可视化与本地持久化。
-
----
-
-## 一、项目概述
-
-DAG AI Chat 是一款基于鸿蒙 HarmonyOS ArkUI V2 的 AI 对话应用，核心创新点是将传统线性对话升级为**气泡树（Bubble Tree）**结构，用户可以在任意对话节点分叉出新的对话分支，实现多路探索式 AI 交互。
-
-### 核心能力
-
-| 能力 | 说明 |
-|------|------|
-| 🌳 气泡树对话 | 对话以树形 DAG 结构组织，支持任意节点分叉子气泡 |
-| 🎨 画布可视化 | Canvas 绘制气泡节点 + 父子连线，支持拖拽布局 |
-| 💬 流式对话 | 接入火山方舟 API，SSE 流式实时返回 AI 回复 |
-| 🖼️ 多模态图片 | 支持相册多选图片，Base64 内联发送给多模态模型 |
-| 🖼️ 图片全屏预览 | 点击图片全屏浏览，支持左右滑动、双指缩放、右滑关闭 |
-| ⏳ 加载/错误状态 | 占位气泡「AI正在回复中...」+ 错误气泡提示 |
-| 💾 本地持久化 | 对话树 JSON 序列化存储到应用沙盒 |
-| 📝 Markdown 渲染 | AI 回复支持代码块、表格等 Markdown 格式 |
-| 🔄 代码块自动换行 | 代码块上方按钮切换换行/横向滚动，默认换行 |
-| 📏 输入框自适应 | ≤5 行自适应高度，>5 行内部滚动 |
-| 🔗 DAG 链路回溯 | 从当前气泡沿 parentID 回溯构建完整对话上下文 |
-| 📦 上下文压缩 | 超 25 条消息自动生成摘要，滑动窗口压缩历史 |
-| 🌓 深浅色主题 | 跟随系统深浅色切换，全页面适配 |
-| 🔧 API 配置 | 设置页配置 API Key / Endpoint / Model，内置 5 个预置模型 |
+> **版本：0.15 (MVP 持续迭代)**  
+> 鸿蒙 HarmonyOS ArkUI V2 原生应用，气泡树（DAG）多分支 AI 对话，接入火山方舟大模型 API。
 
 ---
 
-## 二、技术栈
+## 项目介绍
+
+DAG AI Chat 是基于鸿蒙 ArkUI V2 开发的原生 AI 对话应用，核心创新是**气泡树（DAG 有向无环图）对话模型**，打破普通 AI 聊天只能单线对话的限制。
+
+传统对话是一条直线，每次提问只能沿着当前上下文继续；在 DAG AI Chat 中，你可以在任意气泡节点分叉，衍生多条独立对话分支，并行探索不同思路、不同提问角度，非常适合自学、数学推演、代码调试、知识拆解等深度思考场景。
+
+## ✨ 核心特性
+
+- 🌳 **DAG 气泡树对话**：任意对话节点新建分支，多路并行探索 AI，保留全部思考脉络
+- 🖼️ **Canvas 可视化画布**：图形化查看整棵对话树，支持节点拖拽、双指捏合缩放、选中气泡高亮
+- 💬 **气泡自定义标题**：节点自动提取首句问题做预览，支持手动重命名气泡，快速识别每一段对话主题
+- 💾 **本地持久化**：对话气泡树保存在本机，无网络也可以完整使用 App 全部基础能力
+- 📱 **鸿蒙原生开发**，同时适配鸿蒙手机、鸿蒙 PC
+
+## 💰 商业化说明
+
+本项目所有本地功能永久免费，离线可用，不强制登录。
+
+【多端云同步】为可选增值订阅服务：新用户享有 30 天免费试用；包月 9.9 元，年费 99 元。
+
+订阅到期仅暂停云端同步，设备本地所有对话、气泡数据完整保留，不会删除。
+
+云同步仅支持华为账号登录，不接入微信、手机号等第三方登录。
+
+## 🎯 适合人群
+
+深度自学者、数学 / 理科学习者、程序员、知识整理爱好者。
+
+适合一边和 AI 对话，一边分叉验证不同猜想，沉淀成个人知识库。
+
+## ⚠️ 当前状态
+
+MVP 持续迭代开发中。目前已实现画布、分支对话、本地存储、主题深浅色跟随、气泡标题等基础能力；云同步功能为后续迭代模块。
+
+---
+
+## 一、技术栈
 
 | 技术 | 说明 |
 |------|------|
 | 语言 | ArkTS（TypeScript 超集） |
 | UI 框架 | ArkUI V2（@ComponentV2 / @ObservedV2 / @Trace） |
 | 状态管理 | AppStorageV2 + PersistenceV2 + @Local + @Computed |
-| 网络 | @kit.NetworkKit（http SSE 流式请求） |
-| 文件 | @kit.CoreFileKit（沙盒 JSON 持久化） |
+| 网络 | @kit.NetworkKit（http SSE 流式请求 + TTS 合成） |
+| 文件 | @kit.CoreFileKit（沙盒 JSON 持久化 + TTS 音频临时文件） |
 | 相册 | @kit.MediaLibraryKit（photoAccessHelper 图片选择） |
-| API | 火山方舟 OpenAI 兼容接口 v3 |
+| 媒体 | @kit.MediaKit（AVPlayer 音频播放，TTS 朗读） |
+| API | 火山方舟 OpenAI 兼容接口 v3 + openspeech 语音合成 2.0 |
 | 构建 | hvigor |
 | 设备 | phone / tablet / 2in1 |
 
 ---
 
-## 三、项目目录结构
+## 二、项目目录结构
 
 ```
 DAG_AI_Chat/
@@ -54,31 +66,33 @@ DAG_AI_Chat/
 │   └── app.json5                          # 应用全局配置（bundleName、版本）
 ├── entry/
 │   └── src/main/
-│   ├── ets/
-│   │   ├── pages/
-│   │   │   └── Index.ets              # 首页入口（Navigation 导航）
-│   │   ├── components/
-│   │   │   ├── BBTreeCanvas.ets       # 气泡树画布（Canvas 绘制 + 拖拽 + 连线）
-│   │   │   ├── ChatPage.ets           # 对话页面（消息列表 + 输入 + 图片 + 流式）
-│   │   │   └── SettingsPage.ets       # 设置页面（API 配置 + 模型选择 + 诊断）
-│   │   ├── common/
-│   │   │   └── ChatModel.ets          # 数据模型（ChatMessage / BubbleNode / BubbleTree / 序列化 / PersistenceV2 持久化）
-│   │   ├── utils/
-│   │   │   └── ApiClient.ets          # API 客户端（SSE 流式 + 多模态 + 诊断测试）
-│   │   ├── entryability/
-│   │   │   └── EntryAbility.ets       # 入口 Ability（含全局 ThemeStore 深浅色）
-│   │   └── entrybackupability/
-│   │       └── EntryBackupAbility.ets # 备份恢复扩展 Ability
-│   ├── resources/
-│   │   └── base/
-│   │       ├── profile/
-│   │       │   ├── main_pages.json    # 页面路由配置
-│   │       ├── element/
-│   │       │   ├── string.json        # 字符串资源
-│   │       │   └── color.json         # 颜色资源
-│   │       └── media/                 # 图标资源
-│   └── module.json5                   # 模块配置（权限、设备类型）
-├── docs/                                  # 版本文档（0.40 ~ 0.131）
+│       ├── ets/
+│       │   ├── pages/
+│       │   │   └── Index.ets              # 首页入口（Navigation 导航 + 持久化恢复）
+│       │   ├── components/
+│       │   │   ├── BBTreeCanvas.ets       # 气泡树画布（组件渲染 + 自动排版 + 视口适配）
+│       │   │   ├── ChatPage.ets           # 对话页（消息列表 + 划词翻译 + TTS + 复习区）
+│       │   │   ├── SettingsPage.ets       # 设置页（API 配置 + 模型选择 + 诊断）
+│       │   │   ├── WordBankPage.ets       # 单词库页（0.145）
+│       │   │   └── KnowledgeBankPage.ets  # 知识库页（0.146）
+│       │   ├── common/
+│       │   │   ├── ChatModel.ets          # 对话数据模型（ChatMessage / BubbleNode / 序列化）
+│       │   │   ├── WordModel.ets          # 单词库数据模型（0.145）
+│       │   │   └── KnowledgeModel.ets     # 知识库数据模型（0.146）
+│       │   ├── utils/
+│       │   │   ├── ApiClient.ets          # API 客户端（SSE 流式 + 查词 + 知识提炼 + TTS 合成）
+│       │   │   ├── WordStoreUtil.ets      # 单词库持久化操作（0.145）
+│       │   │   ├── KnowledgeStoreUtil.ets # 知识库持久化操作（0.146）
+│       │   │   ├── WordSpeaker.ets        # 单词发音 TTS 单例（0.149）
+│       │   │   └── MathRender.ets         # LaTeX 数学符号本地渲染（0.151）
+│       │   ├── entryability/
+│       │   │   └── EntryAbility.ets       # 入口 Ability（含全局 ThemeStore 深浅色）
+│       │   └── entrybackupability/
+│       │       └── EntryBackupAbility.ets # 备份恢复扩展 Ability
+│       ├── resources/
+│       │   └── base/                      # 资源（profile / element / media）
+│       └── module.json5                   # 模块配置（权限、设备类型）
+├── docs/                                  # 版本迭代文档
 ├── build-profile.json5                    # 构建配置（签名、SDK 版本）
 ├── oh-package.json5                       # 依赖管理
 └── hvigorfile.ts                          # hvigor 构建任务
@@ -86,16 +100,19 @@ DAG_AI_Chat/
 
 ---
 
-## 四、核心数据模型
+## 三、核心数据模型
 
 ### ChatMessage — 单条对话消息
 ```typescript
 @ObservedV2
 export class ChatMessage {
   @Trace messageId: string;       // 唯一消息 ID
-  @Trace role: ChatRole;          // 'user' | 'assistant'
+  @Trace role: ChatRole;          // 'user' | 'assistant' | 'system'
   @Trace content: string;         // 文字内容
   @Trace imageUrl: string[];      // 图片 URL 数组（Base64 内联），空数组=无图片
+  @Trace inputTokens: number;     // 输入 token 数
+  @Trace outputTokens: number;    // 输出 token 数
+  @Trace isPodcastMode: boolean;  // 播客模式标记（0.133）
 }
 ```
 
@@ -110,6 +127,9 @@ export class BubbleNode {
   @Trace y: number;               // 画布 y 坐标
   @Trace parentX: number;         // 父节点 x（冗余存储）
   @Trace parentY: number;         // 父节点 y
+  @Trace historySummary: string;          // 分支链路摘要（0.117）
+  @Trace historySummaryCount: number;     // 摘要生成时的消息总数（0.117）
+  @Trace nodeTitle: string;       // 节点标题：空=自动取首句，非空=手动覆盖（0.147）
 }
 ```
 
@@ -125,49 +145,52 @@ export class BubbleTree {
 ```typescript
 @ObservedV2
 export class ApiConfig {
-  @Trace apiKey: string;          // 火山方舟 API Key
-  @Trace endpoint: string;        // API Endpoint URL
-  @Trace model: string;           // 模型 ID
+  @Trace apiKey: string;          // 火山方舟 API Key（对话）
+  @Trace endpoint: string;        // 对话 API Endpoint
+  @Trace model: string;           // 对话模型 ID
+  @Trace audioModel: string;      // TTS 模型资源 ID（0.139）
+  @Trace audioVoice: string;      // TTS 音色 ID（0.139）
+  @Trace audioEndpoint: string;   // TTS 端点（openspeech，与对话端点独立）
+  @Trace audioKey: string;        // TTS 专用 Key（0.140，与对话 Key 相互独立）
 }
 ```
 
 ---
 
-## 五、功能详解
+## 四、功能详解
 
-### 5.1 气泡树画布（BBTreeCanvas.ets）
-- Canvas 绘制气泡节点（圆角矩形 + 文字预览）
-- 父子节点之间绘制贝塞尔曲线连线
-- 手势拖拽节点，实时更新坐标
-- 点击节点切换当前对话气泡
-- 「+」按钮在当前节点下新增子气泡
+### 4.1 气泡树画布（BBTreeCanvas.ets）
+- 圆角矩形气泡组件（节点标题 + 消息计数，0.147）
+- 父子连线（直线组件，选中分支橙色高亮）
+- 双击气泡进入对话页；长按弹操作菜单（修改标题 / 删除）
+- 纵向树形自动排版 + 「显示全部」视口自适应
+- 画布平移 + 双指缩放
 
-### 5.2 对话页面（ChatPage.ets）
-- 消息列表：用户消息蓝色气泡 / AI 消息灰色气泡
-- 用户气泡支持文字 + 图片缩略图同时展示
-- 流式对话：SSE 实时追加 AI 回复内容
-- 加载占位：发送后 AI 气泡显示「AI正在回复中，请稍候...」
-- 错误提示：请求失败显示「请求出错，请检查网络/API配置」
-- 图片选择：📷 按钮 → 相册多选 → Base64 → 预览 → 发送
-- 发送按钮置灰防重复点击
-- 消息删除：× 按钮单条删除
+### 4.2 对话页面（ChatPage.ets）
+- 流式对话：SSE 实时追加 AI 回复（打字机效果）
+- Markdown 渲染：代码块（换行/横滚切换）、表格
+- LaTeX 数学符号本地渲染（0.151/0.152：\frac、\sqrt、上下标、pmatrix 矩阵等）
+- 划词翻译：自定义选词工具栏（翻译 / 入知识库 / 复制 / 全选），屏蔽系统菜单
+- 单词入库 + AI 气泡底部生词复习区（随机 2 词）
+- 知识卡片提炼 + AI 气泡底部知识复习区
+- TTS 朗读：AI 回复分段语音合成播放；单词发音三处共用单例（0.149）
+- 回复长度选择（短/中/长）+ 播客模式
+- 多模态图片：相册多选 → Base64 → 全屏预览（滑动/缩放/右滑关闭）
+- 消息删除防误触（首次确认 + 「不再提示」勾选）
 
-### 5.3 API 客户端（ApiClient.ets）
-- 火山方舟 OpenAI 兼容接口 v3
-- SSE 流式解析（parseSSEChunk）
-- 多模态请求体构造（content 数组格式）
-- 全链路诊断日志（请求构建 → 发送 → 数据接收 → SSE 解析 → 错误）
-- `testApiWithDiagnostics` 诊断测试函数
-- `StreamController` 支持手动取消请求
+### 4.3 API 客户端（ApiClient.ets）
+- streamChat：火山方舟 OpenAI 兼容 v3，SSE 流式解析
+- queryWord / queryKnowledge：复用流式请求累积全文，严格 JSON 解析
+- synthesizeTTS：openspeech 语音合成 2.0，HTTP 分段请求
+- StreamController 支持手动取消；全链路诊断日志
+- 数据卫生：TTS 调试遗留消息不进入 LLM 上下文
 
-### 5.4 设置页面（SettingsPage.ets）
-- API Key 输入（脱敏显示）
-- Endpoint URL 输入
-- 模型下拉选择（5 个预置模型）
+### 4.4 设置页面（SettingsPage.ets）
+- 对话配置：API Key（脱敏）/ Endpoint / 模型下拉（5 个预置模型）
+- 音频配置：TTS Key / 模型资源 ID / 音色（0.139/0.140）
 - 「测试」按钮一键诊断 API 连通性
-- 诊断结果直接显示在消息气泡中
 
-### 5.5 预置模型列表
+### 4.5 预置模型列表
 
 | 显示名称 | API Model ID | 类型 |
 |----------|-------------|------|
@@ -177,15 +200,18 @@ export class ApiConfig {
 | DeepSeek-V4-Pro正式版 | `deepseek-v4-pro-260425` | 纯文本 |
 | DeepSeek-V4-Flash正式版 | `deepseek-v4-flash-260425` | 纯文本 |
 
-### 5.6 本地持久化（ChatModel.ets + PersistenceV2）
-- `serializeBubbleTree`：响应式树 → 纯对象（剥离 @ObservedV2 代理）→ JSON 字符串
-- `deserializeBubbleTree`：JSON 字符串 → 重建响应式 BubbleTree（启动时由 Index 恢复）
-- 持久化载体：PersistenceV2 存储单一 JSON 字符串（`PersistData.bubbleTreeJson`），坐标/消息变更即写回
-- 版本字段支持后续数据结构迁移（`historySummary` 等字段带 `??` 兜底）
+### 4.6 本地持久化（PersistenceV2 多 key 隔离）
+
+| Key | 内容 |
+|-----|------|
+| `persist-data` | 气泡树 JSON（`serializeBubbleTree` / `deserializeBubbleTree`，可选字段 `??` 兜底兼容旧数据） |
+| `api-config-v2` | API 配置（0.143 换 key 迁移修复新增属性不落盘） |
+| `word-bank` | 单词库（独立持久化，0.145） |
+| `knowledge-bank` | 知识库（独立持久化，0.146） |
 
 ---
 
-## 六、多模态请求格式
+## 五、多模态请求格式
 
 ### 纯文本消息
 ```json
@@ -213,59 +239,64 @@ export class ApiConfig {
 
 ---
 
-## 七、状态管理架构
+## 六、状态管理架构
 
 ```
 AppStorageV2（全局响应式存储）
 ├── BubbleTree ('bubble-tree')        # 气泡树数据
-├── CurrentBubble ('current-bubble')  # 当前选中气泡 ID
-└── ApiConfig ('api-config')          # API 配置（PersistenceV2 持久化）
+├── CurrentBubble ('current-bubble')  # 当前选中气泡 ID + 坐标
+└── ThemeStore ('theme-store')        # 深浅色主题
+
+PersistenceV2（磁盘持久化）
+├── PersistData ('persist-data')      # 气泡树 JSON 字符串
+├── ApiConfig ('api-config-v2')       # API 配置（工厂函数内迁移旧 key 数据）
+├── WordBankStore ('word-bank')       # 单词库
+└── KnowledgeBankStore ('knowledge-bank')  # 知识库
 
 @ComponentV2 组件内
-├── @Local                            # 组件局部状态（inputText, isLoading, pendingImages）
-├── @Computed                         # 计算属性（currentBubbleId, currentBubble, currentMessages）
+├── @Local                            # 组件局部状态
+├── @Computed                         # 计算属性
 ├── @Param                            # 父组件传参（pathStack）
 └── @ObservedV2 + @Trace              # 深度响应式（ChatMessage, BubbleNode, BubbleTree）
 ```
 
 ---
 
-## 八、版本历史
+## 七、版本历史
 
 | 版本 | 说明 |
 |------|------|
-| 0.1 (MVP) | 气泡树对话 + 火山方舟流式 API + 多模态图片 + 加载/错误状态 + 本地持久化 + 画布拖拽 |
-| 0.40 | 修复模型名大小写 404 问题 |
-| 0.41 | 修正 5 个预置模型 API Model ID |
-| 0.42 | 新增加载占位气泡 + 错误气泡 + 多模态图片上传 |
-| 0.114 | 图片显示优化 + 全屏浏览（左右滑动、双指缩放） |
-| 0.115 | 图片全屏预览交互优化（右滑关闭、点击关闭） |
-| 0.116 | 输入框多行自适应（≤5 行自适应，>5 行内部滚动） |
-| 0.117 | DAG 链路回溯 + 滑动窗口上下文压缩（超 25 条自动摘要） |
-| 0.118 | 输入框动态高度优化 |
-| 0.121 | AI 回复 Markdown 渲染（代码块、表格） |
-| 0.122 | 代码块自动换行按钮 + 代码清理（删除死代码、未使用导入） |
-| 0.123 | 气泡树画布深浅色适配 + 阴影 + 高亮连线 |
-| 0.124 | 纵向树形自动排版 + 「显示全部」按钮 |
-| 0.126 | fitViewport 自动缩放 + 画布裁剪（clip） |
-| 0.130 | fitViewport 重构：以画布真实尺寸居中（「显示全部」+ 清零默认节点位置修复） |
-| 0.131 | 全项目代码清理：弃用 API 迁移（headersReceive / UIContext.showAlertDialog / focusControl）+ 默认模型对齐 + 首页/设置页深浅色补齐 + 显示全部按钮右缘自适应 |
+| 0.1 (MVP) | 气泡树对话 + 火山方舟流式 API + 多模态图片 + 本地持久化 |
+| 0.114~0.118 | 图片全屏预览、输入框自适应、DAG 链路回溯 + 上下文压缩 |
+| 0.121~0.124 | Markdown 渲染、代码块换行、深浅色适配、纵向自动排版 |
+| 0.126~0.131 | 视口自适应、弃用 API 迁移、全项目代码清理 |
+| 0.132 | 流式渲染 ForEach key 复用 bug 修复（打字机效果恢复，真机验证闭环） |
+| 0.133 | 播客模式发送标记 |
+| 0.136~0.142 | TTS 语音朗读全链路打通：HTTP 合成 + 分段播放 + 调试消息 + 死锁修复 |
+| 0.139 | TTS 迁移 openspeech 语音合成-2.0 端点 |
+| 0.143 | PersistenceV2 换 key 迁移（api-config-v2，修复 audioKey 不落盘） |
+| 0.145 | 单词库 MVP：划词翻译 + 入库 + 生词复习区 + 单词库页 |
+| 0.146 | 知识库：划词提炼知识卡片 + 复习区 + 知识库页 |
+| 0.147 | 画布气泡节点增强：标题 + 圆角矩形 + 长按菜单 |
+| 0.149 | 单词发音 TTS 单例（复习区 / 单词库 / 翻译弹窗三处共用） |
+| 0.151 | LaTeX 数学符号本地渲染（MathRender 零依赖转换器） |
+| 0.152 | pmatrix 矩阵环境 + 全角 / 零宽字符规范化 |
 
 ---
 
-## 九、运行环境
+## 八、运行环境
 
 - **IDE**：DevEco Studio
-- **SDK**：HarmonyOS API 12+
+- **SDK**：HarmonyOS NEXT（compatibleSdkVersion 6.1.1，API 24+；targetSdkVersion 26.0.0）
 - **设备**：phone / tablet / 2in1
 - **签名**：默认 debug 签名配置
 
 ---
 
-## 十、快速开始
+## 九、快速开始
 
 1. 用 DevEco Studio 打开项目
-2. 在设置页填入火山方舟 API Key
+2. 在设置页填入火山方舟 API Key（对话）
 3. 选择预置模型（推荐 `Doubao-Seed-2.1-lite`）
 4. 点击「测试」验证 API 连通性
 5. 开始对话，在气泡树上探索多分支对话

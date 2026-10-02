@@ -10,6 +10,8 @@
 // 页面导航关系：
 //   Index → BBTreeCanvas（气泡画布）→ ChatPage（对话页）
 //                                  → SettingsPage（设置页）
+//                                  → WordBankPage（单词库，★ 0.145）
+//                                  → KnowledgeBankPage（知识库，★ 0.146）
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';

@@ -3,7 +3,7 @@
 // ============================================================
 // 本文件定义了 DAG 气泡树聊天系统的核心数据结构：
 //   - ChatMessage：单条对话消息（用户/AI/系统）
-//   - BubbleNode：气泡节点，每个节点保存一组消息，通过 parentID 形成树状结构
+//   - BubbleNode：气泡节点，每个节点保存一组消息（nodeTitle 节点标题 ★ 0.147），通过 parentID 形成树状结构
 //   - BubbleTree：气泡树，包含所有节点
 //   - CurrentBubble：当前选中的气泡节点
 //   - ApiConfig：API 配置（Key、Endpoint、Model）

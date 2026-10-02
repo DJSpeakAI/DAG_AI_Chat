@@ -3,6 +3,9 @@
 // ============================================================
 // 本文件封装了与火山引擎（Volcano）AI 大模型的通信逻辑：
 //   - streamChat()：流式对话请求，AI 边生成边返回（SSE 协议）
+//   - queryWord()：AI 查词，结果入单词库（★ 0.145）
+//   - queryKnowledge()：AI 知识卡片草稿提炼（★ 0.146）
+//   - synthesizeTTS()：语音合成，HTTP 分段请求（★ 0.136/0.139）
 //   - StreamController：流式请求控制器，支持手动 cancel 终止请求
 //   - parseSSEChunk()：解析 SSE（Server-Sent Events）数据块
 //
