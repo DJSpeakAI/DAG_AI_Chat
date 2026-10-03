@@ -213,7 +213,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.166.1') // ★ 0.166.1：修复圈注「创建子气泡」标注图丢失——图片随 addBubble 切换回调带入（0.162 动画改造后清空移入 onFinish 回调，原同步塞图被回调清空）
+        Text('v0.166.2') // ★ 0.166.2：平板进入画布后首页残留左栏修复——Navigation mode Auto→Stack（宽屏自动分栏是根因，强制单栏与手机一致）
           .fontSize(12)
           .fontColor(this.getThemeStore().isDark ? '#666666' : '#AAAAAA')
           .margin({ top: 12 })
@@ -225,6 +225,8 @@ struct Index {
       .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA') // ★ 0.131：深浅色适配（与其他页面一致）
     }
     .navDestination(this.pageMap)
-    .mode(NavigationMode.Auto)
+    // ★ 0.166.2：Auto 模式下平板宽屏自动切分栏——首页一直占左栏、画布只占右栏（用户实测
+    // 「首页一直出现在屏幕左边」）；改 Stack 强制单栏，push 后目标页全屏覆盖，平板与手机一致
+    .mode(NavigationMode.Stack)
   }
 }
