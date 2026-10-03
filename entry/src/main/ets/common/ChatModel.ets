@@ -17,6 +17,7 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
+import { upsertCloudData, registerCloudDataHandler } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
 export type ChatRole = 'user' | 'assistant' | 'system'; // ★ 新增 'system'（0.117 摘要虚拟消息）
@@ -539,9 +540,11 @@ export function applyCanvasModeSwitch(newMode: CanvasMode): void {
   if (newMode === 'tabs') {
     // 平铺 → 选项卡：工作区（全部树）存回平铺池
     persist.bubbleTreeJson = serializeBubbleTree(store);
+    upsertCloudData('flat_pool', persist.bubbleTreeJson); // ★ 0.165.1：云同步桥接（切换前平铺池先上云）
     // 按根拆树：每个根的子树 = 一个 Tab（互通：树还是那批树，只是换个组织方式）
     const tabs = buildTabsFromNodeList(store.nodeList);
     forest.tabsJson = serializeTabs(tabs);
+    upsertCloudData('tabs_pool', forest.tabsJson); // ★ 0.165.1：云同步桥接（重建的 Tab 池上云）
     // 选中第一个 Tab，工作区加载第一棵树（无树 = 空工作区，等用户点 ➕ 创建）
     forest.activeTabId = tabs.length > 0 ? tabs[0].id : '';
     const first = tabs.length > 0 ? deserializeBubbleTree(tabs[0].treeJson) : null;
@@ -553,6 +556,7 @@ export function applyCanvasModeSwitch(newMode: CanvasMode): void {
     if (idx >= 0) {
       tabs[idx].treeJson = serializeBubbleTree(store);
       forest.tabsJson = serializeTabs(tabs);
+      upsertCloudData('tabs_pool', forest.tabsJson); // ★ 0.165.1：云同步桥接（当前 Tab 存回后 Tab 池上云）
     }
     // 合并全部 Tab 的树 → 多根平铺（互通：需求 2.4.2「统一平铺渲染」字面语义；
     // nodeID 为时间戳+随机全局唯一，各 Tab 树直接拼接无冲突）
@@ -572,6 +576,7 @@ export function applyCanvasModeSwitch(newMode: CanvasMode): void {
     layoutFlatForest(merged);
     // 全量重建平铺池 + 工作区加载合并树
     persist.bubbleTreeJson = serializeBubbleTree(new BubbleTree(merged));
+    upsertCloudData('flat_pool', persist.bubbleTreeJson); // ★ 0.165.1：云同步桥接（重建的平铺池上云）
     store.nodeList = merged;
   }
   // 清空当前选中（旧选中节点在新工作区必然失效，防 ChatPage 数据错乱）
@@ -631,6 +636,7 @@ export function migrateLegacyPoolsIfNeeded(canvasMode: CanvasMode): void {
           tabs.push(tab);
         }
         forest.tabsJson = serializeTabs(tabs);
+        upsertCloudData('tabs_pool', forest.tabsJson); // ★ 0.165.1：云同步桥接（迁移后 Tab 池上云）
       }
     }
   } else {
@@ -661,8 +667,68 @@ export function migrateLegacyPoolsIfNeeded(canvasMode: CanvasMode): void {
       }
       if (appended > 0) {
         persist.bubbleTreeJson = serializeBubbleTree(new BubbleTree(merged));
+        upsertCloudData('flat_pool', persist.bubbleTreeJson); // ★ 0.165.1：云同步桥接（迁移后平铺池上云）
       }
     }
   }
   flag.migrated = true;
+}
+
+// ============================================================
+// ★ 0.165.2：云端下行刷新（dataChange 事件 → 写回池 → 重建工作区）
+// ============================================================
+// 链路：CloudSyncUtil 订阅 SUBSCRIBE_TYPE_CLOUD → 云端数据下行到本地 RDB →
+//   pullAndNotify 拉快照 → 此处 handler 写回 PersistenceV2 池 → 重建工作区
+// 设计约束：
+//   - 【绝不 upsert】下行写池后不能再调 upsertCloudData——否则 A 写→云→B 下行→
+//     B 再 upsert→云→A 下行……无限回环。PersistenceV2 赋值自动落盘，无需手动上云
+//   - 【值比较挡回声】本机 upsert 上云的回声事件：RDB 值 == 池值 → 不写回，天然幂等
+//   - 【竞态窗口】本机池已更新但 upsert 尚未落 RDB 的毫秒级窗口内恰逢下行，可能用
+//     旧值覆盖新编辑（last-write-wins 语义，快照行模式固有，概率极低，MVP 接受）
+//   - 【打断风险】下行重建工作区会打断进行中的流式回复/输入（nodeList 整体替换）——
+//     触发条件是另一台设备刚改过数据，属用户预期内的多端一致，MVP 接受
+// ============================================================
+export function setupCloudDownlink(): void {
+  registerCloudDataHandler((key: string, value: string): void => {
+    if (key === 'flat_pool') {
+      const persist = PersistenceV2.connect(PersistData, 'persist-data',
+        () => new PersistData()) as PersistData;
+      if (persist.bubbleTreeJson !== value) {
+        persist.bubbleTreeJson = value; // PersistenceV2 自动落盘（绝不 upsert，防回环）
+        refreshWorkspaceFromPools();
+      }
+    } else if (key === 'tabs_pool') {
+      const forest = connectTabForest();
+      if (forest.tabsJson !== value) {
+        forest.tabsJson = value;
+        refreshWorkspaceFromPools();
+      }
+    }
+  });
+}
+
+// ★ 0.165.2：按当前模式的权威池重建工作区（复用 0.151 applyCanvasModeSwitch 的搬移模式）——
+// flat：工作区 = 平铺池全部树；tabs：工作区 = activeTab 的树。
+// 清空 current（旧选中节点在新工作区可能失效）+ 置 needsRelayout（BBTreeCanvas 消费触发重布局）
+function refreshWorkspaceFromPools(): void {
+  const store = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  const current = AppStorageV2.connect(CurrentBubble, 'current-bubble',
+    () => new CurrentBubble()) as CurrentBubble;
+  const modeStore = connectCanvasMode();
+  if (modeStore.mode === 'flat') {
+    const persist = PersistenceV2.connect(PersistData, 'persist-data',
+      () => new PersistData()) as PersistData;
+    const tree = deserializeBubbleTree(persist.bubbleTreeJson);
+    store.nodeList = tree !== null ? tree.nodeList : [];
+  } else {
+    const forest = connectTabForest();
+    const tabs = parseTabs(forest.tabsJson);
+    const active = tabs.find((t: TabMeta): boolean => t.id === forest.activeTabId);
+    const tree = active !== undefined ? deserializeBubbleTree(active.treeJson) : null;
+    store.nodeList = tree !== null ? tree.nodeList : [];
+  }
+  current.nodeID = '';
+  current.bubbleX = 0;
+  current.bubbleY = 0;
+  store.needsRelayout = true;
 }

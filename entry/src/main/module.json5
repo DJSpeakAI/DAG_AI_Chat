@@ -73,6 +73,21 @@
           ],
           "when": "inuse"
         }
+      },
+      // ★ 0.165.1：端云数据同步（setDistributedTables 云端模式）所需权限。
+      // 官方权限列表实证：normal 级别 + user_grant（用户授权）——面向所有应用开放，
+      // 非受限权限、不需要 Profile 的 ACL 授权（与 0.164.7 删除的 READ_PASTEBOARD 不同，
+      // 装机不会触发 9568289）；但须运行时弹窗 requestPermissionsFromUser 用户手动允许
+      // （CloudSyncUtil.requestSyncPermission，0.165.2 挂设置页入口触发）。
+      {
+        "name": "ohos.permission.DISTRIBUTED_DATASYNC",
+        "reason": "$string:distributed_datasync_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ]
   }

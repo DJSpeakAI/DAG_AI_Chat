@@ -18,6 +18,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility'; // ★ 0.123 深浅色主题
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
+import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -153,10 +154,12 @@ export struct BBTreeCanvas {
           tabs[idx].name = getRootDisplayName(root);
         }
         this.tabForest.tabsJson = serializeTabs(tabs);
+        upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（Tab 池快照上云）
       }
       // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
     } else {
       this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      upsertCloudData('flat_pool', this.persistData.bubbleTreeJson); // ★ 0.165.1：云同步桥接（平铺池快照上云）
     }
   }
 
@@ -305,6 +308,7 @@ export struct BBTreeCanvas {
     const tree = new BubbleTree([root]);
     tabs.push({ id: tabId, name: getRootDisplayName(root), treeJson: serializeBubbleTree(tree) }); // ★ 0.151-bugfix2：Tab 名 = 树根显示名（空白新根 =「空气泡」，与根气泡文字一致；重命名 Tab 即给树起名）
     this.tabForest.tabsJson = serializeTabs(tabs);
+    upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（新增 Tab 后 Tab 池上云）
     this.tabForest.activeTabId = tabId;
     // 工作区加载新 Tab 的树
     this.store.nodeList = [root];
@@ -336,6 +340,7 @@ export struct BBTreeCanvas {
           if (idx < 0) return;
           current.splice(idx, 1);
           this.tabForest.tabsJson = serializeTabs(current);
+          upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（删 Tab 后 Tab 池上云）
           if (tabId === this.tabForest.activeTabId) {
             // 删的是当前 Tab：切到相邻 Tab（优先原位置右侧，否则左边；全空 = 空树）
             if (current.length === 0) {
@@ -390,6 +395,7 @@ export struct BBTreeCanvas {
           }
         }
         this.tabForest.tabsJson = serializeTabs(tabs);
+        upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（Tab 重命名后 Tab 池上云）
         // 重命名的是当前 Tab：工作区根标题同步刷新（画布气泡文字立即变）
         if (this.tabRenameId === this.tabForest.activeTabId) {
           const liveRoot = this.store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);

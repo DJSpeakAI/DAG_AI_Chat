@@ -21,8 +21,10 @@
 // ============================================================
 
 import { AppStorageV2 } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, CanvasMode, CanvasModeStore, connectCanvasMode, applyCanvasModeSwitch } from '../common/ChatModel';
 import { ThemeStore } from '../entryability/EntryAbility';
+import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
 
 // 模型选项接口（与原 SettingsPage 一致，搬入保持组件自包含）
 interface ModelOption {
@@ -73,6 +75,8 @@ export struct GlobalSettingsDialog {
   @Local editEncourage: boolean = true; // 自动鼓励开关（默认开启）
   // ★ 0.151 Tab2 编辑副本（画布模式；点保存才执行切换——切换涉及工作区数据搬移，不宜点选即切）
   @Local editCanvasMode: CanvasMode = 'flat'; // 'flat' 平铺 / 'tabs' 选项卡
+  // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
+  @Local syncGranted: boolean = false;
 
   // ★ 0.131：获取全局主题状态（与 ChatPage/BBTreeCanvas 相同模式）
   getThemeStore(): ThemeStore {
@@ -106,6 +110,10 @@ export struct GlobalSettingsDialog {
     this.editEncourage = this.aiPreference.encourageEnabled;
     // ★ 0.151：画布模式编辑副本
     this.editCanvasMode = this.canvasModeStore.mode;
+    // ★ 0.165.2：云同步权限状态（异步查；已授权则「云同步」Tab 直接显示已开启）
+    isCloudSyncGranted().then((granted: boolean) => {
+      this.syncGranted = granted;
+    });
 
     // ★ 0.139：旧值迁移——方舟端点组合（doubao-tts，两次真机实测 404）与播客 ID 一并迁移到 openspeech 2.0 协议
     // （原迁移逻辑在 SettingsPage aboutToAppear；SettingsPage 改弹窗后无入口，迁移职责随表单搬入本组件）
@@ -582,6 +590,91 @@ export struct GlobalSettingsDialog {
     .width('100%')
   }
 
+  // ★ 0.165.2：Tab4 内容——云同步（分布式同步权限授权入口 + 状态显示；点按钮即时生效，无「保存」概念）
+  @Builder
+  cloudTabContent() {
+    Column() {
+      // 状态卡片
+      Row() {
+        Text(this.syncGranted ? '✓' : '○')
+          .fontSize(18)
+          .fontColor(this.syncGranted ? '#4CAF50' : (this.getThemeStore().isDark ? '#777777' : '#999'))
+        Column() {
+          Text(this.syncGranted ? '云同步已开启' : '云同步未开启')
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          Text(this.syncGranted ? '本设备对话数据将自动与云端保持一致' : '开启后，登录同一华为账号的多台设备共享对话数据')
+            .fontSize(11)
+            .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+            .margin({ top: 2 })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        .margin({ left: 10 })
+      }
+      .width('100%')
+      .padding(12)
+      .borderRadius(8)
+      .backgroundColor(this.syncGranted
+        ? (this.getThemeStore().isDark ? '#1B3A2A' : '#E8F5E9')
+        : (this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5'))
+      .margin({ bottom: 16 })
+
+      // 开启按钮（已授权则不显示——授权是一次性的，重复弹窗无意义；拒绝过可再点重试）
+      if (!this.syncGranted) {
+        Button('开启云同步')
+          .width('100%')
+          .height(48)
+          .fontSize(16)
+          .backgroundColor('#1976D2')
+          .fontColor('#FFFFFF')
+          .borderRadius(8)
+          .margin({ bottom: 16 })
+          .onClick(() => {
+            const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            if (context === undefined || context === null) {
+              this.showToastSafe('获取上下文失败，请重试');
+              return;
+            }
+            requestSyncPermission(context).then((granted: boolean) => {
+              this.syncGranted = granted;
+              this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
+            });
+          })
+      }
+
+      // 使用条件说明
+      Column() {
+        Text('同步条件')
+          .fontSize(13)
+          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .margin({ bottom: 6 })
+        Text('1. 各台设备均开启云同步，且登录同一个华为账号')
+          .fontSize(11)
+          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+        Text('2. 系统「设置 → 华为账号 → 云空间」开关已打开')
+          .fontSize(11)
+          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .margin({ top: 4 })
+        Text('3. 云空间默认仅 WLAN 下同步（系统「云空间 → 高级设置」可改）')
+          .fontSize(11)
+          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .margin({ top: 4 })
+        Text('4. 对话数据经华为云空间加密存储，本地功能永久免费离线可用')
+          .fontSize(11)
+          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .padding(12)
+      .borderRadius(8)
+      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+  }
+
   build() {
     Stack() {
       // 遮罩：点击不关闭（0.148 教训——弹窗内输入中误触遮罩会丢输入，故不加 onClick）
@@ -652,6 +745,19 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 2;
             })
+          Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
+            .fontSize(15)
+            .fontWeight(this.currentTab === 3 ? FontWeight.Bold : FontWeight.Normal)
+            .fontColor(this.currentTab === 3 ? '#1976D2' : (this.getThemeStore().isDark ? '#AAAAAA' : '#666'))
+            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+            .borderRadius(6)
+            .backgroundColor(this.currentTab === 3
+              ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
+              : Color.Transparent)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.currentTab = 3;
+            })
         }
         .width('100%')
         .margin({ bottom: 12 })
@@ -662,8 +768,10 @@ export struct GlobalSettingsDialog {
             this.apiTabContent()
           } else if (this.currentTab === 1) {
             this.prefTabContent()
-          } else {
+          } else if (this.currentTab === 2) {
             this.canvasTabContent() // ★ 0.151-bugfix4：Tab3 画布多树模式
+          } else {
+            this.cloudTabContent() // ★ 0.165.2：Tab4 云同步
           }
         }
         .width('100%')
@@ -672,18 +780,20 @@ export struct GlobalSettingsDialog {
         .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.Top)
 
-        // 保存按钮（两 Tab 共用，固定底部；保存不关弹窗）
-        Button('保存')
-          .width('100%')
-          .height(48)
-          .fontSize(16)
-          .backgroundColor('#1976D2')
-          .fontColor('#FFFFFF')
-          .borderRadius(8)
-          .margin({ top: 12 })
-          .onClick(() => {
-            this.saveAll();
-          })
+        // 保存按钮（Tab1~3 共用，固定底部；保存不关弹窗；★ 0.165.2：云同步 Tab 点按钮即时生效，无保存概念，隐藏）
+        if (this.currentTab !== 3) {
+          Button('保存')
+            .width('100%')
+            .height(48)
+            .fontSize(16)
+            .backgroundColor('#1976D2')
+            .fontColor('#FFFFFF')
+            .borderRadius(8)
+            .margin({ top: 12 })
+            .onClick(() => {
+              this.saveAll();
+            })
+        }
       }
       .width('94%')
       .height('88%')

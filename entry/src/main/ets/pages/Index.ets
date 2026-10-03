@@ -213,7 +213,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.164.7') // ★ 0.164.7：删除误加的 READ_PASTEBOARD 权限申请（代码仅写剪贴板无需权限），解决 9568289 安装失败，配合 AGC 手动申请的调试 Profile 装机测登录
+        Text('v0.165.2') // ★ 0.165.2：云同步激活链路——设置页「云同步」Tab（权限弹窗授权）+ dataChange 订阅 + 云端下行写回池重建工作区
           .fontSize(12)
           .fontColor(this.getThemeStore().isDark ? '#666666' : '#AAAAAA')
           .margin({ top: 12 })

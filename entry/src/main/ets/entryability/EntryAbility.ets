@@ -12,7 +12,8 @@
 
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { AppStorageV2, window } from '@kit.ArkUI';
-import { loadBuiltinApiConfig } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key
+import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
+import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
 
 // ★ 全局主题状态（UI 运行时状态，非持久化数据模型）
 @ObservedV2
@@ -41,6 +42,24 @@ export default class EntryAbility extends UIAbility {
       loadBuiltinApiConfig(this.context);
     } catch (err) {
       // 加载失败静默——设置页可自填
+    }
+
+    // ★ 0.165.1：初始化云同步 RDB（建库 dag_chat_cloud.db + 建表 cloud_data + 设分布式表 autoSync）——
+    // 异步执行不阻塞启动；此后各持久化点的 upsertCloudData 内部等待 init 完成后写入；
+    // 云侧 AGC 未配置时本地写入正常、上云失败仅日志（静默降级，不影响本地功能）
+    try {
+      initCloudDb(this.context);
+    } catch (err) {
+      // 初始化失败静默——云同步整体降级，本地 PersistenceV2 路径不受影响
+    }
+
+    // ★ 0.165.2：注册云端下行处理器（dataChange 事件 → 写回池 → 重建工作区）——
+    // 同步注册（非异步），保证早于 initCloudDb 异步链里的订阅挂载（JS 单线程：
+    // 本行先执行完，微任务队列才轮到 initPromise 内的 activateCloudSync）
+    try {
+      setupCloudDownlink();
+    } catch (err) {
+      // 注册失败静默——仅丢失下行刷新，本地功能与上云不受影响
     }
 
     // Main window is created, set main page for this ability

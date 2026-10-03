@@ -2,9 +2,12 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000005, // ★ 0.164.7：versionCode+1（删除误加的 READ_PASTEBOARD 权限申请，解决 9568289 安装失败）
+    "versionCode": 1000007, // ★ 0.165.2：versionCode+1（云同步激活链路：设置页授权入口 + dataChange 下行刷新）
     "versionName": "1.0.0",
     "buildVersion": "1",
+    // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
+    // debug 证书连开发环境（AGC 云侧容器/数据类型配置就绪后同步生效）
+    "cloudStructuredDataSyncEnabled": true,
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

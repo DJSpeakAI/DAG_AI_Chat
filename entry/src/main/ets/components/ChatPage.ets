@@ -41,6 +41,7 @@ import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { ThemeStore, AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）
+import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -1905,10 +1906,12 @@ export struct ChatPage {
           tabs[idx].name = getRootDisplayName(root);
         }
         this.tabForest.tabsJson = serializeTabs(tabs);
+        upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（Tab 池快照上云）
       }
       // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
     } else {
       this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
+      upsertCloudData('flat_pool', this.persistData.bubbleTreeJson); // ★ 0.165.1：云同步桥接（平铺池快照上云）
     }
   }
 
