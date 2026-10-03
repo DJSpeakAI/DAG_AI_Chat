@@ -18,7 +18,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connect
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
 import { upsertCloudData, registerCloudDataHandler } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册
-import { NODE_W } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）
+import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
 export type ChatRole = 'user' | 'assistant' | 'system'; // ★ 新增 'system'（0.117 摘要虚拟消息）
@@ -466,12 +466,14 @@ function subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, 
 //   新版：node.x = leftX + 子树占位/2（子树水平中轴），子节点从 leftX 起按各自占位
 //   依次排开——数学保证任意两气泡间必有 siblingGap 空隙；单根也走同一算法全量防重叠
 //   （fitViewport 负责居中，x 归零无影响）。
+// ★ 0.167.4 用户拍板：多根从上往下堆叠（纵向排列）——新建根气泡排在已有树下方，
+//   弃 0.151 旧版横向并排；与「全设备统一从上到下」视觉语言一致。
 export function layoutFlatForest(nodeList: BubbleNode[]): void {
   const roots = nodeList.filter((n: BubbleNode) => n.parentID === null);
   if (roots.length === 0) return;
 
   const siblingGap = 40;       // ★ 0.167.3：同层相邻子树间隙（用户硬性要求：气泡间必须有空隙）
-  const treeGap = 120;         // 多根树间额外间隙
+  const treeGap = 120;         // ★ 0.167.4：多根树间垂直间隙（纵向堆叠，从上往下排）
   const verticalSpacing = 160; // 层级间垂直间距（层间净空 160-68=92，不重叠）
 
   // 构建父→子映射
@@ -488,23 +490,49 @@ export function layoutFlatForest(nodeList: BubbleNode[]): void {
   const widthCache = new Map<string, number>();
 
   // 递归布局：先定自身（子树占位中轴），再按占位 cursor 依次排开子树
-  const layoutSubtree = (node: BubbleNode, leftX: number, depth: number): void => {
+  // ★ 0.167.4：baseY 参数——多根纵向堆叠时每棵树从各自起始 y 往下长（树内仍 depth*verticalSpacing）
+  const layoutSubtree = (node: BubbleNode, leftX: number, depth: number, baseY: number): void => {
     node.x = leftX + subtreeWidth(node, childrenMap, siblingGap, widthCache) / 2;
-    node.y = depth * verticalSpacing;
+    node.y = baseY + depth * verticalSpacing;
     const children = childrenMap.get(node.nodeID);
     if (!children || children.length === 0) return;
     let cursor = leftX;
     for (const child of children) {
-      layoutSubtree(child, cursor, depth + 1);
+      layoutSubtree(child, cursor, depth + 1, baseY);
       cursor += subtreeWidth(child, childrenMap, siblingGap, widthCache) + siblingGap;
     }
   };
 
-  // 单根/多根统一：多根按树占位并排（树间 treeGap）
-  let cursorX = 0;
+  // ★ 0.167.4：树垂直占位——最深层气泡下缘相对树顶的偏移（maxDepth*verticalSpacing + NODE_H）
+  const treeHeight = (node: BubbleNode, depth: number): number => {
+    const children = childrenMap.get(node.nodeID);
+    if (!children || children.length === 0) return depth * verticalSpacing + NODE_H;
+    let maxH = 0;
+    for (const child of children) {
+      maxH = Math.max(maxH, treeHeight(child, depth + 1));
+    }
+    return maxH;
+  };
+
+  // ★ 0.167.4 用户拍板：多根从上往下堆叠（纵向排列）——新建根气泡排在已有树下方，
+  //   非 0.151 旧版的横向并排；与「全设备统一从上到下树形结构」视觉语言一致，
+  //   手机竖屏下纵向堆叠更省横向空间不易超宽。
+  // ★ 0.167.5 用户拍板：根气泡 x 恒 0——所有树的根永远在同一条竖线上对齐（旧版根在
+  //   各自子树占位中心，树宽不同根就歪歪扭扭不美观）；子树以根为中轴左右对称展开。
+  let cursorY = 0;
   for (const root of roots) {
-    layoutSubtree(root, cursorX, 0);
-    cursorX += subtreeWidth(root, childrenMap, siblingGap, widthCache) + treeGap;
+    const w = subtreeWidth(root, childrenMap, siblingGap, widthCache);
+    root.x = 0;
+    root.y = cursorY;
+    const children = childrenMap.get(root.nodeID);
+    if (children && children.length > 0) {
+      let cursor = -w / 2; // 子树占位从根中轴左侧起排，整体居中于根正下方
+      for (const child of children) {
+        layoutSubtree(child, cursor, 1, cursorY);
+        cursor += subtreeWidth(child, childrenMap, siblingGap, widthCache) + siblingGap;
+      }
+    }
+    cursorY += treeHeight(root, 0) + treeGap;
   }
 
   // 更新所有子节点的 parentX/parentY

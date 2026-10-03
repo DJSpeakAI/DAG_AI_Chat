@@ -281,23 +281,35 @@ export struct BBTreeCanvas {
     // ★ 自动缩放：以画布真实尺寸为准，去掉 0.3 下限，任何大小的树都完整可见（0.130）
     // ★ 0.151-bugfix5：+32 四周呼吸边距（16×2）——树铺满画布时气泡不贴屏幕边缘
     // ★ 0.167：节点卡片 150×68（★ 0.167.3 砍 1/4；UI_GUIDELINES 六-5），包围盒余量随之更新
+    // ★ 0.167.6：垂直可用区排除顶部信息条底板（0.167.5 不透明底板盖住树 1 根气泡实测回归）——
+    //   flat 底板高 24+40+8=72 取 80；tabs 再加 Tab 栏 36+space 8 取 128；缩放与居中都基于剩余区
+    const topSafe = this.canvasModeStore.mode === 'tabs' ? 128 : 80;
     const treeW = maxX - minX + NODE_W + 32;
     const treeH = maxY - minY + NODE_H + 32;
-    this.canvasScale = Math.min(this.viewW / treeW, this.viewH / treeH, 1.0);
+    this.canvasScale = Math.min(this.viewW / treeW, (this.viewH - topSafe) / treeH, 1.0);
 
     // ★ 树几何中心对齐画布正中，-NODE_W/2 / -NODE_H/2 气泡左上角→中心补偿；去掉 Math.max 截断，树再大中心也对齐（0.130）
     // ★ 0.151-bugfix5：补偿必须乘 scale——treeCenterX 是气泡左上角坐标中心，视觉中心 = treeCenterX + NODE_W/2，
     //   居中要求 (treeCenterX + NODE_W/2) * scale + offsetX = viewW/2
+    // ★ 0.167.6：垂直居中区从 topSafe 起（信息条底板下方），树顶不再钻进底板被盖
     this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - NODE_W / 2 * this.canvasScale;
-    this.canvasOffsetY = this.viewH / 2 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
+    this.canvasOffsetY = topSafe + (this.viewH - topSafe) / 2 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
     this.redrawEdges(); // ★ 0.167.2：视口变化 → 连线重绘
   }
 
-  // ★ 0.167：缩放控件按钮缩放（以画布中心为锚点，公式同 PinchGesture；0.3~2.0 限幅）
+  // ★ 0.167：缩放控件按钮缩放（以画布中心为锚点，公式同 PinchGesture）
+  // ★ 0.167.4-bugfix：限幅改方向感知——放大只拦上限 2.0、缩小只拦绝对下限 0.05。
+  //   旧 0.3~2.0 双向限幅与 fitViewport（早已去掉 0.3 下限）不一致：平铺模式新建根气泡后
+  //   多树并排、fitViewport 把 scale 压到 0.3 以下，此时放大（×1.2 仍 <0.3）与缩小全被
+  //   return 拦死 = 缩放功能整体锁死（用户实测报 bug）。方向感知后任何 fitViewport 结果
+  //   都能自由缩回正常区间。
   zoomBy(factor: number): void {
     const newScale = this.canvasScale * factor;
-    if (newScale < 0.3 || newScale > 2.0) {
-      return;
+    if (factor > 1.0 && newScale > 2.0) {
+      return; // 放大：只拦上限
+    }
+    if (factor < 1.0 && newScale < 0.05) {
+      return; // 缩小：只拦绝对下限（防无限缩没）
     }
     const cx = this.viewW / 2;
     const cy = this.viewH / 2;
@@ -468,44 +480,79 @@ export struct BBTreeCanvas {
   }
 
   // ★ 0.167.2：分段控件 @Builder（画布/选项卡模式切换，UI_GUIDELINES 六-8）
-  // 平板（viewW≥520）放信息条主行内 / 手机（viewW<520）放信息条第二行——两处复用同一实现
+  // ★ 0.167.6 用户拍板：小屏（viewW<520）icon-only——删「画布/选项卡」文字只留图标
+  //   （呼应手机稿图标式双按钮：gitbranch + layers），选项固定 30×30、track 总高 36
+  //   与 ⚙/➕ 等高对齐；中大屏保持 icon+文字
   @Builder
   SegmentedControl() {
     Row({ space: 4 }) {
-      Row({ space: 4 }) {
-        Image($r('app.media.gitbranch'))
-          .width(14)
-          .height(14)
-          .objectFit(ImageFit.Contain)
-        Text('画布')
-          .fontSize(FONT_SIZE_BODY)
-          .fontWeight(this.canvasModeStore.mode === 'flat' ? 600 : 500)
-          .fontFamily(this.canvasModeStore.mode === 'flat' ? FONT_INTER_SEMIBOLD : FONT_INTER)
-          .fontColor(this.canvasModeStore.mode === 'flat' ? TEXT_PRIMARY : TEXT_SECONDARY)
+      if (this.viewW >= 520) {
+        // 中大屏：icon + 文字（0.167.2 原版）
+        Row({ space: 4 }) {
+          Image($r('app.media.gitbranch'))
+            .width(14)
+            .height(14)
+            .objectFit(ImageFit.Contain)
+          Text('画布')
+            .fontSize(FONT_SIZE_BODY)
+            .fontWeight(this.canvasModeStore.mode === 'flat' ? 600 : 500)
+            .fontFamily(this.canvasModeStore.mode === 'flat' ? FONT_INTER_SEMIBOLD : FONT_INTER)
+            .fontColor(this.canvasModeStore.mode === 'flat' ? TEXT_PRIMARY : TEXT_SECONDARY)
+        }
+        .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+        .borderRadius(8)
+        .backgroundColor(this.canvasModeStore.mode === 'flat' ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.switchCanvasMode('flat');
+        })
+        Row({ space: 4 }) {
+          Image($r('app.media.layers'))
+            .width(14)
+            .height(14)
+            .objectFit(ImageFit.Contain)
+          Text('选项卡')
+            .fontSize(FONT_SIZE_BODY)
+            .fontWeight(this.canvasModeStore.mode === 'tabs' ? 600 : 500)
+            .fontFamily(this.canvasModeStore.mode === 'tabs' ? FONT_INTER_SEMIBOLD : FONT_INTER)
+            .fontColor(this.canvasModeStore.mode === 'tabs' ? TEXT_PRIMARY : TEXT_SECONDARY)
+        }
+        .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+        .borderRadius(8)
+        .backgroundColor(this.canvasModeStore.mode === 'tabs' ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.switchCanvasMode('tabs');
+        })
+      } else {
+        // 小屏：icon-only 30×30（★ 0.167.6）——无文字，居中
+        Row() {
+          Image($r('app.media.gitbranch'))
+            .width(14)
+            .height(14)
+            .objectFit(ImageFit.Contain)
+        }
+        .width(30)
+        .height(30)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(8)
+        .backgroundColor(this.canvasModeStore.mode === 'flat' ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.switchCanvasMode('flat');
+        })
+        Row() {
+          Image($r('app.media.layers'))
+            .width(14)
+            .height(14)
+            .objectFit(ImageFit.Contain)
+        }
+        .width(30)
+        .height(30)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(8)
+        .backgroundColor(this.canvasModeStore.mode === 'tabs' ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.switchCanvasMode('tabs');
+        })
       }
-      .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-      .borderRadius(8)
-      .backgroundColor(this.canvasModeStore.mode === 'flat' ? BRAND_PRIMARY : Color.Transparent)
-      .onClick(() => {
-        this.switchCanvasMode('flat');
-      })
-      Row({ space: 4 }) {
-        Image($r('app.media.layers'))
-          .width(14)
-          .height(14)
-          .objectFit(ImageFit.Contain)
-        Text('选项卡')
-          .fontSize(FONT_SIZE_BODY)
-          .fontWeight(this.canvasModeStore.mode === 'tabs' ? 600 : 500)
-          .fontFamily(this.canvasModeStore.mode === 'tabs' ? FONT_INTER_SEMIBOLD : FONT_INTER)
-          .fontColor(this.canvasModeStore.mode === 'tabs' ? TEXT_PRIMARY : TEXT_SECONDARY)
-      }
-      .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-      .borderRadius(8)
-      .backgroundColor(this.canvasModeStore.mode === 'tabs' ? BRAND_PRIMARY : Color.Transparent)
-      .onClick(() => {
-        this.switchCanvasMode('tabs');
-      })
     }
     .padding(3)
     .borderRadius(RADIUS_CONTROL)
@@ -665,14 +712,18 @@ export struct BBTreeCanvas {
               })
               .onActionUpdate((event: GestureEvent) => {
                 const newScale = this.pinchStartScale * event.scale;
-                if (newScale >= 0.3 && newScale <= 2.0) {
-                  // 以捏合中心为锚点，保持该点不动调整 offset
-                  const ratio = newScale / this.canvasScale;
-                  this.canvasOffsetX = event.pinchCenterX - (event.pinchCenterX - this.canvasOffsetX) * ratio;
-                  this.canvasOffsetY = event.pinchCenterY - (event.pinchCenterY - this.canvasOffsetY) * ratio;
-                  this.canvasScale = newScale;
-                  this.redrawEdges(); // ★ 0.167.2：捏合缩放 → 连线跟随重绘
+                // ★ 0.167.4-bugfix：限幅改方向感知（同 zoomBy）——放大只拦上限 2.0、缩小只拦
+                //   绝对下限 0.05；旧 0.3~2.0 双向限幅在 fitViewport 压低 scale 后把捏合锁死
+                const isZoomIn = newScale > this.canvasScale;
+                if ((isZoomIn && newScale > 2.0) || (!isZoomIn && newScale < 0.05)) {
+                  return;
                 }
+                // 以捏合中心为锚点，保持该点不动调整 offset
+                const ratio = newScale / this.canvasScale;
+                this.canvasOffsetX = event.pinchCenterX - (event.pinchCenterX - this.canvasOffsetX) * ratio;
+                this.canvasOffsetY = event.pinchCenterY - (event.pinchCenterY - this.canvasOffsetY) * ratio;
+                this.canvasScale = newScale;
+                this.redrawEdges(); // ★ 0.167.2：捏合缩放 → 连线跟随重绘
               })
           )
 
@@ -690,29 +741,33 @@ export struct BBTreeCanvas {
                   this.pathStack.pop();
                 })
               // 标题 + 统计（ScreenTitle 16 SemiBold + Meta 11，UI_GUIDELINES 三/六）
-              // ★ 0.167.2：统计行仅平板显示（viewW≥520）——手机信息条可用宽仅 272vp，全量内容 ≈470vp 必溢出
-              Column({ space: 2 }) {
-                Text('知识画布')
-                  .fontSize(FONT_SIZE_SCREEN_TITLE)
-                  .fontWeight(600)
-                  .fontFamily(FONT_INTER_SEMIBOLD)
-                  .fontColor(TEXT_PRIMARY)
-                  .maxLines(1)
-                if (this.viewW >= 520) {
+              // ★ 0.167.2：统计行仅平板显示（viewW≥520）——手机信息条可用宽有限
+              // ★ 0.167.5：标题区 layoutWeight(1) 弹性收缩（替代 Blank）——手机分段控件挪回
+              //   主行（⚙ 左边）后宽度紧张，标题弹性保证右侧控件（分段/⚙/➕）永不溢出屏幕
+              // ★ 0.167.6 用户拍板：小屏（viewW<520）标题整块不渲染——顶部只留 4 个图标
+              //   （分段 2 图标 + ⚙ + ➕）靠右收拢对齐（Blank 弹性占位），呼应手机稿极简顶栏
+              if (this.viewW >= 520) {
+                Column({ space: 2 }) {
+                  Text('知识画布')
+                    .fontSize(FONT_SIZE_SCREEN_TITLE)
+                    .fontWeight(600)
+                    .fontFamily(FONT_INTER_SEMIBOLD)
+                    .fontColor(TEXT_PRIMARY)
+                    .maxLines(1)
                   Text(`${this.store.nodeList.length} 个气泡 · ${this.getTotalMsgCount()} 条对话`)
                     .fontSize(FONT_SIZE_META)
                     .fontFamily(FONT_INTER)
                     .fontColor(TEXT_SECONDARY)
                     .maxLines(1)
                 }
-              }
-              .alignItems(HorizontalAlign.Start)
-              Blank()
+                .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
-              // 分段控件（★ 0.167.2：平板放主行内；手机挪到信息条第二行——见下方 viewW<520 分支）
-              if (this.viewW >= 520) {
-                this.SegmentedControl()
+              } else {
+                Blank()
+                  .layoutWeight(1)
               }
+              // 分段控件（★ 0.167.5 用户拍板：全设备放主行 ⚙ 左边——收回 0.167.2 手机挪第二行方案）
+              this.SegmentedControl()
               // ⚙ 设置（侧边栏工作台落地后移到侧边栏）
               Row() {
                 Image($r('app.media.settings'))
@@ -728,35 +783,50 @@ export struct BBTreeCanvas {
                 this.globalSettingsVisible = true;
               })
               // + 新建气泡（UI_GUIDELINES 六-9；行为按模式：平铺=新树 / 选项卡=新 Tab）
-              // ★ 0.167.3：统一 36×36 纯图标按钮（用户拍板：canvas 右上角按钮只用 icon）——
-              //   弃 0.167.2 的 viewW 双态分支（平板 icon+文字 / 手机纯图标），全设备一致省空间
-              Row() {
-                Image($r('app.media.plus0'))
-                  .width(18)
-                  .height(18)
-              }
-              .width(36)
-              .height(36)
-              .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(BRAND_PRIMARY)
-              .justifyContent(FlexAlign.Center)
-              .onClick(() => {
-                if (this.canvasModeStore.mode === 'tabs') {
-                  this.addTab();
-                } else {
-                  this.addRootBubble();
+              // ★ 0.167.5 用户拍板：恢复双态（收回 0.167.3 统一纯图标）——小屏（viewW<520）
+              //   36×36 纯 icon；中大屏 icon+文字「新建气泡」充实一点
+              if (this.viewW >= 520) {
+                Row({ space: 8 }) {
+                  Image($r('app.media.plus0'))
+                    .width(16)
+                    .height(16)
+                  Text('新建气泡')
+                    .fontSize(FONT_SIZE_CARD_TITLE_SM)
+                    .fontWeight(600)
+                    .fontFamily(FONT_INTER_SEMIBOLD)
+                    .fontColor(TEXT_PRIMARY)
                 }
-              })
+                .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+                .borderRadius(RADIUS_CONTROL)
+                .backgroundColor(BRAND_PRIMARY)
+                .onClick(() => {
+                  if (this.canvasModeStore.mode === 'tabs') {
+                    this.addTab();
+                  } else {
+                    this.addRootBubble();
+                  }
+                })
+              } else {
+                Row() {
+                  Image($r('app.media.plus0'))
+                    .width(18)
+                    .height(18)
+                }
+                .width(36)
+                .height(36)
+                .borderRadius(RADIUS_CONTROL)
+                .backgroundColor(BRAND_PRIMARY)
+                .justifyContent(FlexAlign.Center)
+                .onClick(() => {
+                  if (this.canvasModeStore.mode === 'tabs') {
+                    this.addTab();
+                  } else {
+                    this.addRootBubble();
+                  }
+                })
+              }
             }
             .width('100%')
-
-            // ★ 0.167.2：手机（viewW<520）分段控件挪信息条第二行——主行 272vp 可用宽塞不下全量控件
-            if (this.viewW < 520) {
-              Row() {
-                this.SegmentedControl()
-              }
-              .width('100%')
-            }
 
             // Tab 栏（仅选项卡模式；横向滚动、✕ 删除、长按重命名——交互全保留）
             if (this.canvasModeStore.mode === 'tabs') {
@@ -806,8 +876,13 @@ export struct BBTreeCanvas {
               .width('100%')
             }
           }
-          .width('calc(100% - 56vp)')
-          .position({ x: 28, y: 24 })
+          // ★ 0.167.5 用户拍板：信息条加不透明底板（BG_CANVAS 与画布同色=视觉隐形）——
+          //   气泡树平移/缩放时永远被压在底板下面，不再穿透重叠（用户要的「隐形的线」）；
+          //   底板从画布 (0,0) 全宽铺开（原 position(28,24) 改 padding 内缩，内容视觉位置不变）
+          .width('100%')
+          .padding({ left: 28, right: 28, top: 24, bottom: 8 })
+          .backgroundColor(BG_CANVAS)
+          .position({ x: 0, y: 0 })
 
           // ★ 0.167：缩放控件（UI_GUIDELINES 六-10；右下角悬浮：放大/缩小/适应全图）
           Column({ space: 4 }) {
