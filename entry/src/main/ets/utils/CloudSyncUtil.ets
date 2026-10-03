@@ -3,15 +3,17 @@
 // ============================================================
 // 技术路线：ArkData 端云数据同步（RDB + cloudSync，数据存华为云空间）
 //   - 本地 RDB 库 dag_chat_cloud.db（★ AGC 容器名必须 = dag_chat_cloud，无后缀）
-//   - 表 cloud_data（★ 云侧数据类型名必须 = cloud_data）：
-//       key TEXT 主键 / value TEXT（云侧配 Encrypted String 加密）/ updated_at INTEGER
+//   - 表 cloud_data（★ AGC 新界面双字段映射：数据类型名称 cloudData 驼峰——该输入框不允许
+//     下划线；「高级设置→本地表名称」填 cloud_data 承接映射，端侧表名不变）：
+//       key TEXT 主键 / value TEXT / updated_at INTEGER
 //   - setDistributedTables(DISTRIBUTED_CLOUD, autoSync: true)：本地变更自动上云
 // 快照行模式（docs/0.165.md 方案）：
 //   - flat_pool ← PersistData.bubbleTreeJson（平铺池全部树）
 //   - tabs_pool ← TabForestStore.tabsJson（Tab 池全部 Tab 元数据+树）
 // 官方约束（端云同步文档实证）：
 //   - 主键须唯一禁自增；表列只能新增不能修改删除；字段禁 NOT NULL
-//   - 云侧须在 AGC 配置同名容器+同名数据类型+字段一一对应+主键勾「端侧去重主键」
+//   - 云侧须在 AGC 配置：容器 dag_chat_cloud + 数据类型 cloudData（本地表名称 cloud_data）
+//     + 字段一一对应 + 主键勾「端侧去重主键」（实测新界面，详见 docs/0.165.md 第三章）
 //   - debug 证书连开发环境 / release 证书连生产环境（当前 debug 签名 → 开发环境调测）
 //   - 云侧未配置时：本地写入正常，上云失败仅打日志（不崩溃不阻塞持久化路径）
 // ============================================================
@@ -22,7 +24,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
 const DB_NAME = 'dag_chat_cloud.db'; // 库名（AGC 容器名 = dag_chat_cloud）
-const TABLE_NAME = 'cloud_data';     // 表名 = 云侧数据类型名
+const TABLE_NAME = 'cloud_data';     // 表名 = 云侧「本地表名称」字段值（数据类型名为驼峰 cloudData）
 const TAG = 'CloudSyncUtil';
 const DOMAIN = 0x0165;
 
@@ -150,17 +152,14 @@ export function upsertCloudData(key: string, value: string): void {
       'updated_at': Date.now()
     };
     rdbStore.insert(TABLE_NAME, bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE)
-      .then((rowId: number) => {
-        hilog.debug(DOMAIN, TAG, `upsert ${key} ok (len=${value.length})`);
-      })
       .catch((err: BusinessError) => {
         hilog.warn(DOMAIN, TAG, `upsert ${key} failed: code=${err.code} msg=${err.message}`);
       });
   });
 }
 
-// ★ 0.165.1：查询一行快照（0.165.2 下行合并用；MVP 预留接口）
-export async function queryCloudData(key: string): Promise<string | null> {
+// 查询一行快照（0.165.2 下行链路内部使用：pullAndNotify 拉快照通知业务层）
+async function queryCloudData(key: string): Promise<string | null> {
   if (!await ensureReady() || rdbStore === null) {
     return null;
   }
@@ -180,28 +179,6 @@ export async function queryCloudData(key: string): Promise<string | null> {
   }
 }
 
-// ★ 0.165.1：手动触发一次云同步（0.165.2 双端调测用；autoSync 已开启，平时无需手动调）
-export async function triggerCloudSync(): Promise<void> {
-  if (!await ensureReady() || rdbStore === null) {
-    return;
-  }
-  try {
-    rdbStore.cloudSync(relationalStore.SyncMode.SYNC_MODE_TIME_FIRST, [TABLE_NAME],
-      (progress: relationalStore.ProgressDetails) => {
-        hilog.info(DOMAIN, TAG, `cloudSync progress: ${JSON.stringify(progress)}`);
-      },
-      (err: BusinessError) => {
-        if (err) {
-          hilog.warn(DOMAIN, TAG, `cloudSync err: code=${err.code} msg=${err.message}`);
-        } else {
-          hilog.info(DOMAIN, TAG, 'cloudSync done');
-        }
-      });
-  } catch (err) {
-    hilog.warn(DOMAIN, TAG, `cloudSync failed: ${JSON.stringify(err)}`);
-  }
-}
-
 // ============================================================
 // ★ 0.165.2：云端下行链路（dataChange 订阅 → 拉快照 → 通知业务层写回）
 // ============================================================
@@ -214,11 +191,6 @@ export function registerCloudDataHandler(handler: CloudDataHandler): void {
 // 查询分布式同步权限是否已授予（设置页「云同步」Tab 状态显示用）
 export async function isCloudSyncGranted(): Promise<boolean> {
   return hasSyncPermission();
-}
-
-// 云同步是否已激活（setDistributedTables 成功 + 订阅已挂）
-export function isCloudSyncActive(): boolean {
-  return cloudSyncActive;
 }
 
 // 订阅云端数据变化（SUBSCRIBE_TYPE_CLOUD：云端数据下行到本地 RDB 后触发）——

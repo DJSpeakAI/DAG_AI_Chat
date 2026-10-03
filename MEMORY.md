@@ -19,6 +19,7 @@
 - 生命周期：提炼弹窗180s超时，切后台自动中断请求；页面销毁停止定时器，防止内存泄漏
 - 返回键拦截：弹窗打开时，返回键优先关闭弹窗
 - 华为账号登录（Account Kit 纯客户端授权：昵称/unionID/openID，PersistenceV2 持久化，AGC 应用 6917618071300773117）
+- 云同步（端云数据同步 RDB+cloudSync 快照行模式：设置页「云同步」Tab 授权入口 + autoSync 上云 + dataChange 订阅下行刷新重建工作区，2026-10-03 双端调测通过）
 
 ## PENDING 待开发任务
 ### 任务1：DAG链路回溯与10+15摘要滑动窗口上下文压缩
@@ -28,10 +29,7 @@ BubbleNode新增historySummary字段（@Trace）保存摘要，子气泡继承�
 修改文件：ChatModel.ets、ChatPage.ets
 状态：pending
 
-### 任务2：0.165 云同步（多设备共享数据）
-需求：华为账号登录后，对话树等数据云端同步，多设备共享（MatePad 11.5 S 活力版 + 畅享 90 Pro Max）。
-方案：**端云数据同步（ArkData RDB + cloudSync，数据存华为云空间）**，快照行模式（cloud_data 表：key/value/updated_at，flat_pool+tabs_pool 两行快照，不拆节点表）。
-状态：v0.165.2 激活链路编译通过（设置页「云同步」Tab 授权入口 + dataChange 订阅 + 下行写回池重建工作区）；AGC 配置要点（实测新界面）：容器 dag_chat_cloud + 数据类型名称 cloudData（驼峰，不允许下划线）+ 高级设置→本地表名称 cloud_data（承接映射，端侧代码不用改）+ 主键勾端侧去重 key；待用户 AGC 配置后双端调测。主文档 docs/0.165.md
+（任务2 已完成：0.165 云同步 2026-10-03 双端调测成功收官，功能进上方 FACT 清单；完整记录见 docs/0.165.md 与版本简表 0.165.x 行）
 
 ## 版本迭代简表
 |版本|核心能力|
@@ -54,7 +52,7 @@ BubbleNode新增historySummary字段（@Trace）保存摘要，子气泡继承�
 |0.162.1|新建分支过渡动画（同页切store刷屏过快→链式animateTo淡出140ms→onFinish切气泡→淡入300ms，总440ms）；主文档docs/0.162.md|
 |0.163.x|代码块按钮纯icon化+App显示名DAG AI Chat/桌面短名AI Chat（**桌面名=module.json5 ability label，设置名=app.json5 label**）+图标换用户logo；**教训：bundleName勿动**（调试profile绑死包名，0.163.3改包名致SignHap失败回退）；主文档docs/0.163.md|
 |0.164.x|华为账号登录完整跑通（0.164.1开发→0.164.2~.6六轮排查1001502003→0.164.7删误加READ_PASTEBOARD解决9568289装机失败→**装机登录成功收官**）；核心教训：①**DevEco自动签名=内部「调试应用」通道无有效Client ID**，Account Kit登录必须AGC手动申请调试Profile+手动签名（**只换Profile不换证书**：build-profile.json5改profile路径即可，证书/密码全不动）②**受限权限须Profile的ACL显式授权**，申请了没用的直接删（写剪贴板setData无需权限，读才需要）③错误码上屏（code+服务端原始msg）是排查利器；主文档docs/0.164.md（含完整错误码速查表+签名排查全记录）|
-|0.165.x|云同步（端云数据同步 RDB+cloudSync，快照行模式不拆节点表）：v0.165.1 基础设施（CloudSyncUtil 建库建表+持久化点桥接 fire-and-forget+权限链路）；v0.165.2 激活链路（设置页第 4 Tab「云同步」授权入口+SUBSCRIBE_TYPE_CLOUD 订阅+下行写回池重建工作区）；**踩坑①新 SDK 移除 abilityAccessCtrl.PermissionRequestResult 类型名→async/await+类型推断；②循环依赖防护=CloudSyncUtil 回调注入（registerCloudDataHandler），ChatModel 注册处理器；③下行写池绝不 upsert 防回环，值比较挡本机回声；④用户把云侧配到「云数据库(for Object)」配错产品——正确入口是「云空间」服务；⑤AGC 新界面「数据类型名称」不允许下划线→填驼峰 cloudData，「高级设置→本地表名称」填 cloud_data 承接映射（云端类型名可≠本地表名，端侧代码不用改），「高级设置」无加密勾选框、类型下拉无 Encrypted String 就保持 String，主键勾端侧去重 key**；待 AGC 正确配置+双端调测；主文档docs/0.165.md|
+|0.165.x|云同步（端云数据同步 RDB+cloudSync，快照行模式不拆节点表）：v0.165.1 基础设施（CloudSyncUtil 建库建表+持久化点桥接 fire-and-forget+权限链路）；v0.165.2 激活链路（设置页第 4 Tab「云同步」授权入口+SUBSCRIBE_TYPE_CLOUD 订阅+下行写回池重建工作区）；**踩坑①新 SDK 移除 abilityAccessCtrl.PermissionRequestResult 类型名→async/await+类型推断；②循环依赖防护=CloudSyncUtil 回调注入（registerCloudDataHandler），ChatModel 注册处理器；③下行写池绝不 upsert 防回环，值比较挡本机回声；④用户把云侧配到「云数据库(for Object)」配错产品——正确入口是「云空间」服务；⑤AGC 新界面「数据类型名称」不允许下划线→填驼峰 cloudData，「高级设置→本地表名称」填 cloud_data 承接映射（云端类型名可≠本地表名，端侧代码不用改），「高级设置」无加密勾选框、类型下拉无 Encrypted String 就保持 String，主键勾端侧去重 key**；**2026-10-03 双端同步调测成功收官**（收官清理：删零调用 triggerCloudSync/isCloudSyncActive、queryCloudData 降内部函数、删调试打印，BUILD SUCCESSFUL 0 新增警告；遗留 v0.165.3 待定=同步状态提示+云空间开关引导）；主文档docs/0.165.md|
 
 ## 版本号体系（2026-10-03 起）
 - 首页显示 `v0.165.x`，每次改动编译装机递增末位（0.165.1 → 0.165.2 → ...）
