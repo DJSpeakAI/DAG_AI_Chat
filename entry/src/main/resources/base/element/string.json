@@ -13,6 +13,10 @@
       "value": "DAG AI Chat"
     },
     {
+      "name": "app_short_name",
+      "value": "AI Chat"
+    },
+    {
       "name": "read_pasteboard_reason",
       "value": "用于读取剪贴板内容"
     },
