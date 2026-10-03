@@ -14,11 +14,12 @@
 // 技术栈：鸿蒙 ArkUI V2（气泡组件渲染 + 连线 Canvas 绘制）
 // ============================================================
 
-import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI';
+import { AppStorageV2, PersistenceV2, display } from '@kit.ArkUI'; // ★ 0.168：display 屏宽断点（平板/手机边栏形态）
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch } from '../common/ChatModel';
-import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）
+import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token（BG_NAV/RADIUS_NAV/NAV_LABEL/LABEL/CAPTION/SOFT）
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
+import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -55,6 +56,23 @@ export struct BBTreeCanvas {
   @Local tabRenameVisible: boolean = false;
   @Local tabRenameId: string = '';
   @Local tabRenameText: string = '';
+
+  // ★ 0.168：左侧边栏（Pixso 工作台稿落地）——平板 208 常驻带文字 / 手机 72 窄栏抽屉
+  @Local isTablet: boolean = false;        // 断点：屏宽 ≥600vp = 平板宽边栏
+  @Local sidebarVisible: boolean = false;  // 手机抽屉开关（平板常驻不用）
+  account: HuaweiAccountStore = connectHuaweiAccount(); // 边栏底部头像/昵称（华为账号登录态）
+
+  aboutToAppear(): void {
+    // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
+    // px→vp 手动换算 vp = px ÷ densityPixels（全局 px2vp 已废弃，且 aboutToAppear 阶段
+    // getUIContext() 尚未挂树不可用）；getDefaultDisplaySync 声明可抛异常 → try-catch 兜底
+    try {
+      const d = display.getDefaultDisplaySync();
+      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+    } catch (e) {
+      this.isTablet = false; // 取显示信息失败：保守按手机处理（抽屉窄栏），不中断首帧
+    }
+  }
 
   // ★ 0.167.2：连线层 Canvas 命令式绘制（弃 Path——Path 无 viewport 属性，未设时 ArkUI 自动把
   // commands 包围盒缩放适配到组件尺寸（实测因子≈0.32），连线被二次缩放飞到画布左上角，真根因；
@@ -485,6 +503,332 @@ export struct BBTreeCanvas {
     this.tabRenameVisible = false;
   }
 
+  // ══════════════════════════════════════════════════════════
+  // ★ 0.168：左侧边栏（Pixso 工作台稿：平板 Frame_2_59 宽 208 / 手机 Frame_2_215 宽 72）
+  // 导航：画布（当前页选中态）/ 单词库 / 知识库（pushPath 压栈——目标页返回按钮是 pop()，
+  // 天然「哪进哪回」：边栏进回画布、对话页右上角进回对话页，用户拍板）；底部：设置 + 账号
+  // ══════════════════════════════════════════════════════════
+
+  /** 边栏导航项图标（canvas 走 DagIcon 自绘，不在此列） */
+  navIcon(kind: string): Resource {
+    if (kind === 'wordbank') {
+      return $r('app.media.bookopen');
+    }
+    if (kind === 'knowledge') {
+      return $r('app.media.library');
+    }
+    return $r('app.media.settings');
+  }
+
+  /** 边栏导航项文字 */
+  navLabel(kind: string): string {
+    if (kind === 'wordbank') {
+      return '单词库';
+    }
+    if (kind === 'knowledge') {
+      return '知识库';
+    }
+    if (kind === 'settings') {
+      return '设置';
+    }
+    return '画布';
+  }
+
+  /** 边栏导航分发（★ 0.168「哪进哪回」：pushPath 压栈 + 目标页 pop 返回 = 从哪个入口进就回哪个入口） */
+  onNavClick(kind: string): void {
+    if (kind === 'wordbank') {
+      this.closeSidebar();
+      this.pathStack.pushPath({ name: 'WordBankPage' });
+    } else if (kind === 'knowledge') {
+      this.closeSidebar();
+      this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+    } else if (kind === 'settings') {
+      this.closeSidebar();
+      this.globalSettingsVisible = true;
+    } else {
+      // 画布 = 当前页：手机收抽屉回画布，平板无操作
+      this.closeSidebar();
+    }
+  }
+
+  /** 边栏账号显示名（对齐 Index.getDisplayName 逻辑；未登录显示「未登录」） */
+  getAccountDisplayName(): string {
+    if (!this.account.isLoggedIn) {
+      return '未登录';
+    }
+    if (this.account.nickName !== '') {
+      return this.account.nickName;
+    }
+    if (this.account.openID !== '') {
+      return `ID: ${this.account.openID.substring(0, 10)}…`;
+    }
+    return '已登录';
+  }
+
+  /** 手机抽屉开（translate 滑入动画） */
+  openSidebar(): void {
+    if (this.sidebarVisible) {
+      return;
+    }
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+      this.sidebarVisible = true;
+    });
+  }
+
+  /** 手机抽屉收（translate 滑出动画；平板常驻态幂等） */
+  closeSidebar(): void {
+    if (!this.sidebarVisible) {
+      return;
+    }
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
+      this.sidebarVisible = false;
+    });
+  }
+
+  // ★ 0.168：DAG 图标（设计稿同款自绘——四个节点小方块示意有向无环图；边栏「画布」专用，
+  //   与分段控件平铺模式的 gitbranch 图标区分语义）
+  @Builder
+  DagIcon(size: number, color: ResourceColor) {
+    Stack() {
+      Row()
+        .width(size * 0.29)
+        .height(size * 0.375)
+        .position({ x: size * 0.125, y: size * 0.125 })
+        .borderRadius(size * 0.04)
+        .border({ width: Math.max(1, size * 0.08), color: color })
+      Row()
+        .width(size * 0.29)
+        .height(size * 0.21)
+        .position({ x: size * 0.58, y: size * 0.125 })
+        .borderRadius(size * 0.04)
+        .border({ width: Math.max(1, size * 0.08), color: color })
+      Row()
+        .width(size * 0.29)
+        .height(size * 0.375)
+        .position({ x: size * 0.58, y: size * 0.5 })
+        .borderRadius(size * 0.04)
+        .border({ width: Math.max(1, size * 0.08), color: color })
+      Row()
+        .width(size * 0.29)
+        .height(size * 0.21)
+        .position({ x: size * 0.125, y: size * 0.67 })
+        .borderRadius(size * 0.04)
+        .border({ width: Math.max(1, size * 0.08), color: color })
+    }
+    .width(size)
+    .height(size)
+  }
+
+  // ★ 0.168：边栏 Logo（36×36 容器 225° 主紫渐变 + gitbranch，同节点图标容器视觉语言）
+  @Builder
+  SideBarLogo(size: number) {
+    Column() {
+      Image($r('app.media.gitbranch'))
+        .width(size * 0.55)
+        .height(size * 0.55)
+        .objectFit(ImageFit.Contain)
+    }
+    .width(size)
+    .height(size)
+    .borderRadius(RADIUS_LOGO)
+    .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // ★ 0.168：边栏头像（登录态 avatarUri 圆形裁切；无头像/未登录柔面圆占位）
+  @Builder
+  SideBarAvatar(size: number) {
+    if (this.account.avatarUri !== '') {
+      Image(this.account.avatarUri)
+        .width(size)
+        .height(size)
+        .borderRadius(size / 2)
+        .clip(true)
+        .objectFit(ImageFit.Cover)
+    } else {
+      Column() {
+        Image($r('app.media.gitbranch'))
+          .width(size * 0.5)
+          .height(size * 0.5)
+          .objectFit(ImageFit.Contain)
+      }
+      .width(size)
+      .height(size)
+      .borderRadius(size / 2)
+      .backgroundColor(SURFACE_SOFT)
+      .border({ width: 1, color: STROKE_CARD })
+      .justifyContent(FlexAlign.Center)
+    }
+  }
+
+  // ★ 0.168：边栏导航项（kind: canvas/wordbank/knowledge/settings；画布=当前页选中态）
+  @Builder
+  SideBarNavItem(kind: string) {
+    if (this.isTablet) {
+      // 平板：icon + 文字，44 高（设计稿 Frame_2_59：padding 12 / 圆角 RADIUS_NAV）
+      Row({ space: 10 }) {
+        if (kind === 'canvas') {
+          this.DagIcon(18, TEXT_PRIMARY)
+        } else {
+          Image(this.navIcon(kind))
+            .width(18)
+            .height(18)
+            .objectFit(ImageFit.Contain)
+        }
+        Text(this.navLabel(kind))
+          .fontSize(FONT_SIZE_NAV_LABEL)
+          .fontFamily(kind === 'canvas' ? FONT_INTER_SEMIBOLD : FONT_INTER)
+          .fontColor(kind === 'canvas' ? TEXT_PRIMARY : TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(44)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(kind === 'canvas' ? SURFACE_HOVER : Color.Transparent)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.onNavClick(kind);
+      })
+    } else {
+      // 手机：48×48 纯图标按钮（设计稿 Frame_2_215；画布选中态 SURFACE_HOVER 底）
+      Column() {
+        if (kind === 'canvas') {
+          this.DagIcon(20, TEXT_PRIMARY)
+        } else {
+          Image(this.navIcon(kind))
+            .width(20)
+            .height(20)
+            .objectFit(ImageFit.Contain)
+        }
+      }
+      .width(48)
+      .height(48)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(kind === 'canvas' ? SURFACE_HOVER : Color.Transparent)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        this.onNavClick(kind);
+      })
+    }
+  }
+
+  // ★ 0.168：边栏主体（平板 208 常驻带文字 / 手机 72 窄栏；点非按钮空白处手机收抽屉回画布）
+  @Builder
+  SideBarPanel() {
+    Column() {
+      // ── 顶部 Logo 区（平板带应用名 + 副标题，手机仅图标）──
+      if (this.isTablet) {
+        Row({ space: 10 }) {
+          this.SideBarLogo(36)
+          Column({ space: 2 }) {
+            Text('DAG AI Chat')
+              .fontSize(FONT_SIZE_CARD_TITLE)
+              .fontWeight(600)
+              .fontFamily(FONT_INTER_SEMIBOLD)
+              .fontColor(TEXT_PRIMARY)
+              .maxLines(1)
+            Text('对话式 DAG 学习工具')
+              .fontSize(FONT_SIZE_CAPTION)
+              .fontFamily(FONT_INTER)
+              .fontColor(TEXT_TERTIARY)
+              .maxLines(1)
+          }
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: 20, bottom: 24 })
+      } else {
+        Column() {
+          this.SideBarLogo(36)
+        }
+        .margin({ top: 20, bottom: 16 })
+      }
+
+      // ── 工作区分组标签（仅平板，设计稿 Label 10 号字距 0.5）──
+      if (this.isTablet) {
+        Text('工作区')
+          .fontSize(FONT_SIZE_LABEL)
+          .fontFamily(FONT_INTER)
+          .fontColor(TEXT_TERTIARY)
+          .letterSpacing(0.5)
+          .width('100%')
+          .margin({ bottom: 6 })
+      }
+
+      // ── 导航项：画布（选中）/ 单词库 / 知识库 ──
+      this.SideBarNavItem('canvas')
+      this.SideBarNavItem('wordbank')
+      this.SideBarNavItem('knowledge')
+
+      // ── 弹性空隙（底部设置 + 账号沉底）──
+      Blank()
+
+      // ── 底部：设置 + 账号 ──
+      this.SideBarNavItem('settings')
+      if (this.isTablet) {
+        Divider()
+          .color(STROKE_CARD)
+          .width('100%')
+          .margin({ top: 6, bottom: 6 })
+        Row({ space: 10 }) {
+          this.SideBarAvatar(36)
+          Text(this.getAccountDisplayName())
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontFamily(FONT_INTER)
+            .fontColor(TEXT_SECONDARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      } else {
+        Column() {
+          this.SideBarAvatar(34)
+        }
+        .margin({ top: 12 })
+      }
+    }
+    .width(this.isTablet ? 208 : 72)
+    .height('100%')
+    .padding({ left: 12, right: 12, bottom: 16 })
+    .backgroundColor(BG_NAV)
+    .alignItems(this.isTablet ? HorizontalAlign.Start : HorizontalAlign.Center)
+    .onClick(() => {
+      // 手机抽屉：点边栏任何非按钮空白处收起回画布（用户拍板；按钮 onClick 已消费事件不冒泡至此）
+      if (!this.isTablet) {
+        this.closeSidebar();
+      }
+    })
+    // ★ 0.168：手机抽屉滑入滑出（平板恒 0 无副作用；隐藏 -72 屏幕外不挡触摸）
+    .translate({ x: this.isTablet ? 0 : (this.sidebarVisible ? 0 : -72) })
+  }
+
+  // ★ 0.168：手机抽屉层（Stack 挂画布区顶层）——点遮罩收起；平板不渲染
+  // ★ 0.168.4：唤出改画布左下角固定 ☰ 按钮（用户拍板）——边缘右滑热区整块删除：
+  //   系统手势区占用左缘约 0~65px（快滑=系统返回/慢拖被吞不透传），右滑唤出真机体验受限；
+  //   ☰ 按钮落在画布内容层缩放控件旁（同坐标系保证底缘对齐），不在此层
+  @Builder
+  MobileDrawerLayer() {
+    if (!this.isTablet) {
+      // 遮罩（点按收起；进出场淡入淡出）
+      if (this.sidebarVisible) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.45)')
+          .onClick(() => {
+            this.closeSidebar();
+          })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
+      }
+      // 边栏浮层（translate 在 SideBarPanel 内部，随 sidebarVisible 滑入滑出）
+      this.SideBarPanel()
+    }
+  }
+
   // ★ 0.167.2：分段控件 @Builder（画布/选项卡模式切换，UI_GUIDELINES 六-8）
   // ★ 0.167.6 用户拍板：小屏（viewW<520）icon-only——删「画布/选项卡」文字只留图标
   //   （呼应手机稿图标式双按钮：gitbranch + layers），选项固定 30×30、track 总高 36
@@ -569,6 +913,16 @@ export struct BBTreeCanvas {
 
   build() {
     NavDestination() {
+      // ★ 0.168：根 Row——平板 [边栏 208 常驻 + 画布区]；手机画布区全宽 + 抽屉层挂 Stack 顶层（Pixso 工作台稿）
+      Row() {
+        if (this.isTablet) {
+          // 平板：边栏常驻占位（208，设计稿 Frame_2_59）
+          this.SideBarPanel()
+        }
+      // ★ 0.168.3：抽屉层容器 overlay→Stack——overlay 层内容真机实证不参与 hit test（当时左缘
+      //   热区 drag 穿透到画布平移手势；热区已于 0.168.4 删除），Stack 子节点命中是标准行为
+      //   （同画布内四弹窗结构），结构保留供遮罩/边栏命中优先于画布
+      Stack({ alignContent: Alignment.TopStart }) {
       // ★ 0.167：全屏 BG_APP 底 + 画布容器（margin 24 / 圆角 24 / BG_CANVAS，UI_GUIDELINES 五-平板）
       Column() {
         Stack() {
@@ -769,20 +1123,7 @@ export struct BBTreeCanvas {
               .layoutWeight(1)
               // 分段控件（★ 0.167.5 用户拍板：全设备放主行 ⚙ 左边——收回 0.167.2 手机挪第二行方案）
               this.SegmentedControl()
-              // ⚙ 设置（侧边栏工作台落地后移到侧边栏）
-              Row() {
-                Image($r('app.media.settings'))
-                  .width(18)
-                  .height(18)
-              }
-              .width(36)
-              .height(36)
-              .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_HOVER)
-              .justifyContent(FlexAlign.Center)
-              .onClick(() => {
-                this.globalSettingsVisible = true;
-              })
+              // ★ 0.168：⚙ 设置按钮删除——设置入口移至左侧边栏底部（用户拍板，顺带缓解右上角拥挤）
               // + 新建气泡（UI_GUIDELINES 六-9；行为按模式：平铺=新树 / 选项卡=新 Tab）
               // ★ 0.167.5 用户拍板：恢复双态（收回 0.167.3 统一纯图标）——小屏（viewW<520）
               //   36×36 纯 icon；中大屏 icon+文字「新建气泡」充实一点
@@ -933,6 +1274,35 @@ export struct BBTreeCanvas {
           .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
           .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
           .position({ x: this.viewW - 24 - 48, y: this.viewH - 24 - 132 })
+
+          // ★ 0.168.4：左下角固定 ☰ 唤出按钮（手机抽屉唯一入口；用户拍板取消边缘右滑——
+          //   系统手势区占用左缘约 0~65px，快滑=系统返回/慢拖被吞，右滑唤出真机体验受限）；
+          //   样式对齐右下角缩放控件（40×40 圆角按钮 + padding 4 容器 + SURFACE_NODE 底/描边/阴影），
+          //   同坐标系：x 24 与缩放控件右缘 24 镜像；y=viewH-24-44（高 48 → 底缘 viewH-20，
+          //   与缩放控件底缘 viewH-24-132+136 严格对齐）；抽屉开时被遮罩盖住变暗（同缩放控件行为）
+          if (!this.isTablet) {
+            Column() {
+              Row() {
+                Image($r('app.media.menu'))
+                  .width(18)
+                  .height(18)
+              }
+              .width(40)
+              .height(40)
+              .borderRadius(RADIUS_CONTROL)
+              .justifyContent(FlexAlign.Center)
+              .onClick(() => {
+                this.openSidebar();
+              })
+            }
+            .padding(4)
+            .borderRadius(14)
+            .border({ width: 1, color: STROKE_CARD })
+            .backgroundColor(SURFACE_NODE)
+            .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
+            .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
+            .position({ x: 24, y: this.viewH - 24 - 44 })
+          }
 
       // ★ 0.167：平铺/选项卡两套自绘标题行（0.151-D）已删除——统一由上方信息条
       //   （分段控件切换模式 + 新建气泡按钮）+ Tab 栏 + 右下角缩放控件承担（UI_GUIDELINES 五/六）
@@ -1142,9 +1512,21 @@ export struct BBTreeCanvas {
         .backgroundColor(BG_CANVAS)
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
+      // ★ 0.168.3：Column 改 width/height 100%——layoutWeight 仅 Row/Column/Flex 子节点有效，
+      //   随 Column 外包 Stack 移交外层 Stack；Stack 内 Column 100% 撑满即原全宽效果
       .width('100%')
       .height('100%')
       .backgroundColor(BG_APP)
+      // ★ 0.168.3：手机抽屉层（点遮罩或边栏空白收起；平板不渲染；唤出=左下角 ☰ 按钮 ★ 0.168.4）——
+      //   从 overlay 迁至 Stack 顶层子节点，命中优先于画布
+      this.MobileDrawerLayer()
+      }
+      // ★ 0.168：平板给边栏 208 让位；手机 Row 内独占即全宽（layoutWeight 随 Column 移至 Stack）
+      .layoutWeight(1)
+      .height('100%')
+      }
+      .width('100%')
+      .height('100%')
     }
     // ★ 0.151-D：弃用默认标题栏（.title('气泡树')）——其左上角系统返回按钮即需求 3 要取消的
     // 「返回气泡树」按钮；改 hideTitleBar + 内容区自绘标题行（平铺：←+标题+按钮组；选项卡：Tab 栏+按钮组）
@@ -1154,6 +1536,11 @@ export struct BBTreeCanvas {
       // （有未保存修改时二次确认，不直接丢弃）；无弹窗返回 false 走默认行为（退出应用）
       if (this.globalSettingsVisible) {
         this.globalSettingsCloseReq++;
+        return true;
+      }
+      // ★ 0.168：手机抽屉打开时返回键先收抽屉（回画布），不直接退出
+      if (this.sidebarVisible) {
+        this.closeSidebar();
         return true;
       }
       return false;

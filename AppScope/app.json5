@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000019, // ★ 0.167.8：versionCode+1（分段控件等高对齐+小屏标题统计加回+返回箭头左移+画布改平铺+删设置画布Tab+切换锁死bugfix+app图标换新LOGO）
+    "versionCode": 1000024, // ★ 0.168.4：抽屉唤出改画布左下角固定 ☰ 按钮（样式对齐右下角缩放控件、底缘对齐）+ 删边缘右滑热区（系统手势区占左缘 0~65px：快滑=系统返回/慢拖被吞，右滑真机体验受限）+ 删诊断日志；0.168.3 抽屉层 overlay→Stack；0.168.2 唤出判定 onActionEnd；0.168.1 热区透明穿透修复
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
