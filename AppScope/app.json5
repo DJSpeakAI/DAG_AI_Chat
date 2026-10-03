@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000010, // ★ 0.166.3：versionCode+1（主题固定暗紫不跟系统深浅色）
+    "versionCode": 1000014, // ★ 0.167.4：versionCode+1（整体等比缩放：气泡随画布缩放 + 端点/线宽/箭头乘 s）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

@@ -1,0 +1,33 @@
+{
+  "linearGradient": [],
+  "radialGradient": [],
+  "sweepGradient": [],
+  "solid": [],
+  "dropShadow": [],
+  "text": [
+    {
+      "fontFamily": "Inter",
+      "fontSize": 10,
+      "fontStyle": "Regular",
+      "lineHeight": "119.999993%",
+      "name": "Text/Caption",
+      "styleId": "Text/Caption233"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 13,
+      "fontStyle": "Regular",
+      "lineHeight": "150%",
+      "name": "Text/Body",
+      "styleId": "Text/Body227"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontStyle": "Semi Bold",
+      "lineHeight": "139.999998%",
+      "name": "Text/CardTitle",
+      "styleId": "Text/CardTitle27"
+    }
+  ]
+}

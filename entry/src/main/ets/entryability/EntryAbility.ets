@@ -11,7 +11,7 @@
 // ============================================================
 
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
-import { AppStorageV2, window } from '@kit.ArkUI';
+import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
 import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
 
@@ -67,6 +67,15 @@ export default class EntryAbility extends UIAbility {
       if (err.code) {
         return;
       }
+      // ★ 0.167：注册 Inter 三字重（UI_GUIDELINES.md 字体策略）——三个不同 familyName
+      //（Pixso 导出代码三份同名注册会互相覆盖，是导出瑕疵勿照抄）；
+      // Inter 无中文字形，中文自动 fallback 系统字体，无需打包 HarmonyOS Sans SC
+      // ★ 0.167.1：顶层 font.registerFont since 18 废弃（编译 WARN）→ 改 UIContext.Font#registerFont
+      //（@ohos.font.d.ts @useinstead 指定替代；loadContent 回调时主窗口已就绪，可取 UIContext）
+      const uiFont = windowStage.getMainWindowSync().getUIContext().getFont();
+      uiFont.registerFont({ familyName: 'Inter', familySrc: $rawfile('font/Inter-Regular_1.otf') });
+      uiFont.registerFont({ familyName: 'Inter-Medium', familySrc: $rawfile('font/Inter-Medium_1.otf') });
+      uiFont.registerFont({ familyName: 'Inter-SemiBold', familySrc: $rawfile('font/Inter-SemiBold_1.otf') });
     });
 
     // ★ 0.166.3：主题固定暗紫（方案 A）——应用锁定暗色模式，不跟随系统深浅色：

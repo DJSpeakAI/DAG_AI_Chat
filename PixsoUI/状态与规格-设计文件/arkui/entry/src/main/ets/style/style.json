@@ -1,0 +1,66 @@
+{
+  "linearGradient": [],
+  "radialGradient": [],
+  "sweepGradient": [],
+  "solid": [],
+  "dropShadow": [],
+  "text": [
+    {
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontStyle": "Medium",
+      "lineHeight": "139.999998%",
+      "name": "Text/NavLabel",
+      "styleId": "Text/NavLabel211"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 11,
+      "fontStyle": "Regular",
+      "lineHeight": "139.999998%",
+      "name": "Text/Meta",
+      "styleId": "Text/Meta215"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 14,
+      "fontStyle": "Semi Bold",
+      "lineHeight": "139.999998%",
+      "name": "Text/CardTitle",
+      "styleId": "Text/CardTitle27"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 13,
+      "fontStyle": "Semi Bold",
+      "lineHeight": "139.999998%",
+      "name": "Text/CardTitleSm",
+      "styleId": "Text/CardTitleSm223"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 10,
+      "fontStyle": "Regular",
+      "lineHeight": "119.999993%",
+      "name": "Text/Caption",
+      "styleId": "Text/Caption233"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 16,
+      "fontStyle": "Semi Bold",
+      "lineHeight": "139.999998%",
+      "name": "Text/ScreenTitle",
+      "styleId": "Text/ScreenTitle25"
+    },
+    {
+      "fontFamily": "Inter",
+      "fontSize": 10,
+      "fontStyle": "Medium",
+      "letterSpacing": 0.5,
+      "lineHeight": "119.999993%",
+      "name": "Text/Label",
+      "styleId": "Text/Label231"
+    }
+  ]
+}

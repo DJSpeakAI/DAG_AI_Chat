@@ -213,7 +213,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.166.3') // ★ 0.166.3：主题固定暗紫（方案 A）——setColorMode(DARK) 锁死 + isDark 恒 true + 删 onConfigurationUpdate，所有用户统一暗色配色不跟系统
+        Text('v0.167.4') // ★ 0.167.4：整体等比缩放（传统思维导图，用户拍板）——气泡随画布缩放（scale 变换锚点左上），端点/线宽/箭头乘 s，重叠数学上不可能；0.167.3：连线统一中间出发 + 根图标/子竖线 + 子树占位法防重叠布局（siblingGap=40）+ 气泡宽 150 + 新建按钮纯图标
           .fontSize(12)
           .fontColor(this.getThemeStore().isDark ? '#666666' : '#AAAAAA')
           .margin({ top: 12 })

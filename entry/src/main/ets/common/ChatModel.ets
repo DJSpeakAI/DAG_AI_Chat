@@ -18,6 +18,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connect
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
 import { upsertCloudData, registerCloudDataHandler } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册
+import { NODE_W } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
 export type ChatRole = 'user' | 'assistant' | 'system'; // ★ 新增 'system'（0.117 摘要虚拟消息）
@@ -431,28 +432,26 @@ function buildTabsFromNodeList(nodeList: BubbleNode[], excludeRootIds?: Set<stri
   return tabs;
 }
 
-// ★ 0.151-bugfix3：子树结构宽度估算——BFS 按层统计节点数，每层宽 = (count-1)*spacing + 气泡宽 132
-// （layoutChildren 均分居中，布局后每层实际宽度即此值；供多根并排时计算树占位）
-function subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, spacing: number): number {
-  let maxWidth = 132; // 单节点（气泡 maxWidth 132）
-  let layer: BubbleNode[] = [root];
-  while (layer.length > 0) {
-    const width = (layer.length - 1) * spacing + 132;
-    if (width > maxWidth) {
-      maxWidth = width;
+// ★ 0.167.3：子树占位法（tidy tree 简化版）——递归计算子树水平占位
+// 叶子占位 = NODE_W；内部节点占位 = max(NODE_W, sum(子占位) + (n-1)*gap)
+// 供 layoutFlatForest 按占位排开，数学保证任意两气泡间必有空隙。
+// 旧版 BFS 按层估宽（气泡宽硬编码 132 已过时）+ 子节点均分居中 → 孙子辈均分宽度
+// 超出父辈间距时必然与叔伯家子树交叉重叠（0.167 加宽气泡后恶化），整体弃用。
+function subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, gap: number,
+  cache: Map<string, number>): number {
+  const cached = cache.get(root.nodeID);
+  if (cached !== undefined) return cached;
+  const children = childrenMap.get(root.nodeID);
+  let w = NODE_W;
+  if (children && children.length > 0) {
+    let sum = 0;
+    for (const child of children) {
+      sum += subtreeWidth(child, childrenMap, gap, cache);
     }
-    const next: BubbleNode[] = [];
-    for (const node of layer) {
-      const children = childrenMap.get(node.nodeID);
-      if (children) {
-        for (const child of children) {
-          next.push(child);
-        }
-      }
-    }
-    layer = next;
+    w = Math.max(NODE_W, sum + (children.length - 1) * gap);
   }
-  return maxWidth;
+  cache.set(root.nodeID, w);
+  return w;
 }
 
 // ★ 0.151-bugfix3：多根平铺布局纯函数（从 BBTreeCanvas.autoLayout 提取，单一来源防两份漂移）
@@ -461,14 +460,19 @@ function subtreeWidth(root: BubbleNode, childrenMap: Map<string, BubbleNode[]>, 
 //               各 Tab 树坐标独立，直接拼接必然重叠；旧版靠 needsRelayout 事后重排，
 //               但它是 AppStorageV2 内存态，保存后不关弹窗直接杀应用 / ChatPage 弹窗
 //               切模式后直接退出 → 重启后重叠坐标已落盘无人重排）
-// 算法：单根保持原 x 只置 y=0（兼容现状）；多根按子树宽度并排 y=0（树间间隙 120）；
-//       子节点在父正下方均分居中；末尾统一刷新 parentX/parentY（连线端点）
+// ★ 0.167.3：算法整体换子树占位法（tidy tree 简化版）——
+//   旧版「子节点在父正下方均分居中」+ horizontalSpacing=160 中心距 < 气泡宽 200，
+//   相邻气泡天然重叠 40vp；孙子辈均分宽度超出父辈间距时必然与叔伯家子树交叉重叠。
+//   新版：node.x = leftX + 子树占位/2（子树水平中轴），子节点从 leftX 起按各自占位
+//   依次排开——数学保证任意两气泡间必有 siblingGap 空隙；单根也走同一算法全量防重叠
+//   （fitViewport 负责居中，x 归零无影响）。
 export function layoutFlatForest(nodeList: BubbleNode[]): void {
   const roots = nodeList.filter((n: BubbleNode) => n.parentID === null);
   if (roots.length === 0) return;
 
-  const horizontalSpacing = 160; // ★ 0.147：气泡加宽（maxWidth 132），同层间距 160 防重叠
-  const verticalSpacing = 160;   // 层级间垂直间距
+  const siblingGap = 40;       // ★ 0.167.3：同层相邻子树间隙（用户硬性要求：气泡间必须有空隙）
+  const treeGap = 120;         // 多根树间额外间隙
+  const verticalSpacing = 160; // 层级间垂直间距（层间净空 160-68=92，不重叠）
 
   // 构建父→子映射
   const childrenMap = new Map<string, BubbleNode[]>();
@@ -480,36 +484,27 @@ export function layoutFlatForest(nodeList: BubbleNode[]): void {
     }
   }
 
-  // ★ 递归布局：子节点在父节点正下方居中排列（0.124）
-  const layoutChildren = (parent: BubbleNode, depth: number): void => {
-    const children = childrenMap.get(parent.nodeID);
-    if (!children || children.length === 0) return;
+  // 占位缓存（O(n)：每节点 subtreeWidth 只算一次，防深树重复递归）
+  const widthCache = new Map<string, number>();
 
-    // ★ 均分居中排布（0.126）：同层子节点整体居中于父节点正下方
-    const childCount = children.length;
-    const totalWidth = (childCount - 1) * horizontalSpacing;
-    const startX = parent.x - totalWidth / 2;
-    for (let i = 0; i < childCount; i++) {
-      children[i].x = startX + i * horizontalSpacing;
-      children[i].y = (depth + 1) * verticalSpacing;
-      layoutChildren(children[i], depth + 1);
+  // 递归布局：先定自身（子树占位中轴），再按占位 cursor 依次排开子树
+  const layoutSubtree = (node: BubbleNode, leftX: number, depth: number): void => {
+    node.x = leftX + subtreeWidth(node, childrenMap, siblingGap, widthCache) / 2;
+    node.y = depth * verticalSpacing;
+    const children = childrenMap.get(node.nodeID);
+    if (!children || children.length === 0) return;
+    let cursor = leftX;
+    for (const child of children) {
+      layoutSubtree(child, cursor, depth + 1);
+      cursor += subtreeWidth(child, childrenMap, siblingGap, widthCache) + siblingGap;
     }
   };
 
-  // ★ 0.151：多根支持（需求 2.1「多棵树的根气泡画布同一行对齐并排」）
-  if (roots.length === 1) {
-    roots[0].y = 0;
-    layoutChildren(roots[0], 0);
-  } else {
-    const treeGap = 120; // 树间额外间隙
-    let cursorX = 0;
-    for (let r = 0; r < roots.length; r++) {
-      const root = roots[r];
-      root.x = cursorX;
-      root.y = 0;
-      layoutChildren(root, 0);
-      cursorX += subtreeWidth(root, childrenMap, horizontalSpacing) + treeGap;
-    }
+  // 单根/多根统一：多根按树占位并排（树间 treeGap）
+  let cursorX = 0;
+  for (const root of roots) {
+    layoutSubtree(root, cursorX, 0);
+    cursorX += subtreeWidth(root, childrenMap, siblingGap, widthCache) + treeGap;
   }
 
   // 更新所有子节点的 parentX/parentY
