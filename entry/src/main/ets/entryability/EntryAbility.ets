@@ -12,6 +12,7 @@
 
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { AppStorageV2, window } from '@kit.ArkUI';
+import { loadBuiltinApiConfig } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key
 
 // ★ 全局主题状态（UI 运行时状态，非持久化数据模型）
 @ObservedV2
@@ -34,6 +35,14 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    // ★ 0.161.3：加载内置 API Key（rawfile/config.json，本地文件不入 git）——
+    // 放在 loadContent 之前，保证早于所有页面组件 connect ApiConfig（填充空位后再被各处读到）
+    try {
+      loadBuiltinApiConfig(this.context);
+    } catch (err) {
+      // 加载失败静默——设置页可自填
+    }
+
     // Main window is created, set main page for this ability
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {

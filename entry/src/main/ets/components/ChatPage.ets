@@ -29,7 +29,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
 import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -415,6 +415,8 @@ export struct ChatPage {
   @Local deleteConfirmNoAsk: boolean = false;   // 弹窗内「不再提示」勾选框当前状态（每次打开复位）
   @Local deleteSkipConfirm: boolean = false;    // 本次会话内已勾选「不再提示」（aboutToAppear 重置）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
+  learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.161：学习数量（单词库 ⚙ 设置，默认 2；驱动气泡复习区+提炼弹窗复习区词条数）
+  knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.161.2：知识卡片数量（知识库 ⚙ 设置，默认 1 保持现状；驱动气泡复习区+提炼弹窗复习区卡片数）
   private textControllers: Map<string, TextController> = new Map(); // 每个 Text 独立 controller（关闭选择菜单用）
   private wordQueryController: StreamController | null = null;      // 进行中的查词请求（浮窗关闭时取消）
   private reviewCache: Map<string, ReviewCacheEntry> = new Map();   // 生词复习缓存（msgId → 随机词组）
@@ -432,13 +434,15 @@ export struct ChatPage {
   // 成功/取消/报错/超时/切后台立刻停止清零；180s 业务超时自动 abort；组件销毁必须清除防泄漏
   @Local knowledgeExtractSeconds: number = 0;
   private knowledgeExtractTimer: number = -1; // 计时器 ID（-1 = 未启动）
+  // ★ 0.160.2：AI 回复秒表已按用户决定整体移除（多轮修复未达预期，回复区保持干净）；
+  // 提炼弹窗秒表（上方 knowledgeExtractSeconds 一套）保留勿动。
   // ★ 0.153：全局前后台标志（EntryAbility onForeground/onBackground 维护）——
   // NavDestination 无 onPageHide 生命周期，借 @Monitor 监听此标志实现切后台中断提炼
   @Local appLifecycle: AppLifecycleStore = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
-  // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 2 词 + 知识库 1 卡）；
+  // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 N 词 + 知识库 M 卡，N/M 由 ⚙ 设置驱动）；
   // 弹窗打开时抽一次固定（渲染不重抽、不闪烁），样式与气泡底部复习区一致
   @Local editReviewWords: WordItem[] = [];
-  @Local editReviewCard: KnowledgeCard = new KnowledgeCard();
+  @Local editReviewCards: KnowledgeCard[] = [];
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
@@ -1433,14 +1437,15 @@ export struct ChatPage {
     }
   }
 
-  // 生词复习：按消息 ID 取随机 2 词（缓存命中直接返回；词库长度变化时重新抽取）
+  // 生词复习：按消息 ID 取随机 N 词（N=学习数量，单词库 ⚙ 设置；缓存命中直接返回；
+  // 词库长度或学习数量变化时重新抽取——version 双维度编码 length*100+count，count≤20 无碰撞）
   getReviewWords(messageId: string): WordItem[] {
-    const version = this.wordBank.words.length;
+    const version = this.wordBank.words.length * 100 + this.learnCountStore.learnCount;
     const cached = this.reviewCache.get(messageId);
     if (cached && cached.version === version) {
       return cached.items;
     }
-    const items = pickRandomWords(this.wordBank, 2);
+    const items = pickRandomWords(this.wordBank, this.learnCountStore.learnCount);
     this.reviewCache.set(messageId, new ReviewCacheEntry(version, items));
     return items;
   }
@@ -1452,9 +1457,8 @@ export struct ChatPage {
   // ★ 0.160：抽取弹窗内复习区内容（打开弹窗时调一次固定；词库/知识库为空时对应项为空，
   // 渲染层按空判不显示——与气泡底部复习区同款防御）
   refreshEditReview(): void {
-    this.editReviewWords = pickRandomWords(this.wordBank, 2);
-    const cards = pickRandomKnowledgeCards(this.knowledgeBank, 1);
-    this.editReviewCard = cards.length > 0 ? cards[0] : new KnowledgeCard();
+    this.editReviewWords = pickRandomWords(this.wordBank, this.learnCountStore.learnCount); // ★ 0.161：词条数由学习数量设置驱动（单词库 ⚙ 设置）
+    this.editReviewCards = pickRandomKnowledgeCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount); // ★ 0.161.2：卡片数由知识卡片数量设置驱动（知识库 ⚙ 设置）
   }
 
   // ★ 0.153：启动提炼秒表——清零后每秒 +1；累计 180s 业务超时自动 abort + 红色提示
@@ -1605,17 +1609,18 @@ export struct ChatPage {
     this.imageViewerVisible = true;
   }
 
-  // 复习区知识卡片：按消息 ID 取随机 1 张（缓存命中直接返回；库长度变化时重抽）。
-  // 空库防御性返回空卡片——UI 外层 cards.length > 0 判断保证正常路径非空。
-  getKnowledgeCard(messageId: string): KnowledgeCard {
-    const version = this.knowledgeBank.cards.length;
+  // 复习区知识卡片：按消息 ID 取随机 N 张（N=知识卡片数量，知识库 ⚙ 设置；缓存命中直接返回；
+  // 库长度或卡片数量变化时重抽——version 双维度编码 length*100+count，count≤20 无碰撞）。
+  // 空库返回空数组——UI 外层 length > 0 判断保证正常路径非空。
+  getKnowledgeCards(messageId: string): KnowledgeCard[] {
+    const version = this.knowledgeBank.cards.length * 100 + this.knowledgeCountStore.knowledgeCount;
     const cached = this.knowledgeReviewCache.get(messageId);
     if (cached && cached.version === version) {
-      return cached.items.length > 0 ? cached.items[0] : new KnowledgeCard();
+      return cached.items;
     }
-    const items = pickRandomKnowledgeCards(this.knowledgeBank, 1);
+    const items = pickRandomKnowledgeCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount);
     this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(version, items));
-    return items.length > 0 ? items[0] : new KnowledgeCard();
+    return items;
   }
 
   // ★ 0.145：划词悬浮操作栏（bindSelectionMenu 自定义菜单——完全替代系统小艺菜单）
@@ -2070,11 +2075,15 @@ export struct ChatPage {
                             this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? 0 : 1,
                             this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? msg.content.length : 0
                           )
-                      } else {
-                        // ★ 0.146：包裹容器——气泡与操作行组成同宽块，token 统计行左缘对齐气泡左缘（用户要求）
-                        Column() {
-                        // ★ AI 消息：Markdown 分段渲染（0.121）
-                        Column() {
+                       } else {
+                         // ★ 0.146：包裹容器——气泡与操作行组成同宽块，token 统计行左缘对齐气泡左缘（用户要求）
+                         Column() {
+                         // ★ AI 消息：Markdown 分段渲染（0.121）
+                          // ★ 0.160.1 三次修复：删除占位行 Row——占位文字（LOADING/THINKING）本身就是 msg.content，
+                          // 由下方 Markdown 通道渲染（原始行为，content @Trace 驱动，一直可靠）。此前占位行+
+                          // Markdown 反向 visibility 双通道并存导致占位文字重复显示两次（已修复）。
+                          // ★ 0.160.2：AI 回复秒表（⏱）已按用户决定整体移除，本区不再渲染任何计时组件。
+                         Column() {
                           ForEach(this.parseMarkdown(msg.content), (seg: MdSegment, idx: number) => {
                             if (seg.type === 0) {
                               // 普通文本段
@@ -2231,12 +2240,16 @@ export struct ChatPage {
                               }
                               .alignItems(HorizontalAlign.Start)
                             }
-                           // ★ 0.132 修复：key 纳入 content/header/rows 尺寸——流式追加时 key 变化触发 item 重建，
-                           // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
-                           // ★ 0.160 bugfix: key 再纳入 content 前 12 字符——0.132 的 length 维度存在等长碰撞边界：
-                           // THINKING 占位与正文恰好等长时 key 相同 → item 复用 → 卡占位（用户实测：token 已写入但
-                           // 气泡永显「AI 正在深度思考中...」，持久化 content 实为正文）。前缀维度保证占位↔正文切换 key 必变。
-                             }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.content.substring(0, 12)}_${seg.header.length}_${seg.rows.length}`)
+                            // ★ 0.132 修复：key 纳入 content/header/rows 尺寸——流式追加时 key 变化触发 item 重建，
+                            // 否则 key 恒定导致 ForEach 复用旧 item，MdSegment 非响应式，Text 永不更新（卡占位 bug 根因）
+                            // ★ 0.160 bugfix: key 再纳入 content 前 12 字符——0.132 的 length 维度存在等长碰撞边界：
+                            // THINKING 占位与正文恰好等长时 key 相同 → item 复用 → 卡占位（用户实测：token 已写入但
+                            // 气泡永显「AI 正在深度思考中...」，持久化 content 实为正文）。前缀维度保证占位↔正文切换 key 必变。
+                              }, (seg: MdSegment, idx: number) => `${idx}_${seg.type}_${seg.content.length}_${seg.content.substring(0, 12)}_${seg.header.length}_${seg.rows.length}`)
+                          // ★ 0.160.2 四次修复：删除原 Markdown 内层 Column 的残留闭合「}」与 .alignItems——
+                          // 内层容器开头已在三次修复中随占位行一并移除，闭合括号残留导致括号错配（28 ERROR）。
+                          // 现结构：2122 气泡 Column 直接包含 Markdown ForEach + 生词区 + 知识卡片区，
+                          // 由 2400 行「}」+ constraintSize/padding 属性链闭合。
 
                          // ★ 0.145：生词复习区——词库非空时在 AI 气泡底部展示随机 2 词（词条式布局，与下方知识卡片风格统一）
                          // （仅 AI 气泡渲染，本分支天然不含用户消息；缓存按消息 ID，词库长度变化时重抽）
@@ -2300,53 +2313,59 @@ export struct ChatPage {
                            .alignItems(HorizontalAlign.Start)
                          }
 
-                          // ★ 0.146：知识卡片复习区——库非空时在 AI 气泡底部展示随机 1 张
-                          // （与上方单词复习区并列，📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID）
+                          // ★ 0.146：知识卡片复习区——库非空时在 AI 气泡底部展示随机 N 张
+                          // （N=知识卡片数量，知识库 ⚙ 设置，★ 0.161.2 单卡改多卡；与上方单词复习区并列，
+                          // 📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID；每卡独立横向滚动行、纵向排列——与生词区同款）
                           // ★ UI 定稿：卡片 2 行（标题+图片icon/定义）；有图才显示 🖼️ 指示（不用小缩略图）；行内超宽横向滑动
                           if (this.knowledgeBank.cards.length > 0) {
                             Divider()
                               .strokeWidth(0.5)
                               .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                               .margin({ top: 6, bottom: 6 })
-                            Scroll() {
-                              Column() {
-                                Row() {
-                                  Text('📖 ' + this.getKnowledgeCard(msg.messageId).title)
-                                    .fontSize(13)
-                                    .fontWeight(FontWeight.Bold)
-                                    .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
-                                    .maxLines(1)
-                                  if (this.getKnowledgeCard(msg.messageId).imageUri.length > 0) {
-                                    // Image indicator icon — only shown when the card has an image (user rule)
-                                    // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
-                                    // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
-                                    Text('🖼️')
+                            Column() {
+                              ForEach(this.getKnowledgeCards(msg.messageId), (card: KnowledgeCard, idx: number) => {
+                                Scroll() {
+                                  Column() {
+                                    Row() {
+                                      Text('📖 ' + card.title)
+                                        .fontSize(13)
+                                        .fontWeight(FontWeight.Bold)
+                                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                        .maxLines(1)
+                                      if (card.imageUri.length > 0) {
+                                        // Image indicator icon — only shown when the card has an image (user rule)
+                                        // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
+                                        // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
+                                        Text('🖼️')
+                                          .fontSize(12)
+                                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                          .maxLines(1)
+                                          .margin({ left: 6 })
+                                          .onClick(() => {
+                                            if (card.imageUri.length > 0) {
+                                              this.imageViewerImages = [card.imageUri];
+                                              this.imageViewerIndex = 0;
+                                              this.imageViewerVisible = true;
+                                            }
+                                          })
+                                      }
+                                    }
+                                    Text(card.definition)
                                       .fontSize(12)
-                                      .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
                                       .maxLines(1)
-                                      .margin({ left: 6 })
-                                      .onClick(() => {
-                                        const card = this.getKnowledgeCard(msg.messageId); // cache hit — same card as rendered above
-                                        if (card.imageUri.length > 0) {
-                                          this.imageViewerImages = [card.imageUri];
-                                          this.imageViewerIndex = 0;
-                                          this.imageViewerVisible = true;
-                                        }
-                                      })
+                                      .margin({ top: 2 })
                                   }
+                                  .alignItems(HorizontalAlign.Start)
                                 }
-                                Text(this.getKnowledgeCard(msg.messageId).definition)
-                                  .fontSize(12)
-                                  .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
-                                  .maxLines(1)
-                                  .margin({ top: 2 })
-                              }
-                              .alignItems(HorizontalAlign.Start)
+                                .scrollable(ScrollDirection.Horizontal)
+                                .scrollBar(BarState.Off)
+                                .align(Alignment.Start)
+                                .width('100%')
+                                .margin({ top: idx > 0 ? 6 : 0 })
+                              }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
                             }
-                            .scrollable(ScrollDirection.Horizontal)
-                            .scrollBar(BarState.Off)
-                            .align(Alignment.Start)
-                            .width('100%')
+                            .alignItems(HorizontalAlign.Start)
                           }
                           }
                           .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
@@ -2663,35 +2682,37 @@ export struct ChatPage {
                   .margin({ bottom: idx === this.editReviewWords.length - 1 ? 0 : 6 })
                 }, (w: WordItem) => w.word)
               }
-              if (this.editReviewCard.title.length > 0 || this.editReviewCard.definition.length > 0) {
+              if (this.editReviewCards.length > 0) {
                 Divider()
                   .strokeWidth(0.5)
                   .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                   .margin({ top: 6, bottom: 6 })
-                // ★ 0.160 bugfix: wrap card in horizontal Scroll (same as bubble review area) —
+                // ★ 0.160 bugfix: wrap each card in horizontal Scroll (same as bubble review area) —
                 // long title/definition could not be swiped and overflowed the dialog (user report)
+                // ★ 0.161.2: single card → ForEach over N cards (knowledge-count setting drives N)
+                ForEach(this.editReviewCards, (card: KnowledgeCard, idx: number) => {
                 Scroll() {
                 Column() {
                   Row() {
-                    Text('📖 ' + this.editReviewCard.title)
+                    Text('📖 ' + card.title)
                       .fontSize(13)
                       .fontWeight(FontWeight.Bold)
                       .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
                       .maxLines(1)
-                    if (this.editReviewCard.imageUri.length > 0) {
+                    if (card.imageUri.length > 0) {
                       Text('🖼️')
                         .fontSize(12)
                         .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
                         .maxLines(1)
                         .margin({ left: 6 })
                         .onClick(() => {
-                          this.imageViewerImages = [this.editReviewCard.imageUri];
+                          this.imageViewerImages = [card.imageUri];
                           this.imageViewerIndex = 0;
                           this.imageViewerVisible = true;
                         })
                     }
                   }
-                  Text(this.editReviewCard.definition)
+                  Text(card.definition)
                     .fontSize(12)
                     .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
                     .maxLines(1)
@@ -2703,7 +2724,8 @@ export struct ChatPage {
                 .scrollBar(BarState.Off)
                 .align(Alignment.Start)
                 .width('100%')
-                .margin({ bottom: 12 })
+                .margin({ top: idx > 0 ? 6 : 0, bottom: idx === this.editReviewCards.length - 1 ? 12 : 0 })
+                }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
               }
 
               // 保存 / 取消

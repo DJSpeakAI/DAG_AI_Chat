@@ -112,6 +112,12 @@ struct Index {
           .onClick(() => {
             this.pathStack.pushPath({ name: 'BBTreeCanvas' });
           })
+
+        // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
+        Text('v0.161.4')
+          .fontSize(12)
+          .fontColor(this.getThemeStore().isDark ? '#666666' : '#AAAAAA')
+          .margin({ top: 12 })
       }
       .width('100%')
       .height('100%')

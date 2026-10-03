@@ -28,6 +28,7 @@
 import { AppStorageV2 } from '@kit.ArkUI';
 import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
+import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
 import { ThemeStore } from '../entryability/EntryAbility'; // dark/light theme
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
@@ -77,6 +78,12 @@ export struct KnowledgeBankPage {
 
   // ★ 0.148: batch-delete confirm dialog state (always shown, no no-remind)
   @Local batchConfirmVisible: boolean = false;
+
+  // ★ 0.161.2: knowledge-card count settings dialog state (top-bar ⚙ button, left of "+")
+  knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // persisted card count (default 1, range 1~20)
+  @Local cardSettingsVisible: boolean = false;
+  @Local cardCustomInput: string = '';  // free-input temp value (validated 1~20 on confirm)
+  @Local cardInputError: string = '';   // free-input validation error text (empty = no error)
 
   // Global theme state (same pattern as ChatPage / WordBankPage)
   getThemeStore(): ThemeStore {
@@ -287,6 +294,19 @@ export struct KnowledgeBankPage {
         .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
       Blank()
         .layoutWeight(1)
+      // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
+      Button('⚙')
+        .fontSize(18)
+        .backgroundColor(Color.Transparent)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 8, right: 4 })
+        .margin({ right: 4 })
+        .onClick(() => {
+          // free-input box pre-fills only when current value is a custom one (> 3, quick options are 1/2/3)
+          this.cardCustomInput = this.knowledgeCountStore.knowledgeCount > 3 ? `${this.knowledgeCountStore.knowledgeCount}` : '';
+          this.cardInputError = '';
+          this.cardSettingsVisible = true;
+        })
       if (!this.multiSelectMode) {
         // ★ 0.148: add button — top bar's right, opens the editor dialog
         Button('+')
@@ -311,6 +331,118 @@ export struct KnowledgeBankPage {
     }
     .width('100%')
     .padding({ left: 8, right: 16, top: 8, bottom: 4 })
+  }
+
+  // ★ 0.161.2: knowledge-card count settings dialog — same pattern as WordBankPage's
+  // learnSettingsDialog; default 1 keeps the pre-0.161.2 single-card behaviour
+  @Builder
+  cardSettingsDialog() {
+    Column() {
+      Column() {
+        Text('知识卡片数量设置')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        Text('每次复习展示的卡片数，生效于：AI 回复底部复习区、知识卡片提炼等待页')
+          .fontSize(12)
+          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+          .margin({ top: 6 })
+        Row() {
+          Button('1（默认）')
+            .fontSize(14)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? '#1976D2' : Color.Transparent)
+            .borderRadius(6)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.knowledgeCountStore.knowledgeCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
+              this.cardSettingsVisible = false;
+            })
+          Button('2')
+            .fontSize(14)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? '#1976D2' : Color.Transparent)
+            .borderRadius(6)
+            .layoutWeight(1)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.knowledgeCountStore.knowledgeCount = 2;
+              this.cardSettingsVisible = false;
+            })
+          Button('3')
+            .fontSize(14)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 3 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 3 ? '#1976D2' : Color.Transparent)
+            .borderRadius(6)
+            .layoutWeight(1)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.knowledgeCountStore.knowledgeCount = 3;
+              this.cardSettingsVisible = false;
+            })
+        }
+        .width('100%')
+        .margin({ top: 16 })
+        Row() {
+          Text('自由输入：')
+            .fontSize(14)
+            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+          TextInput({ text: this.cardCustomInput, placeholder: '1~20' })
+            .fontSize(14)
+            .layoutWeight(1)
+            .height(40)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(8)
+            .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+            .type(InputType.Number)
+            .onChange((value: string) => {
+              this.cardCustomInput = value;
+              this.cardInputError = ''; // 输入变化即清错误提示
+            })
+          Button('确定')
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+            .backgroundColor('#1976D2')
+            .borderRadius(6)
+            .margin({ left: 8 })
+            .padding({ left: 14, right: 14 })
+            .onClick(() => {
+              const n = parseInt(this.cardCustomInput, 10);
+              if (!Number.isNaN(n) && n >= 1 && n <= 20) {
+                this.knowledgeCountStore.knowledgeCount = n;
+                this.cardSettingsVisible = false;
+              } else {
+                this.cardInputError = '请输入 1~20 的整数';
+              }
+            })
+        }
+        .width('100%')
+        .margin({ top: 12 })
+        if (this.cardInputError.length > 0) {
+          Text(this.cardInputError)
+            .fontSize(12)
+            .fontColor('#F44336')
+            .margin({ top: 6 })
+        }
+        Button('关闭')
+          .fontSize(14)
+          .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+          .backgroundColor(Color.Transparent)
+          .width('100%')
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.cardSettingsVisible = false;
+          })
+      }
+      .width('86%')
+      .borderRadius(12)
+      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .padding(20)
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('rgba(0,0,0,0.5)')
   }
 
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss
@@ -736,6 +868,10 @@ export struct KnowledgeBankPage {
         if (this.batchConfirmVisible) {
           this.batchConfirmDialog()
         }
+        // ★ 0.161.2: card-count settings dialog
+        if (this.cardSettingsVisible) {
+          this.cardSettingsDialog()
+        }
         // ★ 0.160: editor image fullscreen preview — topmost layer
         if (this.editorImagePreviewVisible) {
           this.editorImagePreview()
@@ -761,6 +897,11 @@ export struct KnowledgeBankPage {
       }
       if (this.batchConfirmVisible) {
         this.batchConfirmVisible = false;
+        return true;
+      }
+      // ★ 0.161.2: card-count settings dialog closes before multi-select
+      if (this.cardSettingsVisible) {
+        this.cardSettingsVisible = false;
         return true;
       }
       if (this.multiSelectMode) {

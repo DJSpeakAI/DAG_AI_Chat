@@ -15,6 +15,8 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
+import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
+import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
 export type ChatRole = 'user' | 'assistant' | 'system'; // ★ 新增 'system'（0.117 摘要虚拟消息）
@@ -188,13 +190,18 @@ export function generateMessageId(): string {
 // API 配置（火山引擎方舟）：PersistenceV2 持久化，跨重启保存
 @ObservedV2
 export class ApiConfig {
+  // ★ 0.161.3：内置 Key 从源码硬编码改为 rawfile/config.json 读取（该文件 .gitignore 忽略绝不入库，
+  // 源码可安全上传 GitHub）；默认值改空串，由 EntryAbility 启动时调 loadBuiltinApiConfig 填充。
+  // 用户在设置页自定义过的 Key（持久化非空）优先，不被内置值覆盖。
   @Trace apiKey: string = '';
   @Trace endpoint: string = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
-  @Trace model: string = 'doubao-seed-2-1-lite-260915'; // ★ 0.131：与 SettingsPage 预置列表第 0 项一致（原 doubao-pro-32k 不在预置列表）
+  @Trace model: string = 'deepseek-v4-1-flash-260910'; // ★ 本轮：与 SettingsPage 预置列表第 0 项一致（DeepSeek-V4.1-Flash）
   @Trace audioModel: string = 'seed-tts-2.0'; // ★ 0.139：音频模型资源 ID（语音合成-2.0，openspeech HTTP 单向流端点，官方文档实证）
   @Trace audioVoice: string = 'zh_female_vv_uranus_bigtts'; // ★ 0.139：TTS 音色 ID（2.0 格式；2.0 模型只能用 2.0 音色，设置页不显示音色框）
   @Trace audioEndpoint: string = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'; // ★ 0.139：TTS 端点（openspeech HTTP 单向流，与 LLM endpoint 相互独立）
-  @Trace audioKey: string = ''; // ★ 0.140：TTS 专用 Key（豆包语音控制台新建，与方舟对话 Key 相互独立——两套体系 Key 不通用，0.139 拿方舟 Key 实测 401 Invalid X-Api-Key）
+  // ★ 0.161.3：TTS 专用 Key 同样改 rawfile/config.json 读取（与方舟对话 Key 相互独立——两套体系
+  // Key 不通用，0.139 拿方舟 Key 实测 401 Invalid X-Api-Key）
+  @Trace audioKey: string = '';
 }
 
 // ★ 0.143：连接 API 配置持久化实例——key 从 'api-config' 换为 'api-config-v2'
@@ -217,6 +224,39 @@ export function connectApiConfig(): ApiConfig {
   }) as ApiConfig;
 }
 
+// ============================================================
+// ★ 0.161.3：内置 API Key 本地配置（rawfile/config.json）
+// ============================================================
+// 背景：此前 Key 硬编码在本文件（0.160.1 内置），源码无法安全上传 GitHub。
+// 改造：Key 挪到 resources/rawfile/config.json（.gitignore 忽略，绝不入库），
+//       源码默认值改空串；EntryAbility 启动时读本文件填充空位。
+// 注意：config.json 会被打进 HAP——自己装机测试没问题，但上架/公开分发 HAP
+//       前仍须移除（原「上架前删除」约束不变，仅位置从源码挪到 rawfile）。
+// 兜底：文件缺失/解析异常（如 clone 后未放本地配置）静默跳过，用户走设置页自填。
+export interface BuiltinConfig {
+  apiKey: string;
+  audioKey: string;
+}
+
+// ★ 0.161.3：从 rawfile/config.json 读取内置 Key，填充持久化配置的空位。
+// 仅填空位——用户在设置页自定义过的 Key（持久化非空）优先，不被内置值覆盖。
+export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
+  try {
+    const raw = context.resourceManager.getRawFileContentSync('config.json');
+    const text = util.TextDecoder.create('utf-8').decodeToString(raw);
+    const obj = JSON.parse(text) as BuiltinConfig;
+    const cfg = connectApiConfig();
+    if (cfg.apiKey.length === 0 && obj.apiKey.length > 0) {
+      cfg.apiKey = obj.apiKey;
+    }
+    if (cfg.audioKey.length === 0 && obj.audioKey.length > 0) {
+      cfg.audioKey = obj.audioKey;
+    }
+  } catch (err) {
+    // config.json 不存在或解析失败——保持空默认，设置页自填
+  }
+}
+
 // ★ 0.150：AI 对话偏好（自定义称呼 + 自动鼓励开关）——PersistenceV2 持久化，跨重启保存
 // 独立 key 与 ApiConfig 隔离（0.143 教训：往已有磁盘快照的类新增字段会因旧快照缺字段不落盘；
 // 全新 key 首次创建即含全部字段，无此坑——与单词库/知识库独立 key 模式一致）
@@ -229,6 +269,32 @@ export class AiPreference {
 // ★ 0.150：连接 AI 偏好持久化实例（全新 key，无历史迁移需求）
 export function connectAiPreference(): AiPreference {
   return PersistenceV2.connect(AiPreference, 'ai-preference-v1', () => new AiPreference()) as AiPreference;
+}
+
+// ★ 0.161：学习数量设置——控制 AI 回复气泡底部生词复习区与知识卡片提炼等待页复习区
+// 每次展示的词条数；单词库顶栏 ⚙ 设置弹窗提供 1 / 2（默认）/ 自由输入（1~20）三选项；
+// PersistenceV2 独立全新 key 跨重启保存（与 AiPreference 同模式，无旧快照缺字段坑）
+@ObservedV2
+export class LearnCountStore {
+  @Trace learnCount: number = 2; // 每次学习的词条数量（默认 2；合法范围 1~20）
+}
+
+// ★ 0.161：连接学习数量持久化实例（全新 key，无历史迁移需求）
+export function connectLearnCount(): LearnCountStore {
+  return PersistenceV2.connect(LearnCountStore, 'learn-count-v1', () => new LearnCountStore()) as LearnCountStore;
+}
+
+// ★ 0.161.2：知识卡片数量设置——控制 AI 回复气泡底部知识卡复习区与知识卡片提炼等待页复习区
+// 每次展示的卡片数；知识库顶栏 ⚙ 设置弹窗提供 1（默认）/ 2 / 3 / 自由输入（1~20）四选项；
+// 与 LearnCountStore 同模式（PersistenceV2 独立全新 key，默认 1 保持 0.146 以来现状）
+@ObservedV2
+export class KnowledgeCountStore {
+  @Trace knowledgeCount: number = 1; // 每次展示的知识卡片数量（默认 1；合法范围 1~20）
+}
+
+// ★ 0.161.2：连接知识卡片数量持久化实例（全新 key，无历史迁移需求）
+export function connectKnowledgeCount(): KnowledgeCountStore {
+  return PersistenceV2.connect(KnowledgeCountStore, 'knowledge-count-v1', () => new KnowledgeCountStore()) as KnowledgeCountStore;
 }
 
 // ============================================================

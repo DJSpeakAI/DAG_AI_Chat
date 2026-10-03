@@ -32,13 +32,10 @@ interface ModelOption {
   price: string;    // 百万 token 价格描述
 }
 
-// 已开通模型列表（硬编码，5 个；与原 SettingsPage 一致）
+// 已开通模型列表（硬编码，2 个；与 SettingsPage 一致）★ 本轮：只留 DeepSeek 4.1 Flash + GLM 5.3 Flash（用户指定）
 const MODEL_LIST: ModelOption[] = [
-  { id: 'doubao-seed-2-1-lite-260915', name: 'Doubao-Seed-2.1-lite', type: '纯文本', price: '基础0.8 / 低延迟1.6 / 音频输入12 元/百万token' },
   { id: 'deepseek-v4-1-flash-260910', name: 'DeepSeek-V4.1-Flash', type: '多模态（图片理解）', price: '1~2 元/百万token' },
   { id: 'glm-5-3-flash-260828', name: 'GLM-5.3-Flash', type: '多模态（图片理解）', price: '0.8 元/百万token' },
-  { id: 'deepseek-v4-pro-260425', name: 'DeepSeek-V4-Pro正式版', type: '纯文本', price: '基础9 / 低优4.5 元/百万token' },
-  { id: 'deepseek-v4-flash-260425', name: 'DeepSeek-V4-Flash正式版', type: '纯文本', price: '基础2 / 低优1 元/百万token' },
 ];
 
 // ★ 0.139：预置音频模型列表（TTS 朗读用）——「Doubao-语音合成2.0」（openspeech HTTP 单向流，官方文档实证）
