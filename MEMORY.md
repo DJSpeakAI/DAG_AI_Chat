@@ -53,10 +53,10 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.164.x|华为账号登录跑通；**核心教训：①DevEco自动签名=内部调试通道无有效Client ID，Account Kit登录须AGC手动申请调试Profile+手动签名（只换Profile不换证书）②受限权限须Profile ACL显式授权，没用的直接删③错误码上屏（code+服务端msg）是排查利器**；主文档docs/0.164.md（含错误码速查表）|
 |0.165.x|云同步双端调测收官；**踩坑：新SDK删PermissionRequestResult类型名→类型推断；循环依赖用回调注入；下行写池绝不upsert防回环；AGC正确入口是「云空间」（勿配成云数据库for Object）；云端类型名驼峰cloudData/本地表cloud_data可不同名**；遗留v0.165.3=同步状态提示+云空间开关引导；主文档docs/0.165.md|
 |0.166.x|圈注标注图丢失修复（**根因：0.162.1动画把清空pendingImages挪进140ms回调，同步塞图被回调清空；修复：addBubble加carryImages参数，塞图与清空同回调执行**）；平板首页占左栏修复（**Navigation Auto宽屏自动分栏→Stack强制单栏**）；主题锁定暗色方案A（setColorMode(DARK)+isDark恒true+删onConfigurationUpdate，亮色分支代码保留勿删）；Pixso设计稿交付后转入0.167线落地|
-|0.167.x|Pixso设计稿落地线（canvas改造，v0.167.1~6）：UI_GUIDELINES.md+DesignTokens.ets双真相源、BBTreeCanvas全面改造（信息条/节点卡片150×68/缩放控件/弹窗换肤）；v0.167.2连线Canvas命令式绘制（**Path无viewport属性自动缩放commands是连线飞左上角真根因**）；v0.167.3子树占位法防重叠（siblingGap=40）+连线统一父下缘→子上缘垂直S；v0.167.4整体等比缩放（尺寸/线宽/端点全乘s）+缩放限幅方向感知（放大拦2.0/缩小拦0.05，修复锁死）+多根纵向堆叠（treeGap=120）+根x恒对齐；v0.167.5信息条不透明底板+新建按钮双态（小屏纯icon36）；v0.167.6小屏顶栏极简4图标（icon-only 30×30与⚙/➕等高、标题不渲染）+fitViewport topSafe排除底板（flat=80/tabs=128）——装机验证通过；**遗留：缩放放大恢复路径待补验（缩小已验0.566）、v0.167.5/6未git commit（最后提交停在0.167.4）、下一站侧边栏工作台→手机端B+C双模式、UI_GUIDELINES回填小屏顶栏与弹窗规格**；主文档docs/0.167.md（精简版）|
+|0.167.x|Pixso设计稿落地线（canvas改造，v0.167.1~7）：UI_GUIDELINES.md+DesignTokens.ets双真相源、BBTreeCanvas全面改造（信息条/节点卡片150×68/缩放控件/弹窗换肤）；v0.167.2连线Canvas命令式绘制（**Path无viewport属性自动缩放commands是连线飞左上角真根因**）；v0.167.3子树占位法防重叠（siblingGap=40）+连线统一父下缘→子上缘垂直S；v0.167.4整体等比缩放（尺寸/线宽/端点全乘s）+缩放限幅方向感知（放大拦2.0/缩小拦0.05，修复锁死）+多根纵向堆叠（treeGap=120）+根x恒对齐；v0.167.5信息条不透明底板+新建按钮双态（小屏纯icon36）；v0.167.6小屏顶栏极简4图标（icon-only 30×30与⚙/➕等高、标题不渲染）+fitViewport topSafe排除底板；v0.167.7用户实测三连改（①信息条padding top 24→8与下方对齐②right 28→14右上角4按钮右移③topSafe随底板新高度重算flat=64/tabs=108）——装机+控件树实证通过（➕右缘距屏右14vp、树顶920px远低于底板底372px无遮挡、重新排列幂等）；**遗留：缩放放大恢复路径待补验（缩小已验0.566）、v0.167.5/6/7未git commit（最后提交停在0.167.4）、下一站侧边栏工作台→手机端B+C双模式、UI_GUIDELINES回填小屏顶栏与弹窗规格**；主文档docs/0.167.md（精简版）|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.167.6（versionCode 1000017）**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.167.7（versionCode 1000018）**
 - 版本线主文档：docs/0.167.md（历史线：0.165/0.164/0.163/0.162/0.161/0.160.md）
 - 真机测试设备：MatePad 11.5 S 活力版（平板）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）
 

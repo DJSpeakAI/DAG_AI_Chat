@@ -22,7 +22,7 @@
 
 import { AppStorageV2 } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, CanvasMode, CanvasModeStore, connectCanvasMode, applyCanvasModeSwitch } from '../common/ChatModel';
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference } from '../common/ChatModel'; // ★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
 import { ThemeStore } from '../entryability/EntryAbility';
 import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
 
@@ -53,10 +53,11 @@ export struct GlobalSettingsDialog {
 
   apiConfig: ApiConfig = connectApiConfig();       // ★ 0.143：换 key 'api-config-v2' 工厂
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：全新 key 'ai-preference-v1'
-  canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：全新 key 'canvas-mode-v1'
 
   // Tab 切换（自绘按钮 + 条件渲染，不用 Tabs 组件）
-  @Local currentTab: number = 0; // 0=API 配置，1=AI 偏好，2=画布（★ 0.151-bugfix4：画布多树模式独立成第三个 Tab）
+  // ★ 0.167.8 用户拍板：删「画布」Tab（画布多树模式切换已由画布页顶部分段控件承担，此处重复）；
+  //   currentTab 索引保持 0=API 配置 / 1=AI 偏好 / 3=云同步 不重排（避免误伤云同步分支）
+  @Local currentTab: number = 0;
 
   // Tab1 编辑副本（点保存才写入持久化；与原 SettingsPage 一致）
   @Local editKey: string = '';
@@ -73,8 +74,6 @@ export struct GlobalSettingsDialog {
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourage: boolean = true; // 自动鼓励开关（默认开启）
-  // ★ 0.151 Tab2 编辑副本（画布模式；点保存才执行切换——切换涉及工作区数据搬移，不宜点选即切）
-  @Local editCanvasMode: CanvasMode = 'flat'; // 'flat' 平铺 / 'tabs' 选项卡
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
 
@@ -108,8 +107,6 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourage = this.aiPreference.encourageEnabled;
-    // ★ 0.151：画布模式编辑副本
-    this.editCanvasMode = this.canvasModeStore.mode;
     // ★ 0.165.2：云同步权限状态（异步查；已授权则「云同步」Tab 直接显示已开启）
     isCloudSyncGranted().then((granted: boolean) => {
       this.syncGranted = granted;
@@ -158,8 +155,7 @@ export struct GlobalSettingsDialog {
       this.editAudioEndpoint.trim() !== this.apiConfig.audioEndpoint ||
       this.editAudioKey.trim() !== this.apiConfig.audioKey || // ★ 0.140：音频 Key 纳入未保存判断
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
-      this.editEncourage !== this.aiPreference.encourageEnabled || // ★ 0.150：鼓励开关
-      this.editCanvasMode !== this.canvasModeStore.mode;           // ★ 0.151：画布模式
+      this.editEncourage !== this.aiPreference.encourageEnabled;   // ★ 0.150：鼓励开关（★ 0.167.8：画布模式判断随 Tab 删除）
   }
 
   // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
@@ -202,11 +198,7 @@ export struct GlobalSettingsDialog {
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageEnabled = this.editEncourage;
-    // ★ 0.151：画布模式切换——先执行工作区切换（两池数据各归其位），再写 mode 持久化
-    if (this.editCanvasMode !== this.canvasModeStore.mode) {
-      applyCanvasModeSwitch(this.editCanvasMode);
-      this.canvasModeStore.mode = this.editCanvasMode;
-    }
+    // ★ 0.167.8：画布模式切换逻辑删除——模式切换已由画布页顶部分段控件即时承担（用户拍板）
     this.showToastSafe('已保存');
   }
 
@@ -510,85 +502,8 @@ export struct GlobalSettingsDialog {
     .width('100%')
   }
 
-  // ★ 0.151-bugfix4：Tab3 内容——画布多树模式（用户需求：从 AI 偏好 Tab 挪出，独立成顶部第三个选项卡）
-  @Builder
-  canvasTabContent() {
-    Column() {
-      // ★ 0.151：画布多树模式单选（平铺 / 选项卡）
-      Column() {
-        Text('画布多树模式')
-          .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
-          .margin({ bottom: 6 })
-
-        // 选项 1：多根平铺模式（默认）
-        Row() {
-          Text(this.editCanvasMode === 'flat' ? '●' : '○')
-            .fontSize(16)
-            .fontColor(this.editCanvasMode === 'flat' ? '#1976D2' : (this.getThemeStore().isDark ? '#777777' : '#999'))
-          Column() {
-            Text('多根平铺模式')
-              .fontSize(14)
-              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-            Text('多棵树的根气泡同一行并排，右上角「添加根气泡」可新增树')
-              .fontSize(11)
-              .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          .margin({ left: 10 })
-        }
-        .width('100%')
-        .padding(12)
-        .borderRadius(8)
-        .backgroundColor(this.editCanvasMode === 'flat'
-          ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-          : (this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5'))
-        .onClick(() => {
-          this.editCanvasMode = 'flat';
-        })
-
-        // 选项 2：选项卡多树模式
-        Row() {
-          Text(this.editCanvasMode === 'tabs' ? '●' : '○')
-            .fontSize(16)
-            .fontColor(this.editCanvasMode === 'tabs' ? '#1976D2' : (this.getThemeStore().isDark ? '#777777' : '#999'))
-          Column() {
-            Text('选项卡多树模式')
-              .fontSize(14)
-              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-            Text('画布顶部 Tab 栏，一个 Tab = 一棵独立树，可增删改名')
-              .fontSize(11)
-              .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          .margin({ left: 10 })
-        }
-        .width('100%')
-        .padding(12)
-        .borderRadius(8)
-        .backgroundColor(this.editCanvasMode === 'tabs'
-          ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-          : (this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5'))
-        .margin({ top: 8 })
-        .onClick(() => {
-          this.editCanvasMode = 'tabs';
-        })
-
-        // 提示：切换规则（数据互通）
-        Text('💡 两模式是同一批树数据的两种展示：切到选项卡时每棵树自动变成一个 Tab（Tab 名 = 树根名）；切回平铺时全部 Tab 的树合并平铺显示。切换在点「保存」后生效。')
-          .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
-          .margin({ top: 6 })
-      }
-      .width('100%')
-      .margin({ bottom: 16 })
-    }
-    .width('100%')
-  }
+  // ★ 0.167.8 用户拍板：原 Tab3「画布多树模式」内容整体删除——模式切换逻辑已由画布页
+  //   顶部分段控件（平铺/选项卡）即时承担，设置内重复入口移除（canvasTabContent @Builder 随删）
 
   // ★ 0.165.2：Tab4 内容——云同步（分布式同步权限授权入口 + 状态显示；点按钮即时生效，无「保存」概念）
   @Builder
@@ -705,7 +620,7 @@ export struct GlobalSettingsDialog {
         .width('100%')
         .margin({ bottom: 12 })
 
-        // Tab 切换行（自绘按钮，选中态高亮；★ 0.151-bugfix4：三 Tab——API 配置 / AI 偏好 / 画布）
+        // Tab 切换行（自绘按钮，选中态高亮；★ 0.167.8：删「画布」Tab——模式切换已由画布页分段控件承担）
         Row() {
           Text('API 配置')
             .fontSize(15)
@@ -732,19 +647,6 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 1;
             })
-          Text('画布')
-            .fontSize(15)
-            .fontWeight(this.currentTab === 2 ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.currentTab === 2 ? '#1976D2' : (this.getThemeStore().isDark ? '#AAAAAA' : '#666'))
-            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-            .borderRadius(6)
-            .backgroundColor(this.currentTab === 2
-              ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-              : Color.Transparent)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.currentTab = 2;
-            })
           Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
             .fontSize(15)
             .fontWeight(this.currentTab === 3 ? FontWeight.Bold : FontWeight.Normal)
@@ -768,10 +670,8 @@ export struct GlobalSettingsDialog {
             this.apiTabContent()
           } else if (this.currentTab === 1) {
             this.prefTabContent()
-          } else if (this.currentTab === 2) {
-            this.canvasTabContent() // ★ 0.151-bugfix4：Tab3 画布多树模式
           } else {
-            this.cloudTabContent() // ★ 0.165.2：Tab4 云同步
+            this.cloudTabContent() // ★ 0.165.2：Tab4 云同步（★ 0.167.8：画布分支随 Tab 删除）
           }
         }
         .width('100%')

@@ -282,8 +282,9 @@ export struct BBTreeCanvas {
     // ★ 0.151-bugfix5：+32 四周呼吸边距（16×2）——树铺满画布时气泡不贴屏幕边缘
     // ★ 0.167：节点卡片 150×68（★ 0.167.3 砍 1/4；UI_GUIDELINES 六-5），包围盒余量随之更新
     // ★ 0.167.6：垂直可用区排除顶部信息条底板（0.167.5 不透明底板盖住树 1 根气泡实测回归）——
-    //   flat 底板高 24+40+8=72 取 80；tabs 再加 Tab 栏 36+space 8 取 128；缩放与居中都基于剩余区
-    const topSafe = this.canvasModeStore.mode === 'tabs' ? 128 : 80;
+    //   缩放与居中都基于剩余区；★ 0.167.7：底板 padding top 24→8 后高度重算——
+    //   flat 底板 8+40+8=56 取 64；tabs 再加 space 8 + Tab 栏 36 = 100 取 108
+    const topSafe = this.canvasModeStore.mode === 'tabs' ? 108 : 64;
     const treeW = maxX - minX + NODE_W + 32;
     const treeH = maxY - minY + NODE_H + 32;
     this.canvasScale = Math.min(this.viewW / treeW, (this.viewH - topSafe) / treeH, 1.0);
@@ -335,6 +336,11 @@ export struct BBTreeCanvas {
   switchCanvasMode(targetMode: CanvasMode): void {
     if (this.canvasModeStore.mode === targetMode) return;
     applyCanvasModeSwitch(targetMode);
+    // ★ 0.167.8-bugfix（用户实测：点一下切过去后点不回来）：applyCanvasModeSwitch 只做
+    //   两池数据置换、不写 mode（写 mode 是调用方职责，旧设置弹窗路径即两步走）——
+    //   此前漏写导致切后 mode 仍为旧值：Tab 栏/分段高亮不刷新，再点目标按钮被
+    //   「mode === targetMode」守卫直接 return = 切换单向锁死。补写 mode 对齐旧路径。
+    this.canvasModeStore.mode = targetMode;
     if (this.store.needsRelayout) {
       this.autoLayout();
       this.fitViewport();
@@ -493,13 +499,14 @@ export struct BBTreeCanvas {
             .width(14)
             .height(14)
             .objectFit(ImageFit.Contain)
-          Text('画布')
+          Text('平铺') // ★ 0.167.8 用户拍板：「画布」改「平铺」（与「选项卡」对仗，模式语义更准）
             .fontSize(FONT_SIZE_BODY)
             .fontWeight(this.canvasModeStore.mode === 'flat' ? 600 : 500)
             .fontFamily(this.canvasModeStore.mode === 'flat' ? FONT_INTER_SEMIBOLD : FONT_INTER)
             .fontColor(this.canvasModeStore.mode === 'flat' ? TEXT_PRIMARY : TEXT_SECONDARY)
         }
-        .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+        .padding({ left: 12, right: 12 })
+        .height(30) // ★ 0.167.8：固定高 30（track padding 3 总高 36），与 ⚙/➕ 等高对齐（用户实测报高度不齐）
         .borderRadius(8)
         .backgroundColor(this.canvasModeStore.mode === 'flat' ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
@@ -516,7 +523,8 @@ export struct BBTreeCanvas {
             .fontFamily(this.canvasModeStore.mode === 'tabs' ? FONT_INTER_SEMIBOLD : FONT_INTER)
             .fontColor(this.canvasModeStore.mode === 'tabs' ? TEXT_PRIMARY : TEXT_SECONDARY)
         }
-        .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+        .padding({ left: 12, right: 12 })
+        .height(30) // ★ 0.167.8：固定高 30（track padding 3 总高 36），与 ⚙/➕ 等高对齐（用户实测报高度不齐）
         .borderRadius(8)
         .backgroundColor(this.canvasModeStore.mode === 'tabs' ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
@@ -741,31 +749,24 @@ export struct BBTreeCanvas {
                   this.pathStack.pop();
                 })
               // 标题 + 统计（ScreenTitle 16 SemiBold + Meta 11，UI_GUIDELINES 三/六）
-              // ★ 0.167.2：统计行仅平板显示（viewW≥520）——手机信息条可用宽有限
-              // ★ 0.167.5：标题区 layoutWeight(1) 弹性收缩（替代 Blank）——手机分段控件挪回
-              //   主行（⚙ 左边）后宽度紧张，标题弹性保证右侧控件（分段/⚙/➕）永不溢出屏幕
-              // ★ 0.167.6 用户拍板：小屏（viewW<520）标题整块不渲染——顶部只留 4 个图标
-              //   （分段 2 图标 + ⚙ + ➕）靠右收拢对齐（Blank 弹性占位），呼应手机稿极简顶栏
-              if (this.viewW >= 520) {
-                Column({ space: 2 }) {
-                  Text('知识画布')
-                    .fontSize(FONT_SIZE_SCREEN_TITLE)
-                    .fontWeight(600)
-                    .fontFamily(FONT_INTER_SEMIBOLD)
-                    .fontColor(TEXT_PRIMARY)
-                    .maxLines(1)
-                  Text(`${this.store.nodeList.length} 个气泡 · ${this.getTotalMsgCount()} 条对话`)
-                    .fontSize(FONT_SIZE_META)
-                    .fontFamily(FONT_INTER)
-                    .fontColor(TEXT_SECONDARY)
-                    .maxLines(1)
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-              } else {
-                Blank()
-                  .layoutWeight(1)
+              // ★ 0.167.6 曾小屏不渲染标题（只留 4 图标）；★ 0.167.8 用户拍板加回——
+              //   「知识画布 + N 个气泡 · N 条对话」小屏左上方也要显示（用户夸平板好看），
+              //   layoutWeight(1) 弹性收缩 + maxLines(1) 保证右侧 4 图标永不溢出
+              Column({ space: 2 }) {
+                Text('知识画布')
+                  .fontSize(FONT_SIZE_SCREEN_TITLE)
+                  .fontWeight(600)
+                  .fontFamily(FONT_INTER_SEMIBOLD)
+                  .fontColor(TEXT_PRIMARY)
+                  .maxLines(1)
+                Text(`${this.store.nodeList.length} 个气泡 · ${this.getTotalMsgCount()} 条对话`)
+                  .fontSize(FONT_SIZE_META)
+                  .fontFamily(FONT_INTER)
+                  .fontColor(TEXT_SECONDARY)
+                  .maxLines(1)
               }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
               // 分段控件（★ 0.167.5 用户拍板：全设备放主行 ⚙ 左边——收回 0.167.2 手机挪第二行方案）
               this.SegmentedControl()
               // ⚙ 设置（侧边栏工作台落地后移到侧边栏）
@@ -880,7 +881,9 @@ export struct BBTreeCanvas {
           //   气泡树平移/缩放时永远被压在底板下面，不再穿透重叠（用户要的「隐形的线」）；
           //   底板从画布 (0,0) 全宽铺开（原 position(28,24) 改 padding 内缩，内容视觉位置不变）
           .width('100%')
-          .padding({ left: 28, right: 28, top: 24, bottom: 8 })
+          // ★ 0.167.7：①上方留白 24→8 与下方对齐 ②right 28→14 右上角 4 按钮右移
+          // ★ 0.167.8：小屏 left 28→14——返回箭头左移，左留白与右边 ➕（14）一致（用户拍板）
+          .padding({ left: this.viewW >= 520 ? 28 : 14, right: 14, top: 8, bottom: 8 })
           .backgroundColor(BG_CANVAS)
           .position({ x: 0, y: 0 })
 
