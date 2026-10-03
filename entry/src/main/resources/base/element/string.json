@@ -17,10 +17,6 @@
       "value": "AI Chat"
     },
     {
-      "name": "read_pasteboard_reason",
-      "value": "用于读取剪贴板内容"
-    },
-    {
       "name": "internet_reason",
       "value": "用于访问网络请求AI对话"
     }

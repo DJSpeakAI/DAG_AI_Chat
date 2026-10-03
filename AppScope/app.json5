@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000000,
+    "versionCode": 1000005, // ★ 0.164.7：versionCode+1（删除误加的 READ_PASTEBOARD 权限申请，解决 9568289 安装失败）
     "versionName": "1.0.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",

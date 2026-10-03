@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\Administrator\\.ohos\\config\\default_DAG_AI_Chat_TCHZccDoDkDY_OAhvqznMnyvnW18PWh19efo4hHRtK8=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B3E0C77745052C4CFF774BF5EF3095248156A2D61A61051CA26AA5883C6A445A1FD252A5FC841C9",
-          "profile": "C:\\Users\\Administrator\\.ohos\\config\\default_DAG_AI_Chat_TCHZccDoDkDY_OAhvqznMnyvnW18PWh19efo4hHRtK8=.p7b",
+          "keyPassword": "0000001B800296392D45DC834694786C7719F4BE36555BAFDE6ED1216A56FE8AFF5F06BD1C4E47ED16B45C",
+          "profile": "C:\\Users\\Administrator\\.ohos\\config\\dag_ai_chat_debugDebug.p7b", // ★ 0.164.6：AGC 手动申请的调试 Profile（openssl 实证 app-identifier=6917618071300773117，与 client_id 一致）；证书/密钥库/密码全不动（只换 Profile 绕开 .p12 明文密码问题）
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\Administrator\\.ohos\\config\\default_DAG_AI_Chat_TCHZccDoDkDY_OAhvqznMnyvnW18PWh19efo4hHRtK8=.p12",
-          "storePassword": "0000001BD16B6733F3574D36A301068EFE1237267F1E050371717573912ABCFE81249C03B1D95C75B36BB5"
+          "storePassword": "0000001BA5D3E31E9ABE48BA20251850B8AF5D76A5AC83B77036B6B0F83127153EE55943463D0A6384FA1C"
         }
       }
     ],
