@@ -47,10 +47,11 @@ BubbleNode新增historySummary字段（@Trace）保存摘要，子气泡继承�
 |0.161|学习数量设置：单词库顶栏⚙弹窗（1/2（默认）/3/自由输入1~20，PersistenceV2独立key learn-count-v1），驱动AI气泡生词区+提炼弹窗复习区词条数，缓存version双维度编码length*100+count（count≤20无碰撞）；0.161.2知识卡片数量设置：知识库顶栏⚙弹窗（1（默认）/2/3/自由输入，key knowledge-count-v1，默认1保持现状），getKnowledgeCard→getKnowledgeCards多卡化，两处复习区改ForEach多卡（每卡独立横向滚动行，与生词区同款，key `${idx}_${title}`）；秒表代码整体移除（三轮修复未达标，用户决定放弃；提炼弹窗读秒knowledgeExtractSeconds一套保留勿删）；首页v0.161.2，主文档docs/0.161.md|
 |0.161.3|API Key外置：硬编码Key挪到resources/rawfile/config.json（.gitignore忽略不入库，源码可安全上传GitHub），apiKey/audioKey默认值改空串，EntryAbility启动loadContent前调loadBuiltinApiConfig读rawfile仅填空位（用户自定义Key优先不被覆盖；文件缺失catch静默走设置页自填）；TextDecoder用decodeToString（decodeWithStream已deprecated，API 12+）；.gitignore重建（原文件UTF-16脏字节损坏）；git历史仅1c338af（0.161.1）引入过Key且未推送（远程停在fd0666e/0.149）；config.json会打进HAP——上架/公开分发HAP前仍须移除；首页v0.161.3|
 |0.161.4|推送修复：用户未先amend直接push被GitHub Push Protection（GH013）拦截（检测到VolcEngine Ark API Key在1c338af的ChatModel.ets:192），推送整体拒绝、远程仍停fd0666e、Key未泄露；三重根因与修复——①用户已提交42ee261使含Key提交卡历史中间amend够不着→git reset --soft fd0666e合并重写；②docs/0.160.md:12与0.161.md验证清单含Key明文（文档记录时写入）→脱敏为ark-****/****；③.hmos-debug/调试产物（解包HAP字节码/截图/控件树）被add -A收进提交→git rm --cached清出+.gitignore加规则；环境坑：本机git版本不支持--noedit（unknown option静默断链，分号后命令照跑掩盖失败），amend须用-m显式传消息；最终b79164d单提交（fd0666e→b79164d），git log -S两Key --all零命中、git grep HEAD零命中；GitHub报错unblock-secret链接绝对勿点（=允许Key公开）；首页v0.161.4|
+|0.162.1|分支树杈icon+新建分支过渡动画：根因——addBubble非页面跳转，同页切currentBubbleStore三属性，@Computed currentMessages瞬间清空重载，刷屏过快空消息页无感知；改动——①底栏＋→🌿（emoji树杈，语义「另起一个树杈」，32×32圆角8样式不变，与✏️/🖼️ emoji风格统一）；②新增@Local msgAreaOpacity/branchAnimating；③addBubble链式animateTo：淡出140ms（EaseIn，模拟页面关闭）→onFinish里切气泡+清输入（清空重载发生在透明态看不见闪变）→淡入300ms（EaseOut，模拟页面打开）→解锁，总≈440ms落0.3~0.5s区间；④空态Column与消息List两分支根容器各挂.opacity(msgAreaOpacity)（不动布局层级）；防抖：branchAnimating播完前忽略重复点击，isLoading流式防御保留优先在前；切换在onFinish而非setTimeout（无定时器竞态）；首页v0.162.1，主文档docs/0.162.md|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示 `v0.161.x`，每次改动编译装机递增末位（0.161.1 → 0.161.2 → 0.161.3 → 0.161.4 → ...）
-- 版本线主文档：docs/0.161.md（0.160 线见 docs/0.160.md）
+- 首页显示 `v0.162.x`，每次改动编译装机递增末位（0.162.1 → 0.162.2 → ...）
+- 版本线主文档：docs/0.162.md（0.161 线见 docs/0.161.md，0.160 线见 docs/0.160.md）
 - 真机测试统一用平板（MatePad 11.5 S，用户常开）；手机用户日常使用勿动
 
 ## 全局硬性约束

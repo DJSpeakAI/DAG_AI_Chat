@@ -392,6 +392,10 @@ export struct ChatPage {
   tabForest: TabForestStore = connectTabForest();         // ★ 0.151：Tab 池（tabsJson + activeTabId，独立 key 'tab-forest-v1'）
   @Local inputText: string = '';
   @Local isLoading: boolean = false;
+  // ★ 0.162：分支切换过渡动画状态——addBubble 切换气泡时消息区先淡出再淡入（约 440ms），
+  // 让用户明确感知「跳到了新的空白消息页」（原瞬间清空重载刷屏过快、空页面时无感知）
+  @Local msgAreaOpacity: number = 1;       // 消息区透明度（1=不透明；动画期间 0↔1 补间）
+  @Local branchAnimating: boolean = false; // 分支切换动画进行中（防抖：播完前忽略重复点击）
   @Local pendingImages: string[] = [];
   // 全屏图片浏览器状态
   @Local imageViewerVisible: boolean = false;
@@ -1719,6 +1723,14 @@ export struct ChatPage {
     if (this.isLoading) {
       return; // ★ 0.151-D：流式回复进行中禁止新建——切换当前气泡会导致流式回调写错气泡
     }
+    // ★ 0.162：过渡动画防抖——上一次切换动画未播完前忽略重复点击
+    if (this.branchAnimating) {
+      return;
+    }
+    this.branchAnimating = true;
+    // ★ 0.151-D 需求 3：直接进入新子气泡的对话页（跳过「返回画布 + 双击气泡」两步）——
+    // 先建节点入库，再播「淡出→切换→淡入」过渡（★ 0.162：原实现瞬间切换 currentBubbleStore，
+    // 消息列表瞬间清空重载刷屏过快，空消息页时用户不知道是否跳转了；现在切换发生在透明态）
     const newBubble = new BubbleNode(
       generateNodeId(),
       this.currentBubbleId,
@@ -1731,14 +1743,33 @@ export struct ChatPage {
     this.store.nodeList = [...this.store.nodeList, newBubble];
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局（返回画布时 onShown 消费）
-    // ★ 0.151-D 需求 3：直接进入新子气泡的对话页（跳过「返回画布 + 双击气泡」两步）——
-    // 只切换 currentBubbleStore 即可：消息列表由 @Computed currentMessages 驱动，立即切到新气泡的空对话
-    this.currentBubbleStore.nodeID = newBubble.nodeID;
-    this.currentBubbleStore.bubbleX = newBubble.x;
-    this.currentBubbleStore.bubbleY = newBubble.y;
-    this.inputText = '';     // 新气泡新对话，清空输入框
-    this.pendingImages = []; // 清空未发送的图片附件
-    this.stopTTS(); // ★ 0.151-D：原停 TTS 依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此补停
+    this.stopTTS(); // ★ 0.151-D：切气泡前补停 TTS（原依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此停）
+    // ★ 0.162 第一段：消息区淡出 140ms（EaseIn 加速消失，模拟「页面关闭」）
+    this.getUIContext().animateTo({
+      duration: 140,
+      curve: Curve.EaseIn,
+      onFinish: () => {
+        // 第二段：淡出完成后才切换气泡——列表清空/重载发生在透明态，用户看不见闪变
+        this.currentBubbleStore.nodeID = newBubble.nodeID;
+        this.currentBubbleStore.bubbleX = newBubble.x;
+        this.currentBubbleStore.bubbleY = newBubble.y;
+        this.inputText = '';     // 新气泡新对话，清空输入框
+        this.pendingImages = []; // 清空未发送的图片附件
+        // ★ 0.162 第三段：消息区淡入 300ms（EaseOut 减速浮现，模拟「页面打开」）；
+        // 淡出 140ms + 淡入 300ms ≈ 440ms，落在用户要求的 0.3~0.5s 区间
+        this.getUIContext().animateTo({
+          duration: 300,
+          curve: Curve.EaseOut,
+          onFinish: () => {
+            this.branchAnimating = false; // 动画播完解锁
+          }
+        }, () => {
+          this.msgAreaOpacity = 1;
+        });
+      }
+    }, () => {
+      this.msgAreaOpacity = 0;
+    });
   }
 
   // ============================================================
@@ -2009,6 +2040,7 @@ export struct ChatPage {
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
+          .opacity(this.msgAreaOpacity) // ★ 0.162：分支切换过渡动画挂点（空态分支）
         } else {
           List({ space: 12, scroller: this.scroller }) {
             ForEach(this.currentMessages, (msg: ChatMessage) => {
@@ -2435,6 +2467,7 @@ export struct ChatPage {
           .layoutWeight(1)
           .width('100%')
           .padding({ left: 16, right: 16, top: 12 })
+          .opacity(this.msgAreaOpacity) // ★ 0.162：分支切换过渡动画挂点（消息列表分支）
         }
 
         // 图片预览区域
@@ -2478,7 +2511,9 @@ export struct ChatPage {
         Row() {
           // ★ 0.151-D：添加子气泡按钮挪到左下角行首（原顶栏文字按钮改 ＋ icon，样式与 BBTreeCanvas 画布 ＋ 同款；
           // 点击在当前气泡下新建子气泡）
-          Text('+')
+          // ★ 0.162：icon ＋ → 🌿（树杈/新枝）——原 ＋ 易被误解为「添加图片」，
+          // 换树杈传达「另起一个树杈（新分支）」语义；尺寸样式不变（32×32 圆角 8）
+          Text('🌿')
             .fontSize(18)
             .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
             .width(32)
