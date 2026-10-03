@@ -114,7 +114,7 @@ struct Index {
           })
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.162.1')
+        Text('v0.163.1')
           .fontSize(12)
           .fontColor(this.getThemeStore().isDark ? '#666666' : '#AAAAAA')
           .margin({ top: 12 })

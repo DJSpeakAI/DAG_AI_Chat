@@ -228,7 +228,8 @@ struct CodeBlockView {
 
   build() {
     Column() {
-      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大）
+      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大；
+      // ★ 0.163：三键去文字留纯 icon（⧉/↩⇄/⤢ 语义已明确），固定 24×22 同款尺寸整齐排列）
       Row() {
         // ★ 0.149：语言标签（无语言标识的代码块标记为 plaintext，不高亮）
         Text(this.lang.length > 0 ? this.lang : 'plaintext')
@@ -237,17 +238,16 @@ struct CodeBlockView {
           .margin({ right: 6 })
 
         // ★ 0.149：复制按钮——一键复制全部代码文本 + toast 提示成功
+        // ★ 0.163：去文字留纯 icon（⧉ 语义已明确），固定 24×22 三键同款整齐排列
         Row() {
           Text('⧉')
-            .fontSize(11)
-            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
-            .margin({ right: 3 })
-
-          Text('复制')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
         }
-        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+        .width(24)
+        .height(22)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .borderRadius(4)
         .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
         .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
@@ -257,40 +257,38 @@ struct CodeBlockView {
         })
 
         // 换行切换按钮：换行模式显示 ↩，滚动模式显示 ⇄
+        // ★ 0.163：去文字留纯 icon，固定 24×22 三键同款整齐排列
         Row() {
           Text(this.wrap ? '↩' : '⇄')
-            .fontSize(11)
-            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
-            .margin({ right: 3 })
-
-          Text(this.wrap ? '自动换行' : '横向滚动')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
         }
-        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+        .width(24)
+        .height(22)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .borderRadius(4)
         .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
         .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .margin({ right: 6 })
         .onClick(() => {
           this.wrap = !this.wrap;
         })
 
         // ★ 0.153：放大按钮——打开全屏代码查看弹窗（父组件渲染）
+        // ★ 0.163：去文字留纯 icon，固定 24×22 三键同款整齐排列
         Row() {
           Text('⤢')
-            .fontSize(11)
-            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
-            .margin({ right: 3 })
-
-          Text('放大')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
         }
-        .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+        .width(24)
+        .height(22)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .borderRadius(4)
         .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
         .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
-        .margin({ left: 6 })
         .onClick(() => {
           this.onZoom(this.content, this.lang); // ★ 0.149：加传 lang（放大弹窗同步高亮）
         })
@@ -2177,16 +2175,16 @@ export struct ChatPage {
                               // + 默认不换行（单行 + 超宽省略）+ 左上角「放大」按钮（全屏查看 + 换行切换）
                               Column() {
                                 // 左上角放大按钮（样式与代码块按钮统一）
+                                // ★ 0.163：去文字留纯 icon（与代码块三键同款 24×22）
                                 Row() {
                                   Text('⤢')
-                                    .fontSize(11)
-                                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
-                                    .margin({ right: 3 })
-                                  Text('放大')
-                                    .fontSize(11)
+                                    .fontSize(13)
                                     .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
                                 }
-                                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                                .width(24)
+                                .height(22)
+                                .justifyContent(FlexAlign.Center)
+                                .alignItems(VerticalAlign.Center)
                                 .borderRadius(4)
                                 .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
                                 .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
@@ -3055,16 +3053,16 @@ export struct ChatPage {
                 Blank()
 
                 // 换行切换按钮（样式与气泡内代码块按钮统一）
+                // ★ 0.163：去文字留纯 icon（与代码块三键同款 24×22）
                 Row() {
                   Text(this.codeZoomWrap ? '↩' : '⇄')
-                    .fontSize(11)
-                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
-                    .margin({ right: 3 })
-                  Text(this.codeZoomWrap ? '自动换行' : '横向滚动')
-                    .fontSize(11)
+                    .fontSize(13)
                     .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
                 }
-                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                .width(24)
+                .height(22)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(VerticalAlign.Center)
                 .borderRadius(4)
                 .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
                 .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
@@ -3209,16 +3207,16 @@ export struct ChatPage {
                 Blank()
 
                 // 换行切换按钮：不换行=单行+横向滚动，换行=固定列宽内折行
+                // ★ 0.163：去文字留纯 icon（与代码块三键同款 24×22）
                 Row() {
                   Text(this.tableZoomWrap ? '↩' : '⇄')
-                    .fontSize(11)
-                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
-                    .margin({ right: 3 })
-                  Text(this.tableZoomWrap ? '换行' : '不换行')
-                    .fontSize(11)
+                    .fontSize(13)
                     .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
                 }
-                .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+                .width(24)
+                .height(22)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(VerticalAlign.Center)
                 .borderRadius(4)
                 .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
                 .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
