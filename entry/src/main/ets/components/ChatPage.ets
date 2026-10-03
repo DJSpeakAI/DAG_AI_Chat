@@ -1715,7 +1715,7 @@ export struct ChatPage {
     this.imageViewerVisible = true;
   }
 
-  addBubble(): void {
+  addBubble(carryImages: string[] = []): void {
     if (!this.currentBubble) {
       return;
     }
@@ -1753,7 +1753,8 @@ export struct ChatPage {
         this.currentBubbleStore.bubbleX = newBubble.x;
         this.currentBubbleStore.bubbleY = newBubble.y;
         this.inputText = '';     // 新气泡新对话，清空输入框
-        this.pendingImages = []; // 清空未发送的图片附件
+        // ★ 0.166.1：携带图片带入新气泡（圈注「创建子气泡」的标注图）；默认空数组 = 原清空行为不变
+        this.pendingImages = carryImages;
         // ★ 0.162 第三段：消息区淡入 300ms（EaseOut 减速浮现，模拟「页面打开」）；
         // 淡出 140ms + 淡入 300ms ≈ 440ms，落在用户要求的 0.3~0.5s 区间
         this.getUIContext().animateTo({
@@ -1848,8 +1849,9 @@ export struct ChatPage {
         this.showToastSafe('AI 正在回复，图片已导入当前对话，回复完成后可再创建子气泡');
         return;
       }
-      this.addBubble(); // 内部会清空 pendingImages
-      this.pendingImages = [img];
+      // ★ 0.166.1 修复：图片必须随 addBubble 的切换回调带入——0.162 动画改造后清空发生在
+      // 140ms onFinish 回调里，原先「addBubble 后同步塞图」会被回调清空（圈注图丢失根因）
+      this.addBubble([img]);
     } else if (action === 'knowledge') {
       // ③ 存入知识库：打开卡片编辑弹窗，标注图作配图，AI 多模态提炼草稿（用户二次编辑后入库）
       this.openKnowledgeFromImage(img);
