@@ -213,7 +213,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.166.2') // ★ 0.166.2：平板进入画布后首页残留左栏修复——Navigation mode Auto→Stack（宽屏自动分栏是根因，强制单栏与手机一致）
+        Text('v0.166.3') // ★ 0.166.3：主题固定暗紫（方案 A）——setColorMode(DARK) 锁死 + isDark 恒 true + 删 onConfigurationUpdate，所有用户统一暗色配色不跟系统
           .fontSize(12)
           .fontColor(this.getThemeStore().isDark ? '#666666' : '#AAAAAA')
           .margin({ top: 12 })

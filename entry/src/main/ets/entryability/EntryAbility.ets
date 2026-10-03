@@ -3,14 +3,14 @@
 // ============================================================
 // 本文件是应用的 UI Ability（生命周期入口），负责：
 //   - 加载主页面（pages/Index）
-//   - 全局主题状态管理（ThemeStore，深浅色切换）
-//   - 系统配置变化监听（深浅色主题跟随系统切换）
+//   - 全局主题状态管理（ThemeStore）
+// ★ 0.166.3：主题固定暗紫（方案 A）——不再跟随系统深浅色，所有用户统一暗色配色
 //
 // ThemeStore 是全局 UI 运行时状态（非持久化），
 // 通过 AppStorageV2 在所有页面间共享。
 // ============================================================
 
-import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { AppStorageV2, window } from '@kit.ArkUI';
 import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
@@ -69,26 +69,26 @@ export default class EntryAbility extends UIAbility {
       }
     });
 
+    // ★ 0.166.3：主题固定暗紫（方案 A）——应用锁定暗色模式，不跟随系统深浅色：
+    // 亮色系统用户也统一看到暗紫配色（Pixso 设计稿为单一暗紫色系）；
+    // 系统状态栏/系统弹窗随 COLOR_MODE_DARK 走暗色风格，视觉全局统一
     try {
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
     } catch (err) {
-      // 设置失败静默忽略（跟随系统默认色模式）
+      // 设置失败静默忽略（isDark 仍固定 true，页面配色不受影响）
     }
 
-    // ★ 初始化主题状态：读取当前系统深浅色模式
+    // ★ 0.166.3：isDark 固定 true（不再读系统 colorMode）——全项目 isDark 三元恒走
+    // 暗色分支；亮色分支代码保留（未来若做双套色可直接复用）
     try {
       const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-      themeStore.isDark = this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+      themeStore.isDark = true;
     } catch (err) {
-      // 主题初始化失败静默忽略（默认浅色）
+      // 主题初始化失败静默忽略
     }
   }
 
-  // ★ 系统主题变化时实时更新全局 ThemeStore
-  onConfigurationUpdate(newConfig: Configuration): void {
-    const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-    themeStore.isDark = newConfig.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
-  }
+  // ★ 0.166.3：删除 onConfigurationUpdate——主题固定暗紫后不再响应系统深浅色切换
 
   onWindowStageDestroy(): void {
   }
