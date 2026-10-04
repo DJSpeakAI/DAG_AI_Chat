@@ -21,7 +21,7 @@
 import { http } from '@kit.NetworkKit'; // ★ 0.136：webSocket 已随播客路径移除（TTS 回归 HTTP）
 import { buffer, util } from '@kit.ArkTS'; // ★ 0.139：util（UUID 生成 + Base64Helper 解码，openspeech 2.0 协议需要）
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.136：HTTP 请求异常回调类型
-import { ChatMessage, ApiConfig, generateMessageId } from '../common/ChatModel';
+import { ChatMessage, ApiConfig, generateMessageId, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.185.0：connectPhoneticAccent（音标口音，prompt 生成用）
 import { WordQueryResult } from '../common/WordModel'; // ★ 0.145：AI 查词结果结构
 import { KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：AI 卡片草稿结果结构
 
@@ -341,12 +341,16 @@ export function streamChat(
 // The result feeds the translate popup and can be added to the word
 // bank. It never creates chat bubbles and never enters the DAG context.
 
-// System prompt for word lookup (strict JSON, no markdown wrapper)
-const WORD_QUERY_PROMPT = '你是英文词典助手。用户会给你一个英文单词或缩写。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"...","usPhonetic":"...","explain":"..."}。字段规则：word=用户查询的原文；fullName=仅当查询对象是缩写（如 OS、AI、CPU）时返回其英文全称（如 Operating System），普通单词必须返回空字符串；usPhonetic=美式音标并用斜杠包裹（缩写时返回全称的音标，普通单词返回该词音标）；explain=简明中文释义（缩写时返回全称的中文释义）。';
+// ★ 0.185.0：音标口音参数化（原常量改函数）——british=true 输出英式音标，false 美式（默认）。
+// 口音来源：connectPhoneticAccent().british（单词库设置弹窗切换，PersistenceV2 持久化）。
+function buildWordQueryPrompt(british: boolean): string {
+  const accent = british ? '英式' : '美式';
+  return `你是英文词典助手。用户会给你一个英文单词或缩写。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"...","usPhonetic":"...","explain":"..."}。字段规则：word=用户查询的原文；fullName=仅当查询对象是缩写（如 OS、AI、CPU）时返回其英文全称（如 Operating System），普通单词必须返回空字符串；usPhonetic=${accent}音标并用斜杠包裹（缩写时返回全称的音标，普通单词返回该词音标）；explain=简明中文释义（缩写时返回全称的中文释义）。`;
+}
 
 // ★ 0.155：检测文本是否含中文字符（CJK 统一表意区 0x4E00-0x9FFF）。
 // 划词含中文（纯中文或中英混合）→ 走中译英 prompt；纯英文 → 原英译中 prompt。
-// 混合词组无论第一个字符是中文还是英文，输出统一归一为「美式音标 + 英文词组」，
+// 混合词组无论第一个字符是中文还是英文，输出统一归一为「音标 + 英文词组」（口音随设置），
 // 与用户规则「以第一个字符为准」在结果上等价（两种方向最终都输出英文词组）。
 export function containsChinese(text: string): boolean {
   for (let i = 0; i < text.length; i++) {
@@ -360,9 +364,13 @@ export function containsChinese(text: string): boolean {
 
 // ★ 0.155：中译英查词 prompt——划词含中文时使用。
 // 中文部分译成对应英文单词、已有英文保持原样、按原词序组合成英文词组；
-// 输出统一为「美式音标 + 英文词组」：usPhonetic=整体音标、explain=英文词组
+// 输出统一为「音标 + 英文词组」：usPhonetic=整体音标、explain=英文词组
 //（浮窗按 音标→英文 顺序展示）；word=英文词组（入单词库的词条名）。
-const WORD_QUERY_ZH_PROMPT = '你是中英互译词典助手。用户会给你一段划选文本，其中包含中文（可能混有英文单词）。请把其中的中文部分翻译成对应的英文单词，已有的英文部分保持原样，按原顺序组合成英文词组。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"","usPhonetic":"...","explain":"..."}。字段规则：word=翻译后的完整英文词组；fullName=固定返回空字符串；usPhonetic=整个英文词组的美式音标并用斜杠包裹；explain=翻译后的完整英文词组（与 word 相同）。';
+// ★ 0.185.0：音标口音参数化（原常量改函数），与英译中 prompt 同步生效。
+function buildWordQueryZhPrompt(british: boolean): string {
+  const accent = british ? '英式' : '美式';
+  return `你是中英互译词典助手。用户会给你一段划选文本，其中包含中文（可能混有英文单词）。请把其中的中文部分翻译成对应的英文单词，已有的英文部分保持原样，按原顺序组合成英文词组。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"","usPhonetic":"...","explain":"..."}。字段规则：word=翻译后的完整英文词组；fullName=固定返回空字符串；usPhonetic=整个英文词组的${accent}音标并用斜杠包裹；explain=翻译后的完整英文词组（与 word 相同）。`;
+}
 
 // Parse the raw AI reply into a WordQueryResult.
 // Extracts the first '{' to the last '}' so a stray markdown fence or
@@ -404,9 +412,11 @@ export function queryWord(
   onDone: (result: WordQueryResult) => void,
   onError: (error: string) => void
 ): StreamController {
-  // ★ 0.155：划词含中文（纯中文/中英混合）→ 中译英 prompt（美式音标+英文格式）；
+  // ★ 0.155：划词含中文（纯中文/中英混合）→ 中译英 prompt（音标+英文格式）；
   // 纯英文 → 原英译中 prompt（中文释义格式）
-  const prompt = containsChinese(word) ? WORD_QUERY_ZH_PROMPT : WORD_QUERY_PROMPT;
+  // ★ 0.185.0：音标口音从单词库设置读取（美式默认/英式），两路 prompt 同步生效
+  const british = connectPhoneticAccent().british;
+  const prompt = containsChinese(word) ? buildWordQueryZhPrompt(british) : buildWordQueryPrompt(british);
   const messages: ChatMessage[] = [
     new ChatMessage(generateMessageId(), 'system', prompt),
     new ChatMessage(generateMessageId(), 'user', word)

@@ -299,6 +299,19 @@ export function connectKnowledgeCount(): KnowledgeCountStore {
   return PersistenceV2.connect(KnowledgeCountStore, 'knowledge-count-v1', () => new KnowledgeCountStore()) as KnowledgeCountStore;
 }
 
+// ★ 0.185.0：音标口音设置——划词查词生成的音标口音（美式默认/英式）。
+// 单词库顶栏 ⚙ 设置弹窗提供 美式（默认）/ 英式 两选项，切换需确认（切换时清空现有音标）。
+// 与 LearnCountStore 同模式：PersistenceV2 独立全新 key，无旧快照缺字段坑。
+@ObservedV2
+export class PhoneticAccentStore {
+  @Trace british: boolean = false; // false=美式音标（默认），true=英式音标
+}
+
+// ★ 0.185.0：连接音标口音持久化实例（全新 key，无历史迁移需求）
+export function connectPhoneticAccent(): PhoneticAccentStore {
+  return PersistenceV2.connect(PhoneticAccentStore, 'phonetic-accent-v1', () => new PhoneticAccentStore()) as PhoneticAccentStore;
+}
+
 // ============================================================
 // ★ 0.151：画布多树模式数据层（互通设计，0.151-bugfix2 用户实测纠正）
 // ============================================================

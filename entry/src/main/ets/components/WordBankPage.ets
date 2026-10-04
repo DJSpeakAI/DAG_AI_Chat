@@ -25,8 +25,8 @@
 // ============================================================
 
 import { WordItem, WordBankStore } from '../common/WordModel';
-import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）
-import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId } from '../utils/WordStoreUtil';
+import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
+import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
 import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
@@ -79,6 +79,11 @@ export struct WordBankPage {
   @Local learnSettingsVisible: boolean = false;
   @Local learnCustomInput: string = '';  // free-input temp value (validated 1~20 on confirm)
   @Local learnInputError: string = '';   // free-input validation error text (empty = no error)
+
+  // ★ 0.185.0: phonetic accent state (settings dialog section, same ⚙ dialog)
+  phoneticAccentStore: PhoneticAccentStore = connectPhoneticAccent(); // persisted accent (false=美式 default, true=英式)
+  @Local phoneticConfirmVisible: boolean = false; // switch confirm dialog (wipes phonetics on confirm)
+  @Local pendingAccentBritish: boolean = false;   // accent to apply after confirm
 
   // ★ 0.148: back-fill id/createTime on entries saved before 0.148.
   // Array head = newer (head-insert history), so descending timestamps
@@ -422,14 +427,20 @@ export struct WordBankPage {
   learnSettingsDialog() {
     Column() {
       Column() {
-        Text('学习数量设置')
+        Text('设置')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
+        // ★ 0.185.0: section label — learn count section (title now covers
+        // both learn count and phonetic accent)
+        Text('复习显示数量')
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 16 })
         Text('每次复习展示的词条数，生效于：AI 回复底部复习区、知识卡片提炼等待页')
           .fontSize(12)
           .fontColor(TEXT_TERTIARY)
-          .margin({ top: 6 })
+          .margin({ top: 4 })
         Row() {
           Button('1')
             .fontSize(14)
@@ -466,7 +477,7 @@ export struct WordBankPage {
             })
         }
         .width('100%')
-        .margin({ top: 16 })
+        .margin({ top: 8 })
         Row() {
           Text('自由输入：')
             .fontSize(14)
@@ -508,6 +519,47 @@ export struct WordBankPage {
             .fontColor(DANGER)
             .margin({ top: 6 })
         }
+        // ★ 0.185.0: phonetic accent section — 美式（默认）/ 英式；switching
+        // needs confirm (wipes existing phonetics), confirm dialog stacks above
+        Text('音标口音')
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 16 })
+        Text('划词查词生成音标的口音，切换将清空现有音标')
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+        Row() {
+          Button('美式（默认）')
+            .fontSize(14)
+            .fontColor(!this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(!this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .layoutWeight(1)
+            .onClick(() => {
+              if (!this.phoneticAccentStore.british) {
+                return; // already American — nothing to do
+              }
+              this.pendingAccentBritish = false;
+              this.phoneticConfirmVisible = true;
+            })
+          Button('英式')
+            .fontSize(14)
+            .fontColor(this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .layoutWeight(1)
+            .margin({ left: 8 })
+            .onClick(() => {
+              if (this.phoneticAccentStore.british) {
+                return; // already British — nothing to do
+              }
+              this.pendingAccentBritish = true;
+              this.phoneticConfirmVisible = true;
+            })
+        }
+        .width('100%')
+        .margin({ top: 8 })
         Button('关闭')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
@@ -527,6 +579,64 @@ export struct WordBankPage {
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .backgroundColor(OVERLAY)
+  }
+
+  // ★ 0.185.0: phonetic accent switch confirm dialog — exact warning text
+  // per spec: 切换音标后，原先的音标将会被删除
+  @Builder
+  phoneticConfirmDialog() {
+    Column() {
+      Column() {
+        Text('切换音标口音？')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text('切换音标后，原先的音标将会被删除')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ top: 12 })
+        Row() {
+          Button('取消')
+            .fontSize(14)
+            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(Color.Transparent)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.phoneticConfirmVisible = false;
+            })
+          Button('确认切换')
+            .fontSize(14)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(DANGER)
+            .borderRadius(RADIUS_CONTROL)
+            .layoutWeight(1)
+            .margin({ left: 12 })
+            .onClick(() => {
+              this.confirmPhoneticSwitch();
+            })
+        }
+        .width('100%')
+        .margin({ top: 16 })
+      }
+      .width('86%')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+      .padding(20)
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(OVERLAY)
+  }
+
+  // ★ 0.185.0: apply confirmed accent switch — persist, wipe existing
+  // phonetics, close both dialogs, toast feedback
+  confirmPhoneticSwitch(): void {
+    this.phoneticAccentStore.british = this.pendingAccentBritish;
+    clearAllPhonetics(this.wordBank);
+    this.phoneticConfirmVisible = false;
+    this.learnSettingsVisible = false;
+    this.showToast(this.pendingAccentBritish ? '已切换为英式音标，原音标已清空' : '已切换为美式音标，原音标已清空');
   }
 
   // ★ 0.148: single-delete confirm dialog — with the session-level
@@ -853,6 +963,10 @@ export struct WordBankPage {
         if (this.learnSettingsVisible) {
           this.learnSettingsDialog()
         }
+        // ★ 0.185.0: phonetic accent switch confirm dialog (stacks above settings)
+        if (this.phoneticConfirmVisible) {
+          this.phoneticConfirmDialog()
+        }
       }
       .backgroundColor(BG_APP) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
     }
@@ -870,6 +984,11 @@ export struct WordBankPage {
       }
       if (this.batchConfirmVisible) {
         this.batchConfirmVisible = false;
+        return true;
+      }
+      // ★ 0.185.0: phonetic accent confirm closes before settings dialog
+      if (this.phoneticConfirmVisible) {
+        this.phoneticConfirmVisible = false;
         return true;
       }
       // ★ 0.161: learn-count settings dialog closes before multi-select

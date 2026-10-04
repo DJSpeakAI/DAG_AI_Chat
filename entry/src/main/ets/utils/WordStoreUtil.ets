@@ -195,3 +195,12 @@ export function pickRandomWords(store: WordBankStore, count: number): WordItem[]
   }
   return pool.slice(0, count);
 }
+
+// ★ 0.185.0: clear every entry's phonetic (accent switch wipes old
+// pronunciations). In-place loop mirrors updateWordInBank; @Trace on
+// usPhonetic triggers the word-bank list refresh.
+export function clearAllPhonetics(store: WordBankStore): void {
+  for (let i = 0; i < store.words.length; i++) {
+    store.words[i].usPhonetic = '';
+  }
+}
