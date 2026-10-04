@@ -1273,12 +1273,13 @@ export struct BBTreeCanvas {
           .backgroundColor(SURFACE_NODE)
           .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
           .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
-          .position({ x: this.viewW - 24 - 48, y: this.viewH - 24 - 132 })
+          .position({ x: this.viewW - 14 - 48, y: this.viewH - 24 - 132 }) // ★ 0.170.1：右缘贴边 24→14（用户要求往右靠边一点，与信息条边距 14 对齐）
 
           // ★ 0.168.4：左下角固定 ☰ 唤出按钮（手机抽屉唯一入口；用户拍板取消边缘右滑——
           //   系统手势区占用左缘约 0~65px，快滑=系统返回/慢拖被吞，右滑唤出真机体验受限）；
           //   样式对齐右下角缩放控件（40×40 圆角按钮 + padding 4 容器 + SURFACE_NODE 底/描边/阴影），
-          //   同坐标系：x 24 与缩放控件右缘 24 镜像；y=viewH-24-44（高 48 → 底缘 viewH-20，
+          //   同坐标系：x 14 与缩放控件右缘 14 镜像（★ 0.170.1 双双贴边 24→14，用户要求靠边一点）；
+          //   y=viewH-24-44（高 48 → 底缘 viewH-20，
           //   与缩放控件底缘 viewH-24-132+136 严格对齐）；抽屉开时被遮罩盖住变暗（同缩放控件行为）
           if (!this.isTablet) {
             Column() {
@@ -1301,7 +1302,7 @@ export struct BBTreeCanvas {
             .backgroundColor(SURFACE_NODE)
             .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
             .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
-            .position({ x: 24, y: this.viewH - 24 - 44 })
+            .position({ x: 14, y: this.viewH - 24 - 44 }) // ★ 0.170.1：左缘贴边 24→14（用户要求往左靠边一点）
           }
 
       // ★ 0.167：平铺/选项卡两套自绘标题行（0.151-D）已删除——统一由上方信息条
