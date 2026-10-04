@@ -611,13 +611,14 @@ export struct BBTreeCanvas {
     return '画布';
   }
 
-  /** 边栏导航分发（★ 0.168「哪进哪回」：pushPath 压栈 + 目标页 pop 返回 = 从哪个入口进就回哪个入口） */
+  /** 边栏导航分发（★ 0.168「哪进哪回」：pushPath 压栈 + 目标页 pop 返回 = 从哪个入口进就回哪个入口；
+      ★ 0.180：跳转单词库/知识库不收抽屉——页面被覆盖期间 sidebarVisible 保留，返回画布时边栏保持打开） */
   onNavClick(kind: string): void {
     if (kind === 'wordbank') {
-      this.closeSidebar();
+      // 不收抽屉：pop 返回后边栏原样在
       this.pathStack.pushPath({ name: 'WordBankPage' });
     } else if (kind === 'knowledge') {
-      this.closeSidebar();
+      // 不收抽屉：同上，返回时边栏保持
       this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
     } else if (kind === 'settings') {
       this.closeSidebar();
