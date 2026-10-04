@@ -57,7 +57,7 @@ export struct BBTreeCanvas {
   @Local tabRenameId: string = '';
   @Local tabRenameText: string = '';
 
-  // ★ 0.168：左侧边栏（Pixso 工作台稿落地）——平板 208 常驻带文字 / 手机 72 窄栏抽屉
+  // ★ 0.168：左侧边栏（Pixso 工作台稿落地）——平板 208 常驻 / 手机抽屉（★ 0.170.2 抽屉内容对齐平板完整版，同宽 208）
   @Local isTablet: boolean = false;        // 断点：屏宽 ≥600vp = 平板宽边栏
   @Local sidebarVisible: boolean = false;  // 手机抽屉开关（平板常驻不用）
   account: HuaweiAccountStore = connectHuaweiAccount(); // 边栏底部头像/昵称（华为账号登录态）
@@ -663,99 +663,71 @@ export struct BBTreeCanvas {
   }
 
   // ★ 0.168：边栏导航项（kind: canvas/wordbank/knowledge/settings；画布=当前页选中态）
+  // ★ 0.170.2：手机抽屉内容对齐平板——统一 icon + 文字 44 高（原手机 48×48 纯图标分支删除：
+  //   抽屉为点击唤出的浮层，宽度不再是约束，用户拍板中文标签直接显示）
   @Builder
   SideBarNavItem(kind: string) {
-    if (this.isTablet) {
-      // 平板：icon + 文字，44 高（设计稿 Frame_2_59：padding 12 / 圆角 RADIUS_NAV）
-      Row({ space: 10 }) {
-        if (kind === 'canvas') {
-          this.DagIcon(18, TEXT_PRIMARY)
-        } else {
-          Image(this.navIcon(kind))
-            .width(18)
-            .height(18)
-            .objectFit(ImageFit.Contain)
-        }
-        Text(this.navLabel(kind))
-          .fontSize(FONT_SIZE_NAV_LABEL)
-          .fontFamily(kind === 'canvas' ? FONT_INTER_SEMIBOLD : FONT_INTER)
-          .fontColor(kind === 'canvas' ? TEXT_PRIMARY : TEXT_SECONDARY)
+    Row({ space: 10 }) {
+      if (kind === 'canvas') {
+        this.DagIcon(18, TEXT_PRIMARY)
+      } else {
+        Image(this.navIcon(kind))
+          .width(18)
+          .height(18)
+          .objectFit(ImageFit.Contain)
       }
-      .width('100%')
-      .height(44)
-      .padding({ left: 12, right: 12 })
-      .borderRadius(RADIUS_NAV)
-      .backgroundColor(kind === 'canvas' ? SURFACE_HOVER : Color.Transparent)
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        this.onNavClick(kind);
-      })
-    } else {
-      // 手机：48×48 纯图标按钮（设计稿 Frame_2_215；画布选中态 SURFACE_HOVER 底）
-      Column() {
-        if (kind === 'canvas') {
-          this.DagIcon(20, TEXT_PRIMARY)
-        } else {
-          Image(this.navIcon(kind))
-            .width(20)
-            .height(20)
-            .objectFit(ImageFit.Contain)
-        }
-      }
-      .width(48)
-      .height(48)
-      .borderRadius(RADIUS_NAV)
-      .backgroundColor(kind === 'canvas' ? SURFACE_HOVER : Color.Transparent)
-      .justifyContent(FlexAlign.Center)
-      .onClick(() => {
-        this.onNavClick(kind);
-      })
+      Text(this.navLabel(kind))
+        .fontSize(FONT_SIZE_NAV_LABEL)
+        .fontFamily(kind === 'canvas' ? FONT_INTER_SEMIBOLD : FONT_INTER)
+        .fontColor(kind === 'canvas' ? TEXT_PRIMARY : TEXT_SECONDARY)
     }
+    .width('100%')
+    .height(44)
+    .padding({ left: 12, right: 12 })
+    .borderRadius(RADIUS_NAV)
+    .backgroundColor(kind === 'canvas' ? SURFACE_HOVER : Color.Transparent)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.onNavClick(kind);
+    })
   }
 
-  // ★ 0.168：边栏主体（平板 208 常驻带文字 / 手机 72 窄栏；点非按钮空白处手机收抽屉回画布）
+  // ★ 0.168：边栏主体（平板 208 常驻 / 手机抽屉；点非按钮空白处手机收抽屉回画布）
+  // ★ 0.170.2：手机抽屉内容对齐平板完整版——Logo+应用名+副标题/工作区标签/导航带文字/账号行
+  //   全部放开（原 72 窄栏纯图标分支删除：抽屉为点击唤出浮层，宽度不再是约束，用户拍板）
   @Builder
   SideBarPanel() {
     Column() {
-      // ── 顶部 Logo 区（平板带应用名 + 副标题，手机仅图标）──
-      if (this.isTablet) {
-        Row({ space: 10 }) {
-          this.SideBarLogo(36)
-          Column({ space: 2 }) {
-            Text('DAG AI Chat')
-              .fontSize(FONT_SIZE_CARD_TITLE)
-              .fontWeight(600)
-              .fontFamily(FONT_INTER_SEMIBOLD)
-              .fontColor(TEXT_PRIMARY)
-              .maxLines(1)
-            Text('对话式 DAG 学习工具')
-              .fontSize(FONT_SIZE_CAPTION)
-              .fontFamily(FONT_INTER)
-              .fontColor(TEXT_TERTIARY)
-              .maxLines(1)
-          }
-          .alignItems(HorizontalAlign.Start)
+      // ── 顶部 Logo 区（Logo + 应用名 + 副标题，平板/手机抽屉同款）──
+      Row({ space: 10 }) {
+        this.SideBarLogo(36)
+        Column({ space: 2 }) {
+          Text('DAG AI Chat')
+            .fontSize(FONT_SIZE_CARD_TITLE)
+            .fontWeight(600)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .fontColor(TEXT_PRIMARY)
+            .maxLines(1)
+          Text('对话式 DAG 学习工具')
+            .fontSize(FONT_SIZE_CAPTION)
+            .fontFamily(FONT_INTER)
+            .fontColor(TEXT_TERTIARY)
+            .maxLines(1)
         }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .margin({ top: 20, bottom: 24 })
-      } else {
-        Column() {
-          this.SideBarLogo(36)
-        }
-        .margin({ top: 20, bottom: 16 })
+        .alignItems(HorizontalAlign.Start)
       }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ top: 20, bottom: 24 })
 
-      // ── 工作区分组标签（仅平板，设计稿 Label 10 号字距 0.5）──
-      if (this.isTablet) {
-        Text('工作区')
-          .fontSize(FONT_SIZE_LABEL)
-          .fontFamily(FONT_INTER)
-          .fontColor(TEXT_TERTIARY)
-          .letterSpacing(0.5)
-          .width('100%')
-          .margin({ bottom: 6 })
-      }
+      // ── 工作区分组标签（设计稿 Label 10 号字距 0.5；0.170.2 手机抽屉同显）──
+      Text('工作区')
+        .fontSize(FONT_SIZE_LABEL)
+        .fontFamily(FONT_INTER)
+        .fontColor(TEXT_TERTIARY)
+        .letterSpacing(0.5)
+        .width('100%')
+        .margin({ bottom: 6 })
 
       // ── 导航项：画布（选中）/ 单词库 / 知识库 ──
       this.SideBarNavItem('canvas')
@@ -765,45 +737,38 @@ export struct BBTreeCanvas {
       // ── 弹性空隙（底部设置 + 账号沉底）──
       Blank()
 
-      // ── 底部：设置 + 账号 ──
+      // ── 底部：设置 + 账号（0.170.2 手机抽屉同款完整账号行）──
       this.SideBarNavItem('settings')
-      if (this.isTablet) {
-        Divider()
-          .color(STROKE_CARD)
-          .width('100%')
-          .margin({ top: 6, bottom: 6 })
-        Row({ space: 10 }) {
-          this.SideBarAvatar(36)
-          Text(this.getAccountDisplayName())
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .fontFamily(FONT_INTER)
-            .fontColor(TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        }
+      Divider()
+        .color(STROKE_CARD)
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-      } else {
-        Column() {
-          this.SideBarAvatar(34)
-        }
-        .margin({ top: 12 })
+        .margin({ top: 6, bottom: 6 })
+      Row({ space: 10 }) {
+        this.SideBarAvatar(36)
+        Text(this.getAccountDisplayName())
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontFamily(FONT_INTER)
+          .fontColor(TEXT_SECONDARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
       }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
     }
-    .width(this.isTablet ? 208 : 72)
+    .width(208) // ★ 0.170.2：手机抽屉同宽 208（原 72 窄栏——内容对齐平板后文字需要空间）
     .height('100%')
     .padding({ left: 12, right: 12, bottom: 16 })
     .backgroundColor(BG_NAV)
-    .alignItems(this.isTablet ? HorizontalAlign.Start : HorizontalAlign.Center)
+    .alignItems(HorizontalAlign.Start)
     .onClick(() => {
       // 手机抽屉：点边栏任何非按钮空白处收起回画布（用户拍板；按钮 onClick 已消费事件不冒泡至此）
       if (!this.isTablet) {
         this.closeSidebar();
       }
     })
-    // ★ 0.168：手机抽屉滑入滑出（平板恒 0 无副作用；隐藏 -72 屏幕外不挡触摸）
-    .translate({ x: this.isTablet ? 0 : (this.sidebarVisible ? 0 : -72) })
+    // ★ 0.168：手机抽屉滑入滑出（平板恒 0 无副作用）；★ 0.170.2 隐藏位移随宽度 72→208（屏幕外不挡触摸）
+    .translate({ x: this.isTablet ? 0 : (this.sidebarVisible ? 0 : -208) })
   }
 
   // ★ 0.168：手机抽屉层（Stack 挂画布区顶层）——点遮罩收起；平板不渲染
