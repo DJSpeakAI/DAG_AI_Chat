@@ -16,7 +16,7 @@
 
 import { AppStorageV2, PersistenceV2, display } from '@kit.ArkUI'; // ★ 0.168：display 屏宽断点（平板/手机边栏形态）
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch } from '../common/ChatModel';
-import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token（BG_NAV/RADIUS_NAV/NAV_LABEL/LABEL/CAPTION/SOFT）
+import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token；★ 0.173.1：删「工作区」标签后 FONT_SIZE_LABEL 无使用处，移出 import
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
@@ -60,6 +60,13 @@ export struct BBTreeCanvas {
   // ★ 0.168：左侧边栏（Pixso 工作台稿落地）——平板 208 常驻 / 手机抽屉（★ 0.170.2 抽屉内容对齐平板完整版，同宽 208）
   @Local isTablet: boolean = false;        // 断点：屏宽 ≥600vp = 平板宽边栏
   @Local sidebarVisible: boolean = false;  // 手机抽屉开关（平板常驻不用）
+  // ★ 0.173.1：单击选中气泡（画布页本地视觉焦点，不污染全局 currentBubbleStore 对话语义）
+  @Local selectedNodeId: string = '';
+  // ★ 0.173.2：手动双击判定状态——单击手势与系统 TapGesture(count:2) 并列绑定时，
+  //   ArkUI 手势仲裁让单击在第一击抬起即识别成功、吃掉双击识别流（真机实证双击失效），
+  //   故删系统双击手势，同一气泡两次单击间隔 <300ms 手动判定为双击
+  @Local lastTapNodeId: string = '';
+  @Local lastTapTime: number = 0;
   account: HuaweiAccountStore = connectHuaweiAccount(); // 边栏底部头像/昵称（华为账号登录态）
 
   aboutToAppear(): void {
@@ -317,12 +324,24 @@ export struct BBTreeCanvas {
     });
   }
 
-  // ★ 判断连线是否属于选中分支（0.123）
+  // ★ 0.173.1：视觉焦点节点——单击选中优先（单选替换语义），无单击时回落「当前对话气泡」
+  //   （双击进入对话后返回的选中态，原行为保留）；双击导航时清 selectedNodeId 无缝交棒
+  getFocusNodeId(): string {
+    return this.selectedNodeId !== '' ? this.selectedNodeId : this.currentBubbleStore.nodeID;
+  }
+
+  // ★ 0.173.1：气泡是否处于选中态（卡片高亮/「双击进入对话」/chevron/连线高亮共用判断）
+  isBubbleSelected(bubble: BubbleNode): boolean {
+    return bubble.nodeID === this.getFocusNodeId();
+  }
+
+  // ★ 判断连线是否属于选中分支（0.123；★ 0.173.1：焦点跟随单击选中）
   isHighlightedLine(bubble: BubbleNode): boolean {
-    // 选中节点自身的入边高亮
-    if (bubble.nodeID === this.currentBubbleStore.nodeID) return true;
-    // 选中节点的出边高亮
-    if (bubble.parentID === this.currentBubbleStore.nodeID) return true;
+    const focus = this.getFocusNodeId();
+    // 焦点节点自身的入边高亮
+    if (bubble.nodeID === focus) return true;
+    // 焦点节点的出边高亮
+    if (bubble.parentID === focus) return true;
     return false;
   }
 
@@ -766,7 +785,7 @@ export struct BBTreeCanvas {
             .fontFamily(FONT_INTER_SEMIBOLD)
             .fontColor(TEXT_PRIMARY)
             .maxLines(1)
-          Text('对话式 DAG 学习工具')
+          Text('你的AI学习伴侣') // ★ 0.173.1：副标题改文案（原「对话式 DAG 学习工具」），用户拍板
             .fontSize(FONT_SIZE_CAPTION)
             .fontFamily(FONT_INTER)
             .fontColor(TEXT_TERTIARY)
@@ -778,16 +797,7 @@ export struct BBTreeCanvas {
       .alignItems(VerticalAlign.Center)
       .margin({ top: 20, bottom: 24 })
 
-      // ── 工作区分组标签（设计稿 Label 10 号字距 0.5；0.170.2 手机抽屉同显）──
-      Text('工作区')
-        .fontSize(FONT_SIZE_LABEL)
-        .fontFamily(FONT_INTER)
-        .fontColor(TEXT_TERTIARY)
-        .letterSpacing(0.5)
-        .width('100%')
-        .margin({ bottom: 6 })
-
-      // ── 导航项：画布（选中）/ 单词库 / 知识库 ──
+      // ── 导航项：画布（选中）/ 单词库 / 知识库（★ 0.173.1：删「工作区」分组标签，用户拍板） ──
       this.SideBarNavItem('canvas')
       this.SideBarNavItem('wordbank')
       this.SideBarNavItem('knowledge')
@@ -997,7 +1007,7 @@ export struct BBTreeCanvas {
                 .fontColor(TEXT_PRIMARY)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              if (bubble.nodeID === this.currentBubbleStore.nodeID) {
+              if (this.isBubbleSelected(bubble)) {
                 Text('双击进入对话')
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
@@ -1014,8 +1024,8 @@ export struct BBTreeCanvas {
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
-            // 选中态右侧 chevron（UI_GUIDELINES 六-6）
-            if (bubble.nodeID === this.currentBubbleStore.nodeID) {
+            // 选中态右侧 chevron（UI_GUIDELINES 六-6；★ 0.173.1：判断统一走 isBubbleSelected）
+            if (this.isBubbleSelected(bubble)) {
               Image($r('app.media.chevronright'))
                 .width(16)
                 .height(16)
@@ -1025,13 +1035,13 @@ export struct BBTreeCanvas {
           .height(NODE_H)
           .padding({ top: 12, bottom: 12, left: 14, right: 14 })
           .borderRadius(RADIUS_NODE)
-          // 选中态 = 悬停态规格：SURFACE_HOVER 底 + STROKE_BRAND 描边 + 阴影（UI_GUIDELINES 六-6）
-          .backgroundColor(bubble.nodeID === this.currentBubbleStore.nodeID ? SURFACE_HOVER : SURFACE_NODE)
+          // 选中态 = 悬停态规格：SURFACE_HOVER 底 + STROKE_BRAND 描边 + 阴影（UI_GUIDELINES 六-6；★ 0.173.1：单击选中同款）
+          .backgroundColor(this.isBubbleSelected(bubble) ? SURFACE_HOVER : SURFACE_NODE)
           .border({
             width: 1,
-            color: bubble.nodeID === this.currentBubbleStore.nodeID ? STROKE_BRAND : STROKE_CARD
+            color: this.isBubbleSelected(bubble) ? STROKE_BRAND : STROKE_CARD
           })
-          .shadow(bubble.nodeID === this.currentBubbleStore.nodeID
+          .shadow(this.isBubbleSelected(bubble)
             ? { radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 }
             : { radius: 0, color: 'rgba(0,0,0,0)', offsetX: 0, offsetY: 0 })
           .position({
@@ -1047,14 +1057,30 @@ export struct BBTreeCanvas {
             centerX: 0,
             centerY: 0
           })
-          // ── 双击导航到对话（保留原有逻辑） ──
+          // ── 单击选中 + 手动双击进入（★ 0.173.2：系统 TapGesture(count:2) 与单击手势并列绑定时，
+          //    ArkUI 手势仲裁让单击第一击抬起即识别成功、吃掉双击识别流（真机实证双击失效），
+          //    改为单击手势内手动判定：同一气泡两次单击间隔 <300ms = 双击进入对话；否则 = 单击选中。
+          //    单击选中即时反馈；双击时第一击先高亮、第二击进入，视觉衔接自然） ──
           .gesture(
-            TapGesture({ count: 2 })
+            TapGesture({ count: 1 })
               .onAction(() => {
-                this.currentBubbleStore.nodeID = bubble.nodeID;
-                this.currentBubbleStore.bubbleX = bubble.x;
-                this.currentBubbleStore.bubbleY = bubble.y;
-                this.pathStack.pushPath({ name: 'ChatPage' });
+                const now = Date.now();
+                // 双击路径：进入对话（导航前清本地选中，交棒 current 选中语义）
+                if (this.lastTapNodeId === bubble.nodeID && now - this.lastTapTime < 300) {
+                  this.lastTapNodeId = '';
+                  this.lastTapTime = 0;
+                  this.selectedNodeId = '';
+                  this.currentBubbleStore.nodeID = bubble.nodeID;
+                  this.currentBubbleStore.bubbleX = bubble.x;
+                  this.currentBubbleStore.bubbleY = bubble.y;
+                  this.pathStack.pushPath({ name: 'ChatPage' });
+                  return; // 双击路径不记录本次 tap（防从对话页返回后再点同气泡误判双击）
+                }
+                // 单击路径：立即选中（高亮卡片+「双击进入对话」+连线高亮，与「进入后返回」选中样式一致）
+                this.selectedNodeId = bubble.nodeID;
+                this.redrawEdges(); // Canvas 无状态绑定 → 焦点变化手动重绘连线高亮
+                this.lastTapNodeId = bubble.nodeID;
+                this.lastTapTime = now;
               })
           )
           // ── 长按弹操作菜单（★ 0.147：原直接弹删除确认改为两项菜单） ──

@@ -50,6 +50,6 @@ export const FONT_SIZE_LABEL: number = 10;         // Label：分组标题（字
 export const FONT_SIZE_CAPTION: number = 10;       // Caption：弱化说明
 
 // ── 画布组件尺寸（UI_GUIDELINES 六-5）──
-export const NODE_W: number = 150;    // 节点卡片宽（★ 0.167.3：200→150 砍 1/4，用户拍板）
+export const NODE_W: number = 170;    // 节点卡片宽（★ 0.173.1：150→170 拉宽，容纳元信息行「N 条对话 · X分钟前」完整显示，用户拍板；0.167.3 曾 200→150 砍 1/4）
 export const NODE_H: number = 68;     // 节点卡片高
 export const NODE_ICON: number = 40;  // 节点图标容器（圆角 RADIUS_LOGO，225° 渐变）
