@@ -176,6 +176,64 @@ export struct BBTreeCanvas {
     return '空气泡';
   }
 
+  // ★ 0.172.3：气泡最近消息时间——取最后一条消息 messageId 内嵌时间戳（generateMessageId 格式 msg_${Date.now()}_xxx，
+  //   全项目所有消息同格式）→ 零模型改动、旧持久化数据天然支持；空气泡/解析失败兜底 0
+  getBubbleLastTime(bubble: BubbleNode): number {
+    const last = bubble.messages[bubble.messages.length - 1];
+    if (!last) {
+      return 0;
+    }
+    const parts = last.messageId.split('_');
+    if (parts.length < 2 || parts[0] !== 'msg') {
+      return 0;
+    }
+    const ts = Number(parts[1]);
+    if (isNaN(ts) || ts <= 0) {
+      return 0;
+    }
+    return ts;
+  }
+
+  // ★ 0.172.3：相对时间格式化（参考图惯例：刚刚 / X分钟前 / X小时前 / 昨天 / X天前 / X周前 / X个月前）
+  formatRelativeTime(ts: number): string {
+    if (ts <= 0) {
+      return '';
+    }
+    const diff = Date.now() - ts;
+    if (diff < 60 * 1000) {
+      return '刚刚';
+    }
+    if (diff < 60 * 60 * 1000) {
+      return `${Math.floor(diff / (60 * 1000))}分钟前`;
+    }
+    // 今天内按小时；昨天按日历日判断（跨 0 点即「昨天」，参考图语义）
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (ts >= startOfToday) {
+      return `${Math.floor(diff / (60 * 60 * 1000))}小时前`;
+    }
+    if (ts >= startOfToday - 24 * 60 * 60 * 1000) {
+      return '昨天';
+    }
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+    if (days < 7) {
+      return `${days}天前`;
+    }
+    if (days < 30) {
+      return `${Math.floor(days / 7)}周前`;
+    }
+    return `${Math.floor(days / 30)}个月前`;
+  }
+
+  // ★ 0.172.3：卡片元信息行——「N 条对话 · 最近消息时间」（参考图格式；无时间数据时只显示条数）
+  getBubbleMeta(bubble: BubbleNode): string {
+    const time = this.formatRelativeTime(this.getBubbleLastTime(bubble));
+    if (time === '') {
+      return `${bubble.messages.length} 条对话`;
+    }
+    return `${bubble.messages.length} 条对话 · ${time}`;
+  }
+
   // ★ 0.151-bugfix：按模式分池保存工作区（两池隔离核心写路径）
   // flat：工作区 = 平铺树 → 存回 bubbleTreeJson（现状路径）
   // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson；
@@ -945,10 +1003,13 @@ export struct BBTreeCanvas {
                   .fontFamily(FONT_INTER)
                   .fontColor(BRAND_SECONDARY)
               } else {
-                Text(`${bubble.messages.length} 条对话`)
+                // ★ 0.172.3：元信息行加最近消息时间（参考图「N 条对话 · X小时前」）；maxLines(1) 防长文本撑破 68 高卡片
+                Text(this.getBubbleMeta(bubble))
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
                   .fontColor(TEXT_SECONDARY)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
             }
             .alignItems(HorizontalAlign.Start)
