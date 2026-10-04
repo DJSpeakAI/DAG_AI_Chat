@@ -61,11 +61,13 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.174.x|首页+全局设置弹窗 UI 优化（弹窗 Tab 分段控件、isDark 三元全收敛 token、标题 600+SemiBold、保存/开启云同步主紫按钮、Toggle、面板 SURFACE_NODE+描边）；删首页「图结构对话 · 多分支推理」文案；**满屏教训：Navigation NavBarContent 底部 420px 是 toolbar 预留且被 clip 裁剪，页面组件背景无法突破——Stack 包 Navigation 做全局背景层+expandSafeArea 一层铺满全屏（顺带消除全 app 手势条黑区）；setWindowBackgroundColor 手机端不可用（编译警告属实、运行时静默失败勿用）**；新建 media/user.svg；FontWeight.SemiBold 枚举不存在→数字 600+fontFamily 切 Inter-SemiBold；真机像素采样实证全通过|
 |0.175.0|设置弹窗三 Tab 统一协调——①保存右侧加「返回」按钮（次级样式 SURFACE_SOFT/TEXT_SECONDARY、走 requestClose 未保存确认；云同步 Tab 补全宽返回、三 Tab 底部不空）②**小字行间距以云同步 Tab 为标准入 UI_GUIDELINES 四章（字号 11/副标题距 2/提示条目距 4/连续多行提示 lineHeight 18——乱源=多行长文本默认行高挤，云同步条目单行无此问题）**③称呼示例「大明」→「好奇宝宝」|
 |0.176.0|画布页信息条左上角返回箭头「←」删除（用户拍板，全设备尺寸——信息条全设备共用一处、仅 padding 分档，删一处即全删；侧边栏工作台 0.168 落地后画布即主页面，原 pop() 回 Index 入口已由边栏导航承担；pathStack 仍有 pushPath 引用保留）|
+|0.177.0|两修：①IDE 警告「请使用分层图标」——app.json5 icon 从 $media:app_logo 改指 $media:layered_image（AppScope 分层图标配置 background=新 logo 深紫版+foreground 透明；app_logo.png 与 background.png 本就同图 121489 字节，桌面图标视觉零变化；app_logo.png 保留未删）②**冷启动旧 logo 闪现 0.1s——根因=startWindowIcon 引用的 startIcon.png 仍是 0.163 旧 DAG 气泡 logo（0.174.4 换新 logo 时只换了 app_logo+两处 background 三资源位、漏了 startIcon），用 background.png 同图替换（字节级一致）**；装机 pad（192.168.2.16:33685）冷启动实证 v0.177.0 首页正常|
+|0.178.0|两改一确认：①**冷启动 logo 闪现根治——0.177.0「换新 logo」方向错误被用户否决（「绝对不允许」闪任何 logo），正解=startWindowIcon 透明化（startIcon.png 换 108×108 全透明 png、GDI+ 生成 175 字节 alpha=0 已验证，冷启动只显示背景色不闪任何图形）+ start_window_background base/dark 两处 #FFFFFF/#000000→#120B1F（=BG_APP 应用底色，启动页与首页无缝；启动页在应用进程前由系统按系统深浅色选资源、两处都改保证任何模式暗紫）**②画布页信息条标题「知识画布」→「气泡树」（用户拍板）③桌面短名 DAGAI 用户确认保留不动；装机 pad 杀进程冷启动实证 v0.178.0 首页正常+画布页「气泡树」标题显示|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.176.0（versionCode 1000038）**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.178.0（versionCode 1000040）**
 - 版本线主文档：docs/0.167.md（历史线仅存 0.165.md，0.160~0.164 已清理）
-- 真机测试设备：MatePad 11.5 S 活力版（平板）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）
+- 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，2026-10-04 端口 33685）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**
 
 ## 全局硬性约束
 1. 代码清理规则：全部删除console/hilog调试打印；注释掉的大块死代码直接删除。

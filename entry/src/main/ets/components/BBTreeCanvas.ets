@@ -1148,10 +1148,11 @@ export struct BBTreeCanvas {
               //   落地后画布即主页面，无上级页面可返（原 pop() 回 Index 入口已由边栏导航承担）
               // 标题 + 统计（ScreenTitle 16 SemiBold + Meta 11，UI_GUIDELINES 三/六）
               // ★ 0.167.6 曾小屏不渲染标题（只留 4 图标）；★ 0.167.8 用户拍板加回——
-              //   「知识画布 + N 个气泡 · N 条对话」小屏左上方也要显示（用户夸平板好看），
+              //   「气泡树 + N 个气泡 · N 条对话」小屏左上方也要显示（用户夸平板好看），
               //   layoutWeight(1) 弹性收缩 + maxLines(1) 保证右侧 4 图标永不溢出
+              // ★ 0.178.0：标题「知识画布」→「气泡树」（用户拍板）
               Column({ space: 2 }) {
-                Text('知识画布')
+                Text('气泡树')
                   .fontSize(FONT_SIZE_SCREEN_TITLE)
                   .fontWeight(600)
                   .fontFamily(FONT_INTER_SEMIBOLD)
