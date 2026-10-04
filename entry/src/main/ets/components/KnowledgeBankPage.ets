@@ -25,14 +25,14 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { AppStorageV2 } from '@kit.ArkUI';
 import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
-import { ThemeStore } from '../entryability/EntryAbility'; // dark/light theme
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
+// ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
+import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 
 @ComponentV2
 export struct KnowledgeBankPage {
@@ -84,11 +84,6 @@ export struct KnowledgeBankPage {
   @Local cardSettingsVisible: boolean = false;
   @Local cardCustomInput: string = '';  // free-input temp value (validated 1~20 on confirm)
   @Local cardInputError: string = '';   // free-input validation error text (empty = no error)
-
-  // Global theme state (same pattern as ChatPage / WordBankPage)
-  getThemeStore(): ThemeStore {
-    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-  }
 
   // ★ 0.148: live-filtered + sorted view — fuzzy match on title +
   // definition (spec 2.1.4: title + body content), createdAt asc/desc.
@@ -282,23 +277,23 @@ export struct KnowledgeBankPage {
       Button('←')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
           this.pathStack.pop();
         })
       Text('知识库')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
+        .fontWeight(600)
+        .fontColor(TEXT_PRIMARY)
       Blank()
         .layoutWeight(1)
       // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
       Button('⚙')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 8, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -312,7 +307,7 @@ export struct KnowledgeBankPage {
         Button('+')
           .fontSize(20)
           .backgroundColor(Color.Transparent)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
           .onClick(() => {
             this.openAddEditor();
@@ -321,7 +316,7 @@ export struct KnowledgeBankPage {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
           .fontSize(14)
-          .fontColor('#F44336')
+          .fontColor(DANGER)
           .backgroundColor(Color.Transparent)
           .padding({ left: 8, right: 8 })
           .onClick(() => {
@@ -340,19 +335,19 @@ export struct KnowledgeBankPage {
     Column() {
       Column() {
         Text('知识卡片数量设置')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         Text('每次复习展示的卡片数，生效于：AI 回复底部复习区、知识卡片提炼等待页')
           .fontSize(12)
-          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 6 })
         Row() {
           Button('1（默认）')
             .fontSize(14)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? '#1976D2' : Color.Transparent)
-            .borderRadius(6)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .onClick(() => {
               this.knowledgeCountStore.knowledgeCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
@@ -360,9 +355,9 @@ export struct KnowledgeBankPage {
             })
           Button('2')
             .fontSize(14)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? '#1976D2' : Color.Transparent)
-            .borderRadius(6)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 8 })
             .onClick(() => {
@@ -371,9 +366,9 @@ export struct KnowledgeBankPage {
             })
           Button('3')
             .fontSize(14)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 3 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 3 ? '#1976D2' : Color.Transparent)
-            .borderRadius(6)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 3 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 3 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 8 })
             .onClick(() => {
@@ -386,14 +381,14 @@ export struct KnowledgeBankPage {
         Row() {
           Text('自由输入：')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
           TextInput({ text: this.cardCustomInput, placeholder: '1~20' })
             .fontSize(14)
             .layoutWeight(1)
             .height(40)
             .padding({ left: 12, right: 12 })
-            .borderRadius(8)
-            .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_SOFT)
             .type(InputType.Number)
             .onChange((value: string) => {
               this.cardCustomInput = value;
@@ -401,9 +396,9 @@ export struct KnowledgeBankPage {
             })
           Button('确定')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#1976D2')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(BRAND_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
             .margin({ left: 8 })
             .padding({ left: 14, right: 14 })
             .onClick(() => {
@@ -421,12 +416,12 @@ export struct KnowledgeBankPage {
         if (this.cardInputError.length > 0) {
           Text(this.cardInputError)
             .fontSize(12)
-            .fontColor('#F44336')
+            .fontColor(DANGER)
             .margin({ top: 6 })
         }
         Button('关闭')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+          .fontColor(TEXT_SECONDARY)
           .backgroundColor(Color.Transparent)
           .width('100%')
           .margin({ top: 12 })
@@ -435,14 +430,14 @@ export struct KnowledgeBankPage {
           })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss
@@ -451,17 +446,17 @@ export struct KnowledgeBankPage {
     Column() {
       Column() {
         Text(this.editorIsAdd ? '新增知识卡' : '编辑知识卡')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         TextInput({ text: this.editorTitle, placeholder: '标题（必填）' })
           .fontSize(14)
           .width('100%')
           .height(40)
           .margin({ top: 16 })
           .padding({ left: 12, right: 12 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .onChange((value: string) => {
             this.editorTitle = value;
           })
@@ -471,8 +466,8 @@ export struct KnowledgeBankPage {
           .height(96)
           .margin({ top: 8 })
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .onChange((value: string) => {
             this.editorDefinition = value;
           })
@@ -486,20 +481,20 @@ export struct KnowledgeBankPage {
               .height(56)
               .width(84)
               .objectFit(ImageFit.Cover)
-              .borderRadius(4)
+              .borderRadius(RADIUS_CONTROL)
               .onClick(() => {
                 this.editorImagePreviewVisible = true;
               })
             Text('删除图片')
               .fontSize(13)
-              .fontColor('#F44336')
+              .fontColor(DANGER)
               .margin({ left: 12 })
               .onClick(() => {
                 this.editorImageUri = '';
               })
             Text('换一张')
               .fontSize(13)
-              .fontColor('#1976D2')
+              .fontColor(TEXT_SECONDARY) // ★ 0.183.0：操作文字对齐 ChatPage「添加图片」先例（TEXT_SECONDARY）
               .margin({ left: 8 })
               .onClick(() => {
                 this.selectEditorImage();
@@ -507,7 +502,7 @@ export struct KnowledgeBankPage {
           } else {
             Text('🖼️ 添加图片')
               .fontSize(13)
-              .fontColor('#1976D2')
+              .fontColor(TEXT_SECONDARY) // ★ 0.183.0：对齐 ChatPage「添加图片」按钮文字色先例
               .onClick(() => {
                 this.selectEditorImage();
               })
@@ -518,7 +513,7 @@ export struct KnowledgeBankPage {
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -526,9 +521,9 @@ export struct KnowledgeBankPage {
             })
           Button('保存')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#1976D2')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(BRAND_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
             .onClick(() => {
@@ -539,14 +534,14 @@ export struct KnowledgeBankPage {
         .margin({ top: 20 })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   // ★ 0.160: fullscreen preview of the editor image — tap anywhere to close
@@ -573,19 +568,19 @@ export struct KnowledgeBankPage {
     Column() {
       Column() {
         Text('确认删除该条目？')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         Row() {
           Text(this.deleteConfirmNoRemind ? '☑' : '☐')
             .fontSize(18)
-            .fontColor(this.deleteConfirmNoRemind ? '#1976D2' : '#999999')
+            .fontColor(this.deleteConfirmNoRemind ? BRAND_PRIMARY : TEXT_TERTIARY)
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
             })
           Text('本次会话内不再提示')
             .fontSize(13)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .margin({ left: 6 })
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
@@ -596,7 +591,7 @@ export struct KnowledgeBankPage {
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -604,9 +599,9 @@ export struct KnowledgeBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#F44336')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(DANGER)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
             .onClick(() => {
@@ -617,14 +612,14 @@ export struct KnowledgeBankPage {
         .margin({ top: 16 })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   // ★ 0.148: batch-delete confirm dialog — ALWAYS shown, no no-remind
@@ -634,13 +629,13 @@ export struct KnowledgeBankPage {
     Column() {
       Column() {
         Text(`确认删除选中的 ${this.selectedIds.length} 项？`)
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -648,9 +643,9 @@ export struct KnowledgeBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#F44336')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(DANGER)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
             .onClick(() => {
@@ -661,14 +656,14 @@ export struct KnowledgeBankPage {
         .margin({ top: 20 })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   build() {
@@ -686,7 +681,7 @@ export struct KnowledgeBankPage {
                 .height(40)
                 .padding({ left: 12, right: 12 })
                 .borderRadius(20)
-                .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                .backgroundColor(SURFACE_SOFT)
                 .onChange((value: string) => {
                   this.searchKeyword = value;
                 })
@@ -694,7 +689,7 @@ export struct KnowledgeBankPage {
                 // Clear button — clearing restores the full list (spec 2.1.4)
                 Text('×')
                   .fontSize(16)
-                  .fontColor('#999999')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ left: 6 })
                   .onClick(() => {
                     this.searchKeyword = '';
@@ -702,7 +697,7 @@ export struct KnowledgeBankPage {
               }
               Button(this.sortDesc ? '最新↓' : '最早↑')
                 .fontSize(12)
-                .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                .fontColor(TEXT_SECONDARY)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 6 })
@@ -717,7 +712,7 @@ export struct KnowledgeBankPage {
             Row() {
               Button(this.isAllSelected() ? '取消全选' : '全选')
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                .fontColor(TEXT_SECONDARY)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .onClick(() => {
@@ -727,10 +722,10 @@ export struct KnowledgeBankPage {
                 .layoutWeight(1)
               Text(`已选 ${this.selectedIds.length} 项`)
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
               Button('取消')
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                .fontColor(TEXT_SECONDARY)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 8 })
@@ -747,10 +742,10 @@ export struct KnowledgeBankPage {
             Column() {
               Text('知识库为空')
                 .fontSize(16)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
               Text('点右上角 + 手动添加，或长按对话气泡选中文本入知识库')
                 .fontSize(12)
-                .fontColor(this.getThemeStore().isDark ? '#666666' : '#BBBBBB')
+                .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -761,10 +756,10 @@ export struct KnowledgeBankPage {
             Column() {
               Text('无匹配结果')
                 .fontSize(16)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
               Text('换个关键词试试')
                 .fontSize(12)
-                .fontColor(this.getThemeStore().isDark ? '#666666' : '#BBBBBB')
+                .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -781,18 +776,18 @@ export struct KnowledgeBankPage {
                       // real Checkbox would fire a second onChange
                       Text(this.selectedIds.includes(c.id) ? '☑' : '☐')
                         .fontSize(20)
-                        .fontColor(this.selectedIds.includes(c.id) ? '#1976D2' : '#999999')
+                        .fontColor(this.selectedIds.includes(c.id) ? BRAND_PRIMARY : TEXT_TERTIARY)
                         .margin({ right: 8 })
                     }
                     // Entry content block: title -> definition -> image thumbnail
                     Column() {
                       Text(c.title)
                         .fontSize(16)
-                        .fontWeight(FontWeight.Bold)
-                        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                        .fontWeight(600)
+                        .fontColor(TEXT_PRIMARY)
                       Text(c.definition)
                         .fontSize(13)
-                        .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                        .fontColor(TEXT_SECONDARY)
                         .margin({ top: 2 })
                       if (c.imageUri.length > 0) {
                         // Card image thumbnail — not rendered when empty
@@ -800,7 +795,7 @@ export struct KnowledgeBankPage {
                           .height(64)
                           .width(96)
                           .objectFit(ImageFit.Cover)
-                          .borderRadius(4)
+                          .borderRadius(RADIUS_CONTROL)
                           .margin({ top: 6 })
                       }
                     }
@@ -814,7 +809,7 @@ export struct KnowledgeBankPage {
                       // Single-delete button — hidden while multi-selecting
                       Button('×')
                         .fontSize(16)
-                        .fontColor('#F44336')
+                        .fontColor(DANGER)
                         .backgroundColor(Color.Transparent)
                         .padding({ left: 8, right: 8 })
                         .onClick(() => {
@@ -824,8 +819,10 @@ export struct KnowledgeBankPage {
                   }
                   .width('100%')
                   .padding(12)
-                  .borderRadius(8)
-                  .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                  .borderRadius(RADIUS_CONTROL)
+                  .backgroundColor(SURFACE_NODE) // ★ 0.183.0：卡片底对齐节点卡片规格（SURFACE_NODE + STROKE_CARD 描边）
+                  .borderColor(STROKE_CARD)
+                  .borderWidth(1)
                   .alignItems(VerticalAlign.Center)
                   .gesture(
                     // ★ 0.148: long-press enters multi-select (spec 2.3.1)
@@ -877,6 +874,7 @@ export struct KnowledgeBankPage {
           this.editorImagePreview()
         }
       }
+      .backgroundColor(BG_APP) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)

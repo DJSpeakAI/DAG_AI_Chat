@@ -1,18 +1,24 @@
 // ============================================================
-// AnnotationPage.ets — 屏幕圈选标注页（★ 0.152）
+// AnnotationPage.ets — 屏幕圈选标注页（★ 0.152 / ★ 0.184.0）
 // ============================================================
 // 本页面是内置屏幕标注能力的涂鸦标注界面，功能包括：
 //   - 显示 ChatPage 截取的当前屏幕画面（base64 → PixelMap → Canvas 底图）
 //   - 画笔涂鸦圈选（单指拖动画线，圆头粗线红色笔触）
 //   - 撤销上一笔 / 清空画布（全量重绘：底图 + 笔画栈）
+//   - ★ 0.184.0 补充要求输入框：圈注后可写文字（如「标题写什么、内容
+//     围绕什么方面展开」），随操作一起回传——存入知识库时图+文一起发给
+//     AI 按用户要求精准提炼；导入对话/创建子气泡时文字填入对话输入框
 //   - 标注完成三种操作（需求 0.119 第三章）：
-//       ① 当前对话导入 —— 合成图写入结果 store，pop 回 ChatPage 挂到输入区
+//       ① 当前对话导入 —— 合成图+补充要求写入结果 store，pop 回 ChatPage
+//          挂到输入区（图片挂 pendingImages、文字填输入框）
 //       ② 创建子气泡分支 —— 结果 store 标记 branch，ChatPage 调现有 addBubble
 //          （继承父节点完整上下文，10+15 规则不变，底层消息链路零改动）
 //       ③ 存入知识库 —— 结果 store 标记 knowledge，ChatPage 打开卡片编辑弹窗
-//          并发起多模态 AI 提炼（queryKnowledgeFromImage）
-//   - 有涂鸦时返回需二次确认（防误触丢弃劳动成果，与 0.150 删除确认同理念）
-//   - 深浅色主题适配
+//          并发起多模态 AI 提炼（queryKnowledgeFromImage 图+补充要求）
+//   - 有涂鸦或已写补充要求时返回需二次确认（防误触丢弃劳动成果）
+//   - ★ 0.184.0 UI 对齐暗紫 DesignTokens：原蓝色系/深浅色三元全清
+//     （与 0.181.0 ChatPage、0.183.0 单词库/知识库收敛同款）；顶栏
+//     撤销/清空 icon 化（icon-only 偏好，对齐代码块操作按钮范式）
 //
 // 图片策略：截图与导出均为 base64 data URI（与相册图片消息、知识卡片配图
 // 同模式）——不写系统相册、不产生临时文件，随消息/卡片生命周期存续。
@@ -25,7 +31,9 @@ import { AppStorageV2 } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit'; // 截图 base64 解码 → PixelMap（Canvas drawImage 底图）
 import { buffer } from '@kit.ArkTS';   // base64 ↔ ArrayBuffer
 import { AnnotationDraftStore, AnnotationResultStore, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：截图草稿 + 结果回传
-import { ThemeStore } from '../entryability/EntryAbility'; // 深浅色主题（项目统一模式）
+import { BG_APP, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_HOVER, SURFACE_NODE, SURFACE_SOFT,
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, DANGER, OVERLAY,
+  RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM } from '../common/DesignTokens'; // ★ 0.184.0：UI 收敛 DesignTokens（锁暗紫，isDark 三元全清）
 
 // 一笔涂鸦中的一个采样点（Canvas 本地坐标，单位 vp）
 class StrokePoint {
@@ -38,7 +46,7 @@ class StrokePoint {
   }
 }
 
-// 画笔参数（红色圆头粗线——浅色/深色截图上都醒目）
+// 画笔参数（红色圆头粗线——暗紫底截图上醒目）
 const PEN_COLOR = '#F44336';
 const PEN_WIDTH = 4;
 
@@ -54,8 +62,10 @@ export struct AnnotationPage {
   @Local strokes: StrokePoint[][] = [];
   // 解码失败提示（空草稿/解码异常时显示错误态 + 返回按钮）
   @Local loadError: string = '';
-  // 返回二次确认弹窗（有涂鸦时返回需确认，防误触丢弃）
+  // 返回二次确认弹窗（有涂鸦/有补充要求时返回需确认，防误触丢弃）
   @Local exitConfirmVisible: boolean = false;
+  // ★ 0.184.0：补充要求（圈注后写的定向说明，随操作一起回传 ChatPage）
+  @Local note: string = '';
 
   private ctx: CanvasRenderingContext2D =
     new CanvasRenderingContext2D(new RenderingContextSettings(true)); // 抗锯齿
@@ -66,11 +76,6 @@ export struct AnnotationPage {
   private availH: number = 0;
   private fitted: boolean = false; // 画布尺寸只 fit 一次（页面内尺寸不再变化）
   private currentStroke: StrokePoint[] = []; // 正在绘制的一笔（Up 时并入 strokes）
-
-  // ★ 获取 ThemeStore（通过 AppStorageV2 共享，项目统一模式）
-  getThemeStore(): ThemeStore {
-    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-  }
 
   aboutToAppear() {
     if (this.draft.imageUri.length === 0) {
@@ -216,7 +221,7 @@ export struct AnnotationPage {
     this.fullRedraw();
   }
 
-  // 导出合成图（底图 + 涂鸦，JPEG 90 与相册图片压缩档一致）并携带动作 pop 回 ChatPage
+  // 导出合成图（底图 + 涂鸦，JPEG 90 与相册图片压缩档一致）并携带动作+补充要求 pop 回 ChatPage
   exportAndReturn(action: string): void {
     if (this.canvasW <= 0) {
       return; // 画布未就绪（解码中）防御
@@ -224,12 +229,13 @@ export struct AnnotationPage {
     const dataUri = this.ctx.toDataURL('image/jpeg', 0.9); // data:image/jpeg;base64,...
     this.result.action = action;
     this.result.imageUri = dataUri;
+    this.result.note = this.note.trim(); // ★ 0.184.0：补充要求随结果回传（去首尾空白）
     this.pathStack.pop();
   }
 
-  // 返回入口：有涂鸦时弹二次确认（防误触丢弃），无涂鸦直接返回
+  // 返回入口：有涂鸦或已写补充要求时弹二次确认（防误触丢弃），否则直接返回
   requestExit(): boolean {
-    if (this.strokes.length > 0) {
+    if (this.strokes.length > 0 || this.note.trim().length > 0) {
       this.exitConfirmVisible = true;
       return true; // 消费返回事件（弹窗接管）
     }
@@ -240,40 +246,36 @@ export struct AnnotationPage {
   build() {
     NavDestination() {
       Column() {
-        // ── 顶栏：返回 | 标题 | 撤销 / 清空（自绘行，项目统一模式） ──
+        // ── 顶栏：返回 | 标题 | 撤销 / 清空（★ 0.184.0 icon-only，右对齐收拢） ──
         Row() {
           Button('←')
             .fontSize(18)
             .backgroundColor(Color.Transparent)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontColor(TEXT_PRIMARY)
             .padding({ left: 4, right: 4 })
             .margin({ right: 4 })
             .onClick(() => {
               this.requestExit();
             })
           Text('屏幕标注')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontSize(FONT_SIZE_SCREEN_TITLE)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
           Blank()
             .layoutWeight(1)
-          // 撤销（无笔画时禁用）
-          Text('↩ 撤销')
-            .fontSize(13)
-            .fontColor(this.strokes.length > 0
-              ? (this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
-              : (this.getThemeStore().isDark ? '#555555' : '#BBBBBB'))
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          // 撤销（无笔画时禁用；★ 0.184.0 去文字只留 icon）
+          Text('↩')
+            .fontSize(16)
+            .fontColor(this.strokes.length > 0 ? BRAND_SECONDARY : TEXT_TERTIARY)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
             .onClick(() => {
               this.undoStroke();
             })
-          // 清空（无笔画时禁用）
-          Text('🗑 清空')
-            .fontSize(13)
-            .fontColor(this.strokes.length > 0
-              ? '#F44336'
-              : (this.getThemeStore().isDark ? '#555555' : '#BBBBBB'))
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          // 清空（无笔画时禁用；★ 0.184.0 去文字只留 icon）
+          Text('🗑')
+            .fontSize(16)
+            .fontColor(this.strokes.length > 0 ? DANGER : TEXT_TERTIARY)
+            .padding({ left: 10, right: 2, top: 6, bottom: 6 })
             .margin({ left: 4 })
             .onClick(() => {
               this.clearAllStrokes();
@@ -286,11 +288,13 @@ export struct AnnotationPage {
         if (this.loadError.length > 0) {
           Column() {
             Text(this.loadError)
-              .fontSize(14)
-              .fontColor('#F44336')
+              .fontSize(FONT_SIZE_BODY)
+              .fontColor(DANGER)
               .textAlign(TextAlign.Center)
             Button('返回')
-              .fontSize(14)
+              .fontSize(FONT_SIZE_BODY)
+              .backgroundColor(SURFACE_HOVER)
+              .fontColor(TEXT_PRIMARY)
               .margin({ top: 16 })
               .onClick(() => {
                 this.pathStack.pop();
@@ -305,8 +309,8 @@ export struct AnnotationPage {
               Canvas(this.ctx)
                 .width(this.canvasW)
                 .height(this.canvasH)
-                .borderRadius(8)
-                .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+                .borderRadius(RADIUS_CONTROL)
+                .border({ width: 1, color: STROKE_CARD })
                 .onReady(() => {
                   this.drawBaseImage(); // 画布就绪：绘制截图底图
                 })
@@ -317,8 +321,8 @@ export struct AnnotationPage {
               // 截图解码中
               Column() {
                 Text('截图处理中...')
-                  .fontSize(14)
-                  .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+                  .fontSize(FONT_SIZE_BODY)
+                  .fontColor(TEXT_SECONDARY)
               }
               .justifyContent(FlexAlign.Center)
             }
@@ -332,32 +336,48 @@ export struct AnnotationPage {
           })
         }
 
+        // ── ★ 0.184.0 补充要求输入框（画布下方、操作按钮上方）：
+        //    圈注后写定向说明（标题写什么/内容围绕什么展开），随操作一起回传 ──
+        TextArea({ text: this.note, placeholder: '补充要求（可选）：如标题写什么、内容围绕什么展开' })
+          .fontSize(FONT_SIZE_BODY)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .placeholderFont({ size: FONT_SIZE_BODY })
+          .backgroundColor(SURFACE_SOFT)
+          .borderRadius(RADIUS_CONTROL)
+          .constraintSize({ maxHeight: 100 }) // 限高防长文撑爆画布区（超出内部滚动）
+          .width('100%')
+          .margin({ left: 12, right: 12, top: 4, bottom: 4 })
+          .onChange((value: string) => {
+            this.note = value;
+          })
+
         // ── 底部操作区：三种操作（需求 0.119 第三章原文语义） ──
         Row() {
           Button('当前对话导入')
-            .fontSize(13)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor('#1976D2')
-            .fontColor('#FFFFFF')
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(TEXT_PRIMARY)
             .enabled(this.canvasW > 0)
             .onClick(() => {
               this.exportAndReturn('import');
             })
           Button('创建子气泡')
-            .fontSize(13)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
-            .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+            .backgroundColor(SURFACE_HOVER)
+            .fontColor(TEXT_PRIMARY)
             .margin({ left: 8 })
             .enabled(this.canvasW > 0)
             .onClick(() => {
               this.exportAndReturn('branch');
             })
           Button('存入知识库')
-            .fontSize(13)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-            .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+            .backgroundColor(SURFACE_NODE)
+            .fontColor(BRAND_SECONDARY)
             .margin({ left: 8 })
             .enabled(this.canvasW > 0)
             .onClick(() => {
@@ -369,9 +389,9 @@ export struct AnnotationPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.getThemeStore().isDark ? '#1A1A1A' : '#FAFAFA')
+      .backgroundColor(BG_APP)
 
-      // ── 返回二次确认弹窗（有涂鸦时防误触丢弃） ──
+      // ── 返回二次确认弹窗（有涂鸦/有补充要求时防误触丢弃） ──
       if (this.exitConfirmVisible) {
         Stack() {
           // 遮罩：不关闭弹窗（防误触，与知识编辑弹窗同理念）
@@ -380,24 +400,24 @@ export struct AnnotationPage {
           }
           .width('100%')
           .height('100%')
-          .backgroundColor('rgba(0,0,0,0.4)')
+          .backgroundColor(OVERLAY)
 
           Column() {
-            Text('丢弃涂鸦内容？')
+            Text('丢弃标注内容？')
               .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .fontWeight(600)
+              .fontColor(TEXT_PRIMARY)
               .margin({ bottom: 8 })
-            Text('标注尚未导入使用，退出将丢弃当前涂鸦')
-              .fontSize(13)
-              .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+            Text('标注尚未导入使用，退出将丢弃当前涂鸦与补充要求')
+              .fontSize(FONT_SIZE_BODY)
+              .fontColor(TEXT_SECONDARY)
               .margin({ bottom: 16 })
             Row() {
               Button('继续标注')
                 .fontSize(14)
                 .layoutWeight(1)
-                .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
-                .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                .backgroundColor(SURFACE_HOVER)
+                .fontColor(TEXT_PRIMARY)
                 .margin({ right: 8 })
                 .onClick(() => {
                   this.exitConfirmVisible = false;
@@ -405,8 +425,8 @@ export struct AnnotationPage {
               Button('丢弃并退出')
                 .fontSize(14)
                 .layoutWeight(1)
-                .backgroundColor('#F44336')
-                .fontColor('#FFFFFF')
+                .backgroundColor(DANGER)
+                .fontColor(TEXT_PRIMARY)
                 .onClick(() => {
                   this.exitConfirmVisible = false;
                   this.pathStack.pop();
@@ -416,8 +436,8 @@ export struct AnnotationPage {
           }
           .width('85%')
           .padding(20)
-          .borderRadius(12)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(SURFACE_NODE)
         }
         .width('100%')
         .height('100%')
@@ -426,7 +446,7 @@ export struct AnnotationPage {
     }
     .hideTitleBar(true)
     .onBackPressed(() => {
-      return this.requestExit(); // 有涂鸦时拦截返回弹确认，无涂鸦直接返回
+      return this.requestExit(); // 有涂鸦/补充要求时拦截返回弹确认，否则直接返回
     })
   }
 }

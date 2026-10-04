@@ -586,19 +586,31 @@ export function queryKnowledge(
 // image, focusing on the region the user circled/highlighted.
 const KNOWLEDGE_IMAGE_QUERY_PROMPT = '你是卡片提炼助手，用户会提供一张带画笔圈选标注的屏幕截图。请识别图中被圈选或标注区域的核心内容，仅基于图中可见信息生成知识库卡片。规则：1. 只使用图中可见的内容，严禁增加图中不存在的信息、例子或拓展解释；2. title填写图中核心术语或概念名称；definition写精简核心定义，压缩文字；3. 输出严格JSON，不要任何额外文字、注释、markdown，只返回json字符串，格式：{"title":"...","definition":"..."}。';
 
+// ★ 0.184.0：带补充要求的提示词——用户在标注页写明了标题/内容方向时优先遵循：
+// 核心素材仍取自图中圈选区域，补充要求只决定组织方向与重点（不虚构图中完全无关的信息）
+const KNOWLEDGE_IMAGE_QUERY_PROMPT_NOTE = '你是卡片提炼助手，用户会提供一张带画笔圈选标注的屏幕截图，并附有补充要求。请识别图中被圈选或标注区域的核心内容，以图中可见信息为核心素材，并优先遵循用户补充要求组织卡片：用户指定了标题就按其指定填写，用户指定了内容方向就围绕该方向展开definition。规则：1. 核心素材须来自图中可见内容，补充要求仅用于确定标题与组织方向，严禁虚构图中完全无关的信息；2. title填写用户指定的标题或图中核心术语；definition精简核心内容，压缩文字；3. 输出严格JSON，不要任何额外文字、注释、markdown，只返回json字符串，格式：{"title":"...","definition":"..."}。';
+
 // AI card draft from an annotated image: multimodal stream request (user
 // message carries the image). Reuses parseKnowledgeQueryResult — the JSON
 // contract is identical to the text-based queryKnowledge.
+// ★ 0.184.0 note: the user's supplementary requirement from the annotation
+//   page. Non-empty → image + note are sent together and the note-steering
+//   prompt is used; empty → the original image-only behaviour is unchanged.
 export function queryKnowledgeFromImage(
   imageUri: string,
+  note: string,
   config: ApiConfig,
   onDone: (result: KnowledgeQueryResult) => void,
   onError: (error: string) => void,
   onPartial?: (title: string, definition: string) => void // ★ 0.153：流式实时填充弹窗输入框
 ): StreamController {
+  const hasNote = note.trim().length > 0;
   const messages: ChatMessage[] = [
-    new ChatMessage(generateMessageId(), 'system', KNOWLEDGE_IMAGE_QUERY_PROMPT),
-    new ChatMessage(generateMessageId(), 'user', '请提取图中圈选标注区域的内容，生成知识库卡片', [imageUri]) // ★ 0.152：图片走 imageUrl 数组（streamChat 多模态链路，与相册图片消息同机制）
+    new ChatMessage(generateMessageId(), 'system', hasNote ? KNOWLEDGE_IMAGE_QUERY_PROMPT_NOTE : KNOWLEDGE_IMAGE_QUERY_PROMPT),
+    // ★ 0.152：图片走 imageUrl 数组（streamChat 多模态链路，与相册图片消息同机制）
+    new ChatMessage(generateMessageId(), 'user', hasNote
+      ? `请提取图中圈选标注区域的内容，生成知识库卡片。我的补充要求：${note.trim()}`
+      : '请提取图中圈选标注区域的内容，生成知识库卡片', [imageUri])
   ];
   let full = '';
   return streamChat(

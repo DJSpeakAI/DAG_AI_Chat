@@ -24,12 +24,12 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { AppStorageV2 } from '@kit.ArkUI';
 import { WordItem, WordBankStore } from '../common/WordModel';
 import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）
 import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId } from '../utils/WordStoreUtil';
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton
-import { ThemeStore } from '../entryability/EntryAbility'; // dark/light theme
+// ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
+import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 
 @ComponentV2
 export struct WordBankPage {
@@ -79,11 +79,6 @@ export struct WordBankPage {
   @Local learnSettingsVisible: boolean = false;
   @Local learnCustomInput: string = '';  // free-input temp value (validated 1~20 on confirm)
   @Local learnInputError: string = '';   // free-input validation error text (empty = no error)
-
-  // Global theme state (same pattern as ChatPage / SettingsPage)
-  getThemeStore(): ThemeStore {
-    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-  }
 
   // ★ 0.148: back-fill id/createTime on entries saved before 0.148.
   // Array head = newer (head-insert history), so descending timestamps
@@ -283,23 +278,23 @@ export struct WordBankPage {
       Button('←')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
           this.pathStack.pop();
         })
       Text('单词库')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
+        .fontWeight(600)
+        .fontColor(TEXT_PRIMARY)
       Blank()
         .layoutWeight(1)
       // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
       Button('⚙')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 8, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -313,7 +308,7 @@ export struct WordBankPage {
         Button('+')
           .fontSize(20)
           .backgroundColor(Color.Transparent)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
           .onClick(() => {
             this.openAddEditor();
@@ -322,7 +317,7 @@ export struct WordBankPage {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
           .fontSize(14)
-          .fontColor('#F44336')
+          .fontColor(DANGER)
           .backgroundColor(Color.Transparent)
           .padding({ left: 8, right: 8 })
           .onClick(() => {
@@ -340,17 +335,17 @@ export struct WordBankPage {
     Column() {
       Column() {
         Text(this.editorIsAdd ? '新增单词' : '编辑单词')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         TextInput({ text: this.editorWord, placeholder: '单词（必填）' })
           .fontSize(14)
           .width('100%')
           .height(40)
           .margin({ top: 16 })
           .padding({ left: 12, right: 12 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .onChange((value: string) => {
             this.editorWord = value;
           })
@@ -360,8 +355,8 @@ export struct WordBankPage {
           .height(40)
           .margin({ top: 8 })
           .padding({ left: 12, right: 12 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .onChange((value: string) => {
             this.editorFullName = value;
           })
@@ -371,8 +366,8 @@ export struct WordBankPage {
           .height(40)
           .margin({ top: 8 })
           .padding({ left: 12, right: 12 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .onChange((value: string) => {
             this.editorPhonetic = value;
           })
@@ -382,15 +377,15 @@ export struct WordBankPage {
           .height(40)
           .margin({ top: 8 })
           .padding({ left: 12, right: 12 })
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .onChange((value: string) => {
             this.editorExplain = value;
           })
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -398,9 +393,9 @@ export struct WordBankPage {
             })
           Button('保存')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#1976D2')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(BRAND_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
             .onClick(() => {
@@ -411,14 +406,14 @@ export struct WordBankPage {
         .margin({ top: 20 })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   // ★ 0.161: learn-count settings dialog — 1 / 2 (default) / free input (1~20);
@@ -428,19 +423,19 @@ export struct WordBankPage {
     Column() {
       Column() {
         Text('学习数量设置')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         Text('每次复习展示的词条数，生效于：AI 回复底部复习区、知识卡片提炼等待页')
           .fontSize(12)
-          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 6 })
         Row() {
           Button('1')
             .fontSize(14)
-            .fontColor(this.learnCountStore.learnCount === 1 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
-            .backgroundColor(this.learnCountStore.learnCount === 1 ? '#1976D2' : Color.Transparent)
-            .borderRadius(6)
+            .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+            .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .onClick(() => {
               this.learnCountStore.learnCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
@@ -448,9 +443,9 @@ export struct WordBankPage {
             })
           Button('2（默认）')
             .fontSize(14)
-            .fontColor(this.learnCountStore.learnCount === 2 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
-            .backgroundColor(this.learnCountStore.learnCount === 2 ? '#1976D2' : Color.Transparent)
-            .borderRadius(6)
+            .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+            .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 8 })
             .onClick(() => {
@@ -460,9 +455,9 @@ export struct WordBankPage {
           // ★ 0.161.2: quick option "3" added beside "2" (user request)
           Button('3')
             .fontSize(14)
-            .fontColor(this.learnCountStore.learnCount === 3 ? '#FFFFFF' : (this.getThemeStore().isDark ? '#CCCCCC' : '#666666'))
-            .backgroundColor(this.learnCountStore.learnCount === 3 ? '#1976D2' : Color.Transparent)
-            .borderRadius(6)
+            .fontColor(this.learnCountStore.learnCount === 3 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+            .backgroundColor(this.learnCountStore.learnCount === 3 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 8 })
             .onClick(() => {
@@ -475,14 +470,14 @@ export struct WordBankPage {
         Row() {
           Text('自由输入：')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
           TextInput({ text: this.learnCustomInput, placeholder: '1~20' })
             .fontSize(14)
             .layoutWeight(1)
             .height(40)
             .padding({ left: 12, right: 12 })
-            .borderRadius(8)
-            .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_SOFT)
             .type(InputType.Number)
             .onChange((value: string) => {
               this.learnCustomInput = value;
@@ -490,9 +485,9 @@ export struct WordBankPage {
             })
           Button('确定')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#1976D2')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(BRAND_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
             .margin({ left: 8 })
             .padding({ left: 14, right: 14 })
             .onClick(() => {
@@ -510,12 +505,12 @@ export struct WordBankPage {
         if (this.learnInputError.length > 0) {
           Text(this.learnInputError)
             .fontSize(12)
-            .fontColor('#F44336')
+            .fontColor(DANGER)
             .margin({ top: 6 })
         }
         Button('关闭')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+          .fontColor(TEXT_SECONDARY)
           .backgroundColor(Color.Transparent)
           .width('100%')
           .margin({ top: 12 })
@@ -524,14 +519,14 @@ export struct WordBankPage {
           })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   // ★ 0.148: single-delete confirm dialog — with the session-level
@@ -541,19 +536,19 @@ export struct WordBankPage {
     Column() {
       Column() {
         Text('确认删除该条目？')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         Row() {
           Text(this.deleteConfirmNoRemind ? '☑' : '☐')
             .fontSize(18)
-            .fontColor(this.deleteConfirmNoRemind ? '#1976D2' : '#999999')
+            .fontColor(this.deleteConfirmNoRemind ? BRAND_PRIMARY : TEXT_TERTIARY)
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
             })
           Text('本次会话内不再提示')
             .fontSize(13)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .margin({ left: 6 })
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
@@ -564,7 +559,7 @@ export struct WordBankPage {
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -572,9 +567,9 @@ export struct WordBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#F44336')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(DANGER)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
             .onClick(() => {
@@ -585,14 +580,14 @@ export struct WordBankPage {
         .margin({ top: 16 })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   // ★ 0.148: batch-delete confirm dialog — ALWAYS shown, no no-remind
@@ -602,13 +597,13 @@ export struct WordBankPage {
     Column() {
       Column() {
         Text(`确认删除选中的 ${this.selectedIds.length} 项？`)
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+          .fontSize(FONT_SIZE_SCREEN_TITLE)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+            .fontColor(TEXT_SECONDARY)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -616,9 +611,9 @@ export struct WordBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#F44336')
-            .borderRadius(6)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(DANGER)
+            .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
             .onClick(() => {
@@ -629,14 +624,14 @@ export struct WordBankPage {
         .margin({ top: 20 })
       }
       .width('86%')
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(0,0,0,0.5)')
+    .backgroundColor(OVERLAY)
   }
 
   build() {
@@ -654,7 +649,7 @@ export struct WordBankPage {
                 .height(40)
                 .padding({ left: 12, right: 12 })
                 .borderRadius(20)
-                .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                .backgroundColor(SURFACE_SOFT)
                 .onChange((value: string) => {
                   this.searchKeyword = value;
                 })
@@ -662,7 +657,7 @@ export struct WordBankPage {
                 // Clear button — clearing restores the full list (spec 2.1.4)
                 Text('×')
                   .fontSize(16)
-                  .fontColor('#999999')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ left: 6 })
                   .onClick(() => {
                     this.searchKeyword = '';
@@ -670,7 +665,7 @@ export struct WordBankPage {
               }
               Button(this.sortDesc ? '最新↓' : '最早↑')
                 .fontSize(12)
-                .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                .fontColor(TEXT_SECONDARY)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 6 })
@@ -685,7 +680,7 @@ export struct WordBankPage {
             Row() {
               Button(this.isAllSelected() ? '取消全选' : '全选')
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                .fontColor(TEXT_SECONDARY)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .onClick(() => {
@@ -695,10 +690,10 @@ export struct WordBankPage {
                 .layoutWeight(1)
               Text(`已选 ${this.selectedIds.length} 项`)
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
               Button('取消')
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                .fontColor(TEXT_SECONDARY)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 8 })
@@ -715,10 +710,10 @@ export struct WordBankPage {
             Column() {
               Text('单词库为空')
                 .fontSize(16)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
               Text('点右上角 + 手动添加，或长按对话气泡选词翻译后加入')
                 .fontSize(12)
-                .fontColor(this.getThemeStore().isDark ? '#666666' : '#BBBBBB')
+                .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -729,10 +724,10 @@ export struct WordBankPage {
             Column() {
               Text('无匹配结果')
                 .fontSize(16)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
               Text('换个关键词试试')
                 .fontSize(12)
-                .fontColor(this.getThemeStore().isDark ? '#666666' : '#BBBBBB')
+                .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -749,32 +744,32 @@ export struct WordBankPage {
                       // real Checkbox would fire a second onChange
                       Text(this.selectedIds.includes(w.id) ? '☑' : '☐')
                         .fontSize(20)
-                        .fontColor(this.selectedIds.includes(w.id) ? '#1976D2' : '#999999')
+                        .fontColor(this.selectedIds.includes(w.id) ? BRAND_PRIMARY : TEXT_TERTIARY)
                         .margin({ right: 8 })
                     }
                     // Entry text block: word -> fullName -> usPhonetic -> explain
                     Column() {
                       Text(w.word)
                         .fontSize(16)
-                        .fontWeight(FontWeight.Bold)
-                        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                        .fontWeight(600)
+                        .fontColor(TEXT_PRIMARY)
                       if (w.fullName.length > 0) {
                         // Abbreviation full term — row not rendered when empty
                         Text(w.fullName)
                           .fontSize(13)
-                          .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                          .fontColor(BRAND_SECONDARY)
                           .margin({ top: 2 })
                       }
                       if (w.usPhonetic.length > 0) {
                         Row() {
                           Text(w.usPhonetic)
                             .fontSize(13)
-                            .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                            .fontColor(TEXT_TERTIARY)
                           // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
                           // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行（用户指出单词本行距变大），Text 无默认高度、行距还原
                           Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                             .fontSize(13)
-                            .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                            .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_PRIMARY : (TEXT_TERTIARY))
                             .margin({ left: 6 })
                             .onClick(() => {
                               const ctx = this.getUIContext().getHostContext();
@@ -785,7 +780,7 @@ export struct WordBankPage {
                       }
                       Text(w.explain)
                         .fontSize(13)
-                        .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                        .fontColor(TEXT_SECONDARY)
                         .margin({ top: 2 })
                     }
                     .alignItems(HorizontalAlign.Start)
@@ -798,7 +793,7 @@ export struct WordBankPage {
                       // Single-delete button — hidden while multi-selecting
                       Button('×')
                         .fontSize(16)
-                        .fontColor('#F44336')
+                        .fontColor(DANGER)
                         .backgroundColor(Color.Transparent)
                         .padding({ left: 8, right: 8 })
                         .onClick(() => {
@@ -808,8 +803,10 @@ export struct WordBankPage {
                   }
                   .width('100%')
                   .padding(12)
-                  .borderRadius(8)
-                  .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                  .borderRadius(RADIUS_CONTROL)
+                  .backgroundColor(SURFACE_NODE) // ★ 0.183.0：卡片底对齐节点卡片规格（SURFACE_NODE + STROKE_CARD 描边）
+                  .borderColor(STROKE_CARD)
+                  .borderWidth(1)
                   .alignItems(VerticalAlign.Center)
                   .gesture(
                     // ★ 0.148: long-press enters multi-select (spec 2.3.1)
@@ -857,6 +854,7 @@ export struct WordBankPage {
           this.learnSettingsDialog()
         }
       }
+      .backgroundColor(BG_APP) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)

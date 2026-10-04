@@ -44,10 +44,15 @@ export function connectAnnotationDraft(): AnnotationDraftStore {
 //         'branch'   = create a child bubble carrying the image
 //         'knowledge' = open the knowledge card editor with an AI draft
 //                      extracted from the annotated image
+// ★ 0.184.0 note: the user's supplementary requirement typed on the
+//   annotation page (e.g. "title should be X, definition should focus on Y").
+//   For 'knowledge' it steers the AI card draft (image + note sent together);
+//   for 'import'/'branch' it is pre-filled into the chat input box.
 @ObservedV2
 export class AnnotationResultStore {
   @Trace action: string = '';
   @Trace imageUri: string = ''; // annotated composite (base64 data URI)
+  @Trace note: string = '';     // ★ 0.184.0：补充要求（'' = 未填写）
 }
 
 // ★ 0.152: connect the in-memory result store (consumed immediately in
