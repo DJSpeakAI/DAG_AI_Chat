@@ -1144,16 +1144,8 @@ export struct BBTreeCanvas {
           // ★ 0.167：信息条 + Tab 栏（UI_GUIDELINES 五/六-8/六-9；悬浮画布容器内 position(28,24)）
           Column({ space: 8 }) {
             Row({ space: 8 }) {
-              // 返回 Index（侧边栏工作台落地后移除）
-              Text('←')
-                .fontSize(18)
-                .fontColor(TEXT_PRIMARY)
-                .width(28)
-                .height(40)
-                .textAlign(TextAlign.Center)
-                .onClick(() => {
-                  this.pathStack.pop();
-                })
+              // ★ 0.176.0：返回箭头「←」删除（用户拍板，全设备尺寸）——侧边栏工作台 0.168
+              //   落地后画布即主页面，无上级页面可返（原 pop() 回 Index 入口已由边栏导航承担）
               // 标题 + 统计（ScreenTitle 16 SemiBold + Meta 11，UI_GUIDELINES 三/六）
               // ★ 0.167.6 曾小屏不渲染标题（只留 4 图标）；★ 0.167.8 用户拍板加回——
               //   「知识画布 + N 个气泡 · N 条对话」小屏左上方也要显示（用户夸平板好看），
@@ -1276,6 +1268,7 @@ export struct BBTreeCanvas {
           .width('100%')
           // ★ 0.167.7：①上方留白 24→8 与下方对齐 ②right 28→14 右上角 4 按钮右移
           // ★ 0.167.8：小屏 left 28→14——返回箭头左移，左留白与右边 ➕（14）一致（用户拍板）
+          // ★ 0.176.0：返回箭头已删（全设备），padding 保持不变——标题成为行首元素
           .padding({ left: this.viewW >= 520 ? 28 : 14, right: 14, top: 8, bottom: 8 })
           .backgroundColor(BG_CANVAS)
           .position({ x: 0, y: 0 })
