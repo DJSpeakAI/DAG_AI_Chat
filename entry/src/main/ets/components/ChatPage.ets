@@ -1396,6 +1396,12 @@ export struct ChatPage {
     if (messageId === 'cz') {
       return; // 代码放大弹窗内文本——非消息文本
     }
+    // ★ 0.169.1：复习区划词 key（rw*/rwf*/rwe*/rk*/rkd* 段前缀）不对应消息文本——防御性忽略。
+    // 复习区悬浮栏（ReviewSelectionToolbar）本无删除项，此处兜底防未来误绑 SelectionToolbar 时误删消息
+    const segPart = key.substring(sep + 1);
+    if (segPart.startsWith('rw') || segPart.startsWith('rk')) {
+      return;
+    }
     if (messageId.length > 0) {
       this.requestDeleteMessage(messageId);
     }
@@ -1683,6 +1689,49 @@ export struct ChatPage {
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarDelete();
+        })
+    }
+    .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+    .borderRadius(8)
+    .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+    .shadow({ radius: 12, color: 'rgba(0,0,0,0.25)', offsetX: 0, offsetY: 4 })
+  }
+
+  // ★ 0.169.1：复习区划词悬浮操作栏——AI 气泡底部生词/知识卡复习区专用（翻译 | 入知识库 | 复制）。
+  // 与正文 SelectionToolbar 的差异：无「全选」（复习词条恒单行超短文本，全选无意义）、
+  // 无「删除」（复习区文本不对应可删消息，删除入口只保留消息 × 按钮）。
+  // 三个按钮动作与正文完全复用（onToolbarTranslate/onToolbarAddKnowledge/onToolbarCopy 均取 selText）。
+  @Builder
+  ReviewSelectionToolbar() {
+    Row() {
+      Text('翻译')
+        .fontSize(14)
+        .fontColor('#1976D2')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarTranslate();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+      Text('入知识库')
+        .fontSize(14)
+        .fontColor('#1976D2')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarAddKnowledge();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+      Text('复制')
+        .fontSize(14)
+        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onToolbarCopy();
         })
     }
     .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
@@ -2295,15 +2344,29 @@ export struct ChatPage {
                              .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
                              .margin({ top: 8, bottom: 6 })
                            Column() {
-                             ForEach(this.getReviewWords(msg.messageId), (w: WordItem, idx: number) => {
-                               Scroll() {
-                                 Column() {
-                                   Row() {
-                                     Text('📚 ' + w.word)
-                                       .fontSize(13)
-                                       .fontWeight(FontWeight.Bold)
-                                       .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
-                                       .maxLines(1)
+                              ForEach(this.getReviewWords(msg.messageId), (w: WordItem, idx: number) => {
+                                Scroll() {
+                                  Column() {
+                                    Row() {
+                                      // ★ 0.169.1：复习区划词——词行/全称/释义均可长按划词（翻译/入知识库/复制）；
+                                      // key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
+                                      Text('📚 ' + w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
+                                        .fontSize(13)
+                                        .fontWeight(FontWeight.Bold)
+                                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                        .maxLines(1)
+                                        .copyOption(CopyOptions.LocalDevice)
+                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                          onAppear: () => {
+                                            this.selKey = `${msg.messageId}|rw${idx}`;
+                                          },
+                                          onDisappear: () => {
+                                            this.clearSelectionState();
+                                          }
+                                        })
+                                        .onTextSelectionChange((start: number, end: number) => {
+                                          this.handleSelectionChange(`${msg.messageId}|rw${idx}`, '📚 ' + w.word, start, end);
+                                        })
                                       if (w.usPhonetic.length > 0) {
                                         // Phonetic right beside the word — same line, never ellipsized (user rule)
                                         Text(w.usPhonetic)
@@ -2323,18 +2386,44 @@ export struct ChatPage {
                                           })
                                       }
                                    }
-                                   if (w.fullName.length > 0) {
-                                     Text(w.fullName)
-                                       .fontSize(12)
-                                       .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
-                                       .maxLines(1)
-                                       .margin({ top: 1 })
-                                   }
-                                   Text(w.explain)
-                                     .fontSize(12)
-                                     .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
-                                     .maxLines(1)
-                                     .margin({ top: 2 })
+                                    if (w.fullName.length > 0) {
+                                      // ★ 0.169.1：全称行划词（缩略词全称/中译英答案）
+                                      Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
+                                        .fontSize(12)
+                                        .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                                        .maxLines(1)
+                                        .margin({ top: 1 })
+                                        .copyOption(CopyOptions.LocalDevice)
+                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                          onAppear: () => {
+                                            this.selKey = `${msg.messageId}|rwf${idx}`;
+                                          },
+                                          onDisappear: () => {
+                                            this.clearSelectionState();
+                                          }
+                                        })
+                                        .onTextSelectionChange((start: number, end: number) => {
+                                          this.handleSelectionChange(`${msg.messageId}|rwf${idx}`, w.fullName, start, end);
+                                        })
+                                    }
+                                    // ★ 0.169.1：释义行划词
+                                    Text(w.explain, { controller: this.getOrCreateTextController(`${msg.messageId}|rwe${idx}`) })
+                                      .fontSize(12)
+                                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                                      .maxLines(1)
+                                      .margin({ top: 2 })
+                                      .copyOption(CopyOptions.LocalDevice)
+                                      .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                        onAppear: () => {
+                                          this.selKey = `${msg.messageId}|rwe${idx}`;
+                                        },
+                                        onDisappear: () => {
+                                          this.clearSelectionState();
+                                        }
+                                      })
+                                      .onTextSelectionChange((start: number, end: number) => {
+                                        this.handleSelectionChange(`${msg.messageId}|rwe${idx}`, w.explain, start, end);
+                                      })
                                  }
                                  .alignItems(HorizontalAlign.Start)
                                }
@@ -2362,11 +2451,25 @@ export struct ChatPage {
                                 Scroll() {
                                   Column() {
                                     Row() {
-                                      Text('📖 ' + card.title)
+                                      // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
+                                      // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
+                                      Text('📖 ' + card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
                                         .fontSize(13)
                                         .fontWeight(FontWeight.Bold)
                                         .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
                                         .maxLines(1)
+                                        .copyOption(CopyOptions.LocalDevice)
+                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                          onAppear: () => {
+                                            this.selKey = `${msg.messageId}|rk${idx}`;
+                                          },
+                                          onDisappear: () => {
+                                            this.clearSelectionState();
+                                          }
+                                        })
+                                        .onTextSelectionChange((start: number, end: number) => {
+                                          this.handleSelectionChange(`${msg.messageId}|rk${idx}`, '📖 ' + card.title, start, end);
+                                        })
                                       if (card.imageUri.length > 0) {
                                         // Image indicator icon — only shown when the card has an image (user rule)
                                         // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
@@ -2385,11 +2488,24 @@ export struct ChatPage {
                                           })
                                       }
                                     }
-                                    Text(card.definition)
+                                    // ★ 0.169.1：定义行划词
+                                    Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
                                       .fontSize(12)
                                       .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
                                       .maxLines(1)
                                       .margin({ top: 2 })
+                                      .copyOption(CopyOptions.LocalDevice)
+                                      .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                        onAppear: () => {
+                                          this.selKey = `${msg.messageId}|rkd${idx}`;
+                                        },
+                                        onDisappear: () => {
+                                          this.clearSelectionState();
+                                        }
+                                      })
+                                      .onTextSelectionChange((start: number, end: number) => {
+                                        this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
+                                      })
                                   }
                                   .alignItems(HorizontalAlign.Start)
                                 }
