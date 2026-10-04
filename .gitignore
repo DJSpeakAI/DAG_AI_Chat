@@ -19,3 +19,4 @@ entry/src/main/resources/rawfile/config.json
 
 # 调试产物（解包 HAP 字节码/截图/控件树，勿入库）
 .hmos-debug/
+.opencode/

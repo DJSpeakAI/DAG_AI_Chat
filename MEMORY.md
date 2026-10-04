@@ -70,11 +70,12 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.183.x|单词库/知识库两页（含各自设置弹窗）按稿收敛：isDark 三元死代码清零（getThemeStore 方法删）、操作蓝 #1976D2→BRAND_PRIMARY、删除红 #F44336→DANGER、弹窗面板灰→SURFACE_NODE、输入框灰→SURFACE_SOFT、遮罩→OVERLAY、圆角 8/6/4→RADIUS_CONTROL、12→RADIUS_NAV、Bold→600、列表卡片升级 SURFACE_NODE+STROKE_CARD 描边；两页根 Stack 补 BG_APP 底色（原透 NavDestination 纯黑）；**教训：①NavDestination 自带 #FF000000 黑底，页面根容器不设底色即透黑②像素验证以 UI 树 json 的 backgroundColor/bounds 为铁证——截图与 UI 树同一像素坐标系勿做分辨率换算，且遮罩压暗色（#241640×50%≈#120B20）恰与 BG_APP #120B1F 同色、易误判遮罩未生效**|
 |0.184.0|屏幕标注页双升级：①补充要求输入框（圈注后写「标题写什么/内容围绕什么展开」——存入知识库图+文一起发 AI 按用户要求精准提炼，ApiClient 双提示词按 note 有无切换；导入对话/创建子气泡时文字填入对话输入框）②标注页 UI 对齐暗紫 DesignTokens（isDark 三元清零、顶栏撤销/清空 icon 化、返回确认弹窗覆盖补充要求）；**教训：addBubble 扩 carryText 随切换回调带入（与 0.166.1 carryImages 同模式，防 140ms 动画回调清空）**|
 |0.185.0|单词库设置弹窗（⚙）新增音标口音切换：美式（默认）/英式两选项，切换先确认弹窗「切换音标后，原先的音标将会被删除」，确认后 clearAllPhonetics 清空现有音标+toast、后续查词按新口音生成（ApiClient 双提示词口音参数化 buildWordQueryPrompt(british)/buildWordQueryZhPrompt(british)）；**教训：PersistenceV2 新字段必须全新 key（phonetic-accent-v1 仿 learn-count-v1），挂旧 key 读取为 undefined**|
+|0.186.0|文档管理+AI token优化+核心文档精简线：①docs/按版本段重组织（0.140-0.152/0.160-0.164/0.165+三段+归档archive/），加总索引 index.md ②分层按需加载（L1总索引/L2段索引/L3详情/L4归档，project_rule.md 加 §5）③0.164.md 32.6KB→5.2KB 精简（砍已排除项细表/错误码速查/AGC步骤/签名执行记录）|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.185.0（versionCode 1000049）**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.186.0（versionCode 1000050）**
 - 迭代文档命名：版本号 变更内容.md（如 0.185.0 音标口音切换.md；同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；规则详见 project_rule.md §7，2026-10-04 用户定稿）
-- 版本线主文档：docs/0.167.md（历史线仅存 0.165.md，0.160~0.164 已清理）
+- 版本线主文档：docs/0.165+/0.167.md（精简版，0.165+ 段；历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，2026-10-04 端口 33685）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**
 
 ## 全局硬性约束
