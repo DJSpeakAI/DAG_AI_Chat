@@ -474,7 +474,7 @@ export function layoutFlatForest(nodeList: BubbleNode[]): void {
 
   const siblingGap = 40;       // ★ 0.167.3：同层相邻子树间隙（用户硬性要求：气泡间必须有空隙）
   const treeGap = 120;         // ★ 0.167.4：多根树间垂直间隙（纵向堆叠，从上往下排）
-  const verticalSpacing = 160; // 层级间垂直间距（层间净空 160-68=92，不重叠）
+  const verticalSpacing = 113; // ★ 0.172.2：用户拍板「间距高度再减 1/3」——净空 113-68=45 ≈ 68×2/3（0.172.1 净空 68 的 2/3；原 160 净空 92）
 
   // 构建父→子映射
   const childrenMap = new Map<string, BubbleNode[]>();
