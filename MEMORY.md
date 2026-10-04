@@ -63,9 +63,10 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.176.0|画布页信息条左上角返回箭头「←」删除（用户拍板，全设备尺寸——信息条全设备共用一处、仅 padding 分档，删一处即全删；侧边栏工作台 0.168 落地后画布即主页面，原 pop() 回 Index 入口已由边栏导航承担；pathStack 仍有 pushPath 引用保留）|
 |0.177.0|两修：①IDE 警告「请使用分层图标」——app.json5 icon 从 $media:app_logo 改指 $media:layered_image（AppScope 分层图标配置 background=新 logo 深紫版+foreground 透明；app_logo.png 与 background.png 本就同图 121489 字节，桌面图标视觉零变化；app_logo.png 保留未删）②**冷启动旧 logo 闪现 0.1s——根因=startWindowIcon 引用的 startIcon.png 仍是 0.163 旧 DAG 气泡 logo（0.174.4 换新 logo 时只换了 app_logo+两处 background 三资源位、漏了 startIcon），用 background.png 同图替换（字节级一致）**；装机 pad（192.168.2.16:33685）冷启动实证 v0.177.0 首页正常|
 |0.178.0|两改一确认：①**冷启动 logo 闪现根治——0.177.0「换新 logo」方向错误被用户否决（「绝对不允许」闪任何 logo），正解=startWindowIcon 透明化（startIcon.png 换 108×108 全透明 png、GDI+ 生成 175 字节 alpha=0 已验证，冷启动只显示背景色不闪任何图形）+ start_window_background base/dark 两处 #FFFFFF/#000000→#120B1F（=BG_APP 应用底色，启动页与首页无缝；启动页在应用进程前由系统按系统深浅色选资源、两处都改保证任何模式暗紫）**②画布页信息条标题「知识画布」→「气泡树」（用户拍板）③桌面短名 DAGAI 用户确认保留不动；装机 pad 杀进程冷启动实证 v0.178.0 首页正常+画布页「气泡树」标题显示|
+|0.179.0|首页改版三项（用户截图拍板）：①主按钮「进入对话画布」→「进入气泡树」②主按钮+华为账号登录区下移至左手拇指区（用户左手单手持 pad、原按钮在屏幕中部拇指够不到）③标题 24→32、副标题 11→14 放大；**布局方案：Column 删 justifyContent(FlexAlign.Center)，改 Blank 弹性占位 2:3:1（顶部 Blank(2) 标题悬上部、中部 Blank(3) 按钮组推至下部、底部 Blank(1) 版本号留白）；教训：有 layoutWeight 子元素时 justifyContent Center 不再生效，布局由 Blank 接管**；装机 pad 实证：按钮 y 766→1025（下移 259px）、登录区跟随、tap 跳转画布页正常、v0.179.0 上屏|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.178.0（versionCode 1000040）**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.179.0（versionCode 1000041）**
 - 版本线主文档：docs/0.167.md（历史线仅存 0.165.md，0.160~0.164 已清理）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，2026-10-04 端口 33685）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**
 
