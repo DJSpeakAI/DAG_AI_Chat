@@ -45,28 +45,29 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.147|画布气泡自定义标题、长按菜单|
 |0.151|LaTeX渲染、画布平铺/选项卡双模式（两池数据互通为语义基准）|
 |0.152|矩阵渲染、屏幕圈选截图提炼|
-|0.153|提炼弹窗超时、错误中文提示、Token统计（AI回复秒表已按用户决定删除，提炼弹窗读秒保留）|
-|0.160.x|Prompt泄漏修复、ForEach Key碰撞修复；**ArkUI V2铁律：ForEach item内visibility/if初始求值必须Visible，None/false组件移出渲染树后通知永不到达**；API key内置默认（**上架前须删**）；主文档docs/0.160.md|
-|0.161.x|学习数量设置、API Key外置rawfile/config.json（.gitignore不入库）；**git教训：GitHub Push Protection拦截Key→git reset --soft重写历史；unblock-secret链接绝对勿点**；主文档docs/0.161.md|
-|0.162.1|新建分支过渡动画（链式animateTo淡出→切store→淡入共440ms，防同页切换刷屏）；主文档docs/0.162.md|
-|0.163.x|代码块按钮icon化、App更名DAG AI Chat、用户logo图标；**教训：bundleName勿动**（调试profile绑死包名，改包名致SignHap失败）；主文档docs/0.163.md|
-|0.164.x|华为账号登录跑通；**核心教训：①DevEco自动签名=内部调试通道无有效Client ID，Account Kit登录须AGC手动申请调试Profile+手动签名（只换Profile不换证书）②受限权限须Profile ACL显式授权，没用的直接删③错误码上屏（code+服务端msg）是排查利器**；主文档docs/0.164.md（含错误码速查表）|
-|0.165.x|云同步双端调测收官；**踩坑：新SDK删PermissionRequestResult类型名→类型推断；循环依赖用回调注入；下行写池绝不upsert防回环；AGC正确入口是「云空间」（勿配成云数据库for Object）；云端类型名驼峰cloudData/本地表cloud_data可不同名**；遗留v0.165.3=同步状态提示+云空间开关引导；主文档docs/0.165.md|
-|0.166.x|圈注标注图丢失修复（**根因：0.162.1动画把清空pendingImages挪进140ms回调，同步塞图被回调清空；修复：addBubble加carryImages参数，塞图与清空同回调执行**）；平板首页占左栏修复（**Navigation Auto宽屏自动分栏→Stack强制单栏**）；主题锁定暗色方案A（setColorMode(DARK)+isDark恒true+删onConfigurationUpdate，亮色分支代码保留勿删）；Pixso设计稿交付后转入0.167线落地|
-|0.167.x|Pixso 设计稿 canvas 落地（v0.167.1~8）：UI_GUIDELINES.md+DesignTokens.ets 双真相源、信息条/节点卡片/缩放控件/弹窗换肤、连线 Canvas 命令式绘制、子树占位法防重叠、整体等比缩放+限幅方向感知（修复缩放锁死）、小屏顶栏极简 4 图标、topSafe 排除底板；**教训：①Path 无 viewport 属性自动缩放 commands 是连线飞左上角真根因 ②topSafe 与信息条 padding 联动，改底板必须同步重算**；遗留：缩放放大恢复路径待补验（缩小已验）；主文档 docs/0.167.md|
-|0.168.x|画布页左侧边栏落地：平板 208 常驻 / 手机 72 抽屉默认隐藏（v0.168.4 拍板：☰ 按钮唤出、删边缘右滑热区）；⚙ 移边栏底部；导航「哪进哪回」；双真机验证全通过；**平台坑（真机实证）：①ArkUI overlay 层不参与 hit test，浮层手势须用 Stack 子节点承载 ②系统手势区占左缘 0~65px，快滑=返回、慢拖被吞不透传 ③手势中途挂载带 onClick 新组件致触摸流重路由、抬手即触发其 onClick（抽屉自关根因，修复=唤出判定移 onActionEnd）**|
-|0.169~0.171|复习区划词悬浮栏（翻译/入知识库/复制三项版）、边栏信息与 UI 微调、连线高度缩短启动|
-|0.172.x|连线高度缩短（verticalSpacing 160→136→113，层间距公式 113×s）；气泡卡片加「N 条对话 · X分钟前」最近消息时间（**方案：从最后一条消息 messageId（msg_${Date.now()}_xxx）解析时间戳，零模型改动、旧数据天然支持**）|
-|0.173.x|气泡拉宽 NODE_W 150→170 完整显示时间；单击气泡选中态（getFocusNodeId 焦点语义：selectedNodeId 优先、回落 current，复用进入后返回样式）；边栏副标题改「你的AI学习伴侣」+删「工作区」标签；**核心教训：ArkUI TapGesture(count:1) 与 count:2 并列绑定时单击抢先阻断双击（手势仲裁），单双击并存须只绑 count:1 手动判定（同目标两次 tap <300ms=双击、执行后 return 不记录本次 tap），参考 BBTreeCanvas v0.173.2**；用户实测全部通过收官|
-|0.174.x|首页+全局设置弹窗 UI 优化（弹窗 Tab 分段控件、isDark 三元全收敛 token、标题 600+SemiBold、保存/开启云同步主紫按钮、Toggle、面板 SURFACE_NODE+描边）；删首页「图结构对话 · 多分支推理」文案；**满屏教训：Navigation NavBarContent 底部 420px 是 toolbar 预留且被 clip 裁剪，页面组件背景无法突破——Stack 包 Navigation 做全局背景层+expandSafeArea 一层铺满全屏（顺带消除全 app 手势条黑区）；setWindowBackgroundColor 手机端不可用（编译警告属实、运行时静默失败勿用）**；新建 media/user.svg；FontWeight.SemiBold 枚举不存在→数字 600+fontFamily 切 Inter-SemiBold；真机像素采样实证全通过|
-|0.175.0|设置弹窗三 Tab 统一协调——①保存右侧加「返回」按钮（次级样式 SURFACE_SOFT/TEXT_SECONDARY、走 requestClose 未保存确认；云同步 Tab 补全宽返回、三 Tab 底部不空）②**小字行间距以云同步 Tab 为标准入 UI_GUIDELINES 四章（字号 11/副标题距 2/提示条目距 4/连续多行提示 lineHeight 18——乱源=多行长文本默认行高挤，云同步条目单行无此问题）**③称呼示例「大明」→「好奇宝宝」|
-|0.176.0|画布页信息条左上角返回箭头「←」删除（用户拍板，全设备尺寸——信息条全设备共用一处、仅 padding 分档，删一处即全删；侧边栏工作台 0.168 落地后画布即主页面，原 pop() 回 Index 入口已由边栏导航承担；pathStack 仍有 pushPath 引用保留）|
-|0.177.0|两修：①IDE 警告「请使用分层图标」——app.json5 icon 从 $media:app_logo 改指 $media:layered_image（AppScope 分层图标配置 background=新 logo 深紫版+foreground 透明；app_logo.png 与 background.png 本就同图 121489 字节，桌面图标视觉零变化；app_logo.png 保留未删）②**冷启动旧 logo 闪现 0.1s——根因=startWindowIcon 引用的 startIcon.png 仍是 0.163 旧 DAG 气泡 logo（0.174.4 换新 logo 时只换了 app_logo+两处 background 三资源位、漏了 startIcon），用 background.png 同图替换（字节级一致）**；装机 pad（192.168.2.16:33685）冷启动实证 v0.177.0 首页正常|
-|0.178.0|两改一确认：①**冷启动 logo 闪现根治——0.177.0「换新 logo」方向错误被用户否决（「绝对不允许」闪任何 logo），正解=startWindowIcon 透明化（startIcon.png 换 108×108 全透明 png、GDI+ 生成 175 字节 alpha=0 已验证，冷启动只显示背景色不闪任何图形）+ start_window_background base/dark 两处 #FFFFFF/#000000→#120B1F（=BG_APP 应用底色，启动页与首页无缝；启动页在应用进程前由系统按系统深浅色选资源、两处都改保证任何模式暗紫）**②画布页信息条标题「知识画布」→「气泡树」（用户拍板）③桌面短名 DAGAI 用户确认保留不动；装机 pad 杀进程冷启动实证 v0.178.0 首页正常+画布页「气泡树」标题显示|
-|0.179.0|首页改版三项（用户截图拍板）：①主按钮「进入对话画布」→「进入气泡树」②主按钮+华为账号登录区下移至左手拇指区（用户左手单手持 pad、原按钮在屏幕中部拇指够不到）③标题 24→32、副标题 11→14 放大；**布局方案：Column 删 justifyContent(FlexAlign.Center)，改 Blank 弹性占位 2:3:1（顶部 Blank(2) 标题悬上部、中部 Blank(3) 按钮组推至下部、底部 Blank(1) 版本号留白）；教训：有 layoutWeight 子元素时 justifyContent Center 不再生效，布局由 Blank 接管**；装机 pad 实证：按钮 y 766→1025（下移 259px）、登录区跟随、tap 跳转画布页正常、v0.179.0 上屏|
+|0.153|提炼弹窗超时、错误中文提示、Token统计（AI回复秒表已删，提炼弹窗读秒保留）|
+|0.160.x|Prompt泄漏修复、ForEach Key碰撞修复；**ArkUI V2铁律：ForEach item内visibility/if初始求值必须Visible，None/false移出渲染树后通知永不到达**；API key内置默认（**上架前须删**）；docs/0.160.md|
+|0.161.x|学习数量设置、API Key外置rawfile/config.json；**git教训：GitHub Push Protection拦截Key→reset --soft重写历史；unblock-secret链接绝对勿点**；docs/0.161.md|
+|0.162.1|新建分支过渡动画（链式animateTo淡出→切store→淡入440ms防刷屏）；docs/0.162.md|
+|0.163.x|代码块按钮icon化、更名DAG AI Chat、用户logo；**教训：bundleName勿动**（调试profile绑死包名）；docs/0.163.md|
+|0.164.x|华为账号登录跑通；**教训：①Account Kit登录须AGC手动申请调试Profile+手动签名（DevEco自动签名无有效Client ID）②受限权限须Profile ACL显式授权③错误码上屏是排查利器**；docs/0.164.md（错误码速查表）|
+|0.165.x|云同步双端调测收官；**踩坑：新SDK删类型名→类型推断；循环依赖用回调注入；下行写池绝不upsert防回环；AGC入口是「云空间」非云数据库**；遗留v0.165.3=同步状态提示+云空间开关引导；docs/0.165.md|
+|0.166.x|圈注图丢失修复（根因=动画回调清空pendingImages→addBubble加carryImages参数）；平板首页占左栏（Navigation Auto分栏→Stack单栏）；主题锁定暗色方案A（亮色分支代码保留勿删）|
+|0.167.x|Pixso canvas落地：UI_GUIDELINES+DesignTokens双真相源、连线Canvas命令式绘制、子树占位防重叠、等比缩放+限幅方向感知；**教训：Path无viewport自动缩放commands=连线飞左上角真根因；topSafe与信息条padding联动**；遗留：缩放放大恢复路径待补验；docs/0.167.md|
+|0.168.x|画布左侧边栏：平板208常驻/手机抽屉（☰按钮唤出、删边缘右滑热区）；导航「哪进哪回」；**平台坑：①overlay不参与hit test ②系统手势区占左缘0~65px ③手势中途挂载带onClick组件致触摸流重路由（抽屉自关根因→唤出判定移onActionEnd）**|
+|0.169~0.171|复习区划词悬浮栏（翻译/入知识库/复制）、边栏信息与UI微调、连线高度缩短启动|
+|0.172.x|连线缩短（verticalSpacing 113，层间距公式113×s）；气泡卡片加「N条对话·X分钟前」（messageId解析时间戳，零模型改动）|
+|0.173.x|气泡拉宽NODE_W 170；单击选中态（selectedNodeId优先、回落current）；边栏副标题「你的AI学习伴侣」；**核心教训：TapGesture count:1/count:2并列绑定单击抢先阻断双击，单双击并存须只绑count:1手动判定（两次tap<300ms=双击）**|
+|0.174.x|首页+设置弹窗UI优化（token收敛、分段控件、主紫按钮）；**满屏教训：NavBarContent底部420px被clip→Stack包Navigation+expandSafeArea铺满全屏；setWindowBackgroundColor手机端不可用；SemiBold=数字600+Inter-SemiBold**|
+|0.175.0|设置三Tab协调：保存右侧加「返回」；小字行间距以云同步为标准（多行提示lineHeight 18）入UI_GUIDELINES；称呼示例「好奇宝宝」|
+|0.176.0|信息条左上角返回箭头删除（边栏落地后画布即主页面，pop回Index入口由边栏导航承担）|
+|0.177.0|IDE分层图标警告修复（icon改指layered_image）；冷启动旧logo闪现修复（startIcon.png漏换，同图替换）|
+|0.178.0|冷启动logo闪现根治：startWindowIcon透明化（全透明png）+start_window_background两处→#120B1F；信息条标题「知识画布」→「气泡树」；桌面短名DAGAI保留|
+|0.179.0|首页改版：主按钮「进入气泡树」、按钮+登录区下移拇指区、标题32/副标题14；**布局：Blank弹性占位2:3:1（有layoutWeight子元素时justifyContent Center失效）**|
+|0.180.0|边栏跳转单词库/知识库不收抽屉，返回画布边栏保持打开（哪进哪回状态保持）；**教训：pushPath压栈不销毁源页面、组件状态路由往返天然保留，跳转前主动重置入口UI状态反而破坏哪进哪回**|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.179.0（versionCode 1000041）**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.180.0（versionCode 1000042）**
 - 版本线主文档：docs/0.167.md（历史线仅存 0.165.md，0.160~0.164 已清理）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，2026-10-04 端口 33685）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**
 

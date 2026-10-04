@@ -12,7 +12,7 @@
 //     点「翻译」弹 AI 查词浮窗（不建气泡、不进 DAG），可一键加入单词库（独立 PersistenceV2 持久化）
 //   - ★ 0.145：AI 消息气泡底部生词复习区（词库随机 2 词，词条式自适应宽度）+ 顶栏单词库入口
 //   - ★ 0.146：划词菜单「入知识库」（AI 提炼草稿 → 卡片编辑弹窗二次编辑 → 入库）+ AI 气泡底部知识卡片展示（📖 区分）
-//   - 深浅色主题适配
+//   - ★ 0.181.0：UI 规格化——色值全量收敛 DesignTokens（锁暗紫主题，isDark/浅色分支死代码已清除）
 //   - ★ 0.133：下拉发送模式（正常对话/播客模式）+ AI 消息语音朗读（★ 0.139 openspeech 2.0 协议 + 分段流水线，0.143 收尾清理调试链路）
 //   - ★ 0.152：内置屏幕圈选标注（第四大产品亮点）——✏️ 画画Icon 截取当前屏幕画面进入涂鸦标注页，
 //     标注完成三操作（当前对话导入 / 创建子气泡分支 / 存入知识库）；底栏重排为 ＋ 输入框 ✏️ 发送▾，
@@ -40,9 +40,11 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
-import { ThemeStore, AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）
+import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）
+// ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
+import { BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -104,7 +106,6 @@ const TTS_MAX_SEGMENT_LEN = 280;
 struct CodeBlockView {
   @Param content: string = '';   // 代码内容
   @Param lang: string = '';      // ★ 0.149：语言标识（parseMarkdown 已提取；空 = plaintext 不高亮）
-  @Param isDark: boolean = false; // 深浅色主题
   @Local wrap: boolean = true;    // 默认开启自动换行
   @Event onZoom: (content: string, lang: string) => void =
     (content: string, lang: string) => {}; // ★ 0.153：放大回调（父组件打开全屏代码弹窗）；★ 0.149 加传 lang
@@ -113,8 +114,8 @@ struct CodeBlockView {
   @Param selController: TextController | undefined = undefined;   // 父组件注册的 TextController（关闭选择菜单用）
   @Param selectAllKey: string = '';                               // 全选受控态（`${key}|${nonce}`，命中时本块全选）
   // ★ 0.157 崩溃修复：弃用 @BuilderParam 传父组件工具栏——@Builder 经 @BuilderParam 传入后在子组件上下文执行，
-  // this 不再指向 ChatPage，工具栏内 this.getThemeStore() 变 undefined → 长按代码块 TypeError 崩溃（真机实证）。
-  // 改为：本组件自带工具栏 UI（主题色用自身 isDark @Param），按钮动作经 @Event 回调父组件（this 归位正确）
+  // this 不再指向 ChatPage，工具栏内父组件状态变 undefined → 长按代码块 TypeError 崩溃（真机实证）。
+  // 改为：本组件自带工具栏 UI（★ 0.181.0 主题色收敛 DesignTokens 常量），按钮动作经 @Event 回调父组件（this 归位正确）
   @Event onTranslate: () => void = () => {};       // 翻译按钮（父组件 onToolbarTranslate）
   @Event onAddKnowledge: () => void = () => {};    // 入知识库按钮（父组件 onToolbarAddKnowledge）
   @Event onCopy: () => void = () => {};            // 复制按钮（父组件 onToolbarCopy）
@@ -135,21 +136,21 @@ struct CodeBlockView {
     return tokens;
   }
 
-  // ★ 0.149：token 配色（跟随 isDark 深浅色自动切换；关键字蓝/字符串绿/注释灰/数字橙）
+  // ★ 0.149：token 配色；★ 0.181.0 收敛 DesignTokens 语义常量（关键字蓝/字符串绿/注释灰/数字橙）
   tokenColor(kind: number): string {
     if (kind === 1) {
-      return this.isDark ? '#569CD6' : '#0000C0'; // 关键字：蓝
+      return CODE_KEYWORD; // 关键字：蓝
     }
     if (kind === 2) {
-      return this.isDark ? '#98C379' : '#008000'; // 字符串：绿
+      return CODE_STRING; // 字符串：绿
     }
     if (kind === 3) {
-      return this.isDark ? '#8A8A8A' : '#808080'; // 注释：灰
+      return CODE_COMMENT; // 注释：灰
     }
     if (kind === 4) {
-      return this.isDark ? '#D19A66' : '#B35C00'; // 数字：橙
+      return CODE_NUMBER; // 数字：橙
     }
-    return this.isDark ? '#D4D4D4' : '#333333';   // 普通代码文本：底色对应文字色
+    return CODE_TEXT;   // 普通代码文本：底色对应文字色
   }
 
   // ★ 0.149：一键复制全部代码 + toast 提示（需求：代码块顶部复制按钮）
@@ -176,13 +177,13 @@ struct CodeBlockView {
   }
 
   // ★ 0.157：代码块专用选择工具栏——UI 与 ChatPage.SelectionToolbar 保持一致（样式改动两处同步），
-  // 主题色取自身 isDark、按钮动作走 @Event，规避 @BuilderParam 的 this 上下文丢失
+  // 主题色用 DesignTokens 常量、按钮动作走 @Event，规避 @BuilderParam 的 this 上下文丢失
   @Builder
   codeToolbar() {
     Row() {
       Text('翻译')
         .fontSize(14)
-        .fontColor('#1976D2')
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onTranslate();
@@ -190,10 +191,10 @@ struct CodeBlockView {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('入知识库')
         .fontSize(14)
-        .fontColor('#1976D2')
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onAddKnowledge();
@@ -201,10 +202,10 @@ struct CodeBlockView {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('复制')
         .fontSize(14)
-        .fontColor(this.isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onCopy();
@@ -212,18 +213,18 @@ struct CodeBlockView {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('全选')
         .fontSize(14)
-        .fontColor(this.isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onSelectAll();
         })
     }
-    .backgroundColor(this.isDark ? '#2C2C2C' : '#FFFFFF')
-    .borderRadius(8)
-    .border({ width: 0.5, color: this.isDark ? '#555555' : '#CCCCCC' })
+    .backgroundColor(SURFACE_NODE)
+    .borderRadius(RADIUS_CONTROL)
+    .border({ width: 0.5, color: STROKE_CARD })
     .shadow({ radius: 12, color: 'rgba(0,0,0,0.25)', offsetX: 0, offsetY: 4 })
   }
 
@@ -235,7 +236,7 @@ struct CodeBlockView {
         // ★ 0.149：语言标签（无语言标识的代码块标记为 plaintext，不高亮）
         Text(this.lang.length > 0 ? this.lang : 'plaintext')
           .fontSize(11)
-          .fontColor(this.isDark ? '#9E9E9E' : '#757575')
+          .fontColor(TEXT_TERTIARY)
           .margin({ right: 6 })
 
         // ★ 0.149：复制按钮——一键复制全部代码文本 + toast 提示成功
@@ -243,15 +244,15 @@ struct CodeBlockView {
         Row() {
           Text('⧉')
             .fontSize(13)
-            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+            .fontColor(BRAND_SECONDARY)
         }
         .width(24)
         .height(22)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(4)
-        .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
-        .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .backgroundColor(SURFACE_HOVER)
+        .border({ width: 0.5, color: STROKE_BRAND })
         .margin({ right: 6 })
         .onClick(() => {
           this.copyAllCode();
@@ -262,15 +263,15 @@ struct CodeBlockView {
         Row() {
           Text(this.wrap ? '↩' : '⇄')
             .fontSize(13)
-            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+            .fontColor(BRAND_SECONDARY)
         }
         .width(24)
         .height(22)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(4)
-        .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
-        .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .backgroundColor(SURFACE_HOVER)
+        .border({ width: 0.5, color: STROKE_BRAND })
         .margin({ right: 6 })
         .onClick(() => {
           this.wrap = !this.wrap;
@@ -281,15 +282,15 @@ struct CodeBlockView {
         Row() {
           Text('⤢')
             .fontSize(13)
-            .fontColor(this.isDark ? '#7AB8FF' : '#1976D2')
+            .fontColor(BRAND_SECONDARY)
         }
         .width(24)
         .height(22)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(4)
-        .backgroundColor(this.isDark ? '#1E3A5F' : '#E3F2FD')
-        .border({ width: 0.5, color: this.isDark ? '#3D5A80' : '#90CAF9' })
+        .backgroundColor(SURFACE_HOVER)
+        .border({ width: 0.5, color: STROKE_BRAND })
         .onClick(() => {
           this.onZoom(this.content, this.lang); // ★ 0.149：加传 lang（放大弹窗同步高亮）
         })
@@ -312,10 +313,10 @@ struct CodeBlockView {
         }
           .fontSize(14)
           .fontFamily('monospace')
-          .fontColor(this.isDark ? '#D4D4D4' : '#333333')
+          .fontColor(CODE_TEXT)
           .padding(10)
-          .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
-          .borderRadius(6)
+          .backgroundColor(BG_CANVAS)
+          .borderRadius(RADIUS_CONTROL)
           .copyOption(CopyOptions.LocalDevice)
           .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
             onAppear: () => {
@@ -345,10 +346,10 @@ struct CodeBlockView {
           }
             .fontSize(14)
             .fontFamily('monospace')
-            .fontColor(this.isDark ? '#D4D4D4' : '#333333')
+            .fontColor(CODE_TEXT)
             .padding(10)
-            .backgroundColor(this.isDark ? '#2D2D2D' : '#F0F0F0')
-            .borderRadius(6)
+            .backgroundColor(BG_CANVAS)
+            .borderRadius(RADIUS_CONTROL)
             .copyOption(CopyOptions.LocalDevice)
             .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
               onAppear: () => {
@@ -487,10 +488,7 @@ export struct ChatPage {
   annotationResult: AnnotationResultStore = connectAnnotationResult(); // 标注结果（AnnotationPage → ChatPage，onShown 消费）
   @Local annotationNotifyVisible: boolean = false; // 首次使用说明弹窗可见
 
-  // ★ 获取 ThemeStore（通过 AppStorageV2 共享，0.103 功能）
-  getThemeStore(): ThemeStore {
-    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-  }
+  // ★ 0.181.0：getThemeStore 已删除——锁暗色后 ChatPage 色值全量收敛 DesignTokens（UI_GUIDELINES.md 单一来源）
 
   // ★ 0.153：估算表格各列固定宽度（vp）——按每列最大内容长度计算，保证表头/数据行列边界严格对齐
   // fontSize 14 下中文≈14vp/字符、英文≈7.5vp/字符，按中文保守估算：列偏宽不错位不截断，超宽靠横向滚动兜底
@@ -533,22 +531,21 @@ export struct ChatPage {
     return tokens;
   }
 
-  // ★ 0.149：放大弹窗 token 配色（与 CodeBlockView.tokenColor 保持一致，深浅色两套）
+  // ★ 0.181.0：放大弹窗 token 配色收敛 DesignTokens（锁暗色无浅色分支，与 CodeBlockView.tokenColor 同源常量）
   codeTokenColor(kind: number): string {
-    const dark = this.getThemeStore().isDark;
     if (kind === 1) {
-      return dark ? '#569CD6' : '#0000C0'; // 关键字：蓝
+      return CODE_KEYWORD; // 关键字：蓝
     }
     if (kind === 2) {
-      return dark ? '#98C379' : '#008000'; // 字符串：绿
+      return CODE_STRING; // 字符串：绿
     }
     if (kind === 3) {
-      return dark ? '#8A8A8A' : '#808080'; // 注释：灰
+      return CODE_COMMENT; // 注释：灰
     }
     if (kind === 4) {
-      return dark ? '#D19A66' : '#B35C00'; // 数字：橙
+      return CODE_NUMBER; // 数字：橙
     }
-    return dark ? '#D4D4D4' : '#333333';   // 普通代码文本
+    return CODE_TEXT;   // 普通代码文本
   }
 
   // ★ 0.153：打开表格放大弹窗（换行模式重置为 false，与气泡内表格默认一致）
@@ -1638,7 +1635,7 @@ export struct ChatPage {
     Row() {
       Text('翻译')
         .fontSize(14)
-        .fontColor('#1976D2')
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarTranslate();
@@ -1646,11 +1643,11 @@ export struct ChatPage {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       // ★ 0.146：入知识库——选中原文交 AI 提炼草稿，编辑弹窗二次修改后入库
       Text('入知识库')
         .fontSize(14)
-        .fontColor('#1976D2')
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarAddKnowledge();
@@ -1658,10 +1655,10 @@ export struct ChatPage {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('复制')
         .fontSize(14)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarCopy();
@@ -1669,10 +1666,10 @@ export struct ChatPage {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('全选')
         .fontSize(14)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarSelectAll();
@@ -1680,20 +1677,20 @@ export struct ChatPage {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       // ★ 0.160：划词删除——AI 超长回复时免滚到 × 按钮就地删本条消息；
       // 红色警示（破坏性操作），确认防误触与 × 按钮共享状态
       Text('删除')
         .fontSize(14)
-        .fontColor('#D32F2F')
+        .fontColor(DANGER)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarDelete();
         })
     }
-    .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-    .borderRadius(8)
-    .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+    .backgroundColor(SURFACE_NODE)
+    .borderRadius(RADIUS_CONTROL)
+    .border({ width: 0.5, color: STROKE_CARD })
     .shadow({ radius: 12, color: 'rgba(0,0,0,0.25)', offsetX: 0, offsetY: 4 })
   }
 
@@ -1706,7 +1703,7 @@ export struct ChatPage {
     Row() {
       Text('翻译')
         .fontSize(14)
-        .fontColor('#1976D2')
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarTranslate();
@@ -1714,10 +1711,10 @@ export struct ChatPage {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('入知识库')
         .fontSize(14)
-        .fontColor('#1976D2')
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarAddKnowledge();
@@ -1725,18 +1722,18 @@ export struct ChatPage {
       Divider()
         .vertical(true)
         .height(16)
-        .color(this.getThemeStore().isDark ? '#555555' : '#DDDDDD')
+        .color(STROKE_CARD)
       Text('复制')
         .fontSize(14)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
           this.onToolbarCopy();
         })
     }
-    .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-    .borderRadius(8)
-    .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+    .backgroundColor(SURFACE_NODE)
+    .borderRadius(RADIUS_CONTROL)
+    .border({ width: 0.5, color: STROKE_CARD })
     .shadow({ radius: 12, color: 'rgba(0,0,0,0.25)', offsetX: 0, offsetY: 4 })
   }
 
@@ -2028,7 +2025,7 @@ export struct ChatPage {
       Button('←')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontColor(TEXT_PRIMARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -2037,15 +2034,15 @@ export struct ChatPage {
           }
         })
       Text('对话')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+        .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.181.0：顶栏标题对齐 ScreenTitle（18 Bold→16 SemiBold）
+        .fontWeight(600)
+        .fontColor(TEXT_PRIMARY)
       Blank()
         .layoutWeight(1)
       Button('📚')
         .fontSize(15)
         .backgroundColor(Color.Transparent)
-        .fontColor('#666')
+        .fontColor(TEXT_TERTIARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -2054,7 +2051,7 @@ export struct ChatPage {
       Button('📖')
         .fontSize(15)
         .backgroundColor(Color.Transparent)
-        .fontColor('#666')
+        .fontColor(TEXT_TERTIARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -2063,7 +2060,7 @@ export struct ChatPage {
       Button('⚙')
         .fontSize(17)
         .backgroundColor(Color.Transparent)
-        .fontColor('#666')
+        .fontColor(TEXT_TERTIARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 6 })
         .onClick(() => {
@@ -2087,7 +2084,7 @@ export struct ChatPage {
           Column() {
             Text('暂无对话')
               .fontSize(16)
-              .fontColor('#999999')
+              .fontColor(TEXT_TERTIARY)
           }
           .width('100%')
           .layoutWeight(1)
@@ -2102,7 +2099,7 @@ export struct ChatPage {
                   if (msg.role === 'assistant') {
                     Button('×')
                       .fontSize(16)
-                      .fontColor('#F44336')
+                      .fontColor(DANGER)
                       .backgroundColor(Color.Transparent)
                       .padding({ left: 2, right: 2 }) // ★ 0.148：压掉 Button 默认大内边距（≈32vp），给气泡留宽度
                       .margin({ right: 4 })
@@ -2118,7 +2115,7 @@ export struct ChatPage {
                           Image(url)
                             .width(80)
                             .height(80)
-                            .borderRadius(8)
+                            .borderRadius(RADIUS_CONTROL)
                             .margin({ right: 4 })
                             .onClick(() => {
                               this.openImageViewer(url);
@@ -2135,10 +2132,10 @@ export struct ChatPage {
                         Text(msg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|u`) })
                           .fontSize(16)
                           .lineHeight(24)
-                          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#1976D2')
+                          .fontColor(TEXT_PRIMARY)
                           .padding(10)
-                          .borderRadius(8)
-                          .backgroundColor(this.getThemeStore().isDark ? '#0D47A1' : '#E3F2FD')
+                          .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
+                          .backgroundColor(BRAND_PRIMARY)
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
@@ -2175,7 +2172,7 @@ export struct ChatPage {
                               Text(seg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|${idx}`) })
                                 .fontSize(16)
                                 .lineHeight(24)
-                                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#616161')
+                                .fontColor(TEXT_PRIMARY)
                                 .copyOption(CopyOptions.LocalDevice)
                                 // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
                                 .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
@@ -2203,7 +2200,6 @@ export struct ChatPage {
                               CodeBlockView({
                                 content: seg.content,
                                 lang: seg.lang, // ★ 0.149：语言标识（parseMarkdown 已提取，语法高亮+顶部标签）
-                                isDark: this.getThemeStore().isDark,
                                 onZoom: (content: string, lang: string) => { this.openCodeZoom(content, lang); }, // ★ 0.153：左上角「放大」按钮回调；★ 0.149 加传 lang
                                 textKey: `${msg.messageId}|c${idx}`,
                                 selController: this.getOrCreateTextController(`${msg.messageId}|c${idx}`),
@@ -2233,15 +2229,15 @@ export struct ChatPage {
                                 Row() {
                                   Text('⤢')
                                     .fontSize(13)
-                                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                                    .fontColor(BRAND_SECONDARY)
                                 }
                                 .width(24)
                                 .height(22)
                                 .justifyContent(FlexAlign.Center)
                                 .alignItems(VerticalAlign.Center)
                                 .borderRadius(4)
-                                .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-                                .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
+                                .backgroundColor(SURFACE_HOVER)
+                                .border({ width: 0.5, color: STROKE_BRAND })
                                 .margin({ top: 4, bottom: 2 })
                                 .onClick(() => {
                                   this.openTableZoom(seg.header, seg.rows);
@@ -2257,9 +2253,9 @@ export struct ChatPage {
                                         // key 用 `t${idx}h${ci}` 前缀（t=表格，与文本段纯数字 idx 空间隔离）
                                         Text(cell, { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}h${ci}`) })
                                           .fontSize(14)
-                                          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                                          .fontColor(TEXT_PRIMARY)
                                           .padding(8)
-                                          .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                                          .border({ width: 0.5, color: STROKE_CARD })
                                           .width(this.getTableColWidths(seg.header, seg.rows)[ci])
                                           .maxLines(1)
                                           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2289,9 +2285,9 @@ export struct ChatPage {
                                           // ★ 0.156：划词五件套——同表头（key 含行列号，每格独立 controller）
                                           Text(cell, { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}r${ri}c${ci}`) })
                                             .fontSize(14)
-                                            .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
+                                            .fontColor(TEXT_SECONDARY)
                                             .padding(8)
-                                            .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                                            .border({ width: 0.5, color: STROKE_CARD })
                                             .width(this.getTableColWidths(seg.header, seg.rows)[ci])
                                             .maxLines(1)
                                             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2341,7 +2337,7 @@ export struct ChatPage {
                          if (this.wordBank.words.length > 0) {
                            Divider()
                              .strokeWidth(0.5)
-                             .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                             .color(STROKE_CARD)
                              .margin({ top: 8, bottom: 6 })
                            Column() {
                               ForEach(this.getReviewWords(msg.messageId), (w: WordItem, idx: number) => {
@@ -2352,8 +2348,8 @@ export struct ChatPage {
                                       // key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
                                       Text('📚 ' + w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
                                         .fontSize(13)
-                                        .fontWeight(FontWeight.Bold)
-                                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                        .fontWeight(600)
+                                        .fontColor(TEXT_SECONDARY)
                                         .maxLines(1)
                                         .copyOption(CopyOptions.LocalDevice)
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
@@ -2371,14 +2367,14 @@ export struct ChatPage {
                                         // Phonetic right beside the word — same line, never ellipsized (user rule)
                                         Text(w.usPhonetic)
                                           .fontSize(12)
-                                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                          .fontColor(TEXT_TERTIARY)
                                           .maxLines(1)
                                           .margin({ left: 6 })
                                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                                         // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                                         Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                                           .fontSize(12)
-                                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_TERTIARY))
                                           .onClick(() => {
                                             this.stopTTS();
                                             const ctx = this.getUIContext().getHostContext();
@@ -2390,7 +2386,7 @@ export struct ChatPage {
                                       // ★ 0.169.1：全称行划词（缩略词全称/中译英答案）
                                       Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
                                         .fontSize(12)
-                                        .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                                        .fontColor(BRAND_SECONDARY)
                                         .maxLines(1)
                                         .margin({ top: 1 })
                                         .copyOption(CopyOptions.LocalDevice)
@@ -2409,7 +2405,7 @@ export struct ChatPage {
                                     // ★ 0.169.1：释义行划词
                                     Text(w.explain, { controller: this.getOrCreateTextController(`${msg.messageId}|rwe${idx}`) })
                                       .fontSize(12)
-                                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                                      .fontColor(TEXT_SECONDARY)
                                       .maxLines(1)
                                       .margin({ top: 2 })
                                       .copyOption(CopyOptions.LocalDevice)
@@ -2444,7 +2440,7 @@ export struct ChatPage {
                           if (this.knowledgeBank.cards.length > 0) {
                             Divider()
                               .strokeWidth(0.5)
-                              .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                              .color(STROKE_CARD)
                               .margin({ top: 6, bottom: 6 })
                             Column() {
                               ForEach(this.getKnowledgeCards(msg.messageId), (card: KnowledgeCard, idx: number) => {
@@ -2455,8 +2451,8 @@ export struct ChatPage {
                                       // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
                                       Text('📖 ' + card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
                                         .fontSize(13)
-                                        .fontWeight(FontWeight.Bold)
-                                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                                        .fontWeight(600)
+                                        .fontColor(TEXT_SECONDARY)
                                         .maxLines(1)
                                         .copyOption(CopyOptions.LocalDevice)
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
@@ -2476,7 +2472,7 @@ export struct ChatPage {
                                         // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
                                         Text('🖼️')
                                           .fontSize(12)
-                                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                                          .fontColor(TEXT_TERTIARY)
                                           .maxLines(1)
                                           .margin({ left: 6 })
                                           .onClick(() => {
@@ -2491,7 +2487,7 @@ export struct ChatPage {
                                     // ★ 0.169.1：定义行划词
                                     Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
                                       .fontSize(12)
-                                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                                      .fontColor(TEXT_SECONDARY)
                                       .maxLines(1)
                                       .margin({ top: 2 })
                                       .copyOption(CopyOptions.LocalDevice)
@@ -2521,8 +2517,8 @@ export struct ChatPage {
                           }
                           .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
-                        .borderRadius(8)
-                        .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
+                        .borderRadius(RADIUS_CONTROL)
+                        .backgroundColor(SURFACE_NODE)
                         .alignItems(HorizontalAlign.Start) // ★ 0.145：气泡内段落保持左对齐（阅读习惯），气泡整体位置由外层 alignItems 控制
 
                         // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
@@ -2533,7 +2529,7 @@ export struct ChatPage {
                             Button('🔄')
                               .fontSize(14)
                               .backgroundColor(Color.Transparent)
-                              .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
+                              .fontColor(TEXT_TERTIARY)
                               .padding({ left: 0, right: 4, top: 2, bottom: 2 })
                               .onClick(() => {
                                 this.regenerateMessage(msg);
@@ -2541,7 +2537,7 @@ export struct ChatPage {
                             if (msg.outputTokens > 0) {
                               Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
                                 .fontSize(11)
-                                .fontColor(this.getThemeStore().isDark ? '#888' : '#999')
+                                .fontColor(TEXT_TERTIARY)
                             }
                             Blank()
                               .width(12) // ★ 0.146：固定间距（原 layoutWeight(1) 在自适应行内失效）
@@ -2549,7 +2545,7 @@ export struct ChatPage {
                               .fontSize(14)
                               .backgroundColor(Color.Transparent)
                               .fontColor(this.playingMessageId === msg.messageId || this.ttsLoadingMessageId === msg.messageId
-                                ? '#1976D2' : (this.getThemeStore().isDark ? '#888' : '#999'))
+                                ? BRAND_SECONDARY : (TEXT_TERTIARY))
                               .padding({ left: 8, right: 4, top: 2, bottom: 2 })
                               .onClick(() => {
                                 this.startTTS(msg);
@@ -2568,7 +2564,7 @@ export struct ChatPage {
                   if (msg.role === 'user') {
                     Button('×')
                       .fontSize(16)
-                      .fontColor('#F44336')
+                      .fontColor(DANGER)
                       .backgroundColor(Color.Transparent)
                       .padding({ left: 2, right: 2 }) // ★ 0.148：与 AI 分支 × 保持一致的紧凑内边距
                       .onClick(() => {
@@ -2601,12 +2597,12 @@ export struct ChatPage {
                 Image(img)
                   .width(60)
                   .height(60)
-                  .borderRadius(8)
+                  .borderRadius(RADIUS_CONTROL)
                 Text('×')
                   .fontSize(15)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor('#FFFFFF')
-                  .backgroundColor('#F44336')
+                  .fontWeight(600)
+                  .fontColor(TEXT_PRIMARY)
+                  .backgroundColor(DANGER)
                   .width(22)
                   .height(22)
                   .borderRadius(11)
@@ -2634,13 +2630,13 @@ export struct ChatPage {
           // 换树杈传达「另起一个树杈（新分支）」语义；尺寸样式不变（32×32 圆角 8）
           Text('🌿')
             .fontSize(18)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontColor(TEXT_PRIMARY)
             .width(32)
             .height(32)
             .textAlign(TextAlign.Center)
-            .borderRadius(8)
-            .backgroundColor(this.getThemeStore().isDark ? '#333333' : '#FFFFFF')
-            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#DDDDDD' })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_HOVER)
+            .border({ width: 1, color: STROKE_CARD })
             .margin({ right: 2 })
             .onClick(() => {
               this.addBubble();
@@ -2665,6 +2661,7 @@ export struct ChatPage {
 
           Button('发送')
             .enabled(!this.isLoading)
+            .backgroundColor(BRAND_PRIMARY) // ★ 0.181.0：主操作按钮收敛主紫——原未设背景走系统默认蓝（Material 蓝残留），与暗紫主题冲突
             .margin({ left: 4 }) // ★ 0.144：收紧与模式按钮的间距，把宽度让给输入框
             .onClick(() => {
               this.sendMessage();
@@ -2673,7 +2670,7 @@ export struct ChatPage {
           // ★ 0.152：发送右侧小三角下拉按钮——弹出菜单：对话模式（2项）/ 回复长度（3项）/ 图片添加
           Text('▾')
             .fontSize(12)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontColor(TEXT_PRIMARY)
             .width(18)
             .height(32)
             .textAlign(TextAlign.Center)
@@ -2699,22 +2696,22 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
+            .backgroundColor(OVERLAY)
 
             // 弹窗主体：标题输入框 → 定义输入框 → 图片区 → 保存/取消
             Column() {
               // ★ 0.153：提炼中标题展示秒表计时（每秒 +1），空闲恢复静态标题
               Text(this.knowledgeEditLoading ? `AI提炼中：${this.knowledgeExtractSeconds}秒` : '知识库卡片')
                 .fontSize(16)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.knowledgeEditLoading ? '#1976D2' : (this.getThemeStore().isDark ? '#FFFFFF' : '#333333'))
+                .fontWeight(600)
+                .fontColor(this.knowledgeEditLoading ? BRAND_SECONDARY : (TEXT_PRIMARY))
                 .margin({ bottom: 12 })
 
               // AI 提炼失败提示（输入框仍可手动填写）
               if (!this.knowledgeEditLoading && this.knowledgeEditError.length > 0) {
                 Text(this.knowledgeEditError)
                   .fontSize(13)
-                  .fontColor('#F44336')
+                  .fontColor(DANGER)
                   .margin({ bottom: 8 })
               }
 
@@ -2741,8 +2738,8 @@ export struct ChatPage {
               if (this.knowledgeImageUri.length === 0) {
                 Button('添加图片')
                   .fontSize(13)
-                  .backgroundColor(this.getThemeStore().isDark ? '#1E1E1E' : '#F5F5F5')
-                  .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                  .backgroundColor(SURFACE_NODE)
+                  .fontColor(TEXT_SECONDARY)
                   .width('100%')
                   .margin({ bottom: 12 })
                   .onClick(() => {
@@ -2755,15 +2752,15 @@ export struct ChatPage {
                   Image(this.knowledgeImageUri)
                     .width(80)
                     .height(80)
-                    .borderRadius(8)
+                    .borderRadius(RADIUS_CONTROL)
                     .onClick(() => {
                       this.openKnowledgeImagePreview();
                     })
                   Text('×')
                     .fontSize(15)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#FFFFFF')
-                    .backgroundColor('#F44336')
+                    .fontWeight(600)
+                    .fontColor(TEXT_PRIMARY)
+                    .backgroundColor(DANGER)
                     .width(22)
                     .height(22)
                     .borderRadius(11)
@@ -2783,7 +2780,7 @@ export struct ChatPage {
               if (this.editReviewWords.length > 0) {
                 Divider()
                   .strokeWidth(0.5)
-                  .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                  .color(STROKE_CARD)
                   .margin({ bottom: 6 })
                 ForEach(this.editReviewWords, (w: WordItem, idx: number) => {
                   // ★ 0.160 bugfix: wrap each entry in horizontal Scroll (same as bubble review area) —
@@ -2793,19 +2790,19 @@ export struct ChatPage {
                     Row() {
                       Text('📚 ' + w.word)
                         .fontSize(13)
-                        .fontWeight(FontWeight.Bold)
-                        .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                        .fontWeight(600)
+                        .fontColor(TEXT_SECONDARY)
                         .maxLines(1)
                       if (w.usPhonetic.length > 0) {
                         Text(w.usPhonetic)
                           .fontSize(12)
-                          .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                          .fontColor(TEXT_TERTIARY)
                           .maxLines(1)
                           .margin({ left: 6 })
                         // 发音按钮（与气泡复习区同款三态；缩略词播全称）
                         Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                           .fontSize(12)
-                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_TERTIARY))
                           .margin({ left: 4 })
                           .onClick(() => {
                             this.stopTTS();
@@ -2817,13 +2814,13 @@ export struct ChatPage {
                     if (w.fullName.length > 0) {
                       Text(w.fullName)
                         .fontSize(12)
-                        .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                        .fontColor(BRAND_SECONDARY)
                         .maxLines(1)
                         .margin({ top: 1 })
                     }
                     Text(w.explain)
                       .fontSize(12)
-                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                      .fontColor(TEXT_SECONDARY)
                       .maxLines(1)
                       .margin({ top: 2 })
                   }
@@ -2839,7 +2836,7 @@ export struct ChatPage {
               if (this.editReviewCards.length > 0) {
                 Divider()
                   .strokeWidth(0.5)
-                  .color(this.getThemeStore().isDark ? '#444444' : '#DDDDDD')
+                  .color(STROKE_CARD)
                   .margin({ top: 6, bottom: 6 })
                 // ★ 0.160 bugfix: wrap each card in horizontal Scroll (same as bubble review area) —
                 // long title/definition could not be swiped and overflowed the dialog (user report)
@@ -2850,13 +2847,13 @@ export struct ChatPage {
                   Row() {
                     Text('📖 ' + card.title)
                       .fontSize(13)
-                      .fontWeight(FontWeight.Bold)
-                      .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                      .fontWeight(600)
+                      .fontColor(TEXT_SECONDARY)
                       .maxLines(1)
                     if (card.imageUri.length > 0) {
                       Text('🖼️')
                         .fontSize(12)
-                        .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                        .fontColor(TEXT_TERTIARY)
                         .maxLines(1)
                         .margin({ left: 6 })
                         .onClick(() => {
@@ -2868,7 +2865,7 @@ export struct ChatPage {
                   }
                   Text(card.definition)
                     .fontSize(12)
-                    .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#666666')
+                    .fontColor(TEXT_SECONDARY)
                     .maxLines(1)
                     .margin({ top: 2 })
                 }
@@ -2892,8 +2889,8 @@ export struct ChatPage {
                   })
                 Button('保存入库')
                   .layoutWeight(1)
-                  .backgroundColor('#1976D2')
-                  .fontColor('#FFFFFF')
+                  .backgroundColor(BRAND_PRIMARY)
+                  .fontColor(TEXT_PRIMARY)
                   // ★ 0.153：提炼中/报错/业务超时均置灰不可点击（修复报错态仍可点击的 BUG）；
                   // 仅请求成功结束（loading=false 且无错误）才启用
                   .enabled(!this.knowledgeEditLoading && this.knowledgeEditError.length === 0)
@@ -2906,14 +2903,14 @@ export struct ChatPage {
               // ★ 0.153：底部小字提示——取消仅停止后续内容生成（已发送部分不撤回）
               Text('提示：请求提交后，输入内容已发送AI服务，取消仅停止后续内容生成。')
                 .fontSize(11)
-                .fontColor(this.getThemeStore().isDark ? '#888888' : '#999999')
+                .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
                 .width('100%')
             }
             .width('85%')
             .padding(20)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
           }
           .width('100%')
           .height('100%')
@@ -2937,7 +2934,7 @@ export struct ChatPage {
 
             Button('×')
               .fontSize(24)
-              .fontColor('#FFFFFF')
+              .fontColor(TEXT_PRIMARY)
               .backgroundColor(Color.Transparent)
               .position({ x: 20, y: 20 })
               .onClick(() => {
@@ -2971,7 +2968,7 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.25)')
+            .backgroundColor(OVERLAY_LIGHT)
             .onClick(() => {
               this.closeWordPopup();
             })
@@ -2981,8 +2978,8 @@ export struct ChatPage {
               // 查询原文（即渲染顺序首项「单词」）
               Text(this.wordPopupQuery)
                 .fontSize(20)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
                 .maxLines(1)
                 .margin({ bottom: 12 })
 
@@ -2990,7 +2987,7 @@ export struct ChatPage {
               if (this.wordPopupLoading) {
                 Text('查询中...')
                   .fontSize(14)
-                  .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ bottom: 12 })
               }
 
@@ -2998,7 +2995,7 @@ export struct ChatPage {
               if (!this.wordPopupLoading && this.wordPopupError.length > 0) {
                 Text(this.wordPopupError)
                   .fontSize(14)
-                  .fontColor('#F44336')
+                  .fontColor(DANGER)
                   .margin({ bottom: 12 })
               }
 
@@ -3007,20 +3004,20 @@ export struct ChatPage {
                 if (this.wordPopupResult.fullName.length > 0) {
                   Text(this.wordPopupResult.fullName)
                     .fontSize(14)
-                    .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                    .fontColor(TEXT_SECONDARY)
                     .margin({ bottom: 4 })
                 }
                 if (this.wordPopupResult.usPhonetic.length > 0) {
                   Row() {
                     Text(this.wordPopupResult.usPhonetic)
                       .fontSize(14)
-                      .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                      .fontColor(TEXT_SECONDARY)
                     // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                     // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                     // ★ 0.155：发音文本统一走 wordPopupSpeakText()——中译英播英文译文、原路径播全称/原文
                     Text(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? '⏳' : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? '🔊' : '🔈'))
                       .fontSize(14)
-                      .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? '#1976D2' : (this.getThemeStore().isDark ? '#888888' : '#999999'))
+                      .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? BRAND_SECONDARY : (TEXT_TERTIARY))
                       .margin({ left: 6 })
                       .onClick(() => {
                         this.stopTTS();
@@ -3034,7 +3031,7 @@ export struct ChatPage {
                 if (this.wordPopupResult.explain.length > 0) {
                   Text(this.wordPopupResult.explain)
                     .fontSize(14)
-                    .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#333333')
+                    .fontColor(TEXT_SECONDARY)
                     .margin({ bottom: 12 })
                 }
               }
@@ -3043,15 +3040,15 @@ export struct ChatPage {
               if (this.wordExistsTip) {
                 Text('单词已存在')
                   .fontSize(12)
-                  .fontColor('#F44336')
+                  .fontColor(DANGER)
                   .margin({ bottom: 4 })
               }
 
               // 加入单词库按钮（已加入后转灰禁用防重复）
               Button(this.wordPopupAdded ? '已加入' : '加入单词库')
                 .width('100%')
-                .backgroundColor(this.wordPopupAdded ? (this.getThemeStore().isDark ? '#2C2C2C' : '#E0E0E0') : '#1976D2')
-                .fontColor(this.wordPopupAdded ? (this.getThemeStore().isDark ? '#888888' : '#999999') : '#FFFFFF')
+                .backgroundColor(this.wordPopupAdded ? (SURFACE_HOVER) : BRAND_PRIMARY)
+                .fontColor(this.wordPopupAdded ? (TEXT_TERTIARY) : TEXT_PRIMARY)
                 .enabled(!this.wordPopupAdded && this.wordPopupResult !== null)
                 .onClick(() => {
                   this.addCurrentWordToBank();
@@ -3059,8 +3056,8 @@ export struct ChatPage {
             }
             .width('70%')
             .padding(20)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
           }
           .width('100%')
           .height('100%')
@@ -3077,7 +3074,7 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.25)')
+            .backgroundColor(OVERLAY_LIGHT)
             .onClick(() => {
               this.deleteConfirmVisible = false;
             })
@@ -3086,26 +3083,26 @@ export struct ChatPage {
             Column() {
               Text('删除这条消息？')
                 .fontSize(18)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 8 })
 
               Text('删除后不可恢复')
                 .fontSize(13)
-                .fontColor(this.getThemeStore().isDark ? '#999999' : '#666666')
+                .fontColor(TEXT_TERTIARY)
                 .margin({ bottom: 16 })
 
               // 勾选行：整行可点（Checkbox 只读展示，避免 Row/Checkbox 双触发）
               Row() {
                 Checkbox()
                   .select(this.deleteConfirmNoAsk)
-                  .selectedColor('#1976D2')
+                  .selectedColor(BRAND_PRIMARY)
                   .width(18)
                   .height(18)
                   .hitTestBehavior(HitTestMode.None)
                 Text('此次对话不再提示')
                   .fontSize(13)
-                  .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                  .fontColor(TEXT_SECONDARY)
                   .margin({ left: 6 })
               }
               .margin({ bottom: 16 })
@@ -3117,16 +3114,16 @@ export struct ChatPage {
               Row() {
                 Button('取消')
                   .layoutWeight(1)
-                  .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#E0E0E0')
-                  .fontColor(this.getThemeStore().isDark ? '#CCCCCC' : '#666666')
+                  .backgroundColor(SURFACE_HOVER)
+                  .fontColor(TEXT_SECONDARY)
                   .margin({ right: 8 })
                   .onClick(() => {
                     this.deleteConfirmVisible = false;
                   })
                 Button('删除')
                   .layoutWeight(1)
-                  .backgroundColor('#F44336')
-                  .fontColor('#FFFFFF')
+                  .backgroundColor(DANGER)
+                  .fontColor(TEXT_PRIMARY)
                   .onClick(() => {
                     this.confirmDeleteMessage();
                   })
@@ -3134,8 +3131,8 @@ export struct ChatPage {
             }
             .width('70%')
             .padding(20)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
           }
           .width('100%')
           .height('100%')
@@ -3151,7 +3148,7 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.5)')
+            .backgroundColor(OVERLAY)
             .onClick(() => {
               this.codeZoomVisible = false;
             })
@@ -3162,13 +3159,13 @@ export struct ChatPage {
               Row() {
                 Text('代码块')
                   .fontSize(16)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                  .fontWeight(600)
+                  .fontColor(TEXT_PRIMARY)
 
                 // ★ 0.149：语言标签（与气泡内代码块一致；无语言标识显示 plaintext）
                 Text(this.codeZoomLang.length > 0 ? this.codeZoomLang : 'plaintext')
                   .fontSize(12)
-                  .fontColor(this.getThemeStore().isDark ? '#9E9E9E' : '#757575')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ left: 8 })
 
                 Blank()
@@ -3178,15 +3175,15 @@ export struct ChatPage {
                 Row() {
                   Text(this.codeZoomWrap ? '↩' : '⇄')
                     .fontSize(13)
-                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                    .fontColor(BRAND_SECONDARY)
                 }
                 .width(24)
                 .height(22)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
                 .borderRadius(4)
-                .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-                .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
+                .backgroundColor(SURFACE_HOVER)
+                .border({ width: 0.5, color: STROKE_BRAND })
                 .onClick(() => {
                   this.codeZoomWrap = !this.codeZoomWrap;
                 })
@@ -3194,7 +3191,7 @@ export struct ChatPage {
                 // 关闭按钮
                 Text('✕')
                   .fontSize(16)
-                  .fontColor(this.getThemeStore().isDark ? '#AAAAAA' : '#999999')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ left: 12 })
                   .onClick(() => {
                     this.codeZoomVisible = false;
@@ -3217,10 +3214,10 @@ export struct ChatPage {
                   }
                     .fontSize(14)
                     .fontFamily('monospace')
-                    .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
+                    .fontColor(CODE_TEXT)
                     .padding(10)
-                    .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
-                    .borderRadius(6)
+                    .backgroundColor(BG_CANVAS)
+                    .borderRadius(RADIUS_CONTROL)
                     .width('100%')
                     .copyOption(CopyOptions.LocalDevice)
                     .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
@@ -3250,10 +3247,10 @@ export struct ChatPage {
                     }
                       .fontSize(14)
                       .fontFamily('monospace')
-                      .fontColor(this.getThemeStore().isDark ? '#D4D4D4' : '#333333')
+                      .fontColor(CODE_TEXT)
                       .padding(10)
-                      .backgroundColor(this.getThemeStore().isDark ? '#2D2D2D' : '#F0F0F0')
-                      .borderRadius(6)
+                      .backgroundColor(BG_CANVAS)
+                      .borderRadius(RADIUS_CONTROL)
                       .copyOption(CopyOptions.LocalDevice)
                       .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                         onAppear: () => {
@@ -3284,8 +3281,8 @@ export struct ChatPage {
             .width('94%')
             .height('88%')
             .padding(16)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
           }
           .width('100%')
           .height('100%')
@@ -3311,7 +3308,7 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.5)')
+            .backgroundColor(OVERLAY)
             .onClick(() => {
               this.tableZoomVisible = false;
             })
@@ -3322,8 +3319,8 @@ export struct ChatPage {
               Row() {
                 Text('表格')
                   .fontSize(16)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                  .fontWeight(600)
+                  .fontColor(TEXT_PRIMARY)
 
                 Blank()
 
@@ -3332,15 +3329,15 @@ export struct ChatPage {
                 Row() {
                   Text(this.tableZoomWrap ? '↩' : '⇄')
                     .fontSize(13)
-                    .fontColor(this.getThemeStore().isDark ? '#7AB8FF' : '#1976D2')
+                    .fontColor(BRAND_SECONDARY)
                 }
                 .width(24)
                 .height(22)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
                 .borderRadius(4)
-                .backgroundColor(this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-                .border({ width: 0.5, color: this.getThemeStore().isDark ? '#3D5A80' : '#90CAF9' })
+                .backgroundColor(SURFACE_HOVER)
+                .border({ width: 0.5, color: STROKE_BRAND })
                 .onClick(() => {
                   this.tableZoomWrap = !this.tableZoomWrap;
                 })
@@ -3348,7 +3345,7 @@ export struct ChatPage {
                 // 关闭按钮
                 Text('✕')
                   .fontSize(16)
-                  .fontColor(this.getThemeStore().isDark ? '#AAAAAA' : '#999999')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ left: 12 })
                   .onClick(() => {
                     this.tableZoomVisible = false;
@@ -3367,9 +3364,9 @@ export struct ChatPage {
                         // ★ 0.156：划词五件套——放大弹窗表格单元格可划词（key tzh${ci}；wrap 模式完整显示，划词无截断）
                         Text(cell, { controller: this.getOrCreateTextController(`tzh${ci}`) })
                           .fontSize(14)
-                          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                          .fontColor(TEXT_PRIMARY)
                           .padding(8)
-                          .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                          .border({ width: 0.5, color: STROKE_CARD })
                           .width(this.getTableColWidths(this.tableZoomHeader, this.tableZoomRows)[ci])
                           .maxLines(this.tableZoomWrap ? 999 : 1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -3399,9 +3396,9 @@ export struct ChatPage {
                           // ★ 0.156：划词五件套——同表头（key tzr${ri}c${ci}，每格独立 controller）
                           Text(cell, { controller: this.getOrCreateTextController(`tzr${ri}c${ci}`) })
                             .fontSize(14)
-                            .fontColor(this.getThemeStore().isDark ? '#E0E0E0' : '#666666')
+                            .fontColor(TEXT_SECONDARY)
                             .padding(8)
-                            .border({ width: 0.5, color: this.getThemeStore().isDark ? '#555555' : '#CCCCCC' })
+                            .border({ width: 0.5, color: STROKE_CARD })
                             .width(this.getTableColWidths(this.tableZoomHeader, this.tableZoomRows)[ci])
                             .maxLines(this.tableZoomWrap ? 999 : 1)
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -3438,8 +3435,8 @@ export struct ChatPage {
             .width('94%')
             .height('88%')
             .padding(16)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
           }
           .width('100%')
           .height('100%')
@@ -3460,7 +3457,7 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
+            .backgroundColor(OVERLAY)
             .onClick(() => {
               this.modeMenuOpen = false;
             })
@@ -3470,112 +3467,112 @@ export struct ChatPage {
               // ── 上组：对话模式（★ 0.151-D 需求 3：对话模式在上面） ──
               Text('对话模式')
                 .fontSize(11)
-                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .fontColor(TEXT_TERTIARY)
                 .width('100%')
                 .padding({ left: 12, top: 8 })
                 .textAlign(TextAlign.Start)
               Text('💬 正常对话')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(TEXT_PRIMARY)
                 .width('100%')
                 .padding(12)
                 .textAlign(TextAlign.Start)
-                .backgroundColor(this.sendMode === 'normal' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
-                .borderRadius(8)
+                .backgroundColor(this.sendMode === 'normal' ? (BRAND_PRIMARY) : Color.Transparent)
+                .borderRadius(RADIUS_CONTROL)
                 .onClick(() => {
                   this.sendMode = 'normal';
                   this.modeMenuOpen = false;
                 })
               Text('🎙 播客模式')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(TEXT_PRIMARY)
                 .width('100%')
                 .padding(12)
                 .textAlign(TextAlign.Start)
-                .backgroundColor(this.sendMode === 'podcast' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
-                .borderRadius(8)
+                .backgroundColor(this.sendMode === 'podcast' ? (BRAND_PRIMARY) : Color.Transparent)
+                .borderRadius(RADIUS_CONTROL)
                 .onClick(() => {
                   this.sendMode = 'podcast';
                   this.modeMenuOpen = false;
                 })
               Text('口语化输出，适合朗读')
                 .fontSize(11)
-                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .fontColor(TEXT_TERTIARY)
                 .width('100%')
                 .padding({ left: 12, bottom: 8 })
                 .textAlign(TextAlign.Start)
               Divider()
-                .color(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+                .color(STROKE_CARD)
                 .margin({ top: 4, bottom: 4 })
               // ── 下组：回复长度（★ 0.151-D 需求 3：短中长在下面） ──
               Text('回复长度')
                 .fontSize(11)
-                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .fontColor(TEXT_TERTIARY)
                 .width('100%')
                 .padding({ left: 12, top: 4 })
                 .textAlign(TextAlign.Start)
               Text('短回复')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(TEXT_PRIMARY)
                 .width('100%')
                 .padding(12)
                 .textAlign(TextAlign.Start)
-                .backgroundColor(this.replyLengthMode === 'short' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
-                .borderRadius(8)
+                .backgroundColor(this.replyLengthMode === 'short' ? (BRAND_PRIMARY) : Color.Transparent)
+                .borderRadius(RADIUS_CONTROL)
                 .onClick(() => {
                   this.replyLengthMode = 'short';
                   this.modeMenuOpen = false;
                 })
               Text('中回复')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(TEXT_PRIMARY)
                 .width('100%')
                 .padding(12)
                 .textAlign(TextAlign.Start)
-                .backgroundColor(this.replyLengthMode === 'medium' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
-                .borderRadius(8)
+                .backgroundColor(this.replyLengthMode === 'medium' ? (BRAND_PRIMARY) : Color.Transparent)
+                .borderRadius(RADIUS_CONTROL)
                 .onClick(() => {
                   this.replyLengthMode = 'medium';
                   this.modeMenuOpen = false;
                 })
               Text('长回复')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(TEXT_PRIMARY)
                 .width('100%')
                 .padding(12)
                 .textAlign(TextAlign.Start)
-                .backgroundColor(this.replyLengthMode === 'long' ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD') : Color.Transparent)
-                .borderRadius(8)
+                .backgroundColor(this.replyLengthMode === 'long' ? (BRAND_PRIMARY) : Color.Transparent)
+                .borderRadius(RADIUS_CONTROL)
                 .onClick(() => {
                   this.replyLengthMode = 'long';
                   this.modeMenuOpen = false;
                 })
               Text('输出长度为 AI 参考约束，无法保证严格固定字数')
                 .fontSize(11)
-                .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                .fontColor(TEXT_TERTIARY)
                 .width('100%')
                 .padding({ left: 12, bottom: 8 })
                 .textAlign(TextAlign.Start)
               Divider()
-                .color(this.getThemeStore().isDark ? '#444444' : '#EEEEEE')
+                .color(STROKE_CARD)
                 .margin({ top: 4, bottom: 4 })
               // ── 第三组：图片添加（★ 0.152：原底栏 🖼️ 按钮收进下拉菜单） ──
               Text('🖼️ 添加图片')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontColor(TEXT_PRIMARY)
                 .width('100%')
                 .padding(12)
                 .textAlign(TextAlign.Start)
-                .borderRadius(8)
+                .borderRadius(RADIUS_CONTROL)
                 .onClick(() => {
                   this.modeMenuOpen = false;
                   this.selectImages(); // 相册多选 → base64 挂到输入区（原链路不变）
                 })
             }
             .width(200)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-            .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: 1, color: STROKE_CARD })
             .padding(4)
             .margin({ bottom: 64, right: 16 }) // 抬到输入区上方（⋮ 按钮正上方）
           }
@@ -3593,31 +3590,31 @@ export struct ChatPage {
             }
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.4)')
+            .backgroundColor(OVERLAY)
 
             Column() {
               Text('屏幕圈选标注')
                 .fontSize(16)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 10 })
               Text('用于屏幕圈选标注提问，不会后台录制屏幕。')
                 .fontSize(14)
-                .fontColor(this.getThemeStore().isDark ? '#BBBBBB' : '#555555')
+                .fontColor(TEXT_SECONDARY)
                 .margin({ bottom: 16 })
               Button('知道了')
                 .fontSize(14)
                 .width('100%')
-                .backgroundColor('#1976D2')
-                .fontColor('#FFFFFF')
+                .backgroundColor(BRAND_PRIMARY)
+                .fontColor(TEXT_PRIMARY)
                 .onClick(() => {
                   this.confirmAnnotationNotify();
                 })
             }
             .width('75%')
             .padding(20)
-            .borderRadius(12)
-            .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
           }
           .width('100%')
           .height('100%')

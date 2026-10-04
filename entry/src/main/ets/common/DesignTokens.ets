@@ -27,6 +27,17 @@ export const SEGMENTED_TRACK: string = 'rgba(255,255,255,0.06)';// 分段控件�
 export const EDGE_COLOR: string = 'rgba(124,77,255,0.85)';
 export const EDGE_COLOR_HIGHLIGHT: string = '#A78BFA';
 
+// ── 语义色（★ 0.181.0 ChatPage 收敛：UI_GUIDELINES 14 token 未覆盖的内容语义色，
+//    按总则「未覆盖场景按同组件规格类推」收敛为常量，禁止页面散落写值）──
+export const DANGER: string = '#F44336';            // 删除/破坏性操作警示红
+export const CODE_KEYWORD: string = '#569CD6';      // 代码高亮：关键字
+export const CODE_STRING: string = '#98C379';       // 代码高亮：字符串
+export const CODE_COMMENT: string = '#8A8A8A';      // 代码高亮：注释
+export const CODE_NUMBER: string = '#D19A66';       // 代码高亮：数字
+export const CODE_TEXT: string = '#D4D4D4';         // 代码高亮：普通文本
+export const OVERLAY: string = 'rgba(0,0,0,0.5)';   // 弹窗遮罩（对齐 GlobalSettingsDialog）
+export const OVERLAY_LIGHT: string = 'rgba(0,0,0,0.25)'; // 轻量浮窗遮罩（翻译浮窗/删除确认——底层对话保持可读）
+
 // ── 圆角 Token（5 档）──
 export const RADIUS_NAV: number = 12;      // 导航项/图标按钮
 export const RADIUS_NODE: number = 18;     // 气泡节点卡片
