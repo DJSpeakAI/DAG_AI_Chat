@@ -20,11 +20,11 @@
 // 技术栈：鸿蒙 ArkUI V2（@ComponentV2 / @Local / @Param）
 // ============================================================
 
-import { AppStorageV2 } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference } from '../common/ChatModel'; // ★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
-import { ThemeStore } from '../entryability/EntryAbility';
 import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
+// ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
+import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
 // 模型选项接口（与原 SettingsPage 一致，搬入保持组件自包含）
 interface ModelOption {
@@ -76,11 +76,6 @@ export struct GlobalSettingsDialog {
   @Local editEncourage: boolean = true; // 自动鼓励开关（默认开启）
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
-
-  // ★ 0.131：获取全局主题状态（与 ChatPage/BBTreeCanvas 相同模式）
-  getThemeStore(): ThemeStore {
-    return AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-  }
 
   // ★ 0.134：音频模型触发器显示可读名字（预置列表 id→name 映射；自定义 ID 显示 ID 本身；空值显示未配置）
   audioModelDisplayName(id: string): string {
@@ -219,16 +214,16 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('API Key')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
         TextInput({ text: $$this.editKey, placeholder: '填入火山方舟 API Key' })
           .width('100%')
           .height(48)
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
       }
       .width('100%')
       .margin({ bottom: 16 })
@@ -237,16 +232,16 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('Endpoint')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
         TextInput({ text: $$this.editEndpoint, placeholder: 'API 地址' })
           .width('100%')
           .height(48)
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
       }
       .width('100%')
       .margin({ bottom: 16 })
@@ -255,23 +250,23 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('Model')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
 
         // 下拉触发器：显示当前选中模型名称 + 箭头
         Row() {
           Text(MODEL_LIST[this.selectedModelIndex].name)
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontColor(TEXT_PRIMARY)
             .layoutWeight(1)
           Text(this.isDropdownOpen ? '▲' : '▼')
             .fontSize(12)
-            .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+            .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
         .height(48)
-        .borderRadius(8)
-        .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
         .padding({ left: 12, right: 12 })
         .onClick(() => {
           this.isDropdownOpen = !this.isDropdownOpen;
@@ -285,18 +280,18 @@ export struct GlobalSettingsDialog {
                 // 主文字：模型名称
                 Text(model.name)
                   .fontSize(14)
-                  .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                  .fontColor(TEXT_PRIMARY)
                 // 小字：类型 + 价格
                 Text(`${model.type} · ${model.price}`)
                   .fontSize(12)
-                  .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ top: 2 })
               }
               .width('100%')
               .padding(12)
               .backgroundColor(index === this.selectedModelIndex
-                ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-                : (this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF'))
+                ? (SURFACE_HOVER)
+                : (SURFACE_NODE))
               .onClick(() => {
                 this.selectedModelIndex = index;
                 this.editModel = model.id;
@@ -305,16 +300,16 @@ export struct GlobalSettingsDialog {
             }, (model: ModelOption) => model.id)
           }
           .width('100%')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-          .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_NODE)
+          .border({ width: 1, color: STROKE_CARD })
           .margin({ top: 4 })
         }
 
         // 提示：模型 ID 说明
         Text('⚠️ 控制台展示名称≠API调用ID，预置模型示例：doubao-seed-2-1-lite-260915；数字之间是短横线`-`，禁止小数点，直接复制上表ID使用。')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
@@ -324,20 +319,20 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('音频 API Key')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
         TextInput({ text: $$this.editAudioKey, placeholder: '填入豆包语音控制台新建的 Key' })
           .width('100%')
           .height(48)
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
         // 提示：音频 Key 与对话 Key 相互独立
         Text('⚠️ 语音合成走豆包语音（openspeech）体系，Key 需在豆包语音控制台新建，与上方对话用的方舟 API Key 相互独立、不通用。')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
@@ -347,23 +342,23 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('音频模型（TTS 朗读）')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
 
         // 下拉触发器：显示当前音频模型 ID
         Row() {
           Text(this.audioModelDisplayName(this.editAudioModel))
             .fontSize(14)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontColor(TEXT_PRIMARY)
             .layoutWeight(1)
           Text(this.isAudioDropdownOpen ? '▲' : '▼')
             .fontSize(12)
-            .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+            .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
         .height(48)
-        .borderRadius(8)
-        .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
         .padding({ left: 12, right: 12 })
         .onClick(() => {
           this.isAudioDropdownOpen = !this.isAudioDropdownOpen;
@@ -376,17 +371,17 @@ export struct GlobalSettingsDialog {
               Column() {
                 Text(model.name)
                   .fontSize(14)
-                  .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+                  .fontColor(TEXT_PRIMARY)
                 Text(`${model.type} · ${model.price}`)
                   .fontSize(12)
-                  .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+                  .fontColor(TEXT_TERTIARY)
                   .margin({ top: 2 })
               }
               .width('100%')
               .padding(12)
               .backgroundColor(model.id === this.editAudioModel
-                ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-                : (this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF'))
+                ? (SURFACE_HOVER)
+                : (SURFACE_NODE))
               .onClick(() => {
                 this.editAudioModel = model.id;
                 this.isAudioDropdownOpen = false;
@@ -394,9 +389,9 @@ export struct GlobalSettingsDialog {
             }, (model: ModelOption) => model.id)
           }
           .width('100%')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
-          .border({ width: 1, color: this.getThemeStore().isDark ? '#555555' : '#E0E0E0' })
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_NODE)
+          .border({ width: 1, color: STROKE_CARD })
           .margin({ top: 4 })
         }
 
@@ -405,16 +400,16 @@ export struct GlobalSettingsDialog {
           .width('100%')
           .height(48)
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
           .margin({ top: 8 })
 
         // 提示：音频模型说明
         Text('⚠️ 用于 AI 消息喇叭朗读。语音合成 2.0 走 openspeech HTTP 接口，音色使用内置默认值（zh_female_vv_uranus_bigtts），无需填写音色 ID。')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
@@ -424,16 +419,16 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('音频 Endpoint')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
         TextInput({ text: $$this.editAudioEndpoint, placeholder: 'TTS 接口地址' })
           .width('100%')
           .height(48)
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
       }
       .width('100%')
       .margin({ bottom: 16 })
@@ -449,19 +444,19 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('自定义称呼')
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
         TextInput({ text: $$this.editNickname, placeholder: '如：大明（AI 回复会以此称呼你）' })
           .width('100%')
           .height(48)
           .fontSize(14)
-          .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
-          .placeholderColor(this.getThemeStore().isDark ? '#777777' : '#666666')
-          .borderRadius(8)
-          .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
         Text('💡 填写后 AI 在短/中/长全部回复模式都会以此称呼你；留空则不添加称呼。')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
@@ -473,10 +468,10 @@ export struct GlobalSettingsDialog {
           Column() {
             Text('自动鼓励')
               .fontSize(14)
-              .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+              .fontColor(TEXT_PRIMARY)
             Text('回复开头附 1~2 句学习鼓励')
               .fontSize(11)
-              .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+              .fontColor(TEXT_TERTIARY)
               .margin({ top: 2 })
           }
           .layoutWeight(1)
@@ -484,7 +479,7 @@ export struct GlobalSettingsDialog {
 
           // Toggle 用 onChange 回调写 @Local（isOn 仅初始值参数；不用 $$ 双向绑定，回调模式最稳）
           Toggle({ type: ToggleType.Switch, isOn: this.editEncourage })
-            .selectedColor('#1976D2')
+            .selectedColor(BRAND_PRIMARY)
             .onChange((isOn: boolean) => {
               this.editEncourage = isOn;
             })
@@ -493,7 +488,7 @@ export struct GlobalSettingsDialog {
 
         Text('💡 开启后 AI 会在回复开头（称呼之后、主体内容之前）结合当前学习主题给你 1~2 句鼓励（短回复不生成）；关闭后所有回复都不生成鼓励，仅保留称呼。')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
@@ -513,15 +508,15 @@ export struct GlobalSettingsDialog {
       Row() {
         Text(this.syncGranted ? '✓' : '○')
           .fontSize(18)
-          .fontColor(this.syncGranted ? '#4CAF50' : (this.getThemeStore().isDark ? '#777777' : '#999'))
+          .fontColor(this.syncGranted ? '#4CAF50' : (TEXT_TERTIARY))
         Column() {
           Text(this.syncGranted ? '云同步已开启' : '云同步未开启')
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontColor(TEXT_PRIMARY)
           Text(this.syncGranted ? '本设备对话数据将自动与云端保持一致' : '开启后，登录同一华为账号的多台设备共享对话数据')
             .fontSize(11)
-            .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+            .fontColor(TEXT_TERTIARY)
             .margin({ top: 2 })
         }
         .layoutWeight(1)
@@ -530,10 +525,10 @@ export struct GlobalSettingsDialog {
       }
       .width('100%')
       .padding(12)
-      .borderRadius(8)
+      .borderRadius(RADIUS_CONTROL)
       .backgroundColor(this.syncGranted
-        ? (this.getThemeStore().isDark ? '#1B3A2A' : '#E8F5E9')
-        : (this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5'))
+        ? ('rgba(76,175,80,0.12)')
+        : (SURFACE_SOFT))
       .margin({ bottom: 16 })
 
       // 开启按钮（已授权则不显示——授权是一次性的，重复弹窗无意义；拒绝过可再点重试）
@@ -541,10 +536,11 @@ export struct GlobalSettingsDialog {
         Button('开启云同步')
           .width('100%')
           .height(48)
-          .fontSize(16)
-          .backgroundColor('#1976D2')
-          .fontColor('#FFFFFF')
-          .borderRadius(8)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(TEXT_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
           .margin({ bottom: 16 })
           .onClick(() => {
             const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -563,28 +559,28 @@ export struct GlobalSettingsDialog {
       Column() {
         Text('同步条件')
           .fontSize(13)
-          .fontColor(this.getThemeStore().isDark ? '#888888' : '#666')
+          .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
         Text('1. 各台设备均开启云同步，且登录同一个华为账号')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
         Text('2. 系统「设置 → 华为账号 → 云空间」开关已打开')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
         Text('3. 云空间默认仅 WLAN 下同步（系统「云空间 → 高级设置」可改）')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
         Text('4. 对话数据经华为云空间加密存储，本地功能永久免费离线可用')
           .fontSize(11)
-          .fontColor(this.getThemeStore().isDark ? '#777777' : '#999')
+          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
       .padding(12)
-      .borderRadius(8)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#F5F5F5')
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_SOFT)
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
@@ -605,14 +601,15 @@ export struct GlobalSettingsDialog {
         // 标题行：全局设置 + ✕ 关闭
         Row() {
           Text('全局设置')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getThemeStore().isDark ? '#FFFFFF' : '#333333')
+            .fontSize(FONT_SIZE_SCREEN_TITLE)
+            .fontWeight(600) // ★ 0.174.1：SemiBold 枚举本 API 版本不存在，数字 600 等效（fontFamily 已切 Inter-SemiBold）
+            .fontColor(TEXT_PRIMARY)
+            .fontFamily(FONT_INTER_SEMIBOLD)
           Blank()
             .layoutWeight(1)
           Text('✕')
             .fontSize(16)
-            .fontColor(this.getThemeStore().isDark ? '#AAAAAA' : '#999999')
+            .fontColor(TEXT_SECONDARY)
             .onClick(() => {
               this.requestClose();
             })
@@ -620,48 +617,45 @@ export struct GlobalSettingsDialog {
         .width('100%')
         .margin({ bottom: 12 })
 
-        // Tab 切换行（自绘按钮，选中态高亮；★ 0.167.8：删「画布」Tab——模式切换已由画布页分段控件承担）
+        // Tab 切换行（★ 0.174.1：改分段控件——轨道 SEGMENTED_TRACK + 选中段 BRAND_PRIMARY，与画布页分段控件同规格；★ 0.167.8：删「画布」Tab）
         Row() {
           Text('API 配置')
-            .fontSize(15)
-            .fontWeight(this.currentTab === 0 ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.currentTab === 0 ? '#1976D2' : (this.getThemeStore().isDark ? '#AAAAAA' : '#666'))
-            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-            .borderRadius(6)
-            .backgroundColor(this.currentTab === 0
-              ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-              : Color.Transparent)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 0 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 0 ? BRAND_PRIMARY : Color.Transparent)
             .onClick(() => {
               this.currentTab = 0;
             })
           Text('AI 偏好')
-            .fontSize(15)
-            .fontWeight(this.currentTab === 1 ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.currentTab === 1 ? '#1976D2' : (this.getThemeStore().isDark ? '#AAAAAA' : '#666'))
-            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-            .borderRadius(6)
-            .backgroundColor(this.currentTab === 1
-              ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-              : Color.Transparent)
-            .margin({ left: 8 })
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 1 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .margin({ left: 4 })
             .onClick(() => {
               this.currentTab = 1;
             })
           Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
-            .fontSize(15)
-            .fontWeight(this.currentTab === 3 ? FontWeight.Bold : FontWeight.Normal)
-            .fontColor(this.currentTab === 3 ? '#1976D2' : (this.getThemeStore().isDark ? '#AAAAAA' : '#666'))
-            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-            .borderRadius(6)
-            .backgroundColor(this.currentTab === 3
-              ? (this.getThemeStore().isDark ? '#1E3A5F' : '#E3F2FD')
-              : Color.Transparent)
-            .margin({ left: 8 })
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 3 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 3 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 3 ? BRAND_PRIMARY : Color.Transparent)
+            .margin({ left: 4 })
             .onClick(() => {
               this.currentTab = 3;
             })
         }
         .width('100%')
+        .padding(3)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SEGMENTED_TRACK)
         .margin({ bottom: 12 })
 
         // 内容区：Scroll 包裹（Tab1 表单超屏可滚动，0.140 教训——保存按钮固定底部不被推出）
@@ -685,10 +679,11 @@ export struct GlobalSettingsDialog {
           Button('保存')
             .width('100%')
             .height(48)
-            .fontSize(16)
-            .backgroundColor('#1976D2')
-            .fontColor('#FFFFFF')
-            .borderRadius(8)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(TEXT_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
             .margin({ top: 12 })
             .onClick(() => {
               this.saveAll();
@@ -698,8 +693,9 @@ export struct GlobalSettingsDialog {
       .width('94%')
       .height('88%')
       .padding(16)
-      .borderRadius(12)
-      .backgroundColor(this.getThemeStore().isDark ? '#2C2C2C' : '#FFFFFF')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
     }
     .width('100%')
     .height('100%')
