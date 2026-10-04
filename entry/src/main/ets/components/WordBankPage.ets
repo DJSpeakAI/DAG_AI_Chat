@@ -27,6 +27,7 @@
 import { WordItem, WordBankStore } from '../common/WordModel';
 import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
 import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）
+import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：下次复习时间标签（记忆算法）
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
 import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
@@ -39,7 +40,7 @@ export struct WordBankPage {
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
-  @Local sortDesc: boolean = true; // default: newest first (desc)
+  @Local sortMode: number = 0; // ★ 0.187.0：排序 3 态——0=最新↓（默认）1=最早↑ 2=需复习↑（下次复习时间升序）
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -117,10 +118,36 @@ export struct WordBankPage {
           || w.explain.toLowerCase().includes(kw);
       });
     }
-    list.sort((a: WordItem, b: WordItem) => {
-      return this.sortDesc ? b.createTime - a.createTime : a.createTime - b.createTime;
-    });
+    if (this.sortMode === 2) {
+      // ★ 0.187.0：最近需复习——下次复习时间升序（已到期/未学习 nextReviewAt=0 排最前）
+      list.sort((a: WordItem, b: WordItem) => a.nextReviewAt - b.nextReviewAt);
+    } else {
+      list.sort((a: WordItem, b: WordItem) => {
+        return this.sortMode === 0 ? b.createTime - a.createTime : a.createTime - b.createTime;
+      });
+    }
     return list;
+  }
+
+  // ★ 0.187.0：排序按钮文案（3 态循环）
+  sortLabel(): string {
+    return this.sortMode === 0 ? '最新↓' : (this.sortMode === 1 ? '最早↑' : '需复习↑');
+  }
+
+  // ★ 0.187.0：下次复习标签——未学习 / 下次复习：已到期·N分钟后·N小时后·N天后·日期
+  nextReviewLabel(w: WordItem): string {
+    if (w.reviewCount === 0) {
+      return '未学习';
+    }
+    return '下次复习：' + formatNextReviewLabel(w.nextReviewAt, Date.now());
+  }
+
+  // ★ 0.187.0：下次复习着色——已到期红 / 其余灰
+  nextReviewColor(w: WordItem): string {
+    if (w.reviewCount > 0 && w.nextReviewAt <= Date.now()) {
+      return DANGER;
+    }
+    return TEXT_TERTIARY;
   }
 
   // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
@@ -295,6 +322,16 @@ export struct WordBankPage {
         .fontColor(TEXT_PRIMARY)
       Blank()
         .layoutWeight(1)
+      // ★ 0.188.0：排序按钮移到顶栏右上角（用户要求）——3 态循环 最新↓/最早↑/需复习↑
+      Button(this.sortLabel())
+        .fontSize(12)
+        .backgroundColor(Color.Transparent)
+        .fontColor(TEXT_PRIMARY)
+        .padding({ left: 8, right: 4 })
+        .margin({ right: 4 })
+        .onClick(() => {
+          this.sortMode = (this.sortMode + 1) % 3;
+        })
       // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
       Button('⚙')
         .fontSize(18)
@@ -772,17 +809,8 @@ export struct WordBankPage {
                   .onClick(() => {
                     this.searchKeyword = '';
                   })
-              }
-              Button(this.sortDesc ? '最新↓' : '最早↑')
-                .fontSize(12)
-                .fontColor(TEXT_SECONDARY)
-                .backgroundColor(Color.Transparent)
-                .padding({ left: 6, right: 6 })
-                .margin({ left: 6 })
-                .onClick(() => {
-                  this.sortDesc = !this.sortDesc;
-                })
-            }
+               }
+             }
             .width('100%')
             .padding({ left: 16, right: 16, top: 4, bottom: 4 })
           } else {
@@ -891,6 +919,11 @@ export struct WordBankPage {
                       Text(w.explain)
                         .fontSize(13)
                         .fontColor(TEXT_SECONDARY)
+                        .margin({ top: 2 })
+                      // ★ 0.187.0：下次复习时间（未学习灰 / 已到期红 / 常规灰）
+                      Text(this.nextReviewLabel(w))
+                        .fontSize(11)
+                        .fontColor(this.nextReviewColor(w))
                         .margin({ top: 2 })
                     }
                     .alignItems(HorizontalAlign.Start)

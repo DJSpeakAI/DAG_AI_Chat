@@ -26,6 +26,11 @@ export class WordItem {
   @Trace usPhonetic: string = ''; // American phonetic transcription (e.g. "/ˈɒpəreɪtɪŋ/")
   @Trace explain: string = '';    // concise Chinese explanation
   @Trace createTime: number = 0;  // ★ 0.148: creation timestamp (ms) — bank page sorting field
+  // ★ 0.187.0: memory-algorithm state (hidden from users; full spec in docs/0.165+/0.187.0)
+  @Trace strength: number = 0;     // 记忆强度 S（天，浮点）；0 = 从未评分（新词标记，选词走新词队列）
+  @Trace reviewCount: number = 0;  // 展示复习次数（展示即复习——被动计数，评分不重复计）
+  @Trace lastReviewAt: number = 0; // 上次展示复习时间戳（ms）
+  @Trace nextReviewAt: number = 0; // 计划下次复习时间戳（ms）；0 = 新词，视为已到期
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
@@ -33,13 +38,18 @@ export class WordItem {
   // (ChatPage translate-popup add, preset samples) stay source-compatible;
   // addWordToBank() auto-fills both when they are left empty.
   constructor(word: string = '', fullName: string = '', usPhonetic: string = '', explain: string = '',
-    id: string = '', createTime: number = 0) {
+    id: string = '', createTime: number = 0,
+    strength: number = 0, reviewCount: number = 0, lastReviewAt: number = 0, nextReviewAt: number = 0) {
     this.word = word;
     this.fullName = fullName;
     this.usPhonetic = usPhonetic;
     this.explain = explain;
     this.id = id;
     this.createTime = createTime;
+    this.strength = strength;
+    this.reviewCount = reviewCount;
+    this.lastReviewAt = lastReviewAt;
+    this.nextReviewAt = nextReviewAt;
   }
 }
 

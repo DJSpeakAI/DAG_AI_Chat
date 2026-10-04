@@ -27,6 +27,7 @@
 
 import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
+import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
@@ -41,7 +42,7 @@ export struct KnowledgeBankPage {
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
-  @Local sortDesc: boolean = true; // default: newest first (desc)
+  @Local sortMode: number = 0; // ★ 0.188.0：排序 3 态——0=最新↓（默认）1=最早↑ 2=需复习↑（下次复习时间升序，复刻单词库）
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -99,10 +100,36 @@ export struct KnowledgeBankPage {
           || c.definition.toLowerCase().includes(kw);
       });
     }
-    list.sort((a: KnowledgeCard, b: KnowledgeCard) => {
-      return this.sortDesc ? b.createdAt - a.createdAt : a.createdAt - b.createdAt;
-    });
+    if (this.sortMode === 2) {
+      // ★ 0.188.0：最近需复习——下次复习时间升序（已到期/未学习 nextReviewAt=0 排最前）
+      list.sort((a: KnowledgeCard, b: KnowledgeCard) => a.nextReviewAt - b.nextReviewAt);
+    } else {
+      list.sort((a: KnowledgeCard, b: KnowledgeCard) => {
+        return this.sortMode === 0 ? b.createdAt - a.createdAt : a.createdAt - b.createdAt;
+      });
+    }
     return list;
+  }
+
+  // ★ 0.188.0：排序按钮文案（3 态循环，复刻单词库）
+  sortLabel(): string {
+    return this.sortMode === 0 ? '最新↓' : (this.sortMode === 1 ? '最早↑' : '需复习↑');
+  }
+
+  // ★ 0.188.0：下次复习标签——未学习 / 下次复习：已到期·N分钟后·N小时后·N天后·日期
+  nextReviewLabel(c: KnowledgeCard): string {
+    if (c.reviewCount === 0) {
+      return '未学习';
+    }
+    return '下次复习：' + formatNextReviewLabel(c.nextReviewAt, Date.now());
+  }
+
+  // ★ 0.188.0：下次复习着色——已到期红 / 其余灰
+  nextReviewColor(c: KnowledgeCard): string {
+    if (c.reviewCount > 0 && c.nextReviewAt <= Date.now()) {
+      return DANGER;
+    }
+    return TEXT_TERTIARY;
   }
 
   // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
@@ -289,6 +316,16 @@ export struct KnowledgeBankPage {
         .fontColor(TEXT_PRIMARY)
       Blank()
         .layoutWeight(1)
+      // ★ 0.188.0：排序按钮移到顶栏右上角（复刻单词库）——3 态循环 最新↓/最早↑/需复习↑
+      Button(this.sortLabel())
+        .fontSize(12)
+        .backgroundColor(Color.Transparent)
+        .fontColor(TEXT_PRIMARY)
+        .padding({ left: 8, right: 4 })
+        .margin({ right: 4 })
+        .onClick(() => {
+          this.sortMode = (this.sortMode + 1) % 3;
+        })
       // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
       Button('⚙')
         .fontSize(18)
@@ -694,19 +731,10 @@ export struct KnowledgeBankPage {
                   .onClick(() => {
                     this.searchKeyword = '';
                   })
-              }
-              Button(this.sortDesc ? '最新↓' : '最早↑')
-                .fontSize(12)
-                .fontColor(TEXT_SECONDARY)
-                .backgroundColor(Color.Transparent)
-                .padding({ left: 6, right: 6 })
-                .margin({ left: 6 })
-                .onClick(() => {
-                  this.sortDesc = !this.sortDesc;
-                })
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+               }
+             }
+             .width('100%')
+             .padding({ left: 16, right: 16, top: 4, bottom: 4 })
           } else {
             // ★ 0.148: multi-select toolbar — select-all / counter / cancel
             Row() {
@@ -788,6 +816,11 @@ export struct KnowledgeBankPage {
                       Text(c.definition)
                         .fontSize(13)
                         .fontColor(TEXT_SECONDARY)
+                        .margin({ top: 2 })
+                      // ★ 0.188.0：下次复习时间（未学习灰 / 已到期红 / 常规灰，复刻单词库）
+                      Text(this.nextReviewLabel(c))
+                        .fontSize(11)
+                        .fontColor(this.nextReviewColor(c))
                         .margin({ top: 2 })
                       if (c.imageUri.length > 0) {
                         // Card image thumbnail — not rendered when empty

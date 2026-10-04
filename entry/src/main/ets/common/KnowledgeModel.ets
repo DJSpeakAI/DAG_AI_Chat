@@ -34,15 +34,27 @@ export class KnowledgeCard {
   @Trace definition: string = '';  // card body definition (LaTeX source preserved as plain text)
   @Trace imageUri: string = '';    // base64 data URI; '' = no image (image area not rendered)
   @Trace createdAt: number = 0;    // creation timestamp (ms)
+  // ★ 0.188.0: memory-algorithm state (same 4 fields as WordItem; hidden from users;
+  // spec in docs/0.165+/0.187.0 记忆算法与复习系统.md)
+  @Trace strength: number = 0;     // 记忆强度 S（天，浮点）；0 = 从未评分（新卡标记）
+  @Trace reviewCount: number = 0;  // 展示复习次数（展示即复习——被动计数，评分不重复计）
+  @Trace lastReviewAt: number = 0; // 上次展示复习时间戳（ms）
+  @Trace nextReviewAt: number = 0; // 计划下次复习时间戳（ms）；0 = 新卡，视为已到期
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
-  constructor(id: string = '', title: string = '', definition: string = '', imageUri: string = '', createdAt: number = 0) {
+  // ★ 0.188.0: 4 memory fields appended at the tail — legacy 5-arg call sites unchanged.
+  constructor(id: string = '', title: string = '', definition: string = '', imageUri: string = '', createdAt: number = 0,
+    strength: number = 0, reviewCount: number = 0, lastReviewAt: number = 0, nextReviewAt: number = 0) {
     this.id = id;
     this.title = title;
     this.definition = definition;
     this.imageUri = imageUri;
     this.createdAt = createdAt;
+    this.strength = strength;
+    this.reviewCount = reviewCount;
+    this.lastReviewAt = lastReviewAt;
+    this.nextReviewAt = nextReviewAt;
   }
 }
 
