@@ -59,9 +59,10 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.172.x|连线高度缩短（verticalSpacing 160→136→113，层间距公式 113×s）；气泡卡片加「N 条对话 · X分钟前」最近消息时间（**方案：从最后一条消息 messageId（msg_${Date.now()}_xxx）解析时间戳，零模型改动、旧数据天然支持**）|
 |0.173.x|气泡拉宽 NODE_W 150→170 完整显示时间；单击气泡选中态（getFocusNodeId 焦点语义：selectedNodeId 优先、回落 current，复用进入后返回样式）；边栏副标题改「你的AI学习伴侣」+删「工作区」标签；**核心教训：ArkUI TapGesture(count:1) 与 count:2 并列绑定时单击抢先阻断双击（手势仲裁），单双击并存须只绑 count:1 手动判定（同目标两次 tap <300ms=双击、执行后 return 不记录本次 tap），参考 BBTreeCanvas v0.173.2**；用户实测全部通过收官|
 |0.174.x|首页+全局设置弹窗 UI 优化（弹窗 Tab 分段控件、isDark 三元全收敛 token、标题 600+SemiBold、保存/开启云同步主紫按钮、Toggle、面板 SURFACE_NODE+描边）；删首页「图结构对话 · 多分支推理」文案；**满屏教训：Navigation NavBarContent 底部 420px 是 toolbar 预留且被 clip 裁剪，页面组件背景无法突破——Stack 包 Navigation 做全局背景层+expandSafeArea 一层铺满全屏（顺带消除全 app 手势条黑区）；setWindowBackgroundColor 手机端不可用（编译警告属实、运行时静默失败勿用）**；新建 media/user.svg；FontWeight.SemiBold 枚举不存在→数字 600+fontFamily 切 Inter-SemiBold；真机像素采样实证全通过|
+|0.175.0|设置弹窗三 Tab 统一协调——①保存右侧加「返回」按钮（次级样式 SURFACE_SOFT/TEXT_SECONDARY、走 requestClose 未保存确认；云同步 Tab 补全宽返回、三 Tab 底部不空）②**小字行间距以云同步 Tab 为标准入 UI_GUIDELINES 四章（字号 11/副标题距 2/提示条目距 4/连续多行提示 lineHeight 18——乱源=多行长文本默认行高挤，云同步条目单行无此问题）**③称呼示例「大明」→「好奇宝宝」|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.174.1（versionCode 1000033）**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.175.0（versionCode 1000037）**
 - 版本线主文档：docs/0.167.md（历史线仅存 0.165.md，0.160~0.164 已清理）
 - 真机测试设备：MatePad 11.5 S 活力版（平板）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）
 

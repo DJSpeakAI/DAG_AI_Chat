@@ -307,8 +307,11 @@ export struct GlobalSettingsDialog {
         }
 
         // 提示：模型 ID 说明
+        // ★ 0.175.0：小字行间距规则（入 UI_GUIDELINES 四章，以云同步 Tab 为标准）——
+        //   连续多行提示小字 lineHeight 18，行隙节奏对齐云同步条目间距（margin 4）
         Text('⚠️ 控制台展示名称≠API调用ID，预置模型示例：doubao-seed-2-1-lite-260915；数字之间是短横线`-`，禁止小数点，直接复制上表ID使用。')
           .fontSize(11)
+          .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
@@ -332,6 +335,7 @@ export struct GlobalSettingsDialog {
         // 提示：音频 Key 与对话 Key 相互独立
         Text('⚠️ 语音合成走豆包语音（openspeech）体系，Key 需在豆包语音控制台新建，与上方对话用的方舟 API Key 相互独立、不通用。')
           .fontSize(11)
+          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
@@ -409,6 +413,7 @@ export struct GlobalSettingsDialog {
         // 提示：音频模型说明
         Text('⚠️ 用于 AI 消息喇叭朗读。语音合成 2.0 走 openspeech HTTP 接口，音色使用内置默认值（zh_female_vv_uranus_bigtts），无需填写音色 ID。')
           .fontSize(11)
+          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
@@ -446,7 +451,7 @@ export struct GlobalSettingsDialog {
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
-        TextInput({ text: $$this.editNickname, placeholder: '如：大明（AI 回复会以此称呼你）' })
+        TextInput({ text: $$this.editNickname, placeholder: '如：好奇宝宝（AI 回复会以此称呼你）' }) // ★ 0.175.0：称呼示例「大明」改「好奇宝宝」
           .width('100%')
           .height(48)
           .fontSize(14)
@@ -456,6 +461,7 @@ export struct GlobalSettingsDialog {
           .backgroundColor(SURFACE_SOFT)
         Text('💡 填写后 AI 在短/中/长全部回复模式都会以此称呼你；留空则不添加称呼。')
           .fontSize(11)
+          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
@@ -488,6 +494,7 @@ export struct GlobalSettingsDialog {
 
         Text('💡 开启后 AI 会在回复开头（称呼之后、主体内容之前）结合当前学习主题给你 1~2 句鼓励（短回复不生成）；关闭后所有回复都不生成鼓励，仅保留称呼。')
           .fontSize(11)
+          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
@@ -674,19 +681,49 @@ export struct GlobalSettingsDialog {
         .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.Top)
 
-        // 保存按钮（Tab1~3 共用，固定底部；保存不关弹窗；★ 0.165.2：云同步 Tab 点按钮即时生效，无保存概念，隐藏）
+        // 底部按钮行（固定底部；保存不关弹窗）
+        // ★ 0.175.0：①保存右侧加「返回」按钮（次级样式，走 requestClose——有未保存修改时二次确认）
+        //   ②云同步 Tab 无保存概念，补全宽「返回」——三 Tab 底部不空、统一协调
         if (this.currentTab !== 3) {
-          Button('保存')
+          Row() {
+            Button('保存')
+              .layoutWeight(1)
+              .height(48)
+              .fontSize(FONT_SIZE_CARD_TITLE_SM)
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(BRAND_PRIMARY)
+              .fontColor(TEXT_PRIMARY)
+              .borderRadius(RADIUS_CONTROL)
+              .onClick(() => {
+                this.saveAll();
+              })
+            Button('返回')
+              .layoutWeight(1)
+              .height(48)
+              .fontSize(FONT_SIZE_CARD_TITLE_SM)
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(SURFACE_SOFT)
+              .fontColor(TEXT_SECONDARY)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ left: 12 })
+              .onClick(() => {
+                this.requestClose();
+              })
+          }
+          .width('100%')
+          .margin({ top: 12 })
+        } else {
+          Button('返回')
             .width('100%')
             .height(48)
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
             .borderRadius(RADIUS_CONTROL)
             .margin({ top: 12 })
             .onClick(() => {
-              this.saveAll();
+              this.requestClose();
             })
         }
       }
