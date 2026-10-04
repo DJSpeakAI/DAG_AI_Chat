@@ -34,8 +34,9 @@ import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; 
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, synthesizeTTS, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）
-import { connectWordBank, addWordToBank, pickRandomWords } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作
-import { connectKnowledgeBank, addKnowledgeCard, pickRandomKnowledgeCards } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作
+import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
+import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）
+import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
 import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
@@ -62,9 +63,10 @@ class MdSegment {
   }
 }
 
-// ★ 0.145：生词复习缓存条目——按消息 ID 缓存随机抽取的复习词。
-// version 记录生成时的词库长度：加词/删词都会改变长度，此时重新抽取，
-// 既避免每次渲染重新随机导致表格内容跳变，又保证不展示已删除的词。
+// ★ 0.145：生词复习缓存条目——按消息 ID 缓存抽取的复习词。
+// ★ 0.187.0：缓存改为按消息 ID 永久固定（version 弃用置 0）——历史消息展示「当时」
+// 的词；加词/改设置不再触发全量重抽（原 version=词库长度失效机制会把一次加词变成
+// 几十次虚假复习）。已删除的词由 getReviewWords 读取时滤除。
 class ReviewCacheEntry {
   version: number;
   items: WordItem[];
@@ -74,8 +76,9 @@ class ReviewCacheEntry {
   }
 }
 
-// ★ 0.146：知识卡片复习缓存条目——与 ReviewCacheEntry 同模式（version=库长度，变化时重抽），
-// 类型为 KnowledgeCard。既防渲染跳变又保证不展示已删除的卡片。
+// ★ 0.146：知识卡片复习缓存条目——与 ReviewCacheEntry 同模式。
+// ★ 0.188.0：缓存改为按消息 ID 永久固定（version 弃用置 0，同 0.187.0 单词库修复）；
+// 已删除的卡由 getKnowledgeCards 读取时滤除。
 class KnowledgeReviewCacheEntry {
   version: number;
   items: KnowledgeCard[];
@@ -446,6 +449,10 @@ export struct ChatPage {
   // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 N 词 + 知识库 M 卡，N/M 由 ⚙ 设置驱动）；
   // 弹窗打开时抽一次固定（渲染不重抽、不闪烁），样式与气泡底部复习区一致
   @Local editReviewWords: WordItem[] = [];
+
+  // ★ 0.187.0：复习评分交互状态——key = `${messageId}|${wordId}`（气泡区）/ `edit|${wordId}`（提炼弹窗）
+  @Local reviewExpandKey: string = '';                    // 当前展开评分按钮的词条（空 = 无）
+  @Local reviewRatedMap: Map<string, string> = new Map(); // 已评分词条 key → 评分（hard/good/easy；整体替换触发 V2 刷新）
   @Local editReviewCards: KnowledgeCard[] = [];
   // ★ 0.133：发送模式下拉（'normal' 正常对话 | 'podcast' 播客模式）
   @Local sendMode: string = 'normal';
@@ -1443,16 +1450,21 @@ export struct ChatPage {
     }
   }
 
-  // 生词复习：按消息 ID 取随机 N 词（N=学习数量，单词库 ⚙ 设置；缓存命中直接返回；
-  // 词库长度或学习数量变化时重新抽取——version 双维度编码 length*100+count，count≤20 无碰撞）
+  // 生词复习：按消息 ID 取 N 词（N=学习数量，单词库 ⚙ 设置）。
+  // ★ 0.187.0：选词改走记忆算法（到期词按遗忘风险 R 升序 → 新词 → 未来词，替换纯随机）；
+  // 缓存按消息 ID 永久固定（历史消息稳定），已删除的词读取时滤除；
+  // 展示即复习——真到期的词计数 + 顺延 6h（未到期不计数：防重启重抽虚增，到期闸门防抖）
   getReviewWords(messageId: string): WordItem[] {
-    const version = this.wordBank.words.length * 100 + this.learnCountStore.learnCount;
     const cached = this.reviewCache.get(messageId);
-    if (cached && cached.version === version) {
-      return cached.items;
+    if (cached) {
+      return cached.items.filter((w: WordItem) => this.wordBank.words.includes(w));
     }
-    const items = pickRandomWords(this.wordBank, this.learnCountStore.learnCount);
-    this.reviewCache.set(messageId, new ReviewCacheEntry(version, items));
+    const now = Date.now();
+    const items = pickReviewWords(this.wordBank, this.learnCountStore.learnCount, now);
+    for (let i = 0; i < items.length; i++) {
+      applyPassiveReview(items[i], now);
+    }
+    this.reviewCache.set(messageId, new ReviewCacheEntry(0, items));
     return items;
   }
 
@@ -1462,9 +1474,85 @@ export struct ChatPage {
 
   // ★ 0.160：抽取弹窗内复习区内容（打开弹窗时调一次固定；词库/知识库为空时对应项为空，
   // 渲染层按空判不显示——与气泡底部复习区同款防御）
+  // ★ 0.187.0：选词改走记忆算法 + 展示即复习（到期闸门防抖——反复开关弹窗不虚增计数）
   refreshEditReview(): void {
-    this.editReviewWords = pickRandomWords(this.wordBank, this.learnCountStore.learnCount); // ★ 0.161：词条数由学习数量设置驱动（单词库 ⚙ 设置）
-    this.editReviewCards = pickRandomKnowledgeCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount); // ★ 0.161.2：卡片数由知识卡片数量设置驱动（知识库 ⚙ 设置）
+    const now = Date.now();
+    this.editReviewWords = pickReviewWords(this.wordBank, this.learnCountStore.learnCount, now); // ★ 0.161：词条数由学习数量设置驱动（单词库 ⚙ 设置）
+    for (let i = 0; i < this.editReviewWords.length; i++) {
+      applyPassiveReview(this.editReviewWords[i], now);
+    }
+    this.editReviewCards = pickReviewCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount, now); // ★ 0.161.2：卡片数由知识卡片数量设置驱动（知识库 ⚙ 设置）；★ 0.188.0：记忆算法选卡
+    for (let i = 0; i < this.editReviewCards.length; i++) {
+      applyPassiveReview(this.editReviewCards[i], now); // ★ 0.188.0：展示即复习（到期闸门防抖）
+    }
+  }
+
+  // ★ 0.187.0：点词条展开/收起 3 档评分（👆 图标勾引点击——点词即展开）
+  onReviewWordTap(key: string): void {
+    this.reviewExpandKey = this.reviewExpandKey === key ? '' : key;
+  }
+
+  // ★ 0.187.0：评分落库——按评分规则更新 S 与下次复习（方案B：现在+S），收起按钮
+  // ★ 0.188.0：参数泛化 MemoryItem——单词/知识卡两库共用
+  onReviewRate(key: string, w: MemoryItem, rating: MemoryRating): void {
+    applyRating(w, rating, Date.now());
+    const next = new Map<string, string>(this.reviewRatedMap);
+    next.set(key, rating);
+    this.reviewRatedMap = next; // Map 整体替换触发 V2 刷新
+    this.reviewExpandKey = '';
+  }
+
+  // ★ 0.187.0：评分区（气泡复习区 + 提炼弹窗共用 @Builder）——
+  // 已评分 → 「下次复习：X」结果行（按评分着色）；未评且展开 → 3 档按钮
+  @Builder
+  ratingArea(key: string, w: MemoryItem) { // ★ 0.188.0：参数泛化 MemoryItem——单词/知识卡共用
+    if (this.reviewRatedMap.get(key) !== undefined) {
+      Text(`下次复习：${formatNextReviewLabel(w.nextReviewAt, Date.now())}`)
+        .fontSize(11)
+        .fontColor(this.reviewRatedMap.get(key) === 'hard' ? DANGER : (this.reviewRatedMap.get(key) === 'easy' ? '#3BB273' : '#F5A623'))
+        .margin({ top: 3 })
+    } else if (this.reviewExpandKey === key) {
+      Row({ space: 6 }) {
+        Button() {
+          Column() {
+            Text('生疏').fontSize(13).fontWeight(600).fontColor('#E5484D')
+            Text('几乎想不起来').fontSize(9).fontColor(TEXT_TERTIARY)
+          }
+        }
+        .layoutWeight(1)
+        .backgroundColor('#26E5484D')
+        .borderRadius(RADIUS_CONTROL)
+        .onClick(() => {
+          this.onReviewRate(key, w, 'hard');
+        })
+        Button() {
+          Column() {
+            Text('尚可').fontSize(13).fontWeight(600).fontColor('#F5A623')
+            Text('回忆有点费劲').fontSize(9).fontColor(TEXT_TERTIARY)
+          }
+        }
+        .layoutWeight(1)
+        .backgroundColor('#26F5A623')
+        .borderRadius(RADIUS_CONTROL)
+        .onClick(() => {
+          this.onReviewRate(key, w, 'good');
+        })
+        Button() {
+          Column() {
+            Text('熟知').fontSize(13).fontWeight(600).fontColor('#3BB273')
+            Text('一眼就能反应').fontSize(9).fontColor(TEXT_TERTIARY)
+          }
+        }
+        .layoutWeight(1)
+        .backgroundColor('#263BB273')
+        .borderRadius(RADIUS_CONTROL)
+        .onClick(() => {
+          this.onReviewRate(key, w, 'easy');
+        })
+      }
+      .width('100%')
+      .margin({ top: 4 })
+    }
   }
 
   // ★ 0.153：启动提炼秒表——清零后每秒 +1；累计 180s 业务超时自动 abort + 红色提示
@@ -1615,17 +1703,21 @@ export struct ChatPage {
     this.imageViewerVisible = true;
   }
 
-  // 复习区知识卡片：按消息 ID 取随机 N 张（N=知识卡片数量，知识库 ⚙ 设置；缓存命中直接返回；
-  // 库长度或卡片数量变化时重抽——version 双维度编码 length*100+count，count≤20 无碰撞）。
-  // 空库返回空数组——UI 外层 length > 0 判断保证正常路径非空。
+  // 复习区知识卡片：按消息 ID 取 N 张（N=知识卡片数量，知识库 ⚙ 设置）。
+  // ★ 0.188.0：知识库复刻记忆算法——选卡改走遗忘曲线（到期卡按 R 升序 → 新卡 → 未来卡）；
+  // 缓存按消息 ID 永久固定（同 0.187.0 单词库修复：杜绝加卡触发全量重抽的虚假复习），
+  // 已删除的卡读取时滤除；展示即复习（到期闸门防抖）。
   getKnowledgeCards(messageId: string): KnowledgeCard[] {
-    const version = this.knowledgeBank.cards.length * 100 + this.knowledgeCountStore.knowledgeCount;
     const cached = this.knowledgeReviewCache.get(messageId);
-    if (cached && cached.version === version) {
-      return cached.items;
+    if (cached) {
+      return cached.items.filter((c: KnowledgeCard) => this.knowledgeBank.cards.includes(c));
     }
-    const items = pickRandomKnowledgeCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount);
-    this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(version, items));
+    const now = Date.now();
+    const items = pickReviewCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount, now);
+    for (let i = 0; i < items.length; i++) {
+      applyPassiveReview(items[i], now);
+    }
+    this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(0, items));
     return items;
   }
 
@@ -2358,12 +2450,23 @@ export struct ChatPage {
                                     Row() {
                                       // ★ 0.169.1：复习区划词——词行/全称/释义均可长按划词（翻译/入知识库/复制）；
                                       // key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
-                                      Text('📚 ' + w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
+                                      // ★ 0.188.0：👆→▼/▲ 紫色三角（UI_GUIDELINES 辅助紫=提示语义；展开态转▲）；点词/点箭头展开 3 档评分
+                                      Text(this.reviewExpandKey === `${msg.messageId}|${w.id}` ? '▲' : '▼')
+                                        .fontSize(10)
+                                        .fontColor(BRAND_SECONDARY)
+                                        .margin({ right: 4 })
+                                        .onClick(() => {
+                                          this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                        })
+                                      Text(w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
                                         .fontSize(13)
                                         .fontWeight(600)
                                         .fontColor(TEXT_SECONDARY)
                                         .maxLines(1)
                                         .copyOption(CopyOptions.LocalDevice)
+                                        .onClick(() => {
+                                          this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                        })
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rw${idx}`;
@@ -2432,8 +2535,10 @@ export struct ChatPage {
                                       .onTextSelectionChange((start: number, end: number) => {
                                         this.handleSelectionChange(`${msg.messageId}|rwe${idx}`, w.explain, start, end);
                                       })
-                                 }
-                                 .alignItems(HorizontalAlign.Start)
+                                      // ★ 0.187.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                                      this.ratingArea(`${msg.messageId}|${w.id}`, w)
+                                  }
+                                  .alignItems(HorizontalAlign.Start)
                                }
                                .scrollable(ScrollDirection.Horizontal)
                                .scrollBar(BarState.Off)
@@ -2458,16 +2563,27 @@ export struct ChatPage {
                               ForEach(this.getKnowledgeCards(msg.messageId), (card: KnowledgeCard, idx: number) => {
                                 Scroll() {
                                   Column() {
-                                    Row() {
-                                      // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
-                                      // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
-                                      Text('📖 ' + card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
-                                        .fontSize(13)
-                                        .fontWeight(600)
-                                        .fontColor(TEXT_SECONDARY)
-                                        .maxLines(1)
-                                        .copyOption(CopyOptions.LocalDevice)
-                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                     Row() {
+                                       // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
+                                       // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
+                                       // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
+                                       Text(this.reviewExpandKey === `${msg.messageId}|${card.id}` ? '▲' : '▼')
+                                         .fontSize(10)
+                                         .fontColor(BRAND_SECONDARY)
+                                         .margin({ right: 4 })
+                                         .onClick(() => {
+                                           this.onReviewWordTap(`${msg.messageId}|${card.id}`);
+                                         })
+                                       Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
+                                         .fontSize(13)
+                                         .fontWeight(600)
+                                         .fontColor(TEXT_SECONDARY)
+                                         .maxLines(1)
+                                         .copyOption(CopyOptions.LocalDevice)
+                                         .onClick(() => {
+                                           this.onReviewWordTap(`${msg.messageId}|${card.id}`);
+                                         })
+                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rk${idx}`;
                                           },
@@ -2475,9 +2591,9 @@ export struct ChatPage {
                                             this.clearSelectionState();
                                           }
                                         })
-                                        .onTextSelectionChange((start: number, end: number) => {
-                                          this.handleSelectionChange(`${msg.messageId}|rk${idx}`, '📖 ' + card.title, start, end);
-                                        })
+                                         .onTextSelectionChange((start: number, end: number) => {
+                                           this.handleSelectionChange(`${msg.messageId}|rk${idx}`, card.title, start, end);
+                                         })
                                       if (card.imageUri.length > 0) {
                                         // Image indicator icon — only shown when the card has an image (user rule)
                                         // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
@@ -2511,11 +2627,13 @@ export struct ChatPage {
                                           this.clearSelectionState();
                                         }
                                       })
-                                      .onTextSelectionChange((start: number, end: number) => {
-                                        this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
-                                      })
-                                  }
-                                  .alignItems(HorizontalAlign.Start)
+                                       .onTextSelectionChange((start: number, end: number) => {
+                                         this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
+                                       })
+                                       // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                                       this.ratingArea(`${msg.messageId}|${card.id}`, card)
+                                   }
+                                   .alignItems(HorizontalAlign.Start)
                                 }
                                 .scrollable(ScrollDirection.Horizontal)
                                 .scrollBar(BarState.Off)
@@ -2819,12 +2937,23 @@ export struct ChatPage {
                   // long word/phonetic text overflowed the dialog boundary without it (user report)
                   Scroll() {
                   Column() {
-                    Row() {
-                      Text('📚 ' + w.word)
-                        .fontSize(13)
-                        .fontWeight(600)
-                        .fontColor(TEXT_SECONDARY)
-                        .maxLines(1)
+                     Row() {
+                       // ★ 0.188.0：👆→▼/▲ 紫色三角（展开态转▲）；点词/点箭头展开 3 档评分
+                       Text(this.reviewExpandKey === `edit|${w.id}` ? '▲' : '▼')
+                         .fontSize(10)
+                         .fontColor(BRAND_SECONDARY)
+                         .margin({ right: 4 })
+                         .onClick(() => {
+                           this.onReviewWordTap(`edit|${w.id}`);
+                         })
+                       Text(w.word)
+                         .fontSize(13)
+                         .fontWeight(600)
+                         .fontColor(TEXT_SECONDARY)
+                         .maxLines(1)
+                         .onClick(() => {
+                           this.onReviewWordTap(`edit|${w.id}`);
+                         })
                       if (w.usPhonetic.length > 0) {
                         Text(w.usPhonetic)
                           .fontSize(12)
@@ -2855,6 +2984,8 @@ export struct ChatPage {
                       .fontColor(TEXT_SECONDARY)
                       .maxLines(1)
                       .margin({ top: 2 })
+                    // ★ 0.187.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                    this.ratingArea(`edit|${w.id}`, w)
                   }
                   .alignItems(HorizontalAlign.Start)
                   }
@@ -2876,12 +3007,23 @@ export struct ChatPage {
                 ForEach(this.editReviewCards, (card: KnowledgeCard, idx: number) => {
                 Scroll() {
                 Column() {
-                  Row() {
-                    Text('📖 ' + card.title)
-                      .fontSize(13)
-                      .fontWeight(600)
-                      .fontColor(TEXT_SECONDARY)
-                      .maxLines(1)
+                   Row() {
+                     // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
+                     Text(this.reviewExpandKey === `editcard|${card.id}` ? '▲' : '▼')
+                       .fontSize(10)
+                       .fontColor(BRAND_SECONDARY)
+                       .margin({ right: 4 })
+                       .onClick(() => {
+                         this.onReviewWordTap(`editcard|${card.id}`);
+                       })
+                     Text(card.title)
+                       .fontSize(13)
+                       .fontWeight(600)
+                       .fontColor(TEXT_SECONDARY)
+                       .maxLines(1)
+                       .onClick(() => {
+                         this.onReviewWordTap(`editcard|${card.id}`);
+                       })
                     if (card.imageUri.length > 0) {
                       Text('🖼️')
                         .fontSize(12)
@@ -2895,14 +3037,16 @@ export struct ChatPage {
                         })
                     }
                   }
-                  Text(card.definition)
-                    .fontSize(12)
-                    .fontColor(TEXT_SECONDARY)
-                    .maxLines(1)
-                    .margin({ top: 2 })
-                }
-                .alignItems(HorizontalAlign.Start)
-                }
+                   Text(card.definition)
+                     .fontSize(12)
+                     .fontColor(TEXT_SECONDARY)
+                     .maxLines(1)
+                     .margin({ top: 2 })
+                   // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                   this.ratingArea(`editcard|${card.id}`, card)
+                 }
+                 .alignItems(HorizontalAlign.Start)
+                 }
                 .scrollable(ScrollDirection.Horizontal)
                 .scrollBar(BarState.Off)
                 .align(Alignment.Start)

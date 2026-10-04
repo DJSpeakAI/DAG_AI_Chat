@@ -11,7 +11,7 @@
 //     word text can be changed by the editor, id is the stable key)
 //   - updateWordInBank(): edit an entry by id (0.148, duplicate-checked)
 //   - removeWordsByIds(): batch delete for multi-select mode (0.148)
-//   - pickRandomWords(): pick n random words for the review table
+//   - normalizeMemoryFields(): ★ 0.187.0 back-fill memory fields on legacy data
 //
 // The word bank is persisted under its OWN PersistenceV2 key ('word-bank'),
 // fully isolated from the bubble-tree persistence — deleting words never
@@ -91,6 +91,7 @@ export function connectWordBank(): WordBankStore {
     return s;
   }) as WordBankStore;
   seedPresetWords(store);
+  normalizeMemoryFields(store); // ★ 0.187.0：存量词条补齐记忆字段（防 undefined/NaN 进算法）
   return store;
 }
 
@@ -120,6 +121,28 @@ function seedPresetWords(store: WordBankStore): void {
     store.words = [...missing, ...store.words];
   }
   marker.version = WORD_SEED_VERSION;
+}
+
+// ★ 0.187.0: back-fill memory fields on legacy data. Entries persisted before
+// 0.187 lack the 4 new fields — PersistenceV2 restore may leave them undefined
+// (same fresh-key lesson as 0.185); normalize to numeric defaults so the
+// memory algorithm never sees NaN/undefined.
+function normalizeMemoryFields(store: WordBankStore): void {
+  for (let i = 0; i < store.words.length; i++) {
+    const w = store.words[i];
+    if (typeof w.strength !== 'number' || !isFinite(w.strength)) {
+      w.strength = 0;
+    }
+    if (typeof w.reviewCount !== 'number' || !isFinite(w.reviewCount)) {
+      w.reviewCount = 0;
+    }
+    if (typeof w.lastReviewAt !== 'number' || !isFinite(w.lastReviewAt)) {
+      w.lastReviewAt = 0;
+    }
+    if (typeof w.nextReviewAt !== 'number' || !isFinite(w.nextReviewAt)) {
+      w.nextReviewAt = 0;
+    }
+  }
 }
 
 // Add a word to the bank. Returns false when the word already exists
@@ -183,18 +206,8 @@ export function removeWordsByIds(store: WordBankStore, wordIds: string[]): void 
   store.words = store.words.filter((w: WordItem) => !wordIds.includes(w.id));
 }
 
-// Pick up to `count` random words (Fisher-Yates shuffle on a copy).
-// Returns fewer items when the bank has fewer words; empty bank returns [].
-export function pickRandomWords(store: WordBankStore, count: number): WordItem[] {
-  const pool: WordItem[] = [...store.words];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = pool[i];
-    pool[i] = pool[j];
-    pool[j] = tmp;
-  }
-  return pool.slice(0, count);
-}
+// ★ 0.187.0: pickRandomWords REMOVED — review selection now goes through
+// MemoryAlgorithm.pickReviewWords (forgetting-curve driven, replaces random).
 
 // ★ 0.185.0: clear every entry's phonetic (accent switch wipes old
 // pronunciations). In-place loop mirrors updateWordInBank; @Trace on

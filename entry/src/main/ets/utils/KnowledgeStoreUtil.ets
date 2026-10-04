@@ -71,6 +71,7 @@ export function connectKnowledgeBank(): KnowledgeBankStore {
     return s;
   }) as KnowledgeBankStore;
   seedPresetCards(store);
+  normalizeCardMemoryFields(store); // ★ 0.188.0：存量卡片补齐记忆字段（防 undefined/NaN 进算法）
   return store;
 }
 
@@ -99,6 +100,28 @@ function seedPresetCards(store: KnowledgeBankStore): void {
     store.cards = [...missing, ...store.cards];
   }
   marker.version = KNOWLEDGE_SEED_VERSION;
+}
+
+// ★ 0.188.0: back-fill memory fields on legacy cards (same pattern as
+// WordStoreUtil.normalizeMemoryFields). Cards persisted before 0.188 lack
+// the 4 new fields — normalize to numeric defaults so the memory algorithm
+// never sees NaN/undefined.
+function normalizeCardMemoryFields(store: KnowledgeBankStore): void {
+  for (let i = 0; i < store.cards.length; i++) {
+    const c = store.cards[i];
+    if (typeof c.strength !== 'number' || !isFinite(c.strength)) {
+      c.strength = 0;
+    }
+    if (typeof c.reviewCount !== 'number' || !isFinite(c.reviewCount)) {
+      c.reviewCount = 0;
+    }
+    if (typeof c.lastReviewAt !== 'number' || !isFinite(c.lastReviewAt)) {
+      c.lastReviewAt = 0;
+    }
+    if (typeof c.nextReviewAt !== 'number' || !isFinite(c.nextReviewAt)) {
+      c.nextReviewAt = 0;
+    }
+  }
 }
 
 // ★ 0.148: unique card id generator — timestamp(base36) + random suffix
@@ -147,15 +170,5 @@ export function removeCardsByIds(store: KnowledgeBankStore, cardIds: string[]): 
   store.cards = store.cards.filter((c: KnowledgeCard) => !cardIds.includes(c.id));
 }
 
-// Pick up to `count` random cards (Fisher-Yates shuffle on a copy).
-// Returns fewer items when the bank has fewer cards; empty bank returns [].
-export function pickRandomKnowledgeCards(store: KnowledgeBankStore, count: number): KnowledgeCard[] {
-  const pool: KnowledgeCard[] = [...store.cards];
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = pool[i];
-    pool[i] = pool[j];
-    pool[j] = tmp;
-  }
-  return pool.slice(0, count);
-}
+// ★ 0.188.0: pickRandomKnowledgeCards REMOVED — review selection now goes
+// through MemoryAlgorithm.pickReviewCards (forgetting-curve driven, replaces random).

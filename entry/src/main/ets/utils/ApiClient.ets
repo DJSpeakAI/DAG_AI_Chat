@@ -196,6 +196,62 @@ function cleanupRequest(httpRequest: http.HttpRequest): void {
   httpRequest.destroy();
 }
 
+// ★ 0.188.0：零内容流的错误体形状（火山方舟/OpenAI 兼容：顶层 error 或顶层 message）
+interface StreamErrorInfo {
+  code?: string;
+  message?: string;
+}
+interface StreamErrorBody {
+  error?: StreamErrorInfo;
+  message?: string;
+}
+
+// ★ 0.188.0：从原始响应体预览中提取真实错误。返回空串 = 合法 SSE 且无 error
+// （真·空回复，维持 onDone 通用提示）；非空 = 诊断信息（走 onError 展示给用户）。
+// 兼容两种载体：纯 JSON 错误体（HTTP 4xx/5xx，无 data: 前缀）与 SSE data: 行内 error。
+function extractStreamError(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return '服务器无响应：连接已建立但未收到任何数据，请检查网络后重试';
+  }
+  const candidates: string[] = [];
+  if (trimmed.includes('data:')) {
+    const lines = trimmed.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('data:')) {
+        candidates.push(line.substring(5).trim());
+      }
+    }
+  } else {
+    candidates.push(trimmed);
+  }
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c.length === 0 || c === '[DONE]' || !c.includes('"error"')) {
+      continue;
+    }
+    try {
+      const json = JSON.parse(c) as StreamErrorBody;
+      if (json.error && (json.error.message !== undefined || json.error.code !== undefined)) {
+        const code = json.error.code !== undefined ? json.error.code : '';
+        const message = json.error.message !== undefined ? json.error.message : '';
+        return `API 返回错误${code.length > 0 ? `（${code}）` : ''}：${message}`;
+      }
+      if (json.message !== undefined && json.message.length > 0) {
+        return `API 返回错误：${json.message}`;
+      }
+    } catch (e) {
+      // 非 JSON 段——跳过，走原始体预览兜底
+    }
+  }
+  // 非 SSE 原始体（无 data: 前缀）——直接展示预览（可能是网关 HTML/纯文本错误）
+  if (!trimmed.includes('data:')) {
+    return `API 返回了非流式内容：${trimmed.substring(0, 200)}`;
+  }
+  return '';
+}
+
 // ========== 流式聊天主函数 ==========
 // 发起火山引擎 SSE 流式请求
 // onChunk: 每收到一段文本回调（实时追加到 AI 消息 content）
@@ -216,6 +272,8 @@ export function streamChat(
   let sseBuffer = '';
   let pendingBytes: Uint8Array = new Uint8Array(0); // ★ 0.132：字节级缓冲，防 UTF-8 多字节字符被 TCP chunk 切断
   let trackedUsage: SSEResponseUsage | undefined = undefined;
+  let rawPreview: string = ''; // ★ 0.188.0：原始响应体预览（零内容流诊断真实错误用，截断 600 字符）
+  let deliveredAny: boolean = false; // ★ 0.188.0：是否交付过任何内容/思考分片
 
   // 订阅流式数据回调
   httpRequest.on('dataReceive', (data: ArrayBuffer) => {
@@ -246,8 +304,14 @@ export function streamChat(
     pendingBytes = merged.subarray(lastNl + 1); // 不完整尾部留待下个 chunk
     // 追加到累积 buffer 并解析 SSE 事件
     sseBuffer += dataStr;
+    if (rawPreview.length < 600) { // ★ 0.188.0：留原始体预览（截断防长流撑爆）
+      rawPreview += dataStr;
+    }
     const parsed = parseSSEChunk(sseBuffer);
     sseBuffer = parsed.remainder;
+    if (parsed.texts.length > 0 || parsed.reasonings.length > 0) { // ★ 0.188.0
+      deliveredAny = true;
+    }
     // 逐个回调文本分片
     for (let i = 0; i < parsed.texts.length; i++) {
       onChunk(parsed.texts[i]);
@@ -270,12 +334,19 @@ export function streamChat(
     }
     // ★ 0.132：刷出字节缓冲中未达行尾的剩余字节（服务端最后一条事件可能无结尾换行）
     if (pendingBytes.length > 0) {
-      sseBuffer += buffer.from(pendingBytes.buffer, pendingBytes.byteOffset, pendingBytes.byteLength).toString();
+      const tail = buffer.from(pendingBytes.buffer, pendingBytes.byteOffset, pendingBytes.byteLength).toString();
+      sseBuffer += tail;
+      if (rawPreview.length < 600) { // ★ 0.188.0
+        rawPreview += tail;
+      }
       pendingBytes = new Uint8Array(0);
     }
     // 处理剩余 buffer
     if (sseBuffer.trim().length > 0) {
       const parsed = parseSSEChunk(sseBuffer + '\n');
+      if (parsed.texts.length > 0 || parsed.reasonings.length > 0) { // ★ 0.188.0
+        deliveredAny = true;
+      }
       for (let i = 0; i < parsed.texts.length; i++) {
         onChunk(parsed.texts[i]);
       }
@@ -286,6 +357,18 @@ export function streamChat(
       }
       if (parsed.usage) {
         trackedUsage = parsed.usage;
+      }
+    }
+    // ★ 0.188.0：零内容流诊断——HTTP 4xx/5xx 的 JSON 错误体（无 data: 前缀）此前被
+    // 静默吞掉、统一显示「AI 未返回文本内容」，真实原因（key 失效/模型下线/限流）不可见。
+    // 现在零内容时解析原始响应体：含 error 的体 → 提取信息走 onError 展示真实原因；
+    // 合法 SSE 且无 error → 维持 onDone（真·空回复，ChatPage 显示通用提示）。
+    if (!deliveredAny) {
+      const diag = extractStreamError(rawPreview);
+      if (diag.length > 0) {
+        onError(diag);
+        cleanupRequest(httpRequest);
+        return;
       }
     }
     onDone(trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0);
