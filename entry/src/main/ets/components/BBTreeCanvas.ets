@@ -67,6 +67,8 @@ export struct BBTreeCanvas {
   //   故删系统双击手势，同一气泡两次单击间隔 <300ms 手动判定为双击
   @Local lastTapNodeId: string = '';
   @Local lastTapTime: number = 0;
+  // ★ 0.182.0：画布空白双击判定——上次点击时间戳（纯逻辑判定不驱动 UI，private 非 @Local）
+  private lastCanvasTapTime: number = 0;
   account: HuaweiAccountStore = connectHuaweiAccount(); // 边栏底部头像/昵称（华为账号登录态）
 
   aboutToAppear(): void {
@@ -283,8 +285,12 @@ export struct BBTreeCanvas {
   //   选项卡模式仍禁删根（删整棵树走长按 Tab 删除）
   confirmDeleteBubble(bubble: BubbleNode): void {
     const isRoot = bubble.parentID === null;
+    // ★ 0.182.0：选项卡模式根节点删除放开——原静默 return（旧决策「删树走长按 Tab 删除」），
+    //   用户实测长按根气泡点【删除气泡】无反应视为 bug；改走 deleteTab(activeTabId)：
+    //   自带确认弹窗（文案「删除选项卡」语义更准）、删当前 Tab 自动切相邻、云同步，不会双重弹窗
     if (isRoot && this.canvasModeStore.mode !== 'flat') {
-      return; // 选项卡模式：根不可删（删树走长按 Tab 删除）
+      this.deleteTab(this.tabForest.activeTabId);
+      return;
     }
     this.getUIContext().showAlertDialog({
       title: isRoot ? '删除树' : '删除节点',
@@ -1141,6 +1147,40 @@ export struct BBTreeCanvas {
                 this.redrawEdges(); // ★ 0.167.2：捏合缩放 → 连线跟随重绘
               })
           )
+          // ── 空白双击放大（★ 0.182.0 需求5；★ 0.182.1 用户实测两连调）──
+          // 双击 = 按一次 + 号（1.25，0.182.1 从两档 1.25² 收敛——两档太猛），与 + 号共用 2.0 上限（不无限放大）；
+          // 中心移动：双击点只向视口中心走近 1/3 距离（0.182.1——直接跳到中心太唐突，走 1/3 缓动更流畅舒服）。
+          // 实现：容器 onClick + 手动 <300ms 双击判定（同气泡 0.173.2 先例模式）——
+          // TapGesture 的 GestureEvent 无 x/y 位置属性（编译实证），ClickEvent.x/y 为组件局部坐标
+          // 与 viewW/viewH 同系；点气泡被气泡自身手势消费不落此处，正好符合「空白处」语义；
+          // 与 PanGesture 共存：拖动超阈值后点击识别失败不误触。
+          .onClick((event: ClickEvent) => {
+            const now = Date.now();
+            const isDoubleTap = now - this.lastCanvasTapTime < 300;
+            this.lastCanvasTapTime = now;
+            if (!isDoubleTap) {
+              return; // 单击：只记录时间戳（双击判定窗口），无副作用
+            }
+            this.lastCanvasTapTime = 0; // 双击后清零（防三击连触再放大）
+            const oldScale = this.canvasScale;
+            let newScale = oldScale * 1.25; // 一档（0.182.1：原两档 1.25² 用户实测太猛收敛）
+            if (newScale > 2.0) {
+              newScale = 2.0; // 与 + 号同上限
+            }
+            if (newScale <= oldScale) {
+              return; // 已到上限：双击无效果（与 + 号到顶行为一致）
+            }
+            // 组件 → 画布：c = (p - offset) / scale；目标屏点 p' = p + (C - p)/3（向中心走 1/3），
+            // offset' = p' - c × scale'（放大后该画布点正好落在 p'——双击点向中心缓动 1/3 而非跳到中心）
+            const cx = (event.x - this.canvasOffsetX) / oldScale;
+            const cy = (event.y - this.canvasOffsetY) / oldScale;
+            const targetX = event.x + (this.viewW / 2 - event.x) / 3;
+            const targetY = event.y + (this.viewH / 2 - event.y) / 3;
+            this.canvasOffsetX = targetX - cx * newScale;
+            this.canvasOffsetY = targetY - cy * newScale;
+            this.canvasScale = newScale;
+            this.redrawEdges(); // 缩放 → 连线跟随重绘
+          })
 
           // ★ 0.167：信息条 + Tab 栏（UI_GUIDELINES 五/六-8/六-9；悬浮画布容器内 position(28,24)）
           Column({ space: 8 }) {
@@ -1331,7 +1371,9 @@ export struct BBTreeCanvas {
           if (!this.isTablet) {
             Column() {
               Row() {
-                Image($r('app.media.menu'))
+                // ★ 0.182.0：☰ 换 gitbranch 分叉符号——与 app logo/画布视觉语言统一（用户要求）；
+                //   只放符号本身不放整个 logo（logo 亮紫底太重），按钮背景 SURFACE_NODE 暗紫保持不变
+                Image($r('app.media.gitbranch'))
                   .width(18)
                   .height(18)
               }

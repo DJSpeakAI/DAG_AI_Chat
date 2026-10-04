@@ -2374,7 +2374,7 @@ export struct ChatPage {
                                         // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                                         Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                                           .fontSize(12)
-                                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_TERTIARY))
+                                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
                                           .onClick(() => {
                                             this.stopTTS();
                                             const ctx = this.getUIContext().getHostContext();
@@ -2545,7 +2545,7 @@ export struct ChatPage {
                               .fontSize(14)
                               .backgroundColor(Color.Transparent)
                               .fontColor(this.playingMessageId === msg.messageId || this.ttsLoadingMessageId === msg.messageId
-                                ? BRAND_SECONDARY : (TEXT_TERTIARY))
+                                ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
                               .padding({ left: 8, right: 4, top: 2, bottom: 2 })
                               .onClick(() => {
                                 this.startTTS(msg);
@@ -2628,19 +2628,24 @@ export struct ChatPage {
           // 点击在当前气泡下新建子气泡）
           // ★ 0.162：icon ＋ → 🌿（树杈/新枝）——原 ＋ 易被误解为「添加图片」，
           // 换树杈传达「另起一个树杈（新分支）」语义；尺寸样式不变（32×32 圆角 8）
-          Text('🌿')
-            .fontSize(18)
-            .fontColor(TEXT_PRIMARY)
-            .width(32)
-            .height(32)
-            .textAlign(TextAlign.Center)
-            .borderRadius(RADIUS_CONTROL)
-            .backgroundColor(SURFACE_HOVER)
-            .border({ width: 1, color: STROKE_CARD })
-            .margin({ right: 2 })
-            .onClick(() => {
-              this.addBubble();
-            })
+          // ★ 0.182.1：🌿 emoji 换 gitbranch 分叉符号 svg——用户实测反馈「消息页面的左下角 icon 没有换」
+          //   （0.182.0 需求1 本意即此处：与 app logo/画布视觉语言统一）；32×32 容器/圆角/底色/描边样式不变
+          Row() {
+            Image($r('app.media.gitbranch'))
+              .width(18)
+              .height(18)
+          }
+          .width(32)
+          .height(32)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_HOVER)
+          .border({ width: 1, color: STROKE_CARD })
+          .margin({ right: 2 })
+          .onClick(() => {
+            this.getUIContext().getFocusController().clearFocus(); // ★ 0.182.0：点击输入框外收键盘（根容器兜底不覆盖有自身 onClick 的按钮，此处显式收）
+            this.addBubble();
+          })
 
           TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
             .layoutWeight(1)
@@ -2656,27 +2661,36 @@ export struct ChatPage {
             .padding({ left: 2, right: 2 })
             .margin({ left: 0, right: 2 })
             .onClick(() => {
+              this.getUIContext().getFocusController().clearFocus(); // ★ 0.182.0：点击输入框外收键盘（根容器兜底不覆盖有自身 onClick 的按钮，此处显式收）
               this.startAnnotation();
             })
 
-          Button('发送')
-            .enabled(!this.isLoading)
-            .backgroundColor(BRAND_PRIMARY) // ★ 0.181.0：主操作按钮收敛主紫——原未设背景走系统默认蓝（Material 蓝残留），与暗紫主题冲突
-            .margin({ left: 4 }) // ★ 0.144：收紧与模式按钮的间距，把宽度让给输入框
-            .onClick(() => {
-              this.sendMessage();
-            })
-
-          // ★ 0.152：发送右侧小三角下拉按钮——弹出菜单：对话模式（2项）/ 回复长度（3项）/ 图片添加
-          Text('▾')
-            .fontSize(12)
-            .fontColor(TEXT_PRIMARY)
-            .width(18)
-            .height(32)
-            .textAlign(TextAlign.Center)
-            .onClick(() => {
-              this.modeMenuOpen = !this.modeMenuOpen;
-            })
+          // ★ 0.182.0：发送按钮与 ▾ 合体——▾ 内嵌进发送按钮右侧（原独立 18×32 小三角，用户要求稍大+内置，
+          //   常见「发送 ▾」合体样式）；左区点击=发送、右区点击=模式下拉菜单，整按钮统一主紫背景；
+          //   发送区保留 isLoading 禁用（置灰半透明白），▾ 区保持可用（原行为：发送中仍可切模式）
+          Row() {
+            Text('发送')
+              .fontSize(16)
+              .fontColor(this.isLoading ? 'rgba(255,255,255,0.50)' : Color.White)
+              .padding({ left: 12, right: 2 })
+              .onClick(() => {
+                if (!this.isLoading) {
+                  this.sendMessage();
+                }
+              })
+            Text('▾')
+              .fontSize(14) // ★ 0.182.0：原独立三角 12 → 14（用户要求稍大）
+              .fontColor(Color.White)
+              .padding({ left: 2, right: 10 })
+              .textAlign(TextAlign.Center)
+              .onClick(() => {
+                this.modeMenuOpen = !this.modeMenuOpen;
+              })
+          }
+          .height(40)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(BRAND_PRIMARY) // ★ 0.181.0：主操作按钮收敛主紫——原未设背景走系统默认蓝（Material 蓝残留），与暗紫主题冲突
+          .margin({ left: 4 }) // ★ 0.144：收紧与模式按钮的间距，把宽度让给输入框
         }
         .width('100%')
         .padding({ left: 6, right: 6, top: 8, bottom: 8 }) // ★ 0.143：输入区顶部留白——消息列表/图片预览与输入框原本贴边，加 top 12 与列表顶部 padding 呼应
@@ -2684,6 +2698,12 @@ export struct ChatPage {
         .width('100%')
         .height('100%')
         .id('chatSnapshotRoot') // ★ 0.152：屏幕圈选截图锚点（componentSnapshot.get 截取顶栏+消息列表+输入区当前画面）
+        // ★ 0.182.0：点击输入框外任意处收起软键盘——根容器兜底 onClick（ArkUI 点击不冒泡：
+        // 有自身 onClick 的按钮/菜单项各自消费不触发此处；TextArea 点击获焦点自消费；
+        // 其余空白/消息区点击落到此处 → clearFocus 收键盘，与发送后收键盘同一先例）
+        .onClick(() => {
+          this.getUIContext().getFocusController().clearFocus();
+        })
 
         // ★ 0.146：知识库卡片编辑弹窗（AI 生成草稿 → 用户二次编辑 → 保存入库）
         // 遮罩不关闭弹窗——防误触丢草稿；关闭只走【取消】按钮 / 系统返回。
@@ -2802,7 +2822,7 @@ export struct ChatPage {
                         // 发音按钮（与气泡复习区同款三态；缩略词播全称）
                         Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                           .fontSize(12)
-                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_TERTIARY))
+                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
                           .margin({ left: 4 })
                           .onClick(() => {
                             this.stopTTS();
@@ -3017,7 +3037,7 @@ export struct ChatPage {
                     // ★ 0.155：发音文本统一走 wordPopupSpeakText()——中译英播英文译文、原路径播全称/原文
                     Text(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? '⏳' : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? '🔊' : '🔈'))
                       .fontSize(14)
-                      .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? BRAND_SECONDARY : (TEXT_TERTIARY))
+                      .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
                       .margin({ left: 6 })
                       .onClick(() => {
                         this.stopTTS();
