@@ -672,12 +672,12 @@ export struct BBTreeCanvas {
       }
       // ★ 0.195.0：边栏浮层改共享组件 AppSideBar（translate 由包裹层承担，随 sidebarVisible 滑入滑出）
       Column() {
-         AppSideBar({
-           currentRoute: 'BBTreeCanvas', // ★ 0.195.0 bugfix：抽屉只能从画布唤出——人就在画布上，恒高亮气泡树
-           onNavClick: (kind: string) => {
-             this.onNavClick(kind);
-           }
-         })
+        AppSideBar({
+          currentRoute: 'BBTreeCanvas', // ★ 0.195.0 bugfix：抽屉只能从画布唤出——人就在画布上，恒高亮气泡树
+          onNavClick: (kind: string) => {
+            this.onNavClick(kind);
+          }
+        })
       }
       .translate({ x: this.sidebarVisible ? 0 : -208 })
     }
