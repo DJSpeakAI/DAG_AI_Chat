@@ -35,7 +35,7 @@ import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../comm
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
-import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）
+import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
@@ -1716,14 +1716,17 @@ export struct ChatPage {
         .fontColor(this.reviewRatedMap.get(key) === 'hard' ? DANGER : (this.reviewRatedMap.get(key) === 'easy' ? '#3BB273' : '#F5A623'))
         .margin({ top: 3 })
     } else if (this.reviewExpandKey === key) {
+      // ★ 0.196.0 用户拍板（截图修正）：①主标签「生疏/尚可/熟知」保留，灰色小字描述→复习时间（加「后」：
+      //   10分钟后/12小时后/2天后，复评按当前强度×0.5/×1.6/×2.4 动态算）②按钮固定窄宽 96——
+      //   平板上 layoutWeight(1) 三等分拉伸太难看，全设备保持窄胶囊观感
       Row({ space: 6 }) {
         Button() {
           Column() {
             Text('生疏').fontSize(13).fontWeight(600).fontColor('#E5484D')
-            Text('几乎想不起来').fontSize(9).fontColor(TEXT_TERTIARY)
+            Text(`${formatIntervalDays(previewIntervalDays(w, 'hard'))}后`).fontSize(9).fontColor(TEXT_TERTIARY)
           }
         }
-        .layoutWeight(1)
+        .width(96)
         .backgroundColor('#26E5484D')
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
@@ -1732,10 +1735,10 @@ export struct ChatPage {
         Button() {
           Column() {
             Text('尚可').fontSize(13).fontWeight(600).fontColor('#F5A623')
-            Text('回忆有点费劲').fontSize(9).fontColor(TEXT_TERTIARY)
+            Text(`${formatIntervalDays(previewIntervalDays(w, 'good'))}后`).fontSize(9).fontColor(TEXT_TERTIARY)
           }
         }
-        .layoutWeight(1)
+        .width(96)
         .backgroundColor('#26F5A623')
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
@@ -1744,10 +1747,10 @@ export struct ChatPage {
         Button() {
           Column() {
             Text('熟知').fontSize(13).fontWeight(600).fontColor('#3BB273')
-            Text('一眼就能反应').fontSize(9).fontColor(TEXT_TERTIARY)
+            Text(`${formatIntervalDays(previewIntervalDays(w, 'easy'))}后`).fontSize(9).fontColor(TEXT_TERTIARY)
           }
         }
-        .layoutWeight(1)
+        .width(96)
         .backgroundColor('#263BB273')
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {

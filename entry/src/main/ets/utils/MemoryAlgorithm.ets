@@ -83,6 +83,32 @@ export function applyRating(w: MemoryItem, rating: MemoryRating, now: number): v
   w.nextReviewAt = now + w.strength * DAY_MS;
 }
 
+// ★ 0.196.0：评分按钮时间预览——不落盘，只算「这档评完会隔多久再复习」（天）。
+// 与 applyRating 同一套首评绝对间隔/复评系数/钳制逻辑，改参数时两处同步。
+export function previewIntervalDays(w: MemoryItem, rating: MemoryRating): number {
+  if (w.strength <= 0) {
+    return rating === 'hard' ? FIRST_HARD : (rating === 'good' ? FIRST_GOOD : FIRST_EASY);
+  }
+  const mult = rating === 'hard' ? MULT_HARD : (rating === 'good' ? MULT_GOOD : MULT_EASY);
+  return Math.min(Math.max(w.strength * mult, S_MIN_DAYS), S_MAX_DAYS);
+}
+
+// ★ 0.196.0：间隔天数 → 中文短标签（评分按钮小字用；区别于 formatNextReviewLabel 的时间戳标签）。
+// <1 小时「N 分钟」/ <1 天「N 小时」/ ≤30 天「N 天」/ 更长「N 个月」。UI 侧自行加「后」。
+export function formatIntervalDays(days: number): string {
+  const ms = days * DAY_MS;
+  if (ms < 3600000) {
+    return `${Math.max(1, Math.ceil(ms / 60000))} 分钟`;
+  }
+  if (ms < DAY_MS) {
+    return `${Math.ceil(ms / 3600000)} 小时`;
+  }
+  if (days <= 30) {
+    return `${Math.ceil(days)} 天`;
+  }
+  return `${Math.max(1, Math.round(days / 30))} 个月`;
+}
+
 // 选词（替换纯随机——量大后随机不靠谱，用户拍板）：
 //   ① 到期老词（reviewCount>0 且 nextReviewAt≤now）按 R 升序——遗忘风险最高优先
 //   ② 不够补新词（reviewCount=0）按加入时间升序——公平轮转
