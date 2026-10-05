@@ -5,8 +5,9 @@
 //   种子用户兑换码 +90 天（200 个码，SHA256 白名单离线校验）；兑换前置登录（未登录先引导登录）
 // 发票：由华为开具（用户在华为应用市场订单中心自助申请），App 内只放指路说明
 
-import { SubscriptionStore, connectSubscription, isVip, vipExpireTime, vipDaysLeft, redeemCode, stampFreeTrialOnLogin } from '../common/ChatModel';
+import { SubscriptionStore, connectSubscription, isVip, vipExpireTime, vipDaysLeft, redeemCode, stampFreeTrialOnLogin, markWelcomeShown } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录
+import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
 
@@ -18,6 +19,9 @@ export struct BillingPage {
   @Local redeemInput: string = '';
   @Local redeemResult: string = ''; // ''=无提示 / 'ok' / 'invalid' / 'used'
   @Local isLoggingIn: boolean = false; // ★ 0.194.0：登录中防重复点击
+  // ★ 0.195.0：订阅提醒弹窗状态（本页登录回调触发的首登欢迎）
+  @Local reminderVisible: boolean = false;
+  @Local reminderMode: number = 0;
 
   // 状态文案（四态：未开通 / 免费试用中 / 会员生效中 / 已过期）
   // ★ 0.194.0：未登录且无权益 = 未开通（引导登录送试用；已有权益的旧数据仍如实显示生效中）
@@ -73,8 +77,14 @@ export struct BillingPage {
         this.getUIContext().getPromptAction().showToast({ message: tip });
         return;
       }
-      stampFreeTrialOnLogin(this.subscription);
-      this.getUIContext().getPromptAction().showToast({ message: '登录成功，30 天免费试用已开启' });
+      // ★ 0.195.0：首次登录弹欢迎弹窗（与首页同款 ReminderDialog）；重复登录简短 toast
+      if (stampFreeTrialOnLogin(this.subscription)) {
+        markWelcomeShown(this.subscription); // 弹出即记账（仅 1 次）
+        this.reminderMode = 0;
+        this.reminderVisible = true;
+      } else {
+        this.getUIContext().getPromptAction().showToast({ message: '登录成功' });
+      }
     });
   }
 
@@ -126,6 +136,8 @@ export struct BillingPage {
 
   build() {
     NavDestination() {
+      // ★ 0.195.0：根包 Stack——顶层挂订阅提醒弹窗（本页登录回调触发的首登欢迎）
+      Stack() {
       Column() {
         this.topBar()
 
@@ -371,6 +383,19 @@ export struct BillingPage {
       .height('100%')
       .backgroundColor(BG_APP)
       .expandSafeArea([SafeAreaType.SYSTEM])
+
+      // ★ 0.195.0：订阅提醒弹窗（Stack 顶层；已在账单页，「去账单」仅关闭）
+      ReminderDialog({
+        visible: this.reminderVisible,
+        mode: this.reminderMode,
+        onClose: () => {
+          this.reminderVisible = false;
+        },
+        onGoBilling: () => {
+          this.reminderVisible = false; // 已在账单页，关闭即可
+        }
+      })
+      }
     }
     .hideTitleBar(true)
   }

@@ -31,7 +31,7 @@ import { AppStorageV2 } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit'; // 截图 base64 解码 → PixelMap（Canvas drawImage 底图）
 import { buffer } from '@kit.ArkTS';   // base64 ↔ ArrayBuffer
 import { AnnotationDraftStore, AnnotationResultStore, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：截图草稿 + 结果回传
-import { BG_APP, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_HOVER, SURFACE_NODE, SURFACE_SOFT,
+import { BG_APP, BRAND_PRIMARY, SURFACE_HOVER, SURFACE_NODE, SURFACE_SOFT,
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, DANGER, OVERLAY,
   RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM } from '../common/DesignTokens'; // ★ 0.184.0：UI 收敛 DesignTokens（锁暗紫，isDark 三元全清）
 
@@ -245,6 +245,10 @@ export struct AnnotationPage {
 
   build() {
     NavDestination() {
+      // ★ 0.195.0 bugfix：根包 Stack——返回确认弹窗原挂 NavDestination 第二子节点不渲染
+      //   （返回箭头点了没反应、侧滑被 onBackPressed 消费后弹窗不可见——用户实测全失效）；
+      //   移入 Stack 顶层（0.168.3 教训：overlay 必须在 Stack 内参与 hit test）
+      Stack() {
       Column() {
         // ── 顶栏：返回 | 标题 | 撤销 / 清空（★ 0.184.0 icon-only，右对齐收拢） ──
         Row() {
@@ -263,23 +267,31 @@ export struct AnnotationPage {
             .fontColor(TEXT_PRIMARY)
           Blank()
             .layoutWeight(1)
-          // 撤销（无笔画时禁用；★ 0.184.0 去文字只留 icon）
-          Text('↩')
-            .fontSize(16)
-            .fontColor(this.strokes.length > 0 ? BRAND_SECONDARY : TEXT_TERTIARY)
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.undoStroke();
-            })
-          // 清空（无笔画时禁用；★ 0.184.0 去文字只留 icon）
-          Text('🗑')
-            .fontSize(16)
-            .fontColor(this.strokes.length > 0 ? DANGER : TEXT_TERTIARY)
-            .padding({ left: 10, right: 2, top: 6, bottom: 6 })
-            .margin({ left: 4 })
-            .onClick(() => {
-              this.clearAllStrokes();
-            })
+          // 撤销（无笔画时禁用；★ 0.195.0：↩ 字符换 undo.svg 单色图标——禁用态 opacity 0.4 区分）
+          Row() {
+            Image($r('app.media.undo'))
+              .width(16)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+          }
+          .opacity(this.strokes.length > 0 ? 1 : 0.4)
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .onClick(() => {
+            this.undoStroke();
+          })
+          // 清空（无笔画时禁用；★ 0.195.0：🗑 emoji 换 trash.svg 单色图标——禁用态 opacity 0.4 区分）
+          Row() {
+            Image($r('app.media.trash'))
+              .width(16)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+          }
+          .opacity(this.strokes.length > 0 ? 1 : 0.4)
+          .padding({ left: 10, right: 2, top: 6, bottom: 6 })
+          .margin({ left: 4 })
+          .onClick(() => {
+            this.clearAllStrokes();
+          })
         }
         .width('100%')
         .padding({ left: 8, right: 12, top: 8, bottom: 4 })
@@ -366,7 +378,7 @@ export struct AnnotationPage {
           Button('创建子气泡')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(SURFACE_HOVER)
+            .backgroundColor(BRAND_PRIMARY) // ★ 0.195.0：三按钮统一主紫（原 SURFACE_HOVER，用户拍板「3 个底色太乱」）
             .fontColor(TEXT_PRIMARY)
             .margin({ left: 8 })
             .enabled(this.canvasW > 0)
@@ -376,8 +388,8 @@ export struct AnnotationPage {
           Button('存入知识库')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(SURFACE_NODE)
-            .fontColor(BRAND_SECONDARY)
+            .backgroundColor(BRAND_PRIMARY) // ★ 0.195.0：三按钮统一主紫（原 SURFACE_NODE+紫字，用户拍板「3 个底色太乱」）
+            .fontColor(TEXT_PRIMARY)
             .margin({ left: 8 })
             .enabled(this.canvasW > 0)
             .onClick(() => {
@@ -390,6 +402,11 @@ export struct AnnotationPage {
       .width('100%')
       .height('100%')
       .backgroundColor(BG_APP)
+      // ★ 0.195.0：点空白/画布收起键盘（补充要求输入后点空白处输入法下降——ChatPage 0.182.0 同款兜底；
+      //   ArkUI 点击不冒泡：有自身 onClick 的按钮各自消费不触发此处）
+      .onClick(() => {
+        this.getUIContext().getFocusController().clearFocus();
+      })
 
       // ── 返回二次确认弹窗（有涂鸦/有补充要求时防误触丢弃） ──
       if (this.exitConfirmVisible) {
@@ -443,6 +460,7 @@ export struct AnnotationPage {
         .height('100%')
         .alignContent(Alignment.Center)
       }
+      } // ★ 0.195.0：Stack 收口（确认弹窗移入 Stack 顶层）
     }
     .hideTitleBar(true)
     .onBackPressed(() => {

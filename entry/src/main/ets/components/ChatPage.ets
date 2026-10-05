@@ -46,7 +46,8 @@ import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153�
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
-import { BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（返回箭头大屏专属显示）
+import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -568,6 +569,7 @@ export struct ChatPage {
   // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
+  @Local isTablet: boolean = false; // ★ 0.195.0：大屏断点（≥600vp）——返回箭头大屏专属（小屏侧滑返回）
   // ★ 0.189.0：云端分段管线状态（ttsSegments/请求播放索引/base64缓存/AVPlayer/临时文件/
   // 代际号）全部移除——本地引擎在 LocalTtsEngine 内部管理分段与排队，会话回调自动失效
   private scroller: Scroller = new Scroller();
@@ -663,14 +665,9 @@ export struct ChatPage {
     return this.currentBubble?.messages ?? [];
   }
 
-  // ★ 新增：输入框动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
-  // ★ 修复：单行基准40vp，避免首行文字被遮挡（0.119）
-  @Computed
-  get inputAreaHeight(): number {
-    if (this.inputText.length === 0) return 40; // 空文本单行高度
-    const lines = this.inputText.split('\n').length;
-    return 40 + (Math.min(lines, 5) - 1) * 24; // 首行40vp，后续每行+24vp，上限5行=136vp
-  }
+  // ★ 0.195.0：输入框动态高度计算整体废弃（原 0.118 条数制 → 0.195.0 measureTextSize 软换行制，
+  //   真机密度单位翻车 1 字跳 3 行）——改 TextArea 原生自适应 + constraintSize 封顶（标注页同款），
+  //   inputAreaHeight getter / inputAreaWidth 字段 / onAreaChange / measure import 随删
 
   // ★ 新增：Markdown 解析，拆分为普通文本/代码块/表格段（0.121）
   parseMarkdown(content: string): MdSegment[] {
@@ -1368,6 +1365,13 @@ export struct ChatPage {
   }
 
   aboutToAppear() {
+    // ★ 0.195.0：大屏断点检测（同 Index/BBTreeCanvas 判定：≥600vp）——返回箭头大屏专属显示
+    try {
+      const d = display.getDefaultDisplaySync();
+      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+    } catch (_e) {
+      this.isTablet = false;
+    }
     this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
     this.bookmarkCache = this.getBookmarkEntry(); // ★ 0.191.0：首帧渲染前载入书签（标记线即时显示）
     setTimeout(() => {
@@ -2340,54 +2344,70 @@ export struct ChatPage {
   @Builder
   topBarTitle() {
     Row() {
-      // 自定义返回按钮（替代被 hideTitleBar 隐藏的系统返回）——弹窗打开时先关弹窗，否则退回画布
-      Button('←')
-        .fontSize(18)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
-          if (!this.handleBack()) {
-            this.pathStack.pop();
-          }
-        })
-      Text('对话')
-        .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.181.0：顶栏标题对齐 ScreenTitle（18 Bold→16 SemiBold）
-        .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+      // ★ 0.195.0：返回箭头改大屏专属（用户定稿：大屏保留——无侧滑习惯缺出口；小屏取消——侧滑返回是常识）；
+      //   侧滑拦截逻辑仍在 onBackPressed（先关弹窗再退页，行为不变）
+      if (this.isTablet) {
+        Button('←')
+          .fontSize(18)
+          .backgroundColor(Color.Transparent)
+          .fontColor(TEXT_PRIMARY)
+          .padding({ left: 4, right: 4 })
+          .margin({ right: 4 })
+          .onClick(() => {
+            if (!this.handleBack()) {
+              this.pathStack.pop();
+            }
+          })
+      }
+      Column() {
+        Text('气泡') // ★ 0.195.0：标题「对话」→「气泡」（用户定稿——页面主体是气泡对话，与气泡树命名体系统一）
+          .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.181.0：顶栏标题对齐 ScreenTitle（18 Bold→16 SemiBold）
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        // ★ 0.195.0：副标题统计行（模仿气泡树「N 个气泡 · N 条对话」——用户需求：知道当前对话已有多少条）
+        Text(`${this.currentMessages.length} 条对话`)
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 1 })
+      }
+      .alignItems(HorizontalAlign.Start)
       Blank()
         .layoutWeight(1)
-      Button('📚')
-        .fontSize(15)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_TERTIARY)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
-          this.pathStack.pushPath({ name: 'WordBankPage' });
-        })
-      Button('📖')
-        .fontSize(15)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_TERTIARY)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
-          this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
-        })
-      Button('⚙')
-        .fontSize(17)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_TERTIARY)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 6 })
-        .onClick(() => {
-          this.globalSettingsVisible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
-        })
+      // ★ 0.195.0：顶栏 emoji 图标（📚📖⚙ 彩色）换边栏同款单色 svg——UI 统一（用户拍板：与边栏
+      //   单词库/知识库/设置同款；映射与边栏 navIcon 一致：wordbank=bookopen、knowledge=library）
+      Row() {
+        Image($r('app.media.bookopen'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+      }
+      .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——相邻 icon 边缘间距 4+4=8vp（对齐单词库 ⚙↔+，实测原 12vp 不一致）
+      .onClick(() => {
+        this.pathStack.pushPath({ name: 'WordBankPage' });
+      })
+      Row() {
+        Image($r('app.media.library'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+      }
+      .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——8vp 间距统一
+      .onClick(() => {
+        this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+      })
+      Row() {
+        Image($r('app.media.settings'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+      }
+      .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——8vp 间距统一（Row 自身 right padding 16 收尾）
+      .onClick(() => {
+        this.globalSettingsVisible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
+      })
     }
     .width('100%')
-    .padding({ left: 8, right: 16, top: 8, bottom: 4 })
+    .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（Pad 实测：信息条标题 590px vs 本页 540px 差 20vp；left 28/14=信息条 ≥520 双分支，top 8/right 14 同款）
   }
 
   build() {
@@ -2454,7 +2474,7 @@ export struct ChatPage {
                           .fontColor(TEXT_PRIMARY)
                           .padding(10)
                           .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
-                          .backgroundColor(BRAND_PRIMARY)
+                          .backgroundColor(SURFACE_NODE) // ★ 0.195.0：用户气泡底色改与 AI 气泡一致（原主紫 BRAND_PRIMARY，用户拍板「调成一样」）
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '90%' }) // ★ 0.190.3：气泡最大宽度 85%→90%（用户要求对话列表再加宽一点点）；0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
@@ -2755,9 +2775,11 @@ export struct ChatPage {
                                           .margin({ left: 6 })
                                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                                         // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
-                                        Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
-                                          .fontSize(12)
-                                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
+                                        // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
+                                        Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                                          .width(12)
+                                          .height(12)
+                                          .objectFit(ImageFit.Contain)
 .onClick(() => {
   this.stopTTS();
   // ★ 0.189.2：口音提示改弹窗（英式无包/美式缺包——showAccentDialogs 共用工厂）
@@ -2924,14 +2946,17 @@ export struct ChatPage {
                         if (msg.role === 'assistant') {
                           Row() {
                             // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复（置于 token 统计左侧）
-                            Button('🔄')
-                              .fontSize(14)
-                              .backgroundColor(Color.Transparent)
-                              .fontColor(TEXT_TERTIARY)
-                              .padding({ left: 0, right: 4, top: 2, bottom: 2 })
-                              .onClick(() => {
-                                this.regenerateMessage(msg);
-                              })
+                            // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
+                            Row() {
+                              Image($r('app.media.refresh'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding({ left: 0, right: 4, top: 2, bottom: 2 })
+                            .onClick(() => {
+                              this.regenerateMessage(msg);
+                            })
                             if (msg.outputTokens > 0) {
                               Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
                                 .fontSize(11)
@@ -2939,15 +2964,18 @@ export struct ChatPage {
                             }
                             Blank()
                               .width(12) // ★ 0.146：固定间距（原 layoutWeight(1) 在自适应行内失效）
-                            Button(this.ttsLoadingMessageId === msg.messageId ? '⏳' : (this.playingMessageId === msg.messageId ? '🔊' : '🔈'))
-                              .fontSize(14)
-                              .backgroundColor(Color.Transparent)
-                              .fontColor(this.playingMessageId === msg.messageId || this.ttsLoadingMessageId === msg.messageId
-                                ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
-                              .padding({ left: 8, right: 4, top: 2, bottom: 2 })
-                              .onClick(() => {
-                                this.startTTS(msg);
-                              })
+                            // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态：
+                            //   cone=空闲 / dots=合成中 / waves=播放中（原 BRAND_SECONDARY 激活色随 emoji 退役，形状足够区分）
+                            Row() {
+                              Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding({ left: 8, right: 4, top: 2, bottom: 2 })
+                            .onClick(() => {
+                              this.startTTS(msg);
+                            })
                           }
                           .margin({ top: 4, right: 10 }) // ★ 0.148：右对齐后 right 10 = 气泡 padding 10，喇叭与气泡内文字右缘对齐
                         }
@@ -3001,6 +3029,11 @@ export struct ChatPage {
                   .width(60)
                   .height(60)
                   .borderRadius(RADIUS_CONTROL)
+                  // ★ 0.195.0：待发图片点击放大预览（复用消息气泡同款 openImageViewer 全屏查看器，
+                  //   查看器点任意处收回——用户要求「点开放大、再点收回」，原缩略图点了没反应）
+                  .onClick(() => {
+                    this.openImageViewer(img);
+                  })
                 Text('×')
                   .fontSize(15)
                   .fontWeight(600)
@@ -3052,21 +3085,29 @@ export struct ChatPage {
 
           TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
             .layoutWeight(1)
-            .height(this.inputAreaHeight) // ★ 新增：动态高度，≤5行自适应，>5行固定触发内部滚动（0.118）
+            // ★ 0.195.0：高度改自适应（标注页补充要求框同款，用户指认「他的体验就很好」）——
+            //   TextArea 随内容自撑、一行一行长高，136vp（5 行）封顶后内部滚动；
+            //   原 0.118 手动行数计算 + 0.195.0 measureTextSize 软换行版在真机密度单位翻车
+            //   （1 字跳 3 行，用户实测截图实锤）——整条手动计算链废弃（getter/字段/onAreaChange/measure 全删）
+            .constraintSize({ minHeight: 40, maxHeight: 136 })
             .enterKeyType(EnterKeyType.NEW_LINE)
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 
           // ★ 0.152：画画Icon（屏幕圈选标注，核心新增亮点）——点击截取当前屏幕画面进入涂鸦标注页；
           // 原底栏 🖼️ 图片按钮与 💬 模式按钮移入发送右侧 ▾ 下拉菜单
-          Button('✏️')
-            .fontSize(16)
-            .backgroundColor(Color.Transparent)
-            .padding({ left: 2, right: 2 })
-            .margin({ left: 0, right: 2 })
-            .onClick(() => {
-              this.getUIContext().getFocusController().clearFocus(); // ★ 0.182.0：点击输入框外收键盘（根容器兜底不覆盖有自身 onClick 的按钮，此处显式收）
-              this.startAnnotation();
-            })
+          // ★ 0.195.0：✏️ emoji 换 edit.svg 单色图标（UI 统一——屏幕圈选标注入口）
+          Row() {
+            Image($r('app.media.edit'))
+              .width(16)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+          }
+          .padding({ left: 2, right: 2 })
+          .margin({ left: 0, right: 2 })
+          .onClick(() => {
+            this.getUIContext().getFocusController().clearFocus(); // ★ 0.182.0：点击输入框外收键盘（根容器兜底不覆盖有自身 onClick 的按钮，此处显式收）
+            this.startAnnotation();
+          })
 
           // ★ 0.182.0：发送按钮与 ▾ 合体——▾ 内嵌进发送按钮右侧（原独立 18×32 小三角，用户要求稍大+内置，
           //   常见「发送 ▾」合体样式）；左区点击=发送、右区点击=模式下拉菜单，整按钮统一主紫背景；
@@ -3106,6 +3147,10 @@ export struct ChatPage {
         // 其余空白/消息区点击落到此处 → clearFocus 收键盘，与发送后收键盘同一先例）
         .onClick(() => {
           this.getUIContext().getFocusController().clearFocus();
+          // ★ 0.195.0：点空白处同时收起划词悬浮栏——原仅点其他文本触发 onDisappear 取消，
+          //   点空白自研菜单滞留不关（用户实测）；closeSelectionMenu 主动关闭 + 状态清理
+          this.closeActiveSelectionMenu();
+          this.clearSelectionState();
         })
 
         // ★ 0.146：知识库卡片编辑弹窗（AI 生成草稿 → 用户二次编辑 → 保存入库）
@@ -3235,9 +3280,11 @@ export struct ChatPage {
                           .maxLines(1)
                           .margin({ left: 6 })
                         // 发音按钮（与气泡复习区同款三态；缩略词播全称）
-                        Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
-                          .fontSize(12)
-                          .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
+                        // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
+                        Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                          .width(12)
+                          .height(12)
+                          .objectFit(ImageFit.Contain)
                           .margin({ left: 4 })
 .onClick(() => {
   this.stopTTS();
@@ -3465,9 +3512,11 @@ export struct ChatPage {
                     // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                     // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                     // ★ 0.155：发音文本统一走 wordPopupSpeakText()——中译英播英文译文、原路径播全称/原文
-                    Text(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? '⏳' : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? '🔊' : '🔈'))
-                      .fontSize(14)
-                      .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
+                    // ★ 0.195.0：喇叭三态 emoji 换单色 svg（cone 空闲/dots 合成中/waves 播放中）
+                    Image(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                      .width(14)
+                      .height(14)
+                      .objectFit(ImageFit.Contain)
                       .margin({ left: 6 })
                        .onClick(() => {
                          this.stopTTS();
@@ -4073,6 +4122,9 @@ export struct ChatPage {
       }
       .width('100%')
       .height('100%')
+      // ★ 0.195.0：根底色补齐 BG_APP——原根容器未设底色透出窗口纯黑（用户截图实锤 #000000，
+      //   与画布/单词库/知识库暗紫底不一致；0.183.0 修三页时本页漏网，本次补上）
+      .backgroundColor(BG_APP)
     }
     .hideTitleBar(true)
     // ★ 0.152：标注页 pop 返回时消费标注结果（import/branch/knowledge 三分支；

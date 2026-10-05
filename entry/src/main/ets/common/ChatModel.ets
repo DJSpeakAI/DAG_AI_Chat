@@ -416,6 +416,7 @@ export class SubscriptionStore {
   @Trace subscriptionExpire: number = 0;  // 权益到期时间戳（订阅购买/兑换码写入；0=无权益）
   @Trace redeemedCodes: string = '[]';    // 已兑换码 JSON 数组（防同码重复兑换）
   @Trace purchaseHistory: string = '[]';  // 本地购买/兑换记录 JSON 数组（账单页展示）
+  @Trace reminderState: string = '{}';    // ★ 0.195.0：到期提醒状态 JSON {welcome,last}（旧快照缺字段→parse 兜底）
 }
 
 // ★ 0.194.0：连接订阅持久化实例
@@ -425,11 +426,13 @@ export function connectSubscription(): SubscriptionStore {
 
 // ★ 0.194.0：统一试用打点——已登录且从未记录 → 从当下起算 30 天免费试用
 //   （调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 / BillingPage 登录按钮，三处共用防逻辑漂移）
-export function stampFreeTrialOnLogin(subscription: SubscriptionStore): void {
+export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean {
   const account = connectHuaweiAccount();
   if (account.isLoggedIn && subscription.freeTrialStart === 0) {
     subscription.freeTrialStart = Date.now();
+    return true; // ★ 0.195.0：首次打戳返回 true——调用方据此弹「30 天试用欢迎弹窗」（仅首登 1 次）
   }
+  return false;
 }
 
 // ★ 0.194.0：VIP 判断——免费期内 或 权益期内（到期只锁云同步，其他功能全开放）
@@ -461,6 +464,62 @@ export function vipDaysLeft(store: SubscriptionStore): number {
     return 0;
   }
   return Math.ceil((expire - Date.now()) / 86400000);
+}
+
+// ============================================================
+// ★ 0.195.0：到期提醒引擎（付费转化·用户定稿）
+//   首登欢迎弹 1 次 + 最后 7 天（7/6/5/4/3/2/1）每日首开弹 1 次 + 过期后不再打扰
+//   状态存 reminderState 单 JSON 字符串字段（0.143 教训：往类加字段旧快照坑——parse 全兜底）
+// ============================================================
+class ReminderState {
+  welcome: boolean = false; // 欢迎弹窗已弹过（仅首登 1 次）
+  last: string = '';        // 最近一次倒计时提醒日期 'YYYY-MM-DD'（每日去重）
+}
+
+function parseReminderState(store: SubscriptionStore): ReminderState {
+  try {
+    const s = JSON.parse(store.reminderState) as ReminderState;
+    const st = new ReminderState();
+    st.welcome = s.welcome === true;
+    st.last = typeof s.last === 'string' ? s.last : '';
+    return st;
+  } catch (_e) {
+    return new ReminderState();
+  }
+}
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+}
+
+// 今日应弹的倒计时提醒：0=不弹；1~7=剩余 N 天（每天最多 1 次；过期/无权益恒 0）
+export function checkDailyReminder(store: SubscriptionStore): number {
+  if (!isVip(store)) {
+    return 0; // 已过期/无权益：不打扰（用户定稿）
+  }
+  if (parseReminderState(store).last === todayStr()) {
+    return 0; // 今天已弹过——每日去重
+  }
+  const daysLeft = vipDaysLeft(store);
+  if (daysLeft >= 1 && daysLeft <= 7) {
+    return daysLeft; // 最后 7 天：7/6/5/4/3/2/1 每日一弹
+  }
+  return 0;
+}
+
+// 倒计时弹窗已弹（弹出即记账，不依赖按钮点击）
+export function markReminderShownToday(store: SubscriptionStore): void {
+  const st = parseReminderState(store);
+  st.last = todayStr();
+  store.reminderState = JSON.stringify(st);
+}
+
+// 欢迎弹窗已弹（仅首登 1 次）
+export function markWelcomeShown(store: SubscriptionStore): void {
+  const st = parseReminderState(store);
+  st.welcome = true;
+  store.reminderState = JSON.stringify(st);
 }
 
 // ★ 0.194.0：兑换码——写入 90 天权益（叠加到当前权益之后：连续兑换顺延）

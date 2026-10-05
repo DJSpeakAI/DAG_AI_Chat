@@ -32,6 +32,7 @@ import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
+import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（顶栏左间距对齐气泡树信息条 28/14 双分支）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 
@@ -39,6 +40,19 @@ import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
 export struct KnowledgeBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // isolated PersistenceV2 instance
+
+  // ★ 0.195.0：大屏断点（≥600vp，同 ChatPage/Index 判定）——顶栏左间距对齐气泡树信息条（28/14 双分支）
+  @Local isTablet: boolean = false;
+
+  aboutToAppear(): void {
+    // ★ 0.195.0：大屏断点检测（同 ChatPage：≥600vp）
+    try {
+      const d = display.getDefaultDisplaySync();
+      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+    } catch (_e) {
+      this.isTablet = false;
+    }
+  }
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
@@ -120,6 +134,10 @@ export struct KnowledgeBankPage {
   nextReviewLabel(c: KnowledgeCard): string {
     if (c.reviewCount === 0) {
       return '未学习';
+    }
+    // ★ 0.195.0：已到期标签简化——原「下次复习：已到期」易误解（用户实测），定稿三字「需复习」（nextReviewColor 自动标红）
+    if (c.nextReviewAt <= Date.now()) {
+      return '需复习';
     }
     return '下次复习：' + formatNextReviewLabel(c.nextReviewAt, Date.now());
   }
@@ -301,25 +319,29 @@ export struct KnowledgeBankPage {
   @Builder
   topBar() {
     Row() {
-      Button('←')
-        .fontSize(18)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
+      // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
+      Text('⇄')
+        .fontSize(16)
+        .fontColor(TEXT_TERTIARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
-          this.pathStack.pop();
+          this.pathStack.replacePath({ name: 'WordBankPage' });
         })
       Text('知识库')
         .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
+        .onClick(() => {
+          this.pathStack.replacePath({ name: 'WordBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
+        })
       Blank()
         .layoutWeight(1)
       // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
       //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
       Button(this.sortMode === 1 ? '最新↑' : '最新↓')
         .fontSize(12)
+        .height(28) // ★ 0.195.0：排序按钮高度缩小与右侧 ⚙ 图标对齐（用户实测太高）
         .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
         .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_TERTIARY)
         .padding({ left: 8, right: 4 })
@@ -329,6 +351,7 @@ export struct KnowledgeBankPage {
         })
       Button(this.sortMode === 3 ? '需复习↓' : '需复习↑')
         .fontSize(12)
+        .height(28) // ★ 0.195.0：高度对齐 ⚙
         .backgroundColor(this.sortMode >= 2 ? SURFACE_HOVER : Color.Transparent)
         .fontColor(this.sortMode >= 2 ? BRAND_SECONDARY : TEXT_TERTIARY)
         .padding({ left: 8, right: 4 })
@@ -337,15 +360,18 @@ export struct KnowledgeBankPage {
           this.sortMode = this.sortMode === 2 ? 3 : 2;
         })
       // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
-      Button('⚙')
-        .fontSize(18)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
-        .padding({ left: 8, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
+      // ★ 0.195.0：⚙ emoji 换 settings.svg 单色图标（UI 统一——与边栏/ChatPage 顶栏同款）
+      Row() {
+        Image($r('app.media.settings'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+      }
+      .padding({ left: 8, right: 4 })
+      .margin({ right: 4 })
+      .onClick(() => {
           // free-input box pre-fills only when current value is a custom one (> 3, quick options are 1/2/3)
-          this.cardCustomInput = this.knowledgeCountStore.knowledgeCount > 3 ? `${this.knowledgeCountStore.knowledgeCount}` : '';
+          this.cardCustomInput = this.knowledgeCountStore.knowledgeCount > 2 ? `${this.knowledgeCountStore.knowledgeCount}` : ''; // ★ 0.195.0：>3→>2（快速项改 0/1/2，≥3 即自定义）
           this.cardInputError = '';
           this.cardSettingsVisible = true;
         })
@@ -372,7 +398,7 @@ export struct KnowledgeBankPage {
       }
     }
     .width('100%')
-    .padding({ left: 8, right: 16, top: 8, bottom: 4 })
+    .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（left 28/14 双分支 + top 8/right 14，与 ChatPage/单词库同步）
   }
 
   // ★ 0.161.2: knowledge-card count settings dialog — same pattern as WordBankPage's
@@ -389,77 +415,77 @@ export struct KnowledgeBankPage {
           .fontSize(12)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 6 })
-        Row() {
-          Button('1（默认）')
-            .fontSize(14)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .onClick(() => {
-              this.knowledgeCountStore.knowledgeCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
-              this.cardSettingsVisible = false;
-            })
-          Button('2')
-            .fontSize(14)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.knowledgeCountStore.knowledgeCount = 2;
-              this.cardSettingsVisible = false;
-            })
-          Button('3')
-            .fontSize(14)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 3 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 3 ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.knowledgeCountStore.knowledgeCount = 3;
-              this.cardSettingsVisible = false;
-            })
-        }
-        .width('100%')
-        .margin({ top: 16 })
-        Row() {
-          Text('自由输入：')
-            .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
-          TextInput({ text: this.cardCustomInput, placeholder: '1~20' })
-            .fontSize(14)
-            .layoutWeight(1)
-            .height(40)
-            .padding({ left: 12, right: 12 })
-            .borderRadius(RADIUS_CONTROL)
-            .backgroundColor(SURFACE_SOFT)
-            .type(InputType.Number)
-            .onChange((value: string) => {
-              this.cardCustomInput = value;
-              this.cardInputError = ''; // 输入变化即清错误提示
-            })
-          Button('确定')
-            .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(BRAND_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ left: 8 })
-            .padding({ left: 14, right: 14 })
-            .onClick(() => {
-              const n = parseInt(this.cardCustomInput, 10);
-              if (!Number.isNaN(n) && n >= 1 && n <= 20) {
-                this.knowledgeCountStore.knowledgeCount = n;
+                  // ★ 0.195.0：布局统一（用户定稿「012+输入框」一行——与全局设置复习 Tab 完全同款）
+          Row() {
+            Button('0')
+              .fontSize(14)
+              .width(44)
+              .height(40)
+              .fontColor(this.knowledgeCountStore.knowledgeCount === 0 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .onClick(() => {
+                this.knowledgeCountStore.knowledgeCount = 0;
                 this.cardSettingsVisible = false;
-              } else {
-                this.cardInputError = '请输入 1~20 的整数';
-              }
-            })
-        }
-        .width('100%')
-        .margin({ top: 12 })
+              })
+            Button('1')
+              .fontSize(14)
+              .width(44)
+              .height(40)
+              .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ left: 8 })
+              .onClick(() => {
+                this.knowledgeCountStore.knowledgeCount = 1;
+                this.cardSettingsVisible = false;
+              })
+            Button('2')
+              .fontSize(14)
+              .width(44)
+              .height(40)
+              .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ left: 8 })
+              .onClick(() => {
+                this.knowledgeCountStore.knowledgeCount = 2;
+                this.cardSettingsVisible = false;
+              })
+            TextInput({ text: this.cardCustomInput, placeholder: '0~20' })
+              .fontSize(14)
+              .layoutWeight(1)
+              .height(40)
+              .padding({ left: 12, right: 12 })
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(SURFACE_SOFT)
+              .type(InputType.Number)
+              .margin({ left: 8 })
+              .onChange((value: string) => {
+                this.cardCustomInput = value;
+                this.cardInputError = '';
+              })
+            Button('确定')
+              .fontSize(14)
+              .height(40)
+              .fontColor(TEXT_PRIMARY)
+              .backgroundColor(BRAND_PRIMARY)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ left: 8 })
+              .padding({ left: 14, right: 14 })
+              .onClick(() => {
+                const n = parseInt(this.cardCustomInput, 10);
+                if (!Number.isNaN(n) && n >= 0 && n <= 20) {
+                  this.knowledgeCountStore.knowledgeCount = n;
+                  this.cardSettingsVisible = false;
+                } else {
+                  this.cardInputError = '请输入 0~20 的整数';
+                }
+              })
+          }
+          .width('100%')
+          .margin({ top: 12 })
+
         if (this.cardInputError.length > 0) {
           Text(this.cardInputError)
             .fontSize(12)

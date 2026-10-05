@@ -1,0 +1,235 @@
+// AppSideBar.ets — ★ 0.195.0：应用边栏共享组件（从 BBTreeCanvas.SideBarPanel 抽取）
+// 宿主两种形态（用户定稿「大屏边栏常驻，页面平移，体验非常棒」）：
+//   ① Index 大屏常驻——平板/PC 边栏一直存在，页面在右侧 Navigation 区域平移不遮边栏
+//   ② BBTreeCanvas 手机抽屉——translate 滑入滑出由宿主包裹层承担
+// 导航逻辑全部经 onNavClick(kind) 注入宿主（本组件零导航）：
+//   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
+
+import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil';
+import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+
+@ComponentV2
+export struct AppSideBar {
+  @Event onNavClick: (kind: string) => void = (kind: string) => {};
+  // ★ 0.195.0 bugfix：选中态动态跟踪（用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」——
+  //   原画布项硬编码永久高亮已废）。宿主注入当前路由名，本组件按映射判定高亮；
+  //   BBTreeCanvas 手机抽屉形态固定传 'BBTreeCanvas'（抽屉只能从画布唤出，人就在画布上）
+  @Param currentRoute: string = '';
+  @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
+  account: HuaweiAccountStore = connectHuaweiAccount();
+
+  /** ★ 0.195.0：导航项高亮判定——当前路由映射（ChatPage/AnnotationPage 是气泡树子页，归气泡树） */
+  isItemActive(kind: string): boolean {
+    if (kind === 'canvas') {
+      return this.currentRoute === 'BBTreeCanvas' || this.currentRoute === 'ChatPage' || this.currentRoute === 'AnnotationPage';
+    }
+    if (kind === 'wordbank') {
+      return this.currentRoute === 'WordBankPage';
+    }
+    if (kind === 'knowledge') {
+      return this.currentRoute === 'KnowledgeBankPage';
+    }
+    if (kind === 'statistics') {
+      return this.currentRoute === 'StatisticsPage';
+    }
+    if (kind === 'billing') {
+      return this.currentRoute === 'BillingPage';
+    }
+    if (kind === 'settings') {
+      return this.settingsOpen;
+    }
+    return false;
+  }
+
+  /** 边栏导航项图标（canvas 走 bubbles.svg，其余同原 navIcon 映射） */
+  navIcon(kind: string): Resource {
+    if (kind === 'wordbank') {
+      return $r('app.media.bookopen');
+    }
+    if (kind === 'knowledge') {
+      return $r('app.media.library');
+    }
+    if (kind === 'statistics') {
+      return $r('app.media.chart');
+    }
+    if (kind === 'billing') {
+      return $r('app.media.receipt');
+    }
+    return $r('app.media.settings');
+  }
+
+  /** 边栏导航项文字 */
+  navLabel(kind: string): string {
+    if (kind === 'wordbank') {
+      return '单词库';
+    }
+    if (kind === 'knowledge') {
+      return '知识库';
+    }
+    if (kind === 'statistics') {
+      return '统计';
+    }
+    if (kind === 'billing') {
+      return '账单';
+    }
+    if (kind === 'settings') {
+      return '设置';
+    }
+    return '气泡树'; // ★ 0.195.0：边栏「画布」→「气泡树」（用户定稿——命名与页面主体统一）
+  }
+
+  /** 账号显示名（未登录显示「未登录」） */
+  getAccountDisplayName(): string {
+    if (!this.account.isLoggedIn) {
+      return '未登录';
+    }
+    if (this.account.nickName !== '') {
+      return this.account.nickName;
+    }
+    if (this.account.openID !== '') {
+      return `ID: ${this.account.openID.substring(0, 10)}…`;
+    }
+    return '已登录';
+  }
+
+  // 边栏 Logo（36×36 容器 225° 主紫渐变 + gitbranch，同节点图标容器视觉语言）
+  @Builder
+  SideBarLogo(size: number) {
+    Column() {
+      Image($r('app.media.gitbranch'))
+        .width(size * 0.55)
+        .height(size * 0.55)
+        .objectFit(ImageFit.Contain)
+    }
+    .width(size)
+    .height(size)
+    .borderRadius(RADIUS_LOGO)
+    .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // 边栏头像（登录态 avatarUri 圆形裁切；无头像/未登录柔面圆占位）
+  @Builder
+  SideBarAvatar(size: number) {
+    if (this.account.avatarUri !== '') {
+      Image(this.account.avatarUri)
+        .width(size)
+        .height(size)
+        .borderRadius(size / 2)
+        .clip(true)
+        .objectFit(ImageFit.Cover)
+    } else {
+      Column() {
+        Image($r('app.media.gitbranch'))
+          .width(size * 0.5)
+          .height(size * 0.5)
+          .objectFit(ImageFit.Contain)
+      }
+      .width(size)
+      .height(size)
+      .borderRadius(size / 2)
+      .backgroundColor(SURFACE_SOFT)
+      .border({ width: 1, color: STROKE_CARD })
+      .justifyContent(FlexAlign.Center)
+    }
+  }
+
+  // 边栏导航项（气泡树=主选中态样式；点击经 onNavClick 交宿主裁决）
+  @Builder
+  SideBarNavItem(kind: string) {
+    Row({ space: 10 }) {
+      if (kind === 'canvas') {
+        // ★ 0.195.0：DagIcon 自绘 → bubbles.svg（三气泡+连线，与画布实际视觉同构）
+        Image($r('app.media.bubbles'))
+          .width(18)
+          .height(18)
+          .objectFit(ImageFit.Contain)
+      } else {
+        Image(this.navIcon(kind))
+          .width(18)
+          .height(18)
+          .objectFit(ImageFit.Contain)
+      }
+      Text(this.navLabel(kind))
+        .fontSize(FONT_SIZE_NAV_LABEL)
+        .fontFamily(this.isItemActive(kind) ? FONT_INTER_SEMIBOLD : FONT_INTER) // ★ 0.195.0 bugfix：硬编码 canvas 永久高亮 → 动态跟踪
+        .fontColor(this.isItemActive(kind) ? TEXT_PRIMARY : TEXT_SECONDARY)
+    }
+    .width('100%')
+    .height(44)
+    .padding({ left: 12, right: 12 })
+    .borderRadius(RADIUS_NAV)
+    .backgroundColor(this.isItemActive(kind) ? SURFACE_HOVER : Color.Transparent)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.onNavClick(kind);
+    })
+  }
+
+  build() {
+    Column() {
+      // ── 顶部 Logo 区（Logo + 应用名 + 副标题）──
+      Row({ space: 10 }) {
+        this.SideBarLogo(36)
+        Column({ space: 2 }) {
+          Text('DAG AI Chat')
+            .fontSize(FONT_SIZE_CARD_TITLE)
+            .fontWeight(600)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .fontColor(TEXT_PRIMARY)
+            .maxLines(1)
+          Text('你的AI学习伴侣')
+            .fontSize(FONT_SIZE_CAPTION)
+            .fontFamily(FONT_INTER)
+            .fontColor(TEXT_TERTIARY)
+            .maxLines(1)
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ top: 20, bottom: 24 })
+
+      // ── 导航项：气泡树（主）/ 单词库 / 知识库 / 统计 / 账单 ──
+      this.SideBarNavItem('canvas')
+      this.SideBarNavItem('wordbank')
+      this.SideBarNavItem('knowledge')
+      this.SideBarNavItem('statistics')
+      this.SideBarNavItem('billing')
+
+      // ── 弹性空隙（底部设置 + 账号沉底）──
+      Blank()
+
+      // ── 底部：设置 + 账号 ──
+      this.SideBarNavItem('settings')
+      Divider()
+        .color(STROKE_CARD)
+        .width('100%')
+        .margin({ top: 6, bottom: 6 })
+      Row({ space: 10 }) {
+        this.SideBarAvatar(36)
+        Text(this.getAccountDisplayName())
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontFamily(FONT_INTER)
+          .fontColor(TEXT_SECONDARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.onNavClick('account'); // ★ 0.195.0：账号行点击经事件交宿主（原直跳统计页，两宿主行为一致）
+      })
+    }
+    .width(208)
+    .height('100%')
+    .padding({ left: 12, right: 12, bottom: 16 })
+    .backgroundColor(BG_NAV)
+    .alignItems(HorizontalAlign.Start)
+    .onClick(() => {
+      this.onNavClick(''); // 点边栏空白（手机抽屉收起；按钮 onClick 已消费不冒泡至此）
+    })
+  }
+}

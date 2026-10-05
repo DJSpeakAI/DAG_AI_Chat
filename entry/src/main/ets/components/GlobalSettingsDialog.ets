@@ -27,11 +27,11 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）
 import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
-import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）
+import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
 
 // ============================================================
 // ★ 0.190.0/0.190.1：模型提供商预设（3 预设 + 自定义配置）
@@ -109,7 +109,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.194.0';
+const APP_VERSION: string = 'v0.195.0';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -184,6 +184,13 @@ export struct GlobalSettingsDialog {
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.194.0：云同步 VIP 守卫
+  learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.195.0：复习显示（全局设置直达——0=关闭复习区）
+  knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.195.0：同上（知识卡）
+  // ★ 0.195.0：复习显示 Tab 输入态（0/1/2 快速项 + 自由输入框——与两库 ⚙ 设置同款布局）
+  @Local reviewWordInput: string = '';
+  @Local reviewWordError: string = '';
+  @Local reviewCardInput: string = '';
+  @Local reviewCardError: string = '';
   // ★ 0.190.8：隐私政策自定义弹窗显隐（替代系统 AlertDialog 灰弹窗，按应用设计语言）
   @Local privacyVisible: boolean = false;
 
@@ -781,6 +788,188 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 24 })
+
+      
+    }
+    .width('100%')
+  }
+
+  // ★ 0.195.0：复习显示 Tab（用户拍板：从 AI 偏好挪到顶层——与云同步/关于齐平）。
+  //   布局与两库 ⚙ 设置完全同款：0/1/2 快速项 + 自由输入框一行（界面统一）；即时生效无保存概念。
+  @Builder
+  reviewTabContent() {
+    Column() {
+      // ── 单词库词条数 ──
+      Column() {
+        Text('单词库词条数')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        Row() {
+          Button('0')
+            .fontSize(14)
+            .width(44)
+            .height(40)
+            .fontColor(this.learnCountStore.learnCount === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.learnCountStore.learnCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .onClick(() => {
+              this.learnCountStore.learnCount = 0; // PersistenceV2 即时落盘，两处复习区即时生效
+            })
+          Button('1')
+            .fontSize(14)
+            .width(44)
+            .height(40)
+            .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.learnCountStore.learnCount = 1;
+            })
+          Button('2')
+            .fontSize(14)
+            .width(44)
+            .height(40)
+            .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.learnCountStore.learnCount = 2;
+            })
+          TextInput({ text: this.reviewWordInput, placeholder: '0~20' })
+            .fontSize(14)
+            .layoutWeight(1)
+            .height(40)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_NODE)
+            .type(InputType.Number)
+            .margin({ left: 8 })
+            .onChange((v: string) => {
+              this.reviewWordInput = v;
+              this.reviewWordError = '';
+            })
+          Button('确定')
+            .fontSize(14)
+            .height(40)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(BRAND_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ left: 8 })
+            .padding({ left: 14, right: 14 })
+            .onClick(() => {
+              const n = parseInt(this.reviewWordInput, 10);
+              if (!Number.isNaN(n) && n >= 0 && n <= 20) {
+                this.learnCountStore.learnCount = n;
+              } else {
+                this.reviewWordError = '请输入 0~20 的整数';
+              }
+            })
+        }
+        .width('100%')
+        if (this.reviewWordError.length > 0) {
+          Text(this.reviewWordError)
+            .fontSize(12)
+            .fontColor(DANGER)
+            .margin({ top: 6 })
+        }
+        Text('AI 回复底部复习区、提炼等待页每次展示的词条数；0=关闭（对话页只看对话）')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 20 })
+
+      // ── 知识库卡片数 ──
+      Column() {
+        Text('知识库卡片数')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        Row() {
+          Button('0')
+            .fontSize(14)
+            .width(44)
+            .height(40)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .onClick(() => {
+              this.knowledgeCountStore.knowledgeCount = 0;
+            })
+          Button('1')
+            .fontSize(14)
+            .width(44)
+            .height(40)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.knowledgeCountStore.knowledgeCount = 1;
+            })
+          Button('2')
+            .fontSize(14)
+            .width(44)
+            .height(40)
+            .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.knowledgeCountStore.knowledgeCount = 2;
+            })
+          TextInput({ text: this.reviewCardInput, placeholder: '0~20' })
+            .fontSize(14)
+            .layoutWeight(1)
+            .height(40)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_NODE)
+            .type(InputType.Number)
+            .margin({ left: 8 })
+            .onChange((v: string) => {
+              this.reviewCardInput = v;
+              this.reviewCardError = '';
+            })
+          Button('确定')
+            .fontSize(14)
+            .height(40)
+            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(BRAND_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ left: 8 })
+            .padding({ left: 14, right: 14 })
+            .onClick(() => {
+              const n = parseInt(this.reviewCardInput, 10);
+              if (!Number.isNaN(n) && n >= 0 && n <= 20) {
+                this.knowledgeCountStore.knowledgeCount = n;
+              } else {
+                this.reviewCardError = '请输入 0~20 的整数';
+              }
+            })
+        }
+        .width('100%')
+        if (this.reviewCardError.length > 0) {
+          Text(this.reviewCardError)
+            .fontSize(12)
+            .fontColor(DANGER)
+            .margin({ top: 6 })
+        }
+        Text('AI 回复底部复习区、提炼等待页每次展示的卡片数；0=关闭（对话页只看对话）')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 20 })
     }
     .width('100%')
   }
@@ -1086,6 +1275,22 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 1;
             })
+          Text('复习') // ★ 0.195.0：复习显示 Tab（用户拍板：从 AI 偏好挪顶层——与云同步/关于齐平，重要设置不能藏）
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 5 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 5 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 5 ? BRAND_PRIMARY : Color.Transparent)
+            .margin({ left: 4 })
+            .onClick(() => {
+              this.currentTab = 5;
+              // 进 Tab 预填自定义值（>2 显示当前值，≤2 走快速项留空）
+              this.reviewWordInput = this.learnCountStore.learnCount > 2 ? `${this.learnCountStore.learnCount}` : '';
+              this.reviewCardInput = this.knowledgeCountStore.knowledgeCount > 2 ? `${this.knowledgeCountStore.knowledgeCount}` : '';
+              this.reviewWordError = '';
+              this.reviewCardError = '';
+            })
           Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(this.currentTab === 3 ? FontWeight.Medium : FontWeight.Normal)
@@ -1121,6 +1326,8 @@ export struct GlobalSettingsDialog {
             this.apiTabContent()
           } else if (this.currentTab === 1) {
             this.prefTabContent()
+          } else if (this.currentTab === 5) {
+            this.reviewTabContent() // ★ 0.195.0：复习显示 Tab（即时生效无保存概念）
           } else if (this.currentTab === 4) {
             this.aboutTabContent() // ★ 0.190.6：Tab5 关于
           } else {
@@ -1137,7 +1344,7 @@ export struct GlobalSettingsDialog {
         // ★ 0.175.0：①保存右侧加「返回」按钮（次级样式，走 requestClose——有未保存修改时二次确认）
         //   ②云同步 Tab 无保存概念，补全宽「返回」——三 Tab 底部不空、统一协调
         // ★ 0.190.6：关于 Tab（4）同云同步——无保存概念，全宽返回
-        if (this.currentTab !== 3 && this.currentTab !== 4) {
+        if (this.currentTab !== 3 && this.currentTab !== 4 && this.currentTab !== 5) { // ★ 0.195.0：复习 Tab(5) 同云同步/关于——即时生效，全宽返回
           Row() {
             Button('保存')
               .layoutWeight(1)

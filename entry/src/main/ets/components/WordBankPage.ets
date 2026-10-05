@@ -30,6 +30,8 @@ import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, r
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：下次复习时间标签（记忆算法）
 import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.1：发音语音包管理（listVoices 状态查询 + downloadVoice 应用内下载）
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
+import intl from '@ohos.intl'; // ★ 0.195.0：字母排序 Collator（zh：英文 A-Z + 中文按拼音统一比较；本 SDK 的 @kit.ArkTS 未导出 intl，走 @ohos.intl——measure 同款坑）
+import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（顶栏左间距对齐气泡树信息条 28/14 双分支）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
 
@@ -92,10 +94,20 @@ export struct WordBankPage {
   @Local voicePackDownloading: boolean = false;
   @Local voicePackProgress: string = '';
 
+  // ★ 0.195.0：大屏断点（≥600vp，同 ChatPage/Index 判定）——顶栏左间距对齐气泡树信息条（28/14 双分支）
+  @Local isTablet: boolean = false;
+
   // ★ 0.148: back-fill id/createTime on entries saved before 0.148.
   // Array head = newer (head-insert history), so descending timestamps
   // keep the legacy display order stable under the default desc sort.
   aboutToAppear(): void {
+    // ★ 0.195.0：大屏断点检测（同 ChatPage：≥600vp）
+    try {
+      const d = display.getDefaultDisplaySync();
+      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+    } catch (_e) {
+      this.isTablet = false;
+    }
     const now = Date.now();
     for (let i = 0; i < this.wordBank.words.length; i++) {
       const w = this.wordBank.words[i];
@@ -130,6 +142,14 @@ export struct WordBankPage {
     } else if (this.sortMode === 3) {
       // ★ 0.191.0：需复习降序（最晚复习的在前）
       list.sort((a: WordItem, b: WordItem) => b.nextReviewAt - a.nextReviewAt);
+    } else if (this.sortMode === 4) {
+      // ★ 0.195.0：字母升序——英文 A-Z、中文按拼音（intl.Collator zh 排序，首字符英文/中文统一处理）
+      const coll = new intl.Collator('zh-CN');
+      list.sort((a: WordItem, b: WordItem) => coll.compare(a.word, b.word));
+    } else if (this.sortMode === 5) {
+      // ★ 0.195.0：字母降序
+      const coll = new intl.Collator('zh-CN');
+      list.sort((a: WordItem, b: WordItem) => coll.compare(b.word, a.word));
     } else if (this.sortMode === 1) {
       // ★ 0.191.0：创建时间升序（最早在前）
       list.sort((a: WordItem, b: WordItem) => a.createTime - b.createTime);
@@ -144,6 +164,10 @@ export struct WordBankPage {
   nextReviewLabel(w: WordItem): string {
     if (w.reviewCount === 0) {
       return '未学习';
+    }
+    // ★ 0.195.0：已到期标签简化——原「下次复习：已到期」易误解（用户实测），定稿三字「需复习」（nextReviewColor 自动标红）
+    if (w.nextReviewAt <= Date.now()) {
+      return '需复习';
     }
     return '下次复习：' + formatNextReviewLabel(w.nextReviewAt, Date.now());
   }
@@ -369,25 +393,29 @@ export struct WordBankPage {
   @Builder
   topBar() {
     Row() {
-      Button('←')
-        .fontSize(18)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
+      // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
+      Text('⇄')
+        .fontSize(16)
+        .fontColor(TEXT_TERTIARY)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
-          this.pathStack.pop();
+          this.pathStack.replacePath({ name: 'KnowledgeBankPage' });
         })
       Text('单词库')
         .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
+        .onClick(() => {
+          this.pathStack.replacePath({ name: 'KnowledgeBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
+        })
       Blank()
         .layoutWeight(1)
       // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
       //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
       Button(this.sortMode === 1 ? '最新↑' : '最新↓')
         .fontSize(12)
+        .height(28) // ★ 0.195.0：排序按钮高度缩小与右侧 ⚙ 图标对齐（用户实测太高）
         .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
         .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_TERTIARY)
         .padding({ left: 8, right: 4 })
@@ -397,23 +425,38 @@ export struct WordBankPage {
         })
       Button(this.sortMode === 3 ? '需复习↓' : '需复习↑')
         .fontSize(12)
-        .backgroundColor(this.sortMode >= 2 ? SURFACE_HOVER : Color.Transparent)
-        .fontColor(this.sortMode >= 2 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .height(28) // ★ 0.195.0：高度对齐 ⚙
+        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? SURFACE_HOVER : Color.Transparent) // ★ 0.195.0 bugfix：>=2 → ===2||===3（字母模式 4/5 时误亮，用户实测互斥失效）
+        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_TERTIARY)
         .padding({ left: 8, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
           this.sortMode = this.sortMode === 2 ? 3 : 2;
         })
-      // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
-      Button('⚙')
-        .fontSize(18)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
+      // ★ 0.195.0：字母排序（第三维度，用户需求）——英文 A-Z、中文按拼音（intl.Collator zh 统一比较首字符）；再点切倒序
+      Button(this.sortMode === 5 ? '字母↓' : '字母↑')
+        .fontSize(12)
+        .height(28) // ★ 0.195.0：高度对齐 ⚙
+        .backgroundColor(this.sortMode === 4 || this.sortMode === 5 ? SURFACE_HOVER : Color.Transparent) // ★ 0.195.0 bugfix：>=4 → ===4||===5（显式互斥）
+        .fontColor(this.sortMode === 4 || this.sortMode === 5 ? BRAND_SECONDARY : TEXT_TERTIARY)
         .padding({ left: 8, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
+          this.sortMode = this.sortMode === 4 ? 5 : 4;
+        })
+      // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
+      // ★ 0.195.0：⚙ emoji 换 settings.svg 单色图标（UI 统一——与边栏/ChatPage 顶栏同款）
+      Row() {
+        Image($r('app.media.settings'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+      }
+      .padding({ left: 8, right: 4 })
+      .margin({ right: 4 })
+      .onClick(() => {
           // free-input box pre-fills only when current value is a custom one (> 3, quick options are 1/2/3)
-          this.learnCustomInput = this.learnCountStore.learnCount > 3 ? `${this.learnCountStore.learnCount}` : '';
+          this.learnCustomInput = this.learnCountStore.learnCount > 2 ? `${this.learnCountStore.learnCount}` : ''; // ★ 0.195.0：>3→>2（快速项改 0/1/2，≥3 即自定义）
           this.learnInputError = '';
           this.learnSettingsVisible = true;
           this.refreshVoicePackStatus(); // ★ 0.189.1：打开 ⚙ 即查美式语音包状态
@@ -441,7 +484,7 @@ export struct WordBankPage {
       }
     }
     .width('100%')
-    .padding({ left: 8, right: 16, top: 8, bottom: 4 })
+    .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（left 28/14 双分支 + top 8/right 14，与 ChatPage 同步）
   }
 
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss
@@ -554,61 +597,59 @@ export struct WordBankPage {
             .fontSize(11)
             .fontColor(TEXT_TERTIARY)
             .margin({ top: 2 })
+                    // ★ 0.195.0：布局统一（用户定稿「012+输入框」一行——与全局设置复习 Tab 完全同款）
           Row() {
+            Button('0')
+              .fontSize(14)
+              .width(44)
+              .height(40)
+              .fontColor(this.learnCountStore.learnCount === 0 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.learnCountStore.learnCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .onClick(() => {
+                this.learnCountStore.learnCount = 0;
+                this.learnSettingsVisible = false;
+              })
             Button('1')
               .fontSize(14)
+              .width(44)
+              .height(40)
               .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
               .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
-              .layoutWeight(1)
+              .margin({ left: 8 })
               .onClick(() => {
-                this.learnCountStore.learnCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
+                this.learnCountStore.learnCount = 1;
                 this.learnSettingsVisible = false;
               })
-            Button('2（默认）')
+            Button('2')
               .fontSize(14)
+              .width(44)
+              .height(40)
               .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
               .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
-              .layoutWeight(1)
               .margin({ left: 8 })
               .onClick(() => {
                 this.learnCountStore.learnCount = 2;
                 this.learnSettingsVisible = false;
               })
-            // ★ 0.161.2: quick option "3" added beside "2" (user request)
-            Button('3')
-              .fontSize(14)
-              .fontColor(this.learnCountStore.learnCount === 3 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.learnCountStore.learnCount === 3 ? BRAND_PRIMARY : Color.Transparent)
-              .borderRadius(RADIUS_CONTROL)
-              .layoutWeight(1)
-              .margin({ left: 8 })
-              .onClick(() => {
-                this.learnCountStore.learnCount = 3;
-                this.learnSettingsVisible = false;
-              })
-          }
-          .width('100%')
-          .margin({ top: 10 })
-          Row() {
-            Text('自由输入：')
-              .fontSize(14)
-              .fontColor(TEXT_SECONDARY)
-            TextInput({ text: this.learnCustomInput, placeholder: '1~20' })
+            TextInput({ text: this.learnCustomInput, placeholder: '0~20' })
               .fontSize(14)
               .layoutWeight(1)
               .height(40)
               .padding({ left: 12, right: 12 })
               .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_NODE) // ★ 0.189.2：卡片内输入框用 SURFACE_NODE 与卡片底 SURFACE_SOFT 形成对比
+              .backgroundColor(SURFACE_NODE)
               .type(InputType.Number)
+              .margin({ left: 8 })
               .onChange((value: string) => {
                 this.learnCustomInput = value;
-                this.learnInputError = ''; // 输入变化即清错误提示
+                this.learnInputError = '';
               })
             Button('确定')
               .fontSize(14)
+              .height(40)
               .fontColor(TEXT_PRIMARY)
               .backgroundColor(BRAND_PRIMARY)
               .borderRadius(RADIUS_CONTROL)
@@ -616,16 +657,17 @@ export struct WordBankPage {
               .padding({ left: 14, right: 14 })
               .onClick(() => {
                 const n = parseInt(this.learnCustomInput, 10);
-                if (!Number.isNaN(n) && n >= 1 && n <= 20) {
+                if (!Number.isNaN(n) && n >= 0 && n <= 20) {
                   this.learnCountStore.learnCount = n;
                   this.learnSettingsVisible = false;
                 } else {
-                  this.learnInputError = '请输入 1~20 的整数';
+                  this.learnInputError = '请输入 0~20 的整数';
                 }
               })
           }
           .width('100%')
           .margin({ top: 10 })
+
           if (this.learnInputError.length > 0) {
             Text(this.learnInputError)
               .fontSize(12)
@@ -1030,9 +1072,11 @@ export struct WordBankPage {
                             .fontColor(TEXT_TERTIARY)
                           // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
                           // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行（用户指出单词本行距变大），Text 无默认高度、行距还原
-                          Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
-                            .fontSize(13)
-                            .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_PRIMARY : (TEXT_TERTIARY))
+                          // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
+                          Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                            .width(13)
+                            .height(13)
+                            .objectFit(ImageFit.Contain)
                             .margin({ left: 6 })
                             .onClick(() => {
                               // ★ 0.189.2：口音提示改弹窗（英式无包/美式缺包——showAccentDialogs 共用工厂）

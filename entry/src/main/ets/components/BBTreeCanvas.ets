@@ -18,6 +18,7 @@ import { AppStorageV2, PersistenceV2, display } from '@kit.ArkUI'; // ★ 0.168�
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
 import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token；★ 0.173.1：删「工作区」标签后 FONT_SIZE_LABEL 无使用处，移出 import
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
+import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件（手机抽屉用；平板常驻边栏已升 Index 级）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
 
@@ -595,42 +596,6 @@ export struct BBTreeCanvas {
   // 天然「哪进哪回」：边栏进回画布、对话页右上角进回对话页，用户拍板）；底部：设置 + 账号
   // ══════════════════════════════════════════════════════════
 
-  /** 边栏导航项图标（canvas 走 DagIcon 自绘，不在此列） */
-  navIcon(kind: string): Resource {
-    if (kind === 'wordbank') {
-      return $r('app.media.bookopen');
-    }
-    if (kind === 'knowledge') {
-      return $r('app.media.library');
-    }
-    if (kind === 'statistics') {
-      return $r('app.media.chart'); // ★ 0.192.0：统计入口（柱状图图标）
-    }
-    if (kind === 'billing') {
-      return $r('app.media.receipt'); // ★ 0.194.0：账单入口（票据图标）
-    }
-    return $r('app.media.settings');
-  }
-
-  /** 边栏导航项文字 */
-  navLabel(kind: string): string {
-    if (kind === 'wordbank') {
-      return '单词库';
-    }
-    if (kind === 'knowledge') {
-      return '知识库';
-    }
-    if (kind === 'statistics') {
-      return '统计'; // ★ 0.192.0：统计入口
-    }
-    if (kind === 'billing') {
-      return '账单'; // ★ 0.194.0：账单入口
-    }
-    if (kind === 'settings') {
-      return '设置';
-    }
-    return '画布';
-  }
 
   /** 边栏导航分发（★ 0.168「哪进哪回」：pushPath 压栈 + 目标页 pop 返回 = 从哪个入口进就回哪个入口；
       ★ 0.180：跳转单词库/知识库不收抽屉——页面被覆盖期间 sidebarVisible 保留，返回画布时边栏保持打开） */
@@ -650,25 +615,18 @@ export struct BBTreeCanvas {
     } else if (kind === 'settings') {
       this.closeSidebar();
       this.globalSettingsVisible = true;
+    } else if (kind === 'account') {
+      // ★ 0.195.0：账号行点击 → 统计页（AppSideBar 事件路由；不收抽屉同词库/知识库）
+      this.pathStack.pushPath({ name: 'StatisticsPage' });
+    } else if (kind === '') {
+      // ★ 0.195.0：点边栏空白（AppSideBar 根 onClick）——手机收抽屉
+      this.closeSidebar();
     } else {
-      // 画布 = 当前页：手机收抽屉回画布，平板无操作
+      // 气泡树 = 当前页：手机收抽屉回画布
       this.closeSidebar();
     }
   }
 
-  /** 边栏账号显示名（对齐 Index.getDisplayName 逻辑；未登录显示「未登录」） */
-  getAccountDisplayName(): string {
-    if (!this.account.isLoggedIn) {
-      return '未登录';
-    }
-    if (this.account.nickName !== '') {
-      return this.account.nickName;
-    }
-    if (this.account.openID !== '') {
-      return `ID: ${this.account.openID.substring(0, 10)}…`;
-    }
-    return '已登录';
-  }
 
   /** 手机抽屉开（translate 滑入动画） */
   openSidebar(): void {
@@ -690,188 +648,9 @@ export struct BBTreeCanvas {
     });
   }
 
-  // ★ 0.168：DAG 图标（设计稿同款自绘——四个节点小方块示意有向无环图；边栏「画布」专用，
-  //   与分段控件平铺模式的 gitbranch 图标区分语义）
-  @Builder
-  DagIcon(size: number, color: ResourceColor) {
-    Stack() {
-      Row()
-        .width(size * 0.29)
-        .height(size * 0.375)
-        .position({ x: size * 0.125, y: size * 0.125 })
-        .borderRadius(size * 0.04)
-        .border({ width: Math.max(1, size * 0.08), color: color })
-      Row()
-        .width(size * 0.29)
-        .height(size * 0.21)
-        .position({ x: size * 0.58, y: size * 0.125 })
-        .borderRadius(size * 0.04)
-        .border({ width: Math.max(1, size * 0.08), color: color })
-      Row()
-        .width(size * 0.29)
-        .height(size * 0.375)
-        .position({ x: size * 0.58, y: size * 0.5 })
-        .borderRadius(size * 0.04)
-        .border({ width: Math.max(1, size * 0.08), color: color })
-      Row()
-        .width(size * 0.29)
-        .height(size * 0.21)
-        .position({ x: size * 0.125, y: size * 0.67 })
-        .borderRadius(size * 0.04)
-        .border({ width: Math.max(1, size * 0.08), color: color })
-    }
-    .width(size)
-    .height(size)
-  }
 
-  // ★ 0.168：边栏 Logo（36×36 容器 225° 主紫渐变 + gitbranch，同节点图标容器视觉语言）
-  @Builder
-  SideBarLogo(size: number) {
-    Column() {
-      Image($r('app.media.gitbranch'))
-        .width(size * 0.55)
-        .height(size * 0.55)
-        .objectFit(ImageFit.Contain)
-    }
-    .width(size)
-    .height(size)
-    .borderRadius(RADIUS_LOGO)
-    .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-  }
 
-  // ★ 0.168：边栏头像（登录态 avatarUri 圆形裁切；无头像/未登录柔面圆占位）
-  @Builder
-  SideBarAvatar(size: number) {
-    if (this.account.avatarUri !== '') {
-      Image(this.account.avatarUri)
-        .width(size)
-        .height(size)
-        .borderRadius(size / 2)
-        .clip(true)
-        .objectFit(ImageFit.Cover)
-    } else {
-      Column() {
-        Image($r('app.media.gitbranch'))
-          .width(size * 0.5)
-          .height(size * 0.5)
-          .objectFit(ImageFit.Contain)
-      }
-      .width(size)
-      .height(size)
-      .borderRadius(size / 2)
-      .backgroundColor(SURFACE_SOFT)
-      .border({ width: 1, color: STROKE_CARD })
-      .justifyContent(FlexAlign.Center)
-    }
-  }
 
-  // ★ 0.168：边栏导航项（kind: canvas/wordbank/knowledge/settings；画布=当前页选中态）
-  // ★ 0.170.2：手机抽屉内容对齐平板——统一 icon + 文字 44 高（原手机 48×48 纯图标分支删除：
-  //   抽屉为点击唤出的浮层，宽度不再是约束，用户拍板中文标签直接显示）
-  @Builder
-  SideBarNavItem(kind: string) {
-    Row({ space: 10 }) {
-      if (kind === 'canvas') {
-        this.DagIcon(18, TEXT_PRIMARY)
-      } else {
-        Image(this.navIcon(kind))
-          .width(18)
-          .height(18)
-          .objectFit(ImageFit.Contain)
-      }
-      Text(this.navLabel(kind))
-        .fontSize(FONT_SIZE_NAV_LABEL)
-        .fontFamily(kind === 'canvas' ? FONT_INTER_SEMIBOLD : FONT_INTER)
-        .fontColor(kind === 'canvas' ? TEXT_PRIMARY : TEXT_SECONDARY)
-    }
-    .width('100%')
-    .height(44)
-    .padding({ left: 12, right: 12 })
-    .borderRadius(RADIUS_NAV)
-    .backgroundColor(kind === 'canvas' ? SURFACE_HOVER : Color.Transparent)
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      this.onNavClick(kind);
-    })
-  }
-
-  // ★ 0.168：边栏主体（平板 208 常驻 / 手机抽屉；点非按钮空白处手机收抽屉回画布）
-  // ★ 0.170.2：手机抽屉内容对齐平板完整版——Logo+应用名+副标题/工作区标签/导航带文字/账号行
-  //   全部放开（原 72 窄栏纯图标分支删除：抽屉为点击唤出浮层，宽度不再是约束，用户拍板）
-  @Builder
-  SideBarPanel() {
-    Column() {
-      // ── 顶部 Logo 区（Logo + 应用名 + 副标题，平板/手机抽屉同款）──
-      Row({ space: 10 }) {
-        this.SideBarLogo(36)
-        Column({ space: 2 }) {
-          Text('DAG AI Chat')
-            .fontSize(FONT_SIZE_CARD_TITLE)
-            .fontWeight(600)
-            .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_PRIMARY)
-            .maxLines(1)
-          Text('你的AI学习伴侣') // ★ 0.173.1：副标题改文案（原「对话式 DAG 学习工具」），用户拍板
-            .fontSize(FONT_SIZE_CAPTION)
-            .fontFamily(FONT_INTER)
-            .fontColor(TEXT_TERTIARY)
-            .maxLines(1)
-        }
-        .alignItems(HorizontalAlign.Start)
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .margin({ top: 20, bottom: 24 })
-
-      // ── 导航项：画布（选中）/ 单词库 / 知识库 / 统计 / 账单（★ 0.194.0 加账单）──
-      this.SideBarNavItem('canvas')
-      this.SideBarNavItem('wordbank')
-      this.SideBarNavItem('knowledge')
-      this.SideBarNavItem('statistics')
-      this.SideBarNavItem('billing')
-
-      // ── 弹性空隙（底部设置 + 账号沉底）──
-      Blank()
-
-      // ── 底部：设置 + 账号（0.170.2 手机抽屉同款完整账号行）──
-      this.SideBarNavItem('settings')
-      Divider()
-        .color(STROKE_CARD)
-        .width('100%')
-        .margin({ top: 6, bottom: 6 })
-      Row({ space: 10 }) {
-        this.SideBarAvatar(36)
-        Text(this.getAccountDisplayName())
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .fontFamily(FONT_INTER)
-          .fontColor(TEXT_SECONDARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        // ★ 0.192.0：账号行点击 → 统计页（用户指定第二入口；不收抽屉同词库/知识库）
-        this.pathStack.pushPath({ name: 'StatisticsPage' });
-      })
-    }
-    .width(208) // ★ 0.170.2：手机抽屉同宽 208（原 72 窄栏——内容对齐平板后文字需要空间）
-    .height('100%')
-    .padding({ left: 12, right: 12, bottom: 16 })
-    .backgroundColor(BG_NAV)
-    .alignItems(HorizontalAlign.Start)
-    .onClick(() => {
-      // 手机抽屉：点边栏任何非按钮空白处收起回画布（用户拍板；按钮 onClick 已消费事件不冒泡至此）
-      if (!this.isTablet) {
-        this.closeSidebar();
-      }
-    })
-    // ★ 0.168：手机抽屉滑入滑出（平板恒 0 无副作用）；★ 0.170.2 隐藏位移随宽度 72→208（屏幕外不挡触摸）
-    .translate({ x: this.isTablet ? 0 : (this.sidebarVisible ? 0 : -208) })
-  }
 
   // ★ 0.168：手机抽屉层（Stack 挂画布区顶层）——点遮罩收起；平板不渲染
   // ★ 0.168.4：唤出改画布左下角固定 ☰ 按钮（用户拍板）——边缘右滑热区整块删除：
@@ -891,8 +670,16 @@ export struct BBTreeCanvas {
           })
           .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
       }
-      // 边栏浮层（translate 在 SideBarPanel 内部，随 sidebarVisible 滑入滑出）
-      this.SideBarPanel()
+      // ★ 0.195.0：边栏浮层改共享组件 AppSideBar（translate 由包裹层承担，随 sidebarVisible 滑入滑出）
+      Column() {
+         AppSideBar({
+           currentRoute: 'BBTreeCanvas', // ★ 0.195.0 bugfix：抽屉只能从画布唤出——人就在画布上，恒高亮气泡树
+           onNavClick: (kind: string) => {
+             this.onNavClick(kind);
+           }
+         })
+      }
+      .translate({ x: this.sidebarVisible ? 0 : -208 })
     }
   }
 
@@ -982,10 +769,8 @@ export struct BBTreeCanvas {
     NavDestination() {
       // ★ 0.168：根 Row——平板 [边栏 208 常驻 + 画布区]；手机画布区全宽 + 抽屉层挂 Stack 顶层（Pixso 工作台稿）
       Row() {
-        if (this.isTablet) {
-          // 平板：边栏常驻占位（208，设计稿 Frame_2_59）
-          this.SideBarPanel()
-        }
+        // ★ 0.195.0：平板边栏常驻分支删除——边栏升 Index 级（大屏全页面常驻，页面平移不遮，用户定稿）；
+        //   本页只留画布区（手机抽屉层不变），画布区自动占满 Navigation 右侧区域
       // ★ 0.168.3：抽屉层容器 overlay→Stack——overlay 层内容真机实证不参与 hit test（当时左缘
       //   热区 drag 穿透到画布平移手势；热区已于 0.168.4 删除），Stack 子节点命中是标准行为
       //   （同画布内四弹窗结构），结构保留供遮罩/边栏命中优先于画布
@@ -1042,7 +827,7 @@ export struct BBTreeCanvas {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (this.isBubbleSelected(bubble)) {
-                Text('双击进入对话')
+                Text('双击进入') // ★ 0.195.0：「双击进入对话」→「双击进入」（用户拍板：根气泡两行不可接受，砍字保一行）
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
                   .fontColor(BRAND_SECONDARY)
@@ -1135,6 +920,11 @@ export struct BBTreeCanvas {
             this.viewW = newVal.width as number;
             this.viewH = newVal.height as number;
             if ((oldVal.width as number) <= 0 && this.viewW > 0) {
+              // ★ 0.195.0 bugfix：首次就绪先重排再适配视口——冷启动直接渲染持久化旧坐标，
+              //   历史遗留散落坐标（模式切换池重建/旧版布局算法产物）不重排就散落各处
+              //   （用户实测：4 根气泡右上/中/下散布，新建根正常=新建自带 autoLayout）。
+              //   画布无手动拖拽定位特性，入场规范化安全；空树内部 no-op
+              this.autoLayout();
               this.fitViewport();
             }
             this.redrawEdges(); // ★ 0.167.2：组件尺寸变化 Canvas 缓冲区跟随 → 重绘
@@ -1240,20 +1030,14 @@ export struct BBTreeCanvas {
               // + 新建气泡（UI_GUIDELINES 六-9；行为按模式：平铺=新树 / 选项卡=新 Tab）
               // ★ 0.167.5 用户拍板：恢复双态（收回 0.167.3 统一纯图标）——小屏（viewW<520）
               //   36×36 纯 icon；中大屏 icon+文字「新建气泡」充实一点
-              if (this.viewW >= 520) {
-                Row({ space: 8 }) {
-                  Image($r('app.media.plus0'))
-                    .width(16)
-                    .height(16)
-                  Text('新建气泡')
-                    .fontSize(FONT_SIZE_CARD_TITLE_SM)
-                    .fontWeight(600)
-                    .fontFamily(FONT_INTER_SEMIBOLD)
-                    .fontColor(TEXT_PRIMARY)
-                }
-                .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-                .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(BRAND_PRIMARY)
+              // ★ 0.195.0：新建按钮改单词库同款 +（用户拍板：「单词库的加号很漂亮很显眼，放到气泡树右边」）——
+              //   Button('+') fontSize 20 透明底白字与单词库顶栏完全同款；行为不变（平铺=新树/选项卡=新 Tab），
+              //   原 plus0 svg+文字 pill 双态分支随删（UI 统一不分屏宽）
+              Button('+')
+                .fontSize(20)
+                .backgroundColor(Color.Transparent)
+                .fontColor(TEXT_PRIMARY)
+                .padding({ left: 8, right: 8 })
                 .onClick(() => {
                   if (this.canvasModeStore.mode === 'tabs') {
                     this.addTab();
@@ -1261,25 +1045,6 @@ export struct BBTreeCanvas {
                     this.addRootBubble();
                   }
                 })
-              } else {
-                Row() {
-                  Image($r('app.media.plus0'))
-                    .width(18)
-                    .height(18)
-                }
-                .width(36)
-                .height(36)
-                .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(BRAND_PRIMARY)
-                .justifyContent(FlexAlign.Center)
-                .onClick(() => {
-                  if (this.canvasModeStore.mode === 'tabs') {
-                    this.addTab();
-                  } else {
-                    this.addRootBubble();
-                  }
-                })
-              }
             }
             .width('100%')
 
@@ -1347,8 +1112,8 @@ export struct BBTreeCanvas {
           Column({ space: 4 }) {
             Row() {
               Image($r('app.media.plus'))
-                .width(18)
-                .height(18)
+                .width(20)
+                .height(20)
             }
             .width(40)
             .height(40)
@@ -1359,8 +1124,8 @@ export struct BBTreeCanvas {
             })
             Row() {
               Image($r('app.media.minus'))
-                .width(18)
-                .height(18)
+                .width(20)
+                .height(20)
             }
             .width(40)
             .height(40)
@@ -1371,8 +1136,8 @@ export struct BBTreeCanvas {
             })
             Row() {
               Image($r('app.media.maximize'))
-                .width(18)
-                .height(18)
+                .width(20)
+                .height(20)
             }
             .width(40)
             .height(40)
@@ -1402,8 +1167,8 @@ export struct BBTreeCanvas {
                 // ★ 0.190.2：Text('☰') 字符换回 0.168.4 原始 menu.svg 图标资源（用户反馈：字符
                 //   版偏小且不居中，「之前那个就很好看」——git 考古 4bba3c9 实锤原始即此图标 18×18）
                 Image($r('app.media.menu'))
-                  .width(18)
-                  .height(18)
+                  .width(20)
+                  .height(20)
               }
               .width(40)
               .height(40)
@@ -1625,8 +1390,11 @@ export struct BBTreeCanvas {
         // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / BG_CANVAS）
         .width('100%')
         .layoutWeight(1)
-        .margin(24)
-        .borderRadius(RADIUS_CANVAS)
+        // ★ 0.195.0：顶格修复——顶边距 24→0（用户多次报「信息条上方空一行」：Pad 实测 88→147px
+        //   共 59px BG_APP 色带露在 BG_CANVAS 信息条上方，即本 margin 顶边；左右/底 24 保留）
+        .margin({ left: 24, right: 24, top: 0, bottom: 24 })
+        // ★ 0.195.0：顶部圆角随顶格归零（面板贴顶不露角缺口），底部圆角保留
+        .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
         .backgroundColor(BG_CANVAS)
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
