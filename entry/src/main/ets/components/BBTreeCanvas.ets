@@ -1262,6 +1262,7 @@ export struct BBTreeCanvas {
                 Scroll() {
                   Row({ space: 8 }) {
                     ForEach(parseTabs(this.tabForest.tabsJson), (tab: TabMeta) => {
+                      // ★ 0.191.0：Tab 栏 pill 重设计已回滚（用户验收不通过，等参考其他 UI 后再定方案）
                       Row() {
                         Text(tab.name)
                           .fontSize(FONT_SIZE_BODY)

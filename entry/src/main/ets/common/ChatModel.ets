@@ -307,18 +307,20 @@ export function connectChatBookmarks(): ChatBookmarkStore {
   return PersistenceV2.connect(ChatBookmarkStore, 'chat-bookmarks-v2', () => new ChatBookmarkStore()) as ChatBookmarkStore;
 }
 
-// ★ 0.150：AI 对话偏好（自定义称呼 + 自动鼓励开关）——PersistenceV2 持久化，跨重启保存
+// ★ 0.150：AI 对话偏好（自定义称呼 + 自动鼓励）——PersistenceV2 持久化，跨重启保存
 // 独立 key 与 ApiConfig 隔离（0.143 教训：往已有磁盘快照的类新增字段会因旧快照缺字段不落盘；
 // 全新 key 首次创建即含全部字段，无此坑——与单词库/知识库独立 key 模式一致）
+// ★ 0.191.0：鼓励开关（boolean）→ 三档 encourageMode（off/light/heavy，默认 light=原「开」语义）；
+//   字段类型变化 key 升 v2（0.143 教训），旧 v1 的称呼需用户重填一次（鼓励档默认轻度无缝衔接）
 @ObservedV2
 export class AiPreference {
-  @Trace aiNickname: string = '';          // 自定义称呼（空 = 不添加称呼文本；短/中/长全部回复模式都生效）
-  @Trace encourageEnabled: boolean = true; // 自动鼓励开关（默认开启；仅中/长回复生成鼓励，短回复不生成）
+  @Trace aiNickname: string = '';               // 自定义称呼（空 = 不添加称呼文本；短/中/长全部回复模式都生效）
+  @Trace encourageMode: string = 'light';       // 鼓励三档：off=关闭 / light=轻度（默认，1~2 句温和）/ heavy=重度（2~4 句狂热夸张）；仅中/长回复生成，短回复不生成
 }
 
-// ★ 0.150：连接 AI 偏好持久化实例（全新 key，无历史迁移需求）
+// ★ 0.191.0：连接 AI 偏好持久化实例（key v2——encourageMode 字段类型变化，见类注释）
 export function connectAiPreference(): AiPreference {
-  return PersistenceV2.connect(AiPreference, 'ai-preference-v1', () => new AiPreference()) as AiPreference;
+  return PersistenceV2.connect(AiPreference, 'ai-preference-v2', () => new AiPreference()) as AiPreference;
 }
 
 // ★ 0.161：学习数量设置——控制 AI 回复气泡底部生词复习区与知识卡片提炼等待页复习区

@@ -332,44 +332,47 @@ struct CodeBlockView {
   build() {
     Column() {
       // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大）
-      // ★ 0.191.0：⧉ 全部复制按钮移除（用户定稿：划词工具栏已有「复制」，顶栏复制冗余）；
-      //   换行/放大两键统一纯 icon 无底样式（用户反馈：灰蓝紫底难看、⤢ 不居中——lineHeight 22 撑满容器垂直居中）
-      Row() {
+      // ★ 0.191.0：⧉ 全部复制按钮移除（用户定稿：划词工具栏已有「复制」，顶栏复制冗余）
+      // ★ 0.191.0 定稿：换行/放大全换 svg 矢量图标（wrap/nowrap/zoom.svg 紫色 18×18）——
+      //   字符图标根治（↩ 在鸿蒙被 emoji 化渲染成蓝底白箭头与 ⤢ 不统一，用户实测；⤢ 字形基线偏移居中难调）；
+      //   Row({ space: 8 }) 间距统一（用户指示：图2 顶栏间距不统一重新排列）
+      Row({ space: 8 }) {
         // ★ 0.149：语言标签（无语言标识的代码块标记为 plaintext，不高亮）
         Text(this.lang.length > 0 ? this.lang : 'plaintext')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
-          .margin({ right: 6 })
 
-        // 换行切换按钮：换行模式显示 ↩，滚动模式显示 ⇄
+        // 换行切换按钮：换行模式 wrap.svg（下弯左箭头），滚动模式 nowrap.svg（双向箭头）
+        // ★ 0.191.0 定稿：按钮样式=深紫底+方框+圆角；★ 缩小 20×18/图标14（用户指示大了不美观）
         Row() {
-          Text(this.wrap ? '↩' : '⇄')
-            .fontSize(15)
-            .lineHeight(22)
-            .textAlign(TextAlign.Center)
-            .fontColor(BRAND_SECONDARY)
+          Image(this.wrap ? $r('app.media.wrap') : $r('app.media.nowrap'))
+            .width(14)
+            .height(14)
         }
-        .width(24)
-        .height(22)
+        .width(20)
+        .height(18)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .margin({ right: 6 })
+        .borderRadius(4)
+        .backgroundColor(SURFACE_HOVER)
+        .border({ width: 0.5, color: STROKE_BRAND })
         .onClick(() => {
           this.wrap = !this.wrap;
         })
 
-        // ★ 0.153：放大按钮——打开全屏代码查看弹窗（父组件渲染）
+        // ★ 0.153：放大按钮——打开全屏代码查看弹窗（父组件渲染）；zoom.svg=⤢ 对角双箭头矢量版；同款框样式
         Row() {
-          Text('⤢')
-            .fontSize(15)
-            .lineHeight(22)
-            .textAlign(TextAlign.Center)
-            .fontColor(BRAND_SECONDARY)
+          Image($r('app.media.zoom'))
+            .width(14)
+            .height(14)
         }
-        .width(24)
-        .height(22)
+        .width(20)
+        .height(18)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .borderRadius(4)
+        .backgroundColor(SURFACE_HOVER)
+        .border({ width: 0.5, color: STROKE_BRAND })
         .onClick(() => {
           this.onZoom(this.content, this.lang); // ★ 0.149：加传 lang（放大弹窗同步高亮）
         })
@@ -2247,16 +2250,21 @@ export struct ChatPage {
 
   // ★ 0.150：AI 偏好 prompt 拼接——按用户设置（全局设置弹窗 Tab2）生成 system 指令（称呼 + 鼓励），
   // sendMessage/regenerateMessage 在长度 prompt 之后追加（不持久化、不进入后续上下文，与播客 prompt 同机制）。
-  // 规则：称呼填写时短/中/长全部回复模式都带；鼓励仅在中/长回复且开关开启时生成（短回复不生成）；
-  // 鼓励要求结合对话上下文、措辞多样化、适度轻微夸张、篇幅简短（需求原文约束，靠提示词实现，前端不内置文案库）
+  // 规则：称呼填写时短/中/长全部回复模式都带；鼓励仅在中/长回复且档位非关闭时生成（短回复不生成）；
+  // ★ 0.191.0：鼓励三档（用户定稿）——off=无 / light=轻度（1~2 句温和，原文不动）/
+  //   heavy=重度（2~4 句狂热夸张，含「未来的爱因斯坦」「嫁给你生猴子」式吹捧，用户指定示例词）
   buildPreferencePrompt(): string {
     let prompt = '';
     const nickname = this.aiPreference.aiNickname.trim();
     if (nickname.length > 0) {
       prompt += `请在回答中自然地称呼用户为「${nickname}」。`;
     }
-    if (this.aiPreference.encourageEnabled && this.replyLengthMode !== 'short') {
-      prompt += '在回答的最开头（称呼之后、主体内容之前）附加 1~2 句简短的鼓励话语：必须结合本次对话的具体内容或学习主题（如代码、数学、论文等）给出针对性鼓励，禁止通用套话；每次措辞多样化，避免重复之前用过的表述；允许轻微夸张但不要生硬；篇幅务必简短，不挤占主体回答内容。';
+    if (this.aiPreference.encourageMode !== 'off' && this.replyLengthMode !== 'short') {
+      if (this.aiPreference.encourageMode === 'heavy') {
+        prompt += '在回答的最开头（称呼之后、主体内容之前）附加 2~4 句热情洋溢、极度夸张的鼓励话语：必须结合本次对话的具体内容或学习主题（如代码、数学、论文等）给出针对性鼓励，禁止通用套话；语气热情狂热，像头号粉丝一样为用户喝彩，大胆使用极度夸张的比喻和幽默吹捧（如「你就是未来的爱因斯坦」「如果我是真人，我一定要嫁给你」「我要给你生猴子」这类风格），可使用感叹号；每次措辞多样化，避免重复之前用过的表述；篇幅仍需克制，不超过 4 句，不挤占主体回答内容。';
+      } else {
+        prompt += '在回答的最开头（称呼之后、主体内容之前）附加 1~2 句简短的鼓励话语：必须结合本次对话的具体内容或学习主题（如代码、数学、论文等）给出针对性鼓励，禁止通用套话；每次措辞多样化，避免重复之前用过的表述；允许轻微夸张但不要生硬；篇幅务必简短，不挤占主体回答内容。';
+      }
     }
     return prompt;
   }
@@ -2533,18 +2541,19 @@ export struct ChatPage {
                               // + 默认不换行（单行 + 超宽省略）+ 左上角「放大」按钮（全屏查看 + 换行切换）
                               Column() {
                                 // 左上角放大按钮
-                                // ★ 0.191.0：与代码块换行/放大键统一纯 icon 无底样式（lineHeight 22 垂直居中）
+                                // ★ 0.191.0 定稿：zoom.svg 矢量图标 + 深紫底方框圆角；★ 缩小 20×18/图标14
                                 Row() {
-                                  Text('⤢')
-                                    .fontSize(15)
-                                    .lineHeight(22)
-                                    .textAlign(TextAlign.Center)
-                                    .fontColor(BRAND_SECONDARY)
+                                  Image($r('app.media.zoom'))
+                                    .width(14)
+                                    .height(14)
                                 }
-                                .width(24)
-                                .height(22)
+                                .width(20)
+                                .height(18)
                                 .justifyContent(FlexAlign.Center)
                                 .alignItems(VerticalAlign.Center)
+                                .borderRadius(4)
+                                .backgroundColor(SURFACE_HOVER)
+                                .border({ width: 0.5, color: STROKE_BRAND })
                                 .margin({ top: 4, bottom: 2 })
                                 .onClick(() => {
                                   this.openTableZoom(seg.header, seg.rows);
@@ -3086,7 +3095,8 @@ export struct ChatPage {
             // 弹窗主体：标题输入框 → 定义输入框 → 图片区 → 保存/取消
             Column() {
               // ★ 0.153：提炼中标题展示秒表计时（每秒 +1），空闲恢复静态标题
-              Text(this.knowledgeEditLoading ? `AI提炼中：${this.knowledgeExtractSeconds}秒` : '知识库卡片')
+              // ★ 0.191.0：文案改「等待服务器返回」（与对话等待态统一，用户指示；秒表计时逻辑保留供超时判断，仅不展示）
+              Text(this.knowledgeEditLoading ? '等待服务器返回' : '知识库卡片')
                 .fontSize(16)
                 .fontWeight(600)
                 .fontColor(this.knowledgeEditLoading ? BRAND_SECONDARY : (TEXT_PRIMARY))
@@ -3582,14 +3592,14 @@ export struct ChatPage {
                 Blank()
 
                 // 换行切换按钮（样式与气泡内代码块按钮统一）
-                // ★ 0.163：去文字留纯 icon（与代码块三键同款 24×22）
+                // ★ 0.191.0：字符→wrap/nowrap.svg 矢量图标（↩ emoji 化根治），框样式保留；★ 缩小 20×18/图标14
                 Row() {
-                  Text(this.codeZoomWrap ? '↩' : '⇄')
-                    .fontSize(13)
-                    .fontColor(BRAND_SECONDARY)
+                  Image(this.codeZoomWrap ? $r('app.media.wrap') : $r('app.media.nowrap'))
+                    .width(14)
+                    .height(14)
                 }
-                .width(24)
-                .height(22)
+                .width(20)
+                .height(18)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
                 .borderRadius(4)
@@ -3736,14 +3746,14 @@ export struct ChatPage {
                 Blank()
 
                 // 换行切换按钮：不换行=单行+横向滚动，换行=固定列宽内折行
-                // ★ 0.163：去文字留纯 icon（与代码块三键同款 24×22）
+                // ★ 0.191.0：字符→wrap/nowrap.svg 矢量图标（全局 icon 统一），框样式保留；★ 缩小 20×18/图标14
                 Row() {
-                  Text(this.tableZoomWrap ? '↩' : '⇄')
-                    .fontSize(13)
-                    .fontColor(BRAND_SECONDARY)
+                  Image(this.tableZoomWrap ? $r('app.media.wrap') : $r('app.media.nowrap'))
+                    .width(14)
+                    .height(14)
                 }
-                .width(24)
-                .height(22)
+                .width(20)
+                .height(18)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
                 .borderRadius(4)

@@ -179,7 +179,7 @@ export struct GlobalSettingsDialog {
 
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
-  @Local editEncourage: boolean = true; // 自动鼓励开关（默认开启）
+  @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
   // ★ 0.190.8：隐私政策自定义弹窗显隐（替代系统 AlertDialog 灰弹窗，按应用设计语言）
@@ -236,7 +236,7 @@ export struct GlobalSettingsDialog {
     }
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
-    this.editEncourage = this.aiPreference.encourageEnabled;
+    this.editEncourageMode = this.aiPreference.encourageMode;
     // ★ 0.165.2：云同步权限状态（异步查；已授权则「云同步」Tab 直接显示已开启）
     isCloudSyncGranted().then((granted: boolean) => {
       this.syncGranted = granted;
@@ -250,7 +250,7 @@ export struct GlobalSettingsDialog {
       this.currentModelValue() !== this.apiConfig.model ||
       this.currentEndpointValue() !== this.apiConfig.endpoint ||
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
-      this.editEncourage !== this.aiPreference.encourageEnabled;   // ★ 0.150：鼓励开关
+      this.editEncourageMode !== this.aiPreference.encourageMode;   // ★ 0.191.0：鼓励三档
   }
 
   // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
@@ -290,7 +290,7 @@ export struct GlobalSettingsDialog {
     this.apiConfig.endpoint = this.currentEndpointValue();
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
-    this.aiPreference.encourageEnabled = this.editEncourage;
+    this.aiPreference.encourageMode = this.editEncourageMode;
     this.showToastSafe('已保存');
   }
 
@@ -721,27 +721,56 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .margin({ bottom: 24 })
 
-      // 自动鼓励开关
-      // ★ 0.190.5：删「回复开头附 1~2 句学习鼓励」描述小字（下方 💡 解释已含此信息，用户指示）；
-      //   排版对齐「自定义称呼」区节奏——label 行（14/TEXT_SECONDARY）+ 下方提示小字
+      // 自动鼓励三档（★ 0.191.0：开关→分段控件，用户定稿）
+      // ★ 0.190.5：排版对齐「自定义称呼」区节奏——label 行（14/TEXT_SECONDARY）+ 下方提示小字
       Column() {
-        Row() {
-          Text('自动鼓励')
-            .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
-          Blank()
-            .layoutWeight(1)
+        Text('自动鼓励')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 8 })
 
-          // Toggle 用 onChange 回调写 @Local（isOn 仅初始值参数；不用 $$ 双向绑定，回调模式最稳）
-          Toggle({ type: ToggleType.Switch, isOn: this.editEncourage })
-            .selectedColor(BRAND_PRIMARY)
-            .onChange((isOn: boolean) => {
-              this.editEncourage = isOn;
+        // 三档分段控件（SEGMENTED_TRACK 轨道 + 激活段 BRAND_PRIMARY，对齐 UI_GUIDELINES 六-8 分段规格）
+        Row() {
+          Text('关闭')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editEncourageMode === 'off' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editEncourageMode === 'off' ? BRAND_PRIMARY : Color.Transparent)
+            .onClick(() => {
+              this.editEncourageMode = 'off';
+            })
+          Text('轻度')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editEncourageMode === 'light' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editEncourageMode === 'light' ? BRAND_PRIMARY : Color.Transparent)
+            .onClick(() => {
+              this.editEncourageMode = 'light';
+            })
+          Text('重度')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editEncourageMode === 'heavy' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editEncourageMode === 'heavy' ? BRAND_PRIMARY : Color.Transparent)
+            .onClick(() => {
+              this.editEncourageMode = 'heavy';
             })
         }
         .width('100%')
+        .padding(4)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SEGMENTED_TRACK)
 
-        Text('💡 开启后 AI 会在回复开头（称呼之后、主体内容之前）结合当前学习主题给你 1~2 句鼓励（短回复模式不生成）；关闭后所有回复都不生成鼓励，仅保留称呼。') // ★ 0.190.8：短回复→短回复模式（用户指示）
+        Text('💡 轻度：回复开头 1~2 句温和鼓励；重度：2~4 句热情夸张的喝彩（「未来的爱因斯坦」式吹捧）；关闭：不生成鼓励。仅中/长回复模式生成，短回复模式不生成。') // ★ 0.191.0：三档说明
           .fontSize(11)
           .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)

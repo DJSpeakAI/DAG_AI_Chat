@@ -33,7 +33,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor i
 import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
-import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+  import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 
 @ComponentV2
 export struct KnowledgeBankPage {
@@ -42,7 +42,7 @@ export struct KnowledgeBankPage {
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
-  @Local sortMode: number = 0; // ★ 0.188.0：排序 3 态——0=最新↓（默认）1=最早↑ 2=需复习↑（下次复习时间升序，复刻单词库）
+  @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -101,19 +101,19 @@ export struct KnowledgeBankPage {
       });
     }
     if (this.sortMode === 2) {
-      // ★ 0.188.0：最近需复习——下次复习时间升序（已到期/未学习 nextReviewAt=0 排最前）
+      // ★ 0.191.0：需复习升序（已到期/未学习 nextReviewAt=0 排最前）
       list.sort((a: KnowledgeCard, b: KnowledgeCard) => a.nextReviewAt - b.nextReviewAt);
+    } else if (this.sortMode === 3) {
+      // ★ 0.191.0：需复习降序（最晚复习的在前）
+      list.sort((a: KnowledgeCard, b: KnowledgeCard) => b.nextReviewAt - a.nextReviewAt);
+    } else if (this.sortMode === 1) {
+      // ★ 0.191.0：创建时间升序（最早在前）
+      list.sort((a: KnowledgeCard, b: KnowledgeCard) => a.createdAt - b.createdAt);
     } else {
-      list.sort((a: KnowledgeCard, b: KnowledgeCard) => {
-        return this.sortMode === 0 ? b.createdAt - a.createdAt : a.createdAt - b.createdAt;
-      });
+      // ★ 0.191.0：创建时间降序（最新在前，默认）
+      list.sort((a: KnowledgeCard, b: KnowledgeCard) => b.createdAt - a.createdAt);
     }
     return list;
-  }
-
-  // ★ 0.188.0：排序按钮文案（3 态循环，复刻单词库）
-  sortLabel(): string {
-    return this.sortMode === 0 ? '最新↓' : (this.sortMode === 1 ? '最早↑' : '需复习↑');
   }
 
   // ★ 0.188.0：下次复习标签——未学习 / 下次复习：已到期·N分钟后·N小时后·N天后·日期
@@ -316,15 +316,25 @@ export struct KnowledgeBankPage {
         .fontColor(TEXT_PRIMARY)
       Blank()
         .layoutWeight(1)
-      // ★ 0.188.0：排序按钮移到顶栏右上角（复刻单词库）——3 态循环 最新↓/最早↑/需复习↑
-      Button(this.sortLabel())
+      // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
+      //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
+      Button(this.sortMode === 1 ? '最新↑' : '最新↓')
         .fontSize(12)
-        .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
+        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .padding({ left: 8, right: 4 })
+        .margin({ right: 2 })
+        .onClick(() => {
+          this.sortMode = this.sortMode === 0 ? 1 : 0;
+        })
+      Button(this.sortMode === 3 ? '需复习↓' : '需复习↑')
+        .fontSize(12)
+        .backgroundColor(this.sortMode >= 2 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode >= 2 ? BRAND_SECONDARY : TEXT_TERTIARY)
         .padding({ left: 8, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
-          this.sortMode = (this.sortMode + 1) % 3;
+          this.sortMode = this.sortMode === 2 ? 3 : 2;
         })
       // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
       Button('⚙')

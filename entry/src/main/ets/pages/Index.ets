@@ -262,7 +262,7 @@ struct Index {
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(TEXT_PRIMARY)
-              Text('同步知识画布到云端')
+              Text('同步到云端') // ★ 0.191.0：文案精简（用户指示：删「知识画布」）
                 .fontSize(FONT_SIZE_CAPTION)
                 .fontColor(TEXT_TERTIARY)
                 .margin({ top: 2 })
