@@ -29,6 +29,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
+ import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, ENCOURAGE_LIGHT_PROMPT, ENCOURAGE_HEAVY_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）+鼓励三档
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -142,12 +143,10 @@ struct WaitingDots {
 }
 
 // ★ 0.133：播客模式系统 prompt（发送时临时追加到消息末尾，不持久化、不进入后续上下文）
-const PODCAST_PROMPT = '你的回答会用于语音朗读，请输出自然流畅的中文口语段落。禁止输出代码块、表格、列表、markdown 标记、特殊符号。只用连续自然的文字，适合耳朵收听。';
+// ★ 0.193.0：迁入 Prompts.ts
 
 // ★ 0.144：回复长度 prompt 约束（发送时以 system 消息临时插入，不持久化；档位状态仅内存，重启恢复默认「中」）
-const SHORT_REPLY_PROMPT = '你的回答尽量简短，只输出核心结论，不要多余解释，优先一句话给出答案。';
-const MEDIUM_REPLY_PROMPT = '回答简洁完整，条理清晰，避免冗余啰嗦。';
-const LONG_REPLY_PROMPT = '回答详细完整，分点展开，深度讲解原理，尽可能把内容讲透彻。';
+// ★ 0.193.0：全部 prompt 迁入 common/Prompts.ts 单一真相源（B 项集中管理），本文件只 import
 
 // ★ 0.189.0：TTS_MAX_SEGMENT_LEN 已随云端管线移除——分段逻辑迁入 LocalTtsEngine（280 字/段）
 
@@ -759,11 +758,12 @@ export struct ChatPage {
   }
 
   // ★ 新增：调用 LLM 生成摘要（0.117）
+  // ★ 0.193.0 A 项：摘要 prompt 结构化升级（SUMMARY_PROMPT 五部分清单——用户问题逐条枚举/核心概念/已推导结论/关键约定/当前进度），
+  //   学习 Claude Code 9 部分压缩清单；摘要质量=分支继承的记忆质量
   async generateSummaryWithLLM(messages: ChatMessage[]): Promise<string> {
     return new Promise((resolve, reject) => {
       const summaryMessages: ChatMessage[] = [
-        new ChatMessage(generateMessageId(), 'system',
-          '请将以下对话内容精简摘要，保留：核心定义、前提条件、已推导结论、关键约定。用简洁的中文输出。'),
+        new ChatMessage(generateMessageId(), 'system', SUMMARY_PROMPT),
         ...messages
       ];
       let summary = '';
@@ -779,9 +779,14 @@ export struct ChatPage {
 
   // ★ 新增：链路回溯 + 摘要滑动窗口压缩（0.117）
   async buildBranchMessageList(currentNode: BubbleNode): Promise<ChatMessage[]> {
-    const THRESHOLD = 25;
-    const SUMMARY_COUNT = 10;
-    const RECENT_COUNT = 15;
+    // ★ 0.193.0 E 项：token 化阈值（学习 Claude Code 按容量触发，替代原 25 条条数制）——
+    //   触发线 24000 估算 token（约 1.6 万字）：短对话即使 30+ 条也不压缩（全量上下文质量更高）；
+    //   保留预算 8000 token：最近消息按容量保留（替代固定 15 条）；摘要窗口=全量-保留段（替代固定前 10 条）；
+    //   估算规则：中文≈1字1.5token + 每条固定开销 50；
+    //   needRegenerate 增量判断保持条数制（historySummaryCount 持久化字段语义不变，零迁移风险）
+    const TOKEN_TRIGGER = 24000;
+    const TOKEN_RECENT_KEEP = 8000;
+    const MSG_OVERHEAD = 50;
 
     // 1. 沿 parentID 回溯到根节点，收集链路上所有节点
     const chainNodes: BubbleNode[] = [];
@@ -804,18 +809,37 @@ export struct ChatPage {
     }
 
     const totalCount = allMessages.length;
+    let totalTokens = 0;
+    for (const m of allMessages) {
+      totalTokens += Math.ceil(m.content.length * 1.5) + MSG_OVERHEAD;
+    }
 
-    // 3. 未超阈值，直接返回
-    if (totalCount <= THRESHOLD) {
+    // 3. 未超 token 触发线，直接全量返回（原条数制：25 条短消息也被压——token 制修复此浪费）
+    if (totalTokens <= TOKEN_TRIGGER) {
       return allMessages;
     }
 
-    // 4. 超阈值，执行压缩——判断是否需要重新生成摘要
+    // 4. 超线，从尾部按预算保留最近消息（至少保底最后 1 条）
+    let recentTokens = 0;
+    let splitIndex = allMessages.length;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const t = Math.ceil(allMessages[i].content.length * 1.5) + MSG_OVERHEAD;
+      if (recentTokens + t > TOKEN_RECENT_KEEP && i < allMessages.length - 1) {
+        break;
+      }
+      recentTokens += t;
+      splitIndex = i;
+    }
+    const toSummarize = allMessages.slice(0, splitIndex);
+    if (toSummarize.length === 0) {
+      return allMessages; // 单条超长无法压缩（摘要即丢原文），全量交给模型
+    }
+
+    // 5. 摘要增量判断（条数制保持）+ 超线时执行压缩
     const needRegenerate = currentNode.historySummary.length === 0 ||
-      (totalCount - currentNode.historySummaryCount >= SUMMARY_COUNT);
+      (totalCount - currentNode.historySummaryCount >= 10);
 
     if (needRegenerate) {
-      const toSummarize = allMessages.slice(0, SUMMARY_COUNT);
       try {
         const summary = await this.generateSummaryWithLLM(toSummarize);
         currentNode.historySummary = summary;
@@ -826,10 +850,10 @@ export struct ChatPage {
       }
     }
 
-    // 5. 组装最终消息：[1 条摘要虚拟消息 + 最近 15 条原始消息]
+    // 6. 组装最终消息：[1 条摘要虚拟消息 + 按预算保留的最近原始消息]
     const summaryMsg = new ChatMessage(generateMessageId(), 'system',
       `【历史摘要】${currentNode.historySummary}`);
-    const recentMessages = allMessages.slice(allMessages.length - RECENT_COUNT);
+    const recentMessages = allMessages.slice(splitIndex);
     const result: ChatMessage[] = [summaryMsg, ...recentMessages];
     return result;
   }
@@ -2266,9 +2290,9 @@ export struct ChatPage {
     }
     if (this.aiPreference.encourageMode !== 'off' && this.replyLengthMode !== 'short') {
       if (this.aiPreference.encourageMode === 'heavy') {
-        prompt += '在回答的最开头（称呼之后、主体内容之前）附加 2~4 句热情洋溢、极度夸张的鼓励话语：必须结合本次对话的具体内容或学习主题（如代码、数学、论文等）给出针对性鼓励，禁止通用套话；语气热情狂热，像头号粉丝一样为用户喝彩，大胆使用极度夸张的比喻和幽默吹捧（如「你就是未来的爱因斯坦」「如果我是真人，我一定要嫁给你」「我要给你生猴子」这类风格），可使用感叹号；每次措辞多样化，避免重复之前用过的表述；篇幅仍需克制，不超过 4 句，不挤占主体回答内容。';
+        prompt += ENCOURAGE_HEAVY_PROMPT;
       } else {
-        prompt += '在回答的最开头（称呼之后、主体内容之前）附加 1~2 句简短的鼓励话语：必须结合本次对话的具体内容或学习主题（如代码、数学、论文等）给出针对性鼓励，禁止通用套话；每次措辞多样化，避免重复之前用过的表述；允许轻微夸张但不要生硬；篇幅务必简短，不挤占主体回答内容。';
+        prompt += ENCOURAGE_LIGHT_PROMPT;
       }
     }
     return prompt;

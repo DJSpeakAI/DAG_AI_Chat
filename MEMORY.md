@@ -1,5 +1,6 @@
 # Project Memory
 > 项目基线文档，仅保存架构、定型功能、核心规则、未完成任务；单次调试流水存入docs迭代文档。
+> ★ 0.192.0：AI 助手上下文自律与 Prompt 编写军规见 **docs/CONTEXT_MANAGEMENT.md**（project_rule.md §8 强制引用）——阈值整理/阶段总结清单/写入纪律/长会话自救。
 
 ## FACT 项目固定基线
 1. DAG气泡树项目架构
@@ -23,11 +24,7 @@
 - UI：暗紫主题锁定暗色（方案A）；Pixso 设计稿 canvas 线已落地（0.167~0.173）
 
 ## PENDING 待开发任务
-### 任务1：DAG链路回溯与10+15摘要滑动窗口上下文压缩
-需求：从当前BubbleNode沿parentID回溯到根收集单分支消息，分支隔离。
-压缩规则：消息总数＞25触发；最早10条生成LLM摘要作system消息放头部，保留最近15条；≤25不压缩。
-BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘要。
-修改文件：ChatModel.ets、ChatPage.ets；状态：pending
+（★ 0.193.0 清理：原「任务1 DAG链路回溯与10+15摘要压缩」早已实现——buildBranchMessageList 现为 token 化阈值制，死条目删除；当前无待开发任务，2.0 学习模块方向见对话记录）
 
 ## 版本迭代简表
 > 只留核心能力与关键教训；完整记录见 docs/ 主文档。
@@ -86,9 +83,11 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.190.7|等待态模式小字精简（用户指示）：中回复模式（默认）不再显示「·中回复模式」小字——仅短/长特殊模式显示提示（waitingView 加 if short/long 条件），默认模式不啰嗦|
 |0.190.8|隐私政策弹窗自定义化（用户指示：灰色系统弹窗不好看，按我们的 UI 格式来）：AlertDialog→应用暗紫设计语言自定义弹窗（GlobalSettingsDialog build Stack 顶层 privacyVisible 驱动：遮罩点击关闭+SURFACE_NODE 面板+RADIUS_NAV+Scroll 正文分段 ForEach+主紫「我知道了」）；**事实：华为只要求应用内有便捷查看隐私政策入口+内容合规，不规定 UI 样式**——AlertDialog 灰弹窗非强制，自定义样式合规|
 |0.191.0|阅读位置记忆A+B+多模态高亮（用户批准 A+B 都做；评估时给过成功率 A=85%/B=90%+）：①**方案A 会话级高度记忆**——模块级 Map<bubbleId, yOffset>（页面销毁不丢同会话存活；像素值跨设备/字体漂移**不做持久化**，重启走书签/底部兜底）；记录点=aboutToDisappear+createChildBubble 切气泡前（此路径不触发 disappear **须手动记录**）；恢复=restoreReadingPosition()（A 记忆→B 书签→底部兜底，替代原固定滚底）②**方案B 手动书签**——划词工具栏加「标记」（isAiSegmentKey 仅 AI 正文段 key=messageId\|纯数字 显示；用户消息\|u/复习区 rk*/rkd*/rw* 排除）→书签=**段落序号**（parseMarkdown 段索引，不受图片/字体影响跨重启稳定）→命中段前渲染「🔖 上次读到此处（点击清除）」BRAND_SECONDARY 标记线；持久化 ChatBookmarkStore 独立 key 'chat-bookmarks-v1'（**单 JSON 字符串字段**存全部气泡书签——避 Record 字面量+往类加字段旧快照坑）；每气泡一个书签新标覆盖旧标；无 A 记忆时（重启后）scrollToIndex 跳书签消息③**多模态高亮**（用户指示：强烈推荐+高亮，后续图表上传等 AI 辅助功能依赖多模态）——模型下拉提示 TextSpan 三段：「强烈推荐使用」灰+「多模态模型」紫高亮+说明灰|
+|0.192.0|学习统计页（用户定稿：双入口+只增不减+AI鼓励找亮点）：①统计存储 StatisticsStore 按天聚合轻量库（key statistics-v1，单 JSON 字符串字段——对话条数/气泡数/token；**只增不减**：删除消息/气泡不影响已统计）②埋点：sendMessage 用户消息+1 / onDone AI回复+1+token（含 regenerate）/ createChildBubble+新建树Tab 气泡+1 ③统计页 StatisticsPage：AI鼓励卡（档位跟随鼓励三档+称谓拼入+**核心=数据再差也找亮点吹**，天/周环比挑增长最高的）+日/周/月/年四维柱状图+三大块卡片（对话/学习资产含未来7天待复习/token）④双入口：边栏知识库下方「统计」（chart.svg）+账号行点击；**教训：Navigation 路由页根组件必须 NavDestination+hideTitleBar(true)（0.159 模式），直接 Column 作根=全黑屏**|
+|0.193.0|上下文工程五项（学习 Claude Code 源码泄露经验，用户批准 A+B+C+D+E 全做）：①**A 摘要结构化**——SUMMARY_PROMPT 五部分清单（用户问题逐条枚举/核心概念/已推导结论/关键约定/当前进度，≤500字），摘要质量=分支记忆质量 ②**B prompt 集中管理**——新建 common/Prompts.ts 单一真相源（播客/长度/鼓励/统计鼓励/摘要/卡片提炼全收拢），页面禁止散落 prompt ③**C 军规复查**——卡片提炼三 prompt 数字锚定（"精简/压缩"违规词→"2~8字/不超过60字"）④**D MEMORY.md 瘦身**——删过时 PENDING 死条目 ⑤**E 压缩阈值 token 化**——buildBranchMessageList 条数制(25条)→token 估算制（触发线 24000 估算token≈1.6万字；保留预算 8000 token 替代固定15条；短对话不压缩全量质量更高；needRegenerate 增量保持条数制零迁移）；IDE 侧：docs/CONTEXT_MANAGEMENT.md（上下文自律+10条军规+用户画像）+project_rule.md §8|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.192.0（versionCode 1000066）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.193.0（versionCode 1000067）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）
 - 迭代文档命名：版本号 变更内容.md（如 0.185.0 音标口音切换.md；同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；规则详见 project_rule.md §7，2026-10-04 用户定稿）
 - 版本线主文档：docs/0.165+/0.167.md（精简版，0.165+ 段；历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，2026-10-04 端口 33685）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**

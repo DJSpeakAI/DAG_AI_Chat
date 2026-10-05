@@ -8,6 +8,7 @@
 import { WordItem, WordBankStore } from '../common/WordModel';
 import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
 import { ChatMessage, ApiConfig, AiPreference, StatisticsStore, StatDayEntry, connectStatistics, connectAiPreference, connectApiConfig, getStatDays, statDateKey, generateMessageId } from '../common/ChatModel';
+import { buildStatEncouragePrompt } from '../common/Prompts'; // ★ 0.193.0：统计鼓励 prompt 单一真相源
 import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { streamChat } from '../utils/ApiClient';
@@ -208,17 +209,13 @@ export struct StatisticsPage {
   }
 
   // ── AI 鼓励请求（档位跟随设置；off 不生成；称谓拼入；核心=数据再差也找优点）──
+  // ★ 0.193.0：prompt 迁入 Prompts.ts（buildStatEncouragePrompt 单一真相源）
   requestAiEncourage(): void {
     if (this.aiPreference.encourageMode === 'off') {
       this.aiText = '';
       return;
     }
-    const nickname = this.aiPreference.aiNickname.trim();
-    const namePart = nickname.length > 0 ? `请自然地称呼用户为「${nickname}」。` : '';
-    const heavy = this.aiPreference.encourageMode === 'heavy';
-    const sys = heavy
-      ? `你是一个学习统计鼓励师，本产品是用户的知识沉淀与复习工具。${namePart}请根据末尾的学习统计数据，用 2~4 句热情洋溢、极度夸张的话为用户喝彩：核心是从数据中找到最亮眼的亮点狂热吹捧（天/周环比里增长最高的那项优先），哪怕数据平淡或下降，也要像头号粉丝一样从任何角度找到优点猛夸（「你就是未来的爱因斯坦」式吹捧，可用感叹号），并热情展望未来待学习的内容；必须引用具体数字，禁止通用套话；篇幅不超过 4 句。\n\n${this.buildStatDataText()}`
-      : `你是一个学习统计鼓励师，本产品是用户的知识沉淀与复习工具。${namePart}请根据末尾的学习统计数据，用 1~2 句简短温和的话鼓励用户：核心是从数据中找到最值得表扬的亮点（增长最亮眼的一项优先），哪怕数据平淡或下降，也必须找到值得肯定的点温和鼓励；必须引用具体数字，禁止通用套话；语气自然；篇幅务必简短。\n\n${this.buildStatDataText()}`;
+    const sys = buildStatEncouragePrompt(this.aiPreference.encourageMode, this.aiPreference.aiNickname.trim(), this.buildStatDataText());
     this.aiLoading = true;
     this.aiText = '';
     const messages: ChatMessage[] = [
