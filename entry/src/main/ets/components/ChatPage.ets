@@ -2361,7 +2361,9 @@ export struct ChatPage {
             }
           })
       }
-      Column() {
+      // ★ 0.196.5：标题列 space 2 对齐画布信息条（Column({space:2}){标题,统计}）——
+      //   两列内容规格完全一致（16/600/Inter-SemiBold + 11/TEXT_SECONDARY/Inter）+ 同高 Row 居中 → 标题 y 像素级一致
+      Column({ space: 2 }) {
         Text('气泡') // ★ 0.195.0：标题「对话」→「气泡」（用户定稿——页面主体是气泡对话，与气泡树命名体系统一）
           .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.181.0：顶栏标题对齐 ScreenTitle（18 Bold→16 SemiBold）
           .fontWeight(600)
@@ -2386,6 +2388,7 @@ export struct ChatPage {
           .height(20)
           .objectFit(ImageFit.Contain)
       }
+      .height(40) // ★ 0.196.5：icon 包裹行 40vp——撑起顶栏 Row 与画布 ➕ 同高，标题列居中位置两页一致（像素级对齐）
       .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——相邻 icon 边缘间距 4+4=8vp（对齐单词库 ⚙↔+，实测原 12vp 不一致）
       .onClick(() => {
         this.pathStack.pushPath({ name: 'WordBankPage' });
@@ -2396,6 +2399,7 @@ export struct ChatPage {
           .height(20)
           .objectFit(ImageFit.Contain)
       }
+      .height(40) // ★ 0.196.5：同上——40vp 撑高
       .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——8vp 间距统一
       .onClick(() => {
         this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
@@ -2406,6 +2410,7 @@ export struct ChatPage {
           .height(20)
           .objectFit(ImageFit.Contain)
       }
+      .height(40) // ★ 0.196.5：同上——40vp 撑高
       .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——8vp 间距统一（Row 自身 right padding 16 收尾）
       .onClick(() => {
         this.globalSettingsVisible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
@@ -4132,7 +4137,7 @@ export struct ChatPage {
       .height('100%')
       // ★ 0.195.0：根底色补齐 BG_APP——原根容器未设底色透出窗口纯黑（用户截图实锤 #000000，
       //   与画布/单词库/知识库暗紫底不一致；0.183.0 修三页时本页漏网，本次补上）
-      .backgroundColor(BG_APP)
+      .backgroundColor(BG_CANVAS)
     }
     .hideTitleBar(true)
     // ★ 0.152：标注页 pop 返回时消费标注结果（import/branch/knowledge 三分支；

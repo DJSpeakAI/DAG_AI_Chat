@@ -19,7 +19,7 @@ import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { BG_APP, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -560,7 +560,7 @@ export struct ReviewPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(BG_APP)
+      .backgroundColor(BG_CANVAS)
     }
     .hideTitleBar(true)
   }
