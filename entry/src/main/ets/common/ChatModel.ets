@@ -278,6 +278,35 @@ export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
   }
 }
 
+// ============================================================
+// ★ 0.191.0：对话书签（阅读位置方案 B 手动标记）——独立 key 持久化，跨重启稳定
+// ============================================================
+// 设计：单 JSON 字符串字段存全部气泡的书签（bubbleId → 划词 key+字符偏移），
+// 避免 Record 字面量（ArkTS 严格模式）与往类上加字段的旧快照坑（0.143 教训）。
+// ★ 0.191.0 重做：段落级→划词级——segKey=完整划词 key（`${msgId}|${segIdx}` 文本段 / `${msgId}|t${segIdx}h${ci}` 表格格），
+// start/end=划选在该 Text 内容中的字符偏移（onTextSelectionChange 原值，substring 即得划选文字）。
+// key 升 v2：旧 v1 段落级数据结构不兼容，作废（均为测试期数据）。
+export interface BookmarkEntry {
+  bubbleId: string;   // 所属气泡
+  messageId: string;  // AI 消息 ID
+  segKey: string;     // 完整划词 key（含段/格定位）
+  start: number;      // 划选起始偏移（该 Text 内容内）
+  end: number;        // 划选结束偏移
+}
+
+export interface BookmarkData {
+  entries: BookmarkEntry[];
+}
+
+@ObservedV2
+export class ChatBookmarkStore {
+  @Trace raw: string = '{"entries":[]}';
+}
+
+export function connectChatBookmarks(): ChatBookmarkStore {
+  return PersistenceV2.connect(ChatBookmarkStore, 'chat-bookmarks-v2', () => new ChatBookmarkStore()) as ChatBookmarkStore;
+}
+
 // ★ 0.150：AI 对话偏好（自定义称呼 + 自动鼓励开关）——PersistenceV2 持久化，跨重启保存
 // 独立 key 与 ApiConfig 隔离（0.143 教训：往已有磁盘快照的类新增字段会因旧快照缺字段不落盘；
 // 全新 key 首次创建即含全部字段，无此坑——与单词库/知识库独立 key 模式一致）

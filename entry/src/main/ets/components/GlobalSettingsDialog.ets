@@ -108,9 +108,20 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.190.7';
+const APP_VERSION: string = 'v0.191.0';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
+
+// ★ 0.190.8：隐私政策正文分段（自定义暗紫弹窗渲染；华为只要求应用内有便捷查看入口+内容合规，
+// 不规定 UI 样式——系统 AlertDialog 灰色弹窗按用户指示换成应用设计语言）
+const PRIVACY_SECTIONS: string[] = [
+  'DAGAI 尊重并保护你的隐私。本应用不收集、不上传任何个人信息。',
+  '1. 本地存储：对话、单词库、知识库及 AI 配置（含 API Key）全部存储在设备本地，卸载即清除。',
+  '2. AI 服务：对话内容仅在你主动发送时，按你配置的 AI 服务商（火山方舟 / 华为云 MaaS / DeepSeek / 自定义）接口直接传输，用于生成回复，本应用不经手留存。',
+  '3. 云同步：如你开启云同步，数据经华为云空间加密，仅在你登录的华为账号设备间同步。',
+  '4. 权限：仅在你主动选择图片时访问相册，无其他敏感权限。',
+  '5. 联系我们：' + '1725912449@qq.com'
+];
 
 // ★ 0.190.1：旧版模型 ID → 新清单映射（火山 260910 预览版已被 260731 正式版替代，
 // 用户明确「改成我用那个 Flash 正式版」——回显时自动落新模型，保存即生效）
@@ -171,6 +182,8 @@ export struct GlobalSettingsDialog {
   @Local editEncourage: boolean = true; // 自动鼓励开关（默认开启）
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
+  // ★ 0.190.8：隐私政策自定义弹窗显隐（替代系统 AlertDialog 灰弹窗，按应用设计语言）
+  @Local privacyVisible: boolean = false;
 
   // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
@@ -532,11 +545,18 @@ export struct GlobalSettingsDialog {
           .margin({ top: 4 })
         }
 
-        // ★ 0.190.1：推荐多模态提示（用户指示：告知用户哪个能发图，推荐多模态）
-        Text('推荐使用多模态模型（可发送图片，AI 能识别图片内容）；列表外模型可选「自定义…」。')
+        // ★ 0.191.0：多模态模型高亮（用户指示：强烈推荐+高亮——后续图表上传等 AI 辅助功能依赖多模态）
+        Text() {
+          Span('强烈推荐使用')
+            .fontColor(TEXT_TERTIARY)
+          Span('多模态模型')
+            .fontColor(BRAND_SECONDARY)
+            .fontWeight(FontWeight.Medium)
+          Span('（可发送图片，AI 能识别图片内容）；列表外模型可选「自定义…」。')
+            .fontColor(TEXT_TERTIARY)
+        }
           .fontSize(11)
           .lineHeight(18)
-          .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
@@ -721,7 +741,7 @@ export struct GlobalSettingsDialog {
         }
         .width('100%')
 
-        Text('💡 开启后 AI 会在回复开头（称呼之后、主体内容之前）结合当前学习主题给你 1~2 句鼓励（短回复不生成）；关闭后所有回复都不生成鼓励，仅保留称呼。')
+        Text('💡 开启后 AI 会在回复开头（称呼之后、主体内容之前）结合当前学习主题给你 1~2 句鼓励（短回复模式不生成）；关闭后所有回复都不生成鼓励，仅保留称呼。') // ★ 0.190.8：短回复→短回复模式（用户指示）
           .fontSize(11)
           .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)
@@ -858,18 +878,10 @@ export struct GlobalSettingsDialog {
     }
   }
 
-  // ★ 0.190.6：隐私政策（app 内置文本展示；上架时按华为官方要求接入 AGC 标准化隐私声明
-  //   托管服务——系统自动弹隐私弹窗，应用内入口改调 privacyManager.getAppPrivacyMgmtInfo
-  //   查询托管链接，保持与弹窗一致）
+  // ★ 0.190.6：隐私政策入口；★ 0.190.8：AlertDialog 系统灰弹窗 → 自定义暗紫弹窗
+  // （privacyVisible 驱动 build Stack 顶层渲染；华为不强制样式，按应用设计语言走）
   showPrivacyPolicy(): void {
-    this.getUIContext().showAlertDialog({
-      title: '隐私政策',
-      message: 'DAGAI 尊重并保护你的隐私：\n\n1. 不收集：本应用不收集、不上传任何个人信息。\n\n2. 本地存储：对话、单词库、知识库及 AI 配置（含 API Key）全部存储在设备本地，卸载即清除。\n\n3. AI 服务：对话内容仅在你主动发送时，按你配置的 AI 服务商（火山方舟 / 华为云 MaaS / DeepSeek / 自定义）接口直接传输，用于生成回复，本应用不经手留存。\n\n4. 云同步：如你开启云同步，数据经华为云空间加密，仅在你登录的华为账号设备间同步。\n\n5. 权限：仅在你主动选择图片时访问相册，无其他敏感权限。\n\n6. 联系我们：' + FEEDBACK_EMAIL,
-      confirm: { // ★ AlertDialogParamWithConfirm 单按钮属性名是 confirm（非 confirmButton）
-        value: '我知道了',
-        action: () => {}
-      }
-    });
+    this.privacyVisible = true;
   }
 
   // ★ 0.190.6：Tab5 关于——版本号 + 反馈与联系（邮箱复制 / mailto 预填设备信息）+ 隐私政策入口
@@ -1125,6 +1137,70 @@ export struct GlobalSettingsDialog {
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
+
+      // ★ 0.190.8：隐私政策自定义弹窗（Stack 顶层，暗紫设计语言替代系统 AlertDialog 灰弹窗）
+      if (this.privacyVisible) {
+        // 遮罩（点击关闭——纯阅读无输入，不怕误触）
+        Column() {
+          Blank()
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.5)')
+        .onClick(() => {
+          this.privacyVisible = false;
+        })
+
+        // 面板
+        Column() {
+          Text('隐私政策')
+            .fontSize(FONT_SIZE_SCREEN_TITLE)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .margin({ bottom: 12 })
+
+          Scroll() {
+            Column() {
+              ForEach(PRIVACY_SECTIONS, (section: string, idx: number) => {
+                Text(section)
+                  .fontSize(13)
+                  .lineHeight(20)
+                  .fontColor(idx === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
+                  .fontWeight(idx === 0 ? FontWeight.Medium : FontWeight.Normal)
+                  .margin({ bottom: 10 })
+                  .width('100%')
+              }, (section: string) => section)
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollable(ScrollDirection.Vertical)
+          .edgeEffect(EdgeEffect.Spring)
+          .align(Alignment.Top)
+
+          Button('我知道了')
+            .width('100%')
+            .height(48)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(TEXT_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ top: 12 })
+            .onClick(() => {
+              this.privacyVisible = false;
+            })
+        }
+        .width('88%')
+        .height('80%')
+        .padding(20)
+        .borderRadius(RADIUS_NAV)
+        .backgroundColor(SURFACE_NODE)
+        .border({ width: 1, color: STROKE_CARD })
+      }
     }
     .width('100%')
     .height('100%')

@@ -28,7 +28,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）
+import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -93,6 +93,10 @@ class KnowledgeReviewCacheEntry {
 const PLACEHOLDER_LOADING = 'AI正在回复中，请稍候...';
 const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
 
+// ★ 0.191.0：会话级阅读高度记忆（方案 A）——模块级 Map，页面销毁不丢（同会话内返回画布/切气泡
+// 再回来都在），重启清零（像素值跨设备/字体漂移不做持久化，重启走书签/底部兜底）
+const chatScrollMemory: Map<string, number> = new Map();
+
 // ============================================================
 // ★ 0.190.5：三点跳动等待动画（用户选定方案：非静态等待，三点滚动表示正在等 AI 回复）
 // ============================================================
@@ -147,6 +151,19 @@ const LONG_REPLY_PROMPT = '回答详细完整，分点展开，深度讲解原�
 
 // ★ 0.189.0：TTS_MAX_SEGMENT_LEN 已随云端管线移除——分段逻辑迁入 LocalTtsEngine（280 字/段）
 
+// ★ 0.191.0：带书签标志的代码 token 渲染单元——书签区间与语法 token 求交集拆分，
+// marked 段保留语法色 + 紫色下划线（划词级标记在代码块内的等效实现）
+class MarkedToken {
+  text: string;
+  kind: number;
+  marked: boolean;
+  constructor(text: string, kind: number, marked: boolean) {
+    this.text = text;
+    this.kind = kind;
+    this.marked = marked;
+  }
+}
+
 // ★ 新增：代码块组件，支持自动换行/横向滚动切换（0.122）
 @ComponentV2
 struct CodeBlockView {
@@ -170,6 +187,11 @@ struct CodeBlockView {
   @Event onMenuDisappear: () => void = () => {};                    // 菜单关闭（父组件清理选中状态）
   @Event onSelChange: (key: string, content: string, start: number, end: number) => void =
     (key: string, content: string, start: number, end: number) => {}; // 选中变化（父组件按偏移截取选中文本）
+  // ★ 0.191.0：划词级书签——父组件传入本块书签偏移（-1=无）与工具栏标记按钮状态
+  @Param bmStart: number = -1;
+  @Param bmEnd: number = -1;
+  @Param bookmarkBtnLabel: string = '标记'; // 按钮文案（标记/取消标记，父组件按划选首字符判定）
+  @Event onBookmark: () => void = () => {}; // 标记/取消标记按钮（父组件 onToolbarBookmark）
 
   // ★ 0.149：着色 token 序列（@Computed 依赖 content/lang 自动重算；流式增量输出实时刷新高亮）
   // tokenizeCode 返回 null（语言不支持/超长兜底）时降级为单段全文本——渲染层只有一条 Span 拼接路径
@@ -180,6 +202,41 @@ struct CodeBlockView {
       return [new CodeToken(this.content, 0)];
     }
     return tokens;
+  }
+
+  // ★ 0.191.0：书签区间与语法 token 求交集拆分——marked 段渲染时加紫色下划线（保留语法色）
+  // 偏移越界（书签过期/内容变化）时交集为空，自然降级为无标记渲染
+  @Computed
+  get markedTokens(): MarkedToken[] {
+    const tokens = this.renderTokens;
+    if (this.bmStart < 0 || this.bmEnd <= this.bmStart) {
+      const plain: MarkedToken[] = [];
+      for (const t of tokens) {
+        plain.push(new MarkedToken(t.text, t.kind, false));
+      }
+      return plain;
+    }
+    const out: MarkedToken[] = [];
+    let pos = 0;
+    for (const t of tokens) {
+      const tStart = pos;
+      const tEnd = pos + t.text.length;
+      pos = tEnd;
+      if (tEnd <= this.bmStart || tStart >= this.bmEnd) {
+        out.push(new MarkedToken(t.text, t.kind, false));
+        continue;
+      }
+      if (tStart < this.bmStart) {
+        out.push(new MarkedToken(t.text.substring(0, this.bmStart - tStart), t.kind, false));
+      }
+      const mStart = tStart > this.bmStart ? tStart : this.bmStart;
+      const mEnd = tEnd < this.bmEnd ? tEnd : this.bmEnd;
+      out.push(new MarkedToken(t.text.substring(mStart - tStart, mEnd - tStart), t.kind, true));
+      if (tEnd > this.bmEnd) {
+        out.push(new MarkedToken(t.text.substring(this.bmEnd - tStart), t.kind, false));
+      }
+    }
+    return out;
   }
 
   // ★ 0.149：token 配色；★ 0.181.0 收敛 DesignTokens 语义常量（关键字蓝/字符串绿/注释灰/数字橙）
@@ -197,20 +254,6 @@ struct CodeBlockView {
       return CODE_NUMBER; // 数字：橙
     }
     return CODE_TEXT;   // 普通代码文本：底色对应文字色
-  }
-
-  // ★ 0.149：一键复制全部代码 + toast 提示（需求：代码块顶部复制按钮）
-  copyAllCode(): void {
-    try {
-      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.content);
-      pasteboard.getSystemPasteboard().setData(data).then(() => {
-        this.showToastSafe('复制成功');
-      }).catch((err: Error) => {
-        // 写入失败静默忽略（复制为辅助功能，不打断主流程）
-      });
-    } catch (e) {
-      // 复制异常静默忽略（防崩溃）
-    }
   }
 
   // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
@@ -249,6 +292,18 @@ struct CodeBlockView {
         .vertical(true)
         .height(16)
         .color(STROKE_CARD)
+      // ★ 0.191.0：标记/取消标记（与主工具栏同位——复制左边；文案由父组件按划选首字符判定）
+      Text(this.bookmarkBtnLabel)
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .onClick(() => {
+          this.onBookmark();
+        })
+      Divider()
+        .vertical(true)
+        .height(16)
+        .color(STROKE_CARD)
       Text('复制')
         .fontSize(14)
         .fontColor(TEXT_PRIMARY)
@@ -276,8 +331,9 @@ struct CodeBlockView {
 
   build() {
     Column() {
-      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大；
-      // ★ 0.163：三键去文字留纯 icon（⧉/↩⇄/⤢ 语义已明确），固定 24×22 同款尺寸整齐排列）
+      // ★ 按钮栏：左对齐 + 小字体 + 醒目样式（0.122 优化；0.153 拆分为两个独立按钮：换行切换 + 放大）
+      // ★ 0.191.0：⧉ 全部复制按钮移除（用户定稿：划词工具栏已有「复制」，顶栏复制冗余）；
+      //   换行/放大两键统一纯 icon 无底样式（用户反馈：灰蓝紫底难看、⤢ 不居中——lineHeight 22 撑满容器垂直居中）
       Row() {
         // ★ 0.149：语言标签（无语言标识的代码块标记为 plaintext，不高亮）
         Text(this.lang.length > 0 ? this.lang : 'plaintext')
@@ -285,58 +341,35 @@ struct CodeBlockView {
           .fontColor(TEXT_TERTIARY)
           .margin({ right: 6 })
 
-        // ★ 0.149：复制按钮——一键复制全部代码文本 + toast 提示成功
-        // ★ 0.163：去文字留纯 icon（⧉ 语义已明确），固定 24×22 三键同款整齐排列
-        Row() {
-          Text('⧉')
-            .fontSize(13)
-            .fontColor(BRAND_SECONDARY)
-        }
-        .width(24)
-        .height(22)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .borderRadius(4)
-        .backgroundColor(SURFACE_HOVER)
-        .border({ width: 0.5, color: STROKE_BRAND })
-        .margin({ right: 6 })
-        .onClick(() => {
-          this.copyAllCode();
-        })
-
         // 换行切换按钮：换行模式显示 ↩，滚动模式显示 ⇄
-        // ★ 0.163：去文字留纯 icon，固定 24×22 三键同款整齐排列
         Row() {
           Text(this.wrap ? '↩' : '⇄')
-            .fontSize(13)
+            .fontSize(15)
+            .lineHeight(22)
+            .textAlign(TextAlign.Center)
             .fontColor(BRAND_SECONDARY)
         }
         .width(24)
         .height(22)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .borderRadius(4)
-        .backgroundColor(SURFACE_HOVER)
-        .border({ width: 0.5, color: STROKE_BRAND })
         .margin({ right: 6 })
         .onClick(() => {
           this.wrap = !this.wrap;
         })
 
         // ★ 0.153：放大按钮——打开全屏代码查看弹窗（父组件渲染）
-        // ★ 0.163：去文字留纯 icon，固定 24×22 三键同款整齐排列
         Row() {
           Text('⤢')
-            .fontSize(13)
+            .fontSize(15)
+            .lineHeight(22)
+            .textAlign(TextAlign.Center)
             .fontColor(BRAND_SECONDARY)
         }
         .width(24)
         .height(22)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .borderRadius(4)
-        .backgroundColor(SURFACE_HOVER)
-        .border({ width: 0.5, color: STROKE_BRAND })
         .onClick(() => {
           this.onZoom(this.content, this.lang); // ★ 0.149：加传 lang（放大弹窗同步高亮）
         })
@@ -352,10 +385,12 @@ struct CodeBlockView {
         // ★ 0.149：语法高亮——Text 内 ForEach Span 按着色 token 渲染；token 顺序拼接与 content
         // 完全一致，划词/全选/复制偏移不错位；keyGenerator 纳入内容长度，流式更新触发 Span 重建
         Text('', { controller: this.selController }) {
-          ForEach(this.renderTokens, (t: CodeToken, i: number) => {
+          ForEach(this.markedTokens, (t: MarkedToken, i: number) => {
             Span(t.text)
               .fontColor(this.tokenColor(t.kind))
-          }, (t: CodeToken, i: number) => `${i}|${t.kind}|${t.text.length}`)
+              // ★ 0.191.0：书签 marked 段紫色下划线（保留语法色）
+              .decoration(t.marked ? { type: TextDecorationType.Underline, color: BRAND_SECONDARY } : { type: TextDecorationType.None })
+          }, (t: MarkedToken, i: number) => `${i}|${t.kind}|${t.text.length}|${t.marked}`)
         }
           .fontSize(14)
           .fontFamily('monospace')
@@ -385,10 +420,12 @@ struct CodeBlockView {
           // ★ 0.156：划词五件套——同 wrap 模式（长按进入选择，拖动与横向滚动手势互不冲突）
           // ★ 0.149：语法高亮——同 wrap 模式 ForEach Span 着色渲染
           Text('', { controller: this.selController }) {
-            ForEach(this.renderTokens, (t: CodeToken, i: number) => {
+            ForEach(this.markedTokens, (t: MarkedToken, i: number) => {
               Span(t.text)
                 .fontColor(this.tokenColor(t.kind))
-            }, (t: CodeToken, i: number) => `${i}|${t.kind}|${t.text.length}`)
+                // ★ 0.191.0：书签 marked 段紫色下划线（保留语法色）
+                .decoration(t.marked ? { type: TextDecorationType.Underline, color: BRAND_SECONDARY } : { type: TextDecorationType.None })
+            }, (t: MarkedToken, i: number) => `${i}|${t.kind}|${t.text.length}|${t.marked}`)
           }
             .fontSize(14)
             .fontFamily('monospace')
@@ -433,6 +470,8 @@ export struct ChatPage {
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.143：换 key 'api-config-v2'（旧快照无 audioKey 字段致新增属性不落盘，工厂迁移历史配置）
+  bookmarkStore: ChatBookmarkStore = connectChatBookmarks(); // ★ 0.191.0：阅读书签持久化（方案 B，跨重启）
+  @Local bookmarkCache: BookmarkEntry | null = null; // ★ 0.191.0：本气泡书签缓存（渲染期高频查询免逐段 JSON 解析）
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：AI 偏好（称呼 + 鼓励开关，独立 key 'ai-preference-v1'）
   canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：画布模式（'flat'/'tabs'，独立 key 'canvas-mode-v1'）
   tabForest: TabForestStore = connectTabForest();         // ★ 0.151：Tab 池（tabsJson + activeTabId，独立 key 'tab-forest-v1'）
@@ -448,7 +487,14 @@ export struct ChatPage {
   @Local imageViewerIndex: number = 0;
   @Local imageViewerImages: string[] = [];
   // ★ 0.145：划词翻译状态（替代原长按菜单/文本预览/删除确认——旧二级弹窗整体移除）
-  @Local selText: string = '';            // 当前选中文本（onTextSelectionChange 时从对应 Text 内容截取）
+   @Local selText: string = '';            // 当前选中文本（onTextSelectionChange 时从对应 Text 内容截取）
+   @Local selStart: number = -1;           // ★ 0.191.0：选中起始偏移（划词级书签用；-1=无有效选中）
+   @Local selEnd: number = -1;             // ★ 0.191.0：选中结束偏移
+   // ★ 0.191.0：粘性选中区间（不被 clearSelectionState 清理）——表格横向 Scroll 内拖选时菜单消失重弹
+   // 丢失 selStart/selEnd，点「标记」误报「请划选文字」；同 key 兜底恢复（见 effectiveSelStart）
+   private stickySelKey: string = '';
+   private stickyStart: number = -1;
+   private stickyEnd: number = -1;
   @Local selKey: string = '';             // 当前激活选择的 Text 标识（`${msgId}|u` 用户消息 / `${msgId}|${segIdx}` AI 段）
   @Local selectAllKey: string = '';       // 全选受控态标识（`${selKey}|${nonce}`，nonce 递增确保重复点击仍触发属性重应用）
   @Local selectAllNonce: number = 0;      // 全选触发计数（配合 selectAllKey）
@@ -671,6 +717,18 @@ export struct ChatPage {
         // ★ 0.151：表格单元格同样做数学符号转换（如 |\neq| → |≠|）
         const mathHeader: string[] = header.map((c: string) => renderMathText(c));
         const mathRows: string[][] = rows.map((r: string[]) => r.map((c: string) => renderMathText(c)));
+        // ★ 0.191.0：行格数对齐表头——流式中间态/AI 输出瑕疵导致的短行补空格、超长行截断，
+        //   列边界与表头严格对齐永不错位（配合 parseTableRow 尾格容错，双保险）
+        const colCount = mathHeader.length;
+        for (let ri = 0; ri < mathRows.length; ri++) {
+          const r = mathRows[ri];
+          while (r.length < colCount) {
+            r.push('');
+          }
+          if (r.length > colCount) {
+            mathRows[ri] = r.slice(0, colCount);
+          }
+        }
         segments.push(new MdSegment(2, '', '', mathHeader, mathRows));
         continue;
       }
@@ -684,10 +742,13 @@ export struct ChatPage {
   }
 
   // ★ 新增：解析表格行 | a | b | → [a, b]（0.121）
+  // ★ 0.191.0：流式中间态末行可能不以 | 结尾（AI 正在写入）——尾格也要收进，
+  //   原逻辑丢尾格 → 该行格数比表头少 → 渲染时列边界左移错乱（用户实测 5×5 表末行总是错乱的根因）
   parseTableRow(line: string): string[] {
     const parts = line.split('|');
     const result: string[] = [];
-    for (let j = 1; j < parts.length - 1; j++) {
+    const endJ = line.trim().endsWith('|') ? parts.length - 1 : parts.length;
+    for (let j = 1; j < endJ; j++) {
       result.push(parts[j].trim());
     }
     return result;
@@ -769,37 +830,34 @@ export struct ChatPage {
     return result;
   }
 
-  // ★ 0.190.5：等待态视图——三点动画 + 当前回复模式提示（长模式加「请耐心等待」；
-  //   用户要求：等待中必须告知用户当前用的短/中/长模式，长模式特别提示耐心等待）
+  // ★ 0.191.0：流式请求阶段（等待态一行提示——用户核心诉求：干等难受，必须告知当前在哪一步）
+  // 0=无 1=已提交请求（点发送/刷新瞬间） 2=等待服务器返回（思考模型思考阶段——锅甩给服务器，用户知道不是自己设备的问题）
+  // 「正在接收内容」状态已删（用户指出：首字节一到占位即消失，该状态永远显示不出来=死代码）
+  @Local streamPhase: number = 0;
+
+  // ★ 0.190.5：等待态视图——三点动画 + 阶段反馈 + 回复模式
+  // ★ 0.191.0 定稿（用户指示）：全部信息浓缩一行；文案两态——已提交请求 / 等待服务器返回；无省略号（三点动画已表达进行中）
   @Builder
   waitingView(content: string) {
-    Column() {
-      Row() {
-        WaitingDots()
-        Text(content === PLACEHOLDER_THINKING ? 'AI 正在深度思考' : 'AI 正在回复')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ left: 8 })
-        // ★ 0.190.7：仅短/长模式显示模式小字（特殊模式才需提示；中回复=默认模式不啰嗦，用户指示）
-        if (this.replyLengthMode === 'short' || this.replyLengthMode === 'long') {
-          Text(`· ${this.replyLengthMode === 'short' ? '短' : '长'}回复模式`)
-            .fontSize(12)
-            .fontColor(TEXT_TERTIARY)
-            .margin({ left: 4 })
-        }
-      }
-      .width('100%')
-
-      if (this.replyLengthMode === 'long') {
-        Text('长回复生成时间较久，请耐心等待…')
-          .fontSize(11)
-          .lineHeight(18)
+    Row() {
+      WaitingDots()
+      Text(this.streamPhase === 1 ? '已提交请求'
+        : this.streamPhase === 2 ? '等待服务器返回'
+        : 'AI 正在回复')
+        .fontSize(14)
+        .fontColor(TEXT_SECONDARY)
+        .maxLines(1)
+        .margin({ left: 8 })
+      // ★ 0.190.7：仅短/长模式显示模式段（特殊模式才需提示；中回复=默认模式不啰嗦，用户指示）
+      if (this.replyLengthMode === 'short' || this.replyLengthMode === 'long') {
+        Text(`· ${this.replyLengthMode === 'short' ? '短' : '长'}回复模式`)
+          .fontSize(12)
           .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
+          .maxLines(1)
+          .margin({ left: 4 })
       }
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
   }
 
   // ★ 0.190.2：纯文本模型发图确认弹窗（Promise 包装 AlertDialog，await 取用户选择）
@@ -854,6 +912,7 @@ export struct ChatPage {
     this.pendingImages = [];
     this.getUIContext().getFocusController().clearFocus(); // ★ 0.131：替代 TextAreaController.stopEditing（API 12+ 全设备兼容），发送后收起键盘
     this.isLoading = true;
+    this.streamPhase = 1; // ★ 0.191.0：阶段 1——请求即将发出，等待服务器响应
 
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
     // ★ 替换为链路回溯 + 压缩（0.117）
@@ -888,6 +947,7 @@ export struct ChatPage {
           aiMsg.content = '';
         }
         aiMsg.content += chunk;
+        // ★ 0.191.0：接收态已删——首字节到达即清占位，等待态消失，「正在接收内容」永远显示不出来
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
         this.scroller.scrollEdge(Edge.Bottom);
       },
@@ -895,6 +955,7 @@ export struct ChatPage {
         // onDone：解锁 + 存储 token
         this.isLoading = false;
         this.streamController = null;
+        this.streamPhase = 0; // ★ 0.191.0：阶段复位
         // ★ 0.132 兜底：流结束但零内容时给出明确提示，杜绝任何场景永久卡占位
         if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
           aiMsg.content = '（AI 未返回文本内容，请重试或更换模型）';
@@ -909,6 +970,7 @@ export struct ChatPage {
         // onError：解锁 + 日志 + 错误气泡
         this.isLoading = false;
         this.streamController = null;
+        this.streamPhase = 0; // ★ 0.191.0：阶段复位
         // ★ 0.190.6：错误场景分类（ApiClient 单一真相源）——中文场景+建议操作+保留原始错误；
         //   0.190.2 图片关键词检测已合并进 classifyStreamError
         aiMsg.content = classifyStreamError(errMsg);
@@ -922,6 +984,7 @@ export struct ChatPage {
         if (aiMsg.content === PLACEHOLDER_LOADING) {
           aiMsg.content = PLACEHOLDER_THINKING;
         }
+        this.streamPhase = 2; // ★ 0.191.0：阶段 2——等待服务器返回（思考模型思考阶段，锅甩给服务器）
         this.scroller.scrollEdge(Edge.Bottom);
       }
     );
@@ -947,6 +1010,7 @@ export struct ChatPage {
     msg.inputTokens = 0;
     msg.outputTokens = 0;
     this.isLoading = true;
+    this.streamPhase = 1; // ★ 0.191.0：阶段 1——请求即将发出，等待服务器响应
     const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
     // 回复长度档位 prompt（与 sendMessage 同机制，不持久化）
     if (this.replyLengthMode === 'short') {
@@ -974,12 +1038,14 @@ export struct ChatPage {
           msg.content = '';
         }
         msg.content += chunk;
+        // ★ 0.191.0：接收态已删（同 sendMessage——死代码）
         this.scroller.scrollEdge(Edge.Bottom);
       },
       (inputTokens: number, outputTokens: number) => {
         // onDone：解锁 + 存储 token
         this.isLoading = false;
         this.streamController = null;
+        this.streamPhase = 0; // ★ 0.191.0：阶段复位
         if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
           msg.content = '（AI 未返回文本内容，请重试或更换模型）';
         }
@@ -992,6 +1058,7 @@ export struct ChatPage {
         // onError：解锁 + 错误提示
         this.isLoading = false;
         this.streamController = null;
+        this.streamPhase = 0; // ★ 0.191.0：阶段复位
         // ★ 0.190.6：错误场景分类（与 sendMessage onError 同机制）
         msg.content = classifyStreamError(errMsg);
         this.scroller.scrollEdge(Edge.Bottom);
@@ -1002,6 +1069,7 @@ export struct ChatPage {
         if (msg.content === PLACEHOLDER_LOADING) {
           msg.content = PLACEHOLDER_THINKING;
         }
+        this.streamPhase = 2; // ★ 0.191.0：阶段 2——等待服务器返回（思考模型思考阶段）
         this.scroller.scrollEdge(Edge.Bottom);
       }
     );
@@ -1079,15 +1147,206 @@ export struct ChatPage {
   }
 
   // 进入对话页面：延迟滚到底部，显示最新消息
+  // ============================================================
+  // ★ 0.191.0：阅读位置记忆（方案 A 会话级高度）+ 书签（方案 B 手动标记）
+  // ============================================================
+  // 记录当前气泡滚动高度（离开对话页/切气泡前调用；模块级 Map 同会话存活）
+  recordReadingPosition(): void {
+    const bubbleId = this.currentBubbleId;
+    if (bubbleId.length === 0) {
+      return;
+    }
+    try {
+      const y = this.scroller.currentOffset().yOffset;
+      if (y > 0) {
+        chatScrollMemory.set(bubbleId, y);
+      }
+    } catch (_e) {
+      // 布局未就绪等异常静默忽略
+    }
+  }
+
+  // 恢复阅读位置：A 高度记忆 → 底部（原行为）
+  // ★ 0.191.0 重做：书签跳转分支删除（用户定稿：与 A 冲突——A 生效即无需跳转；且多消息各有一个标记时无法决定跳哪个，本身是 bug）。
+  //   书签降级为纯视觉标记（段落背景色），不再承担任何定位职责。
+  restoreReadingPosition(): void {
+    this.bookmarkCache = this.getBookmarkEntry(); // 重载本气泡书签缓存（视觉标记渲染用）
+    const bubbleId = this.currentBubbleId;
+    let targetY = -1;
+    if (bubbleId.length > 0) {
+      const memY = chatScrollMemory.get(bubbleId) ?? -1;
+      if (memY > 0) {
+        targetY = memY;
+        this.scroller.scrollTo({ xOffset: 0, yOffset: memY });
+      }
+    }
+    if (targetY < 0) {
+      this.scroller.scrollEdge(Edge.Bottom);
+      return;
+    }
+    // 二次补偿：长列表首帧渲染未完成时 scrollTo 被 clamp 到错误位置，延迟校验补滚一次
+    setTimeout(() => {
+      try {
+        const cur = this.scroller.currentOffset().yOffset;
+        if (Math.abs(cur - targetY) > 80) {
+          this.scroller.scrollTo({ xOffset: 0, yOffset: targetY });
+        }
+      } catch (_e) {
+        // 组件已销毁等异常静默
+      }
+    }, 350);
+  }
+
+  // 从持久化 JSON 解析本气泡书签（无则 null）
+  getBookmarkEntry(): BookmarkEntry | null {
+    const bubbleId = this.currentBubbleId;
+    try {
+      const data = JSON.parse(this.bookmarkStore.raw) as BookmarkData;
+      if (data.entries === undefined || data.entries === null) {
+        return null;
+      }
+      for (let i = 0; i < data.entries.length; i++) {
+        if (data.entries[i].bubbleId === bubbleId) {
+          return data.entries[i];
+        }
+      }
+    } catch (_e) {
+      // 解析失败视为无书签
+    }
+    return null;
+  }
+
+  // 设置书签（每气泡一个，新标记覆盖旧标记）——★ 0.191.0 重做：划词级（key+字符偏移）
+  setBookmarkAt(segKey: string, start: number, end: number): void {
+    const bubbleId = this.currentBubbleId;
+    const entries: BookmarkEntry[] = [];
+    try {
+      const data = JSON.parse(this.bookmarkStore.raw) as BookmarkData;
+      if (data.entries !== undefined && data.entries !== null) {
+        for (let i = 0; i < data.entries.length; i++) {
+          if (data.entries[i].bubbleId !== bubbleId) {
+            entries.push(data.entries[i]);
+          }
+        }
+      }
+    } catch (_e) {
+      // 解析失败从空表重建
+    }
+    const messageId = segKey.split('|')[0];
+    const entry: BookmarkEntry = { bubbleId: bubbleId, messageId: messageId, segKey: segKey, start: start, end: end };
+    entries.push(entry);
+    this.bookmarkStore.raw = JSON.stringify({ entries: entries } as BookmarkData);
+    this.bookmarkCache = entry;
+  }
+
+  // 清除本气泡书签
+  clearBookmark(): void {
+    const bubbleId = this.currentBubbleId;
+    const entries: BookmarkEntry[] = [];
+    try {
+      const data = JSON.parse(this.bookmarkStore.raw) as BookmarkData;
+      if (data.entries !== undefined && data.entries !== null) {
+        for (let i = 0; i < data.entries.length; i++) {
+          if (data.entries[i].bubbleId !== bubbleId) {
+            entries.push(data.entries[i]);
+          }
+        }
+      }
+    } catch (_e) {
+      return;
+    }
+    this.bookmarkStore.raw = JSON.stringify({ entries: entries } as BookmarkData);
+    this.bookmarkCache = null;
+  }
+
+  // 渲染期高频查询：本划词 key 是否命中书签（读缓存，零 JSON 解析）
+  isBookmarkAt(key: string): boolean {
+    const bm = this.bookmarkCache;
+    return bm !== null && bm.segKey === key;
+  }
+
+  // 书签划选偏移读取（模板内访问 bookmarkCache 需空安全辅助；-1=无）
+  bmStart(): number {
+    const bm = this.bookmarkCache;
+    return bm !== null ? bm.start : -1;
+  }
+
+  bmEnd(): number {
+    const bm = this.bookmarkCache;
+    return bm !== null ? bm.end : -1;
+  }
+
+  // 划词 key 是否可标记（AI 正文文本段 `${msgId}|纯数字` + 表格格 `${msgId}|t..h..`/`t..r..c..`；
+  // 'u'=用户消息、rk*/rkd*/rw*=复习区、c*=代码块、cz/tz*=放大页均排除）
+  isBookmarkTargetKey(key: string): boolean {
+    const parts = key.split('|');
+    if (parts.length !== 2) {
+      return false;
+    }
+    const segStr = parts[1];
+    if (segStr.length === 0) {
+      return false;
+    }
+    let allDigit = true;
+    for (let i = 0; i < segStr.length; i++) {
+      const c = segStr.charCodeAt(i);
+      if (c < 48 || c > 57) {
+        allDigit = false;
+        break;
+      }
+    }
+    if (allDigit) {
+      return true; // 文本段
+    }
+    // 代码块：c${segIdx}；表格格：t${segIdx}h${ci}（表头）/ t${segIdx}r${ri}c${ci}（数据行）
+    return /^c\d+$/.test(segStr) || /^t\d+h\d+$/.test(segStr) || /^t\d+r\d+c\d+$/.test(segStr);
+  }
+
+  // 划词工具栏「标记/取消标记」——划选首字符已在本气泡书签区间内 → 取消；否则把整个划选设为书签
+  // ★ 0.191.0 定稿（用户方案）：不设独立清除入口，标记/取消都走划词工具栏，屏幕零占用
+  onToolbarBookmark(): void {
+    const s = this.effectiveSelStart();
+    const e = this.effectiveSelEnd();
+    if (s < 0 || e <= s) {
+      this.showToastSafe('请划选文字后再标记');
+      return;
+    }
+    const bm = this.bookmarkCache;
+    if (bm !== null && bm.segKey === this.selKey && s >= bm.start && s < bm.end) {
+      this.clearBookmark();
+      this.showToastSafe('已取消标记');
+    } else {
+      this.setBookmarkAt(this.selKey, s, e);
+      this.showToastSafe('已标记划选内容');
+    }
+    // ★ 0.191.0 修复：此处不清选中状态——菜单仍开着时按钮须变「取消标记」可再点
+    //   （清了 selKey 按钮显示条件失效会整个消失，用户实测 bug）；菜单关闭时 onDisappear 统一清理
+  }
+
+  // ★ 0.191.0：工具栏按钮文案——划选首字符已被标记 → 「取消标记」，否则「标记」
+  bookmarkBtnLabel(): string {
+    const bm = this.bookmarkCache;
+    if (bm === null || bm.segKey !== this.selKey) {
+      return '标记';
+    }
+    const s = this.effectiveSelStart();
+    if (s >= 0 && s >= bm.start && s < bm.end) {
+      return '取消标记';
+    }
+    return '标记';
+  }
+
   aboutToAppear() {
     this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
+    this.bookmarkCache = this.getBookmarkEntry(); // ★ 0.191.0：首帧渲染前载入书签（标记线即时显示）
     setTimeout(() => {
-      this.scroller.scrollEdge(Edge.Bottom);
+      this.restoreReadingPosition(); // ★ 0.191.0：阅读位置恢复（A 高度记忆 → B 书签 → 底部），替代原固定滚底
     }, 100);
   }
 
   // 页面退出：终止正在进行的 SSE 请求，防止内存泄漏
   aboutToDisappear() {
+    this.recordReadingPosition(); // ★ 0.191.0：离开前记录阅读高度（方案 A）
     if (this.streamController) {
       this.streamController.cancel();
       this.streamController = null;
@@ -1185,13 +1444,45 @@ export struct ChatPage {
     }
     this.selKey = key;
     this.selText = content.substring(start, end);
+    this.selStart = start; // ★ 0.191.0：记录偏移供划词级书签
+    this.selEnd = end;
+    // ★ 0.191.0：粘性区间——表格在横向 Scroll 内拖选时手势冲突会触发菜单消失重弹，
+    //   onDisappear 清掉 selStart/selEnd 后点「标记」误报「请划选文字」（用户实测 bug）；
+    //   粘性副本不被清理，点击时同 key 兜底恢复
+    this.stickySelKey = key;
+    this.stickyStart = start;
+    this.stickyEnd = end;
   }
 
   // 选择菜单关闭时清理全部选择状态（点空白/点菜单按钮后由 onDisappear 触发）
+  // ★ 0.191.0：粘性区间不清（跨菜单消失重弹存活，见 handleSelectionChange 注释）
   clearSelectionState(): void {
     this.selKey = '';
     this.selText = '';
+    this.selStart = -1;
+    this.selEnd = -1;
     this.selectAllKey = '';
+  }
+
+  // ★ 0.191.0：有效选中区间（当前回调值优先，菜单重弹丢失时用粘性副本兜底；-1=无）
+  effectiveSelStart(): number {
+    if (this.selStart >= 0) {
+      return this.selStart;
+    }
+    if (this.selKey.length > 0 && this.stickySelKey === this.selKey) {
+      return this.stickyStart;
+    }
+    return -1;
+  }
+
+  effectiveSelEnd(): number {
+    if ( this.selEnd > this.selStart) {
+      return this.selEnd;
+    }
+    if (this.selKey.length > 0 && this.stickySelKey === this.selKey) {
+      return this.stickyEnd;
+    }
+    return -1;
   }
 
   // 关闭当前激活 Text 的选择菜单（悬浮栏按钮点击后调用）
@@ -1626,6 +1917,22 @@ export struct ChatPage {
         .vertical(true)
         .height(16)
         .color(STROKE_CARD)
+      // ★ 0.191.0 重做：标记移到「复制」左边 + 白字（用户定稿）；仅可标记 key 显示
+      // （AI 正文文本段/代码块/表格格；用户消息/复习区/放大页不显示）
+      // ★ 0.191.0 定稿：划选首字符已被标记 → 按钮变「取消标记」（标记/取消统一走工具栏，无独立清除入口）
+      if (this.isBookmarkTargetKey(this.selKey)) {
+        Text(this.bookmarkBtnLabel())
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarBookmark();
+          })
+        Divider()
+          .vertical(true)
+          .height(16)
+          .color(STROKE_CARD)
+      }
       Text('复制')
         .fontSize(14)
         .fontColor(TEXT_PRIMARY)
@@ -1637,17 +1944,8 @@ export struct ChatPage {
         .vertical(true)
         .height(16)
         .color(STROKE_CARD)
-      Text('全选')
-        .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .onClick(() => {
-          this.onToolbarSelectAll();
-        })
-      Divider()
-        .vertical(true)
-        .height(16)
-        .color(STROKE_CARD)
+      // ★ 0.191.0：「全选」按钮移除（用户定稿——工具栏过长致「删除」超出屏幕边界；
+      //   代码块工具栏的全选保留：顶替已删的顶栏⧉复制按钮，全选→复制整段代码）
       // ★ 0.160：划词删除——AI 超长回复时免滚到 × 按钮就地删本条消息；
       // 红色警示（破坏性操作），确认防误触与 × 按钮共享状态
       Text('删除')
@@ -1759,6 +2057,7 @@ export struct ChatPage {
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局（返回画布时 onShown 消费）
     this.stopTTS(); // ★ 0.151-D：切气泡前补停 TTS（原依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此停）
+    this.recordReadingPosition(); // ★ 0.191.0：切气泡前记录阅读高度（此路径不触发 aboutToDisappear，须手动记录）
     // ★ 0.162 第一段：消息区淡出 140ms（EaseIn 加速消失，模拟「页面关闭」）
     this.getUIContext().animateTo({
       duration: 140,
@@ -1778,6 +2077,7 @@ export struct ChatPage {
           curve: Curve.EaseOut,
           onFinish: () => {
             this.branchAnimating = false; // 动画播完解锁
+            this.restoreReadingPosition(); // ★ 0.191.0：切气泡后恢复阅读位置（新气泡无记忆/书签→自然落底部，等价原行为）
           }
         }, () => {
           this.msgAreaOpacity = 1;
@@ -2153,11 +2453,25 @@ export struct ChatPage {
                            if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
                              this.waitingView(msg.content)
                            }
-                           ForEach(this.parseMarkdown(msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING ? '' : msg.content), (seg: MdSegment, idx: number) => {
-                            if (seg.type === 0) {
+                            ForEach(this.parseMarkdown(msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING ? '' : msg.content), (seg: MdSegment, idx: number) => {
+                             // ★ 0.191.0 定稿：清除入口已移除——标记/取消统一走划词工具栏
+                             //   （划选已标记文字 → 按钮变「取消标记」），段落上方不再插任何小字行
+                             if (seg.type === 0) {
                               // 普通文本段
                               // ★ 0.145：划词翻译——AI 文本段同样长按划词（key 纳入段索引 idx，与用户消息 key 空间隔离）
-                              Text(seg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|${idx}`) })
+                              // ★ 0.191.0 重做：划词级书签——命中本段时按字符偏移拆三段 Span，
+                              //   划选文字紫色+下划线（Span 不支持背景色，紫字+紫下划线为等效荧光笔方案）；未命中单 Span 原样
+                              Text('', { controller: this.getOrCreateTextController(`${msg.messageId}|${idx}`) }) {
+                                if (this.isBookmarkAt(`${msg.messageId}|${idx}`) && this.bmStart() >= 0 && this.bmEnd() > this.bmStart() && this.bmEnd() <= seg.content.length) {
+                                  Span(seg.content.substring(0, this.bmStart()))
+                                  Span(seg.content.substring(this.bmStart(), this.bmEnd()))
+                                    .fontColor(BRAND_SECONDARY)
+                                    .decoration({ type: TextDecorationType.Underline, color: BRAND_SECONDARY })
+                                  Span(seg.content.substring(this.bmEnd()))
+                                } else {
+                                  Span(seg.content)
+                                }
+                              }
                                 .fontSize(16)
                                 .lineHeight(24)
                                 .fontColor(TEXT_PRIMARY)
@@ -2185,6 +2499,8 @@ export struct ChatPage {
                               // ★ 代码块：使用 CodeBlockView 组件，支持自动换行切换（0.122）
                               // ★ 0.156：划词桥接——key 用 `c${idx}` 前缀（与文本段纯数字 idx 空间隔离），
                               // controller 注册进父组件 map，工具栏/翻译/复制/全选链路完全复用
+                              // ★ 0.191.0：代码块开放划词级标记——书签偏移传入（命中本块才传，否则 -1），
+                              //   内部与语法 token 求交集拆分，marked 段紫色下划线
                               CodeBlockView({
                                 content: seg.content,
                                 lang: seg.lang, // ★ 0.149：语言标识（parseMarkdown 已提取，语法高亮+顶部标签）
@@ -2192,6 +2508,10 @@ export struct ChatPage {
                                 textKey: `${msg.messageId}|c${idx}`,
                                 selController: this.getOrCreateTextController(`${msg.messageId}|c${idx}`),
                                 selectAllKey: this.selectAllKey,
+                                bmStart: this.isBookmarkAt(`${msg.messageId}|c${idx}`) ? this.bmStart() : -1,
+                                bmEnd: this.isBookmarkAt(`${msg.messageId}|c${idx}`) ? this.bmEnd() : -1,
+                                bookmarkBtnLabel: this.bookmarkBtnLabel(),
+                                onBookmark: () => { this.onToolbarBookmark(); },
                                 // ★ 0.157：工具栏按钮动作经 @Event 回调（替代 @BuilderParam，修复子组件 this 丢失崩溃）
                                 onTranslate: () => { this.onToolbarTranslate(); },
                                 onAddKnowledge: () => { this.onToolbarAddKnowledge(); },
@@ -2212,20 +2532,19 @@ export struct ChatPage {
                               // ★ 0.153：表格重做——固定列宽对齐（layoutWeight 在横向 Scroll 内失去统一基准导致列错位）
                               // + 默认不换行（单行 + 超宽省略）+ 左上角「放大」按钮（全屏查看 + 换行切换）
                               Column() {
-                                // 左上角放大按钮（样式与代码块按钮统一）
-                                // ★ 0.163：去文字留纯 icon（与代码块三键同款 24×22）
+                                // 左上角放大按钮
+                                // ★ 0.191.0：与代码块换行/放大键统一纯 icon 无底样式（lineHeight 22 垂直居中）
                                 Row() {
                                   Text('⤢')
-                                    .fontSize(13)
+                                    .fontSize(15)
+                                    .lineHeight(22)
+                                    .textAlign(TextAlign.Center)
                                     .fontColor(BRAND_SECONDARY)
                                 }
                                 .width(24)
                                 .height(22)
                                 .justifyContent(FlexAlign.Center)
                                 .alignItems(VerticalAlign.Center)
-                                .borderRadius(4)
-                                .backgroundColor(SURFACE_HOVER)
-                                .border({ width: 0.5, color: STROKE_BRAND })
                                 .margin({ top: 4, bottom: 2 })
                                 .onClick(() => {
                                   this.openTableZoom(seg.header, seg.rows);
@@ -2239,7 +2558,18 @@ export struct ChatPage {
                                       ForEach(seg.header, (cell: string, ci: number) => {
                                         // ★ 0.156：划词五件套——单元格内长按划词（翻译/复制/全选）；
                                         // key 用 `t${idx}h${ci}` 前缀（t=表格，与文本段纯数字 idx 空间隔离）
-                                        Text(cell, { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}h${ci}`) })
+                                        // ★ 0.191.0 重做：划词级书签——命中本格时拆 Span，划选文字紫色+下划线
+                                        Text('', { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}h${ci}`) }) {
+                                          if (this.isBookmarkAt(`${msg.messageId}|t${idx}h${ci}`) && this.bmStart() >= 0 && this.bmEnd() > this.bmStart() && this.bmEnd() <= cell.length) {
+                                            Span(cell.substring(0, this.bmStart()))
+                                            Span(cell.substring(this.bmStart(), this.bmEnd()))
+                                              .fontColor(BRAND_SECONDARY)
+                                              .decoration({ type: TextDecorationType.Underline, color: BRAND_SECONDARY })
+                                            Span(cell.substring(this.bmEnd()))
+                                          } else {
+                                            Span(cell)
+                                          }
+                                        }
                                           .fontSize(14)
                                           .fontColor(TEXT_PRIMARY)
                                           .padding(8)
@@ -2264,14 +2594,27 @@ export struct ChatPage {
                                             this.selectAllKey.startsWith(`${msg.messageId}|t${idx}h${ci}|`) ? 0 : 1,
                                             this.selectAllKey.startsWith(`${msg.messageId}|t${idx}h${ci}|`) ? cell.length : 0
                                           )
-                                      }, (cell: string, ci: number) => `h_${ci}`)
+                                       // ★ 0.191.0：key 纳入内容——流式中同格内容变化（列→列2）须触发重建，
+                                       //   原 `h_${ci}` 恒定导致表头格停留在中间态（0.132 segment key 同款教训）
+                                       }, (cell: string, ci: number) => `h_${ci}_${cell.length}_${cell.substring(0, 4)}`)
                                     }
                                     // 数据行
                                     ForEach(seg.rows, (row: string[], ri: number) => {
                                       Row() {
                                         ForEach(row, (cell: string, ci: number) => {
                                           // ★ 0.156：划词五件套——同表头（key 含行列号，每格独立 controller）
-                                          Text(cell, { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}r${ri}c${ci}`) })
+                                          // ★ 0.191.0 重做：划词级书签——命中本格时拆 Span，划选文字紫色+下划线
+                                          Text('', { controller: this.getOrCreateTextController(`${msg.messageId}|t${idx}r${ri}c${ci}`) }) {
+                                            if (this.isBookmarkAt(`${msg.messageId}|t${idx}r${ri}c${ci}`) && this.bmStart() >= 0 && this.bmEnd() > this.bmStart() && this.bmEnd() <= cell.length) {
+                                              Span(cell.substring(0, this.bmStart()))
+                                              Span(cell.substring(this.bmStart(), this.bmEnd()))
+                                                .fontColor(BRAND_SECONDARY)
+                                                .decoration({ type: TextDecorationType.Underline, color: BRAND_SECONDARY })
+                                              Span(cell.substring(this.bmEnd()))
+                                            } else {
+                                              Span(cell)
+                                            }
+                                          }
                                             .fontSize(14)
                                             .fontColor(TEXT_SECONDARY)
                                             .padding(8)
@@ -2296,9 +2639,12 @@ export struct ChatPage {
                                               this.selectAllKey.startsWith(`${msg.messageId}|t${idx}r${ri}c${ci}|`) ? 0 : 1,
                                               this.selectAllKey.startsWith(`${msg.messageId}|t${idx}r${ri}c${ci}|`) ? cell.length : 0
                                             )
-                                        }, (cell: string, ci: number) => `r_${ri}_${ci}`)
+                                        // ★ 0.191.0：key 纳入内容（同表头）
+                                        }, (cell: string, ci: number) => `r_${ri}_${ci}_${cell.length}_${cell.substring(0, 4)}`)
                                       }
-                                    }, (row: string[], ri: number) => `row_${ri}`)
+                                      // ★ 0.191.0：行 key 纳入格数+内容总长——流式追加格（| A3 | B3 → | A3 | B3 | C3 |）
+                                      //   原 `row_${ri}` 恒定导致末行复用旧 item 冻结在中间态（用户实测 3×3 表末行空格根因）
+                                    }, (row: string[], ri: number) => `row_${ri}_${row.length}_${row.join('').length}`)
                                   }
                                 }
                                 .scrollable(ScrollDirection.Horizontal)
@@ -2597,6 +2943,11 @@ export struct ChatPage {
           .width('100%')
           .padding({ left: 16, right: 16, top: 12 })
           .opacity(this.msgAreaOpacity) // ★ 0.162：分支切换过渡动画挂点（消息列表分支）
+          // ★ 0.191.0 重做：滚动中实时记录高度——aboutToDisappear 在 pop 转场中可能读不到偏移（实测记录丢失→回来跳底部），
+          //   改由滚动事件持续写入模块级 Map，退出钩子仅作兜底
+          .onScroll(() => {
+            this.recordReadingPosition();
+          })
         }
 
         // 图片预览区域
