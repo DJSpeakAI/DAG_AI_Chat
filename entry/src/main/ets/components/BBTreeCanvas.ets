@@ -606,6 +606,9 @@ export struct BBTreeCanvas {
     if (kind === 'statistics') {
       return $r('app.media.chart'); // ★ 0.192.0：统计入口（柱状图图标）
     }
+    if (kind === 'billing') {
+      return $r('app.media.receipt'); // ★ 0.194.0：账单入口（票据图标）
+    }
     return $r('app.media.settings');
   }
 
@@ -619,6 +622,9 @@ export struct BBTreeCanvas {
     }
     if (kind === 'statistics') {
       return '统计'; // ★ 0.192.0：统计入口
+    }
+    if (kind === 'billing') {
+      return '账单'; // ★ 0.194.0：账单入口
     }
     if (kind === 'settings') {
       return '设置';
@@ -638,6 +644,9 @@ export struct BBTreeCanvas {
     } else if (kind === 'statistics') {
       // ★ 0.192.0：统计页（不收抽屉，同词库/知识库）
       this.pathStack.pushPath({ name: 'StatisticsPage' });
+    } else if (kind === 'billing') {
+      // ★ 0.194.0：账单页（不收抽屉，同词库/知识库）
+      this.pathStack.pushPath({ name: 'BillingPage' });
     } else if (kind === 'settings') {
       this.closeSidebar();
       this.globalSettingsVisible = true;
@@ -816,11 +825,12 @@ export struct BBTreeCanvas {
       .alignItems(VerticalAlign.Center)
       .margin({ top: 20, bottom: 24 })
 
-      // ── 导航项：画布（选中）/ 单词库 / 知识库 / 统计（★ 0.173.1：删「工作区」分组标签，用户拍板；★ 0.192.0 加统计） ──
+      // ── 导航项：画布（选中）/ 单词库 / 知识库 / 统计 / 账单（★ 0.194.0 加账单）──
       this.SideBarNavItem('canvas')
       this.SideBarNavItem('wordbank')
       this.SideBarNavItem('knowledge')
       this.SideBarNavItem('statistics')
+      this.SideBarNavItem('billing')
 
       // ── 弹性空隙（底部设置 + 账号沉底）──
       Blank()

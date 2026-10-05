@@ -29,6 +29,7 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填�
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
 import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
+import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）
 
@@ -108,7 +109,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.193.0';
+const APP_VERSION: string = 'v0.194.0';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -182,6 +183,7 @@ export struct GlobalSettingsDialog {
   @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
+  subscription: SubscriptionStore = connectSubscription(); // ★ 0.194.0：云同步 VIP 守卫
   // ★ 0.190.8：隐私政策自定义弹窗显隐（替代系统 AlertDialog 灰弹窗，按应用设计语言）
   @Local privacyVisible: boolean = false;
 
@@ -800,7 +802,9 @@ export struct GlobalSettingsDialog {
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
             .fontColor(TEXT_PRIMARY)
-          Text(this.syncGranted ? '本设备对话数据将自动与云端保持一致' : '开启后，登录同一华为账号的多台设备共享对话数据')
+          Text(isVip(this.subscription)
+            ? (this.syncGranted ? '本设备对话数据将自动与云端保持一致' : '开启后，登录同一华为账号的多台设备共享对话数据')
+            : '云同步为会员功能——订阅后开启（其他功能永久免费）') // ★ 0.194.0：非 VIP 提示
             .fontSize(11)
             .fontColor(TEXT_TERTIARY)
             .margin({ top: 2 })
@@ -818,27 +822,43 @@ export struct GlobalSettingsDialog {
       .margin({ bottom: 16 })
 
       // 开启按钮（已授权则不显示——授权是一次性的，重复弹窗无意义；拒绝过可再点重试）
+      // ★ 0.194.0：非 VIP 时按钮替换为「订阅后开启」——云同步是唯一会员功能，到期只锁这里
       if (!this.syncGranted) {
-        Button('开启云同步')
-          .width('100%')
-          .height(48)
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .fontWeight(FontWeight.Medium)
-          .backgroundColor(BRAND_PRIMARY)
-          .fontColor(TEXT_PRIMARY)
-          .borderRadius(RADIUS_CONTROL)
-          .margin({ bottom: 16 })
-          .onClick(() => {
-            const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-            if (context === undefined || context === null) {
-              this.showToastSafe('获取上下文失败，请重试');
-              return;
-            }
-            requestSyncPermission(context).then((granted: boolean) => {
-              this.syncGranted = granted;
-              this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
-            });
-          })
+        if (isVip(this.subscription)) {
+          Button('开启云同步')
+            .width('100%')
+            .height(48)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(TEXT_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ bottom: 16 })
+            .onClick(() => {
+              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+              if (context === undefined || context === null) {
+                this.showToastSafe('获取上下文失败，请重试');
+                return;
+              }
+              requestSyncPermission(context).then((granted: boolean) => {
+                this.syncGranted = granted;
+                this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
+              });
+            })
+        } else {
+          Button('订阅后开启')
+            .width('100%')
+            .height(48)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(SURFACE_HOVER)
+            .fontColor(TEXT_SECONDARY)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ bottom: 16 })
+            .onClick(() => {
+              this.showToastSafe('云同步为会员功能，请到边栏「账单」页订阅');
+            })
+        }
       }
 
       // 使用条件说明

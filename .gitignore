@@ -20,3 +20,7 @@ entry/src/main/resources/rawfile/config.json
 # 调试产物（解包 HAP 字节码/截图/控件树，勿入库）
 .hmos-debug/
 .opencode/
+
+# 兑换码明文清单（唯一明文副本，用户自行备份；App 内只嵌 SHA256 哈希）
+/兑换码清单.txt
+/scripts/redeem-hashes.txt

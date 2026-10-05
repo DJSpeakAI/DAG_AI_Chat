@@ -17,7 +17,9 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
-import { upsertCloudData, registerCloudDataHandler } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册
+ import { upsertCloudData, registerCloudDataHandler } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册
+ import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
+ import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
@@ -402,6 +404,337 @@ export function recordStat(store: StatisticsStore, kind: string, inTok: number, 
   store.raw = JSON.stringify({ days: days } as StatDayData);
 }
 
+// ============================================================
+// ★ 0.194.0：订阅体系（用户定稿：¥9.9/月 + ¥99/年；到期只锁云同步其他 100% 可用；
+//   新用户登录华为账号免费试用 30 天；种子用户兑换码 +90 天）
+// 存储：PersistenceV2 独立 key（0.143 教训：全新 key 无旧快照坑）
+// IAP：华为应用内支付（商品 ID/公钥待用户拿到商户资格后填入，当前占位）
+// ============================================================
+@ObservedV2
+export class SubscriptionStore {
+  @Trace freeTrialStart: number = 0;      // 免费试用开始时间戳（首次登录华为账号记录；0=从未登录）
+  @Trace subscriptionExpire: number = 0;  // 权益到期时间戳（订阅购买/兑换码写入；0=无权益）
+  @Trace redeemedCodes: string = '[]';    // 已兑换码 JSON 数组（防同码重复兑换）
+  @Trace purchaseHistory: string = '[]';  // 本地购买/兑换记录 JSON 数组（账单页展示）
+}
+
+// ★ 0.194.0：连接订阅持久化实例
+export function connectSubscription(): SubscriptionStore {
+  return PersistenceV2.connect(SubscriptionStore, 'subscription-v1', () => new SubscriptionStore()) as SubscriptionStore;
+}
+
+// ★ 0.194.0：统一试用打点——已登录且从未记录 → 从当下起算 30 天免费试用
+//   （调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 / BillingPage 登录按钮，三处共用防逻辑漂移）
+export function stampFreeTrialOnLogin(subscription: SubscriptionStore): void {
+  const account = connectHuaweiAccount();
+  if (account.isLoggedIn && subscription.freeTrialStart === 0) {
+    subscription.freeTrialStart = Date.now();
+  }
+}
+
+// ★ 0.194.0：VIP 判断——免费期内 或 权益期内（到期只锁云同步，其他功能全开放）
+export function isVip(store: SubscriptionStore): boolean {
+  const now = Date.now();
+  if (store.freeTrialStart > 0 && now < store.freeTrialStart + 30 * 86400000) {
+    return true; // 免费试用 30 天内
+  }
+  if (store.subscriptionExpire > 0 && now < store.subscriptionExpire) {
+    return true; // 订阅/兑换码权益期内
+  }
+  return false;
+}
+
+// ★ 0.194.0：权益到期时间（显示用；0=无任何权益）
+export function vipExpireTime(store: SubscriptionStore): number {
+  const now = Date.now();
+  const trialEnd = store.freeTrialStart > 0 ? store.freeTrialStart + 30 * 86400000 : 0;
+  if (trialEnd > now && trialEnd > store.subscriptionExpire) {
+    return trialEnd; // 免费期更晚
+  }
+  return store.subscriptionExpire;
+}
+
+// ★ 0.194.0：剩余天数（向上取整；0=已到期/无权益）
+export function vipDaysLeft(store: SubscriptionStore): number {
+  const expire = vipExpireTime(store);
+  if (expire <= Date.now()) {
+    return 0;
+  }
+  return Math.ceil((expire - Date.now()) / 86400000);
+}
+
+// ★ 0.194.0：兑换码——写入 90 天权益（叠加到当前权益之后：连续兑换顺延）
+export function redeemCode(store: SubscriptionStore, code: string): boolean {
+  if (!isValidRedeemCode(code)) {
+    return false;
+  }
+  // 防同码重复兑换
+  let used: string[] = [];
+  try {
+    used = JSON.parse(store.redeemedCodes) as string[];
+  } catch (_e) {
+    used = [];
+  }
+  if (used.indexOf(code) >= 0) {
+    return false;
+  }
+  used.push(code);
+  store.redeemedCodes = JSON.stringify(used);
+  // 权益叠加：从当前到期日、试用期末、现在三者中较晚者 +90 天
+  // （★ 0.194.0-bugfix：试用期与兑换码顺延而非并行——登录当天兑码应得 30+90=120 天，原实现吞掉试用期）
+  const trialEnd = store.freeTrialStart > 0 ? store.freeTrialStart + 30 * 86400000 : 0;
+  const base = Math.max(store.subscriptionExpire, trialEnd, Date.now());
+  store.subscriptionExpire = base + 90 * 86400000;
+  // 记账
+  let history: string[] = [];
+  try {
+    history = JSON.parse(store.purchaseHistory) as string[];
+  } catch (_e) {
+    history = [];
+  }
+  history.push(`兑换码 ${code.substring(0, 4)}****｜+90 天｜${new Date().toLocaleDateString()}`);
+  store.purchaseHistory = JSON.stringify(history);
+  return true;
+}
+
+// ★ 0.194.0：兑换码合法性校验——SHA256 哈希白名单（REDEEM_CODE_HASHES 内置 200 个种子码哈希；
+//   单向哈希不可反推，离线验证无需服务器）
+export function isValidRedeemCode(code: string): boolean {
+  const normalized = code.trim().toUpperCase();
+  if (normalized.length === 0) {
+    return false;
+  }
+  const hash = sha256Hex(normalized);
+  for (let i = 0; i < REDEEM_CODE_HASHES.length; i++) {
+    if (REDEEM_CODE_HASHES[i] === hash) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ★ 0.194.0：SHA256 摘要（hex 小写）——cryptoFramework + util.TextEncoder
+//   （ArkTS 无全局 TextEncoder，用 @kit.ArkTS 的 util.TextEncoder；encodeInto 直接返回 Uint8Array）
+
+export function sha256Hex(text: string): string {
+  try {
+    const md = cryptoFramework.createMd('SHA256');
+    md.updateSync({ data: new util.TextEncoder().encodeInto(text) });
+    const result = md.digestSync();
+    let hex = '';
+    for (let i = 0; i < result.data.length; i++) {
+      hex += result.data[i].toString(16).padStart(2, '0');
+    }
+    return hex;
+  } catch (_e) {
+    return '';
+  }
+}
+
+// ★ 0.194.0：种子用户兑换码哈希白名单（200 个；码清单在用户手里，此处只存单向哈希）
+// 生成方式：scripts/gen-redeem-codes.ps1 批量生成 DAGAI-XXXXX-XXXXX 随机码 + SHA256
+export const REDEEM_CODE_HASHES: string[] = [
+    '633326e06016dd8e3cca0e0523951d68ced702a2cad59136252dd12b8009b51a',
+    '197fef7b49e147c58fd5a688f43ae290fec559672202c08e4606423746b672a7',
+    '57d30eaa9f27c61babbafebf19efd30665fd6386a4fbbea30741fc815c5efae8',
+    'bf2a4a0989633b9bded8138694014da7a0062195b2c7702d172947894f678d46',
+    'b1567e1e01e4b0ed96f9e22200f843826ca518aa9d21f83bf2cf957a434d2587',
+    '5f33ab3f3a9a0ae2865fb8bf9d531203a40316ebde993060561feb1d5dc1a8a8',
+    'be75dcd71310b49114491d3ce9dee319cd9f42c349719507d9558758031c875c',
+    'cd9ee31465fe7501ef83804c0bd9aff0961690bd2ada5e9c183183dbf6a77152',
+    '304baec78757b059f1b6862581510c9370dc960d11b04c843b070c092c07aae1',
+    'be55f2448e5bb0c597c511c46155ceb3f2fe66cf73e98848ec88944b65899a30',
+    '5c5faccb314be4c9e6ca7bfee383aa13be47a64753e8726aa38daabeba1a22af',
+    '2c931a530762b73dd2879e0cec8c11796fc817cc9d13c0b5c106d97ae1d1d8cf',
+    '3fe7abd1fc91e6562cf677e4147ce69ea2ca1cbbd4e4140e01c2b4093b9f63b1',
+    '9ae4de2f7eaf4020f8c64a84966371dd2570314bf44160214843db4d08ee7d80',
+    'bb0fb559e25059eb5733e75e5736895712d5a278ff3fd09ff1bfa15f1c150ae8',
+    '4fe3f65eb6efc2920ee390f44158b1467e6cbe149a9c77c932f452b2dc9a33fa',
+    'dca5daa5d134775752664f9e513ee3cc52bb12231aadb25c90a9989eb0e0529f',
+    'bdee2e43d87d87af85f1ae4b904a9a7dc15dae4f460b7ab0cece38ec4dc90318',
+    'adb154169ca3d3c8a9cd08affed91a448b03e29f2ea74479eb382b70976a73b7',
+    '7c75aa70600a51608928d3745f8f1b217e49cfcce247173ac473ef5481632d7c',
+    '66497576c8e9e99201e3e949a91716db67e05cb5435547a9959ddfc9a1a38a70',
+    '3a77c636149d6ec61122cb526aaa9268e9ff23ab98b687e4667b6720864dbb15',
+    '5465a958c32d885f6270b3497205e96af57998f59b2d778736487601d70e5e07',
+    '7aa3df6901111fe6b735d17094ace60a41279837b7fd948fd9c7138221d3ea52',
+    'ab51c7d1113f709ed33e5eda12770f2ac292d9e6c6022445bd6525d5de35024b',
+    '12e5a727ea83c57d0d06deaa0580e1ad7452134def60a3b0176f6555dd107bc4',
+    '0c40b2d196531fd898f7d6d31e70cc89c9a32cf91895ab5d91290dda66295ed4',
+    '152456fab6927e3deb6488428779c42b8d274588581a63083a8ee977e52327f5',
+    '136042ed6b9842449407bfa3169f983963845a9558a665ec198245f166fa35a4',
+    'd315ee4f03a2d7d0b19a493f15c717eba01f5999a423042c5b6d92070a3ea233',
+    '5cfe8cc565a2ec0b59e784e1645e1fabce4f345dfef1d204668eb0860586dfa0',
+    '673d67767ac9d8e93f9c6234a52b8a92a682fb4db18a8ba49ddf19b6250c609f',
+    '0cb3a9c9e33647d33964a9c9183b38874d635e6fea097c83b4915f66a6d1ddc3',
+    '1fb2cf0d905b21e56de2464648f2da1a787fab183a2a450ef9b974481a47a974',
+    '74e10a6c8296840ffb3fc50387437eeb67a07a26bc780fdce33075ace2b1c260',
+    '7701b86b8b5ffc08e4ca3fbb3a3ecd6fbbefb301cca98c7b552ea0e600371c52',
+    'be2172cf2cec388526fb251841aaa97c70e0b861e66e9fc156f97258ec403ac1',
+    'b39649ab6e3437878c16527ee8e78e60fcc1e987ec8af8f5ba849ef6041134ed',
+    '6186685c80383738cd9df3679371a234bd44dd2de7572b5dc344bd710b163478',
+    'b496e703ae4f3b294b64713cda4b88029597c249a2517cdb1f1cc250fc3e8b02',
+    '03b561e694e923b8930a13dc8d2c56ab0e0fd38027b8e0f2d474cc7fd31f6537',
+    'a2623d3fa2dc85ca8af33ca36c2cfb4841c60261d4789a3732a5b82cde175b6a',
+    'bd85789aa88b3ae807aedb6d639b32c8aced0e6ac97bedb4e9d59766c4e994c1',
+    'a66d18ef73133502d51b0fc88ab71e84b3779dd34ba56f4098b424bd645b6d77',
+    '8b771869151a94b619a17b31bcfde3bae8ba3eab5943392ee733ac0087eebc0a',
+    '3ce46628fdf2c007661576c75cc541b7a1506ce0b3163e7b0797a750fec74a82',
+    '76d7acbf9d3cc8404979e15e0590c5e56da905070b3a3c3add24845adcfa57a4',
+    'ab803c96b373a4a63cf09a596cddc8391f6b0bc6c4d9f186c985572e0dc5a34c',
+    '19da12cae5ef5f96bc5373d1fa584d0f83901042d6abb399c3a6b151a9c2fb9d',
+    '4009ae0aebfc2da854c51d23cca1c827f7a675d3c96bcf188e120d2b45c85d7b',
+    'ff0dc9f32da906f71ecacf2390c35aee571dcba144592750f791bb287cdf5947',
+    '62925dfab44b754fb9a4c37bfe5cf44fadf16d817250e27f6bc200af6dd7457c',
+    'b0bfbe29be0cddcc4941fd6e28f2242ededff56cf719fc3cdab7d2377ff37428',
+    '775659447879667396229505dec01d51bfcd59d84c90aac94c36d0f20d8168fe',
+    '4bea128df4af0ec3a6eeca072f1a4eca7bd1ff6f34d8d52c5642726c1e90c260',
+    '0d787d9059e5f19bef26559b9c5fcb21b75fc0c520ddca01f127f1b47d765718',
+    '1caec460ca1e0c574c8c2194023d38faf4e3f2e7cb55d0c7465b53caf011269d',
+    'a32c9595bc11ca525f81871f8e62f35f90f8d964c734561bd5036bb8ccdb4d81',
+    'bef87febbc32256e1c3295eaa352e37bd45fdc35d128af3031ce6d8afae9d8e0',
+    '0480542c88a03b0f9a18df3489104eabf25516ae8ebab2b422df056bc115a220',
+    '836d16bfe55dad59e45272af9906d4a84ba88b7a84d9828149759eac2448b3a9',
+    '12a51da5d9cbfc3365b670980263f7708563c19a33a3024a59faccf2a70c878a',
+    '697854f34d0c61c5d733abca8323cae9e163c665934a793a7aedb3dd4d5a8110',
+    'c20a7a3a74b28135962ca20584622a88c1929edb752ccf0d4bb4a1a30bddb5a0',
+    '0481743d185eb1f9258db655347d7fa48938c03e6936bfb38d66c28118b03462',
+    'eab436539b82f0650a96e7589e66fb968a68cd28768b7cd7bd9ea82b3d238eb1',
+    '8a7dcb41e487d5d6918c83cdfe0c64df1a0fdf5e33e8ca648be9336996e9e41e',
+    '61ed9e726b6c10848ea90a7ccd05fef8e20b31815dfd1e6dec095eb47cdc8a55',
+    '5753e5524b4bc4390cd98f33bc298ed52b9c1aaac9443094822ce1611061d0e2',
+    'e6b28d06f45fd391ed89fd3c2a3ecf6f97aee3aecd4dddbb1e4b4903985222fc',
+    'f502c9091d893a1b5b6977c5d8e672ab06a20201251c094af2231987521358c8',
+    '5598e6f0626a30e8034d4c0d5b88ec11fe5b62755d26929bc65e571096099e3f',
+    'f410a2424da2310f1cfe24777389a2d07b1416ae63924fea187c1df8ddcb8274',
+    '85955580f5ab557703a8a19709bae1c199bfd07e5e96b8aa8addd65b49139f84',
+    '69c97756db93385ee53d69ddcabdd2ef1c48a855d35f4d9ee5210852c05bfc9b',
+    '55719f8be578935b3d5d666e4e3e66bbb79ebe4bf914df4ba823e9b9c6cf1659',
+    'e59bf1958b48dd4db5bebee9744b8a7b1b716c9b384c0c2ab7476658be2d3868',
+    'b8d5ff5f79cd23f62ad36ca53311299831c239732c54eaf6374184a1692bd1fe',
+    '740ab6191c38342a456f755c7540d124e69493853e25b0fa203cabcbbd6a28b3',
+    '6033067e72b6ca7228c53b06de7374a9dc97a224ade94d40b12330bd7d33561d',
+    '70f36500b39cba36fdf5294ff1e45c1c7ea46bd61bfc8dacac6d5ddb93267120',
+    'd345986cf81aae0b1c3477ca230eaa47120edac164d51944c36cf0d6808c526d',
+    'bf491f8cc8401b24a63c69e9d66ff7750578e45cac6f7c4d7fbb54718f6830ca',
+    '7ae1a8b224e9b697a5a0d38521ed26dc446faed2b61eec60b1af4981749b4a6a',
+    'c88ffda3036d4aef5329a9256b8a3b937d718dc79679eb50779d153248d51a99',
+    'd757580740fe53745e1ac900250155d4110765b7bfb29e8d8b61862bb269c9a3',
+    '6ce0df13655415ebbd8d4a4bcc2a8910b726476940e7fa3927efcc7674e05ad4',
+    'e007f554e6b5bab5c5daa8ba1da01ea4f6640f98a964e9a9b9e1dee641c78cdf',
+    '14555744831b09addf179b5d9a4a8ad8463d3d9236a7fbfbe71a69c2f340fa7d',
+    'a49a6328e2d7d3bebaa295066375ac63df1afd5d9ae7955b6099fa145d79c360',
+    'fa946708ae23a3e9d527f5ffd236c857d6fb123b6558cba9eafaabadb7aad37c',
+    'ad89fb1f530c1f08c7bec6d1f65d66d4f73354ffcef54930920a052825012133',
+    '2cdbd1a8c803142b56b9a27ebce2a4f2e70dca17428da6cc9d9c93ea31f34689',
+    '8ae891e9350dc16506b13ba4cf8fdcae9fc3093a5a54f5690c25f58e1ddbacdd',
+    'b38a541866c7247dee3334b5d74336131b9d1ebba47b7ce8db4d6a099664ce92',
+    '0d23e20b5266c004a14a6037b502607ec811f453acd15f4ee55bbb2c88102e64',
+    '4c9029feaa74b48648d5ed8dce4b89db69056df2f553d5280188f7172c8b9245',
+    'a9f572362e4411d69cf2d16e187b2ca5feb8e3dea29c330f188a47f8280951f9',
+    'b3383a832e5cb6a7ec2a2770c74fa1e6270e378ab06a04b976d2f0484fbc1332',
+    'ff83dd83d0611faa48e3b596e74a5720f3705ff0c2fa8946e8970c89180cfead',
+    '96e2727511085db834f60c0d1c543b369725fc76c08c81fef3bb150e1d78e891',
+    'dfba26f7a23f0628dcde5a7194151ed68b6cd587ef6cc72ddfacc85edf12efd2',
+    'e84eaa5c8b35684431536d3362eda2ff3db6e0a45efcf78c875388493832e162',
+    '91a768f0856d48b2aa980e686f2edd76360579256028b8ea84ed609427d2f2c5',
+    '1cfcff43d3624da4000635e7e873d590a7713dca072c90abf257e880aa395939',
+    '392ebbf52dffc6172d123b986eb2af31add8e258ee8af0ec284c5eb42f3036a0',
+    'ad17bce5b9b7c91b5b7aea7297714c248a6951377216641648caba25d549e258',
+    '652e96ac2326da72a423d402409342dee99892f3b59cced5b3507deb378505e3',
+    'ffe241ec6f11ac56b8a93c1115e6bc7752aec18e9a58e52cc1ba60d8737cd57b',
+    'ada60eb914f00f71925bc801bac65be73eed63547e69866b904451b092543d3b',
+    'd733f3edb98225d81c321661519d622364b3b42159710a68a9aa36f2954a07a6',
+    '12a6a2f1933f0045ba095600057b027582a5a89a0652c9ac76b4a0d962037783',
+    '28ebad2253e7459d8bbb88251df04452b92de6be9bfb396a6df72478d4e47498',
+    'ad6630543ccb22d6fda4eff5f3f6c27d2bf18bf06a9468404a982408fe740b86',
+    '6703ad7990b63b166c28be10ca5e8602c368f679d175526c641df928332afffd',
+    '33943f1a481003466045d5f837770cff9a0787d1f64ee0b84e940341634f66e7',
+    '0842be4a798b504b7310b948ff5ec6daaeaee8091b1e17d3b0079979f6f438a0',
+    '536bf3d4a6683c80801719652542508d7ba15acc8b1178f5e7634a435ab1c79e',
+    '4cf7c20d9e408608e19bec863a68593a1803958a5e6946e5a18a7c2a0e96adda',
+    '4f0dcfa2f40ab68759f7355f8e34322d6c5faca1bffcb97314b8417d769e1545',
+    '1c17d44e3a6ac4cca752037460a3f88e4e01dedac7d19965f5ea4dab1ea25a7b',
+    '22d4d050fd857c8885795590d8bd9739a174fca2c02e7352cd96be7f61059998',
+    '11d5b530b0acc46ca961eb83cc266327e68306b034330bdd8e042794d6fb0b03',
+    '93dd5e7cb0aca5a509cfe79a32b596e042792a8b99144c892f6bddbbccdc3140',
+    '8954830eb8f26a1b177f4f32350b8bc97fde6617dfbdfb4532ea491b555c62d1',
+    '721169487b23970e992d0f116d4d7662577086dab558a811c0799a86e9ab9704',
+    '2c72953a2e42897a9c7edd276b92c56e5392c6330dbdc2dfab34dce2887de6c0',
+    '30b444119c06fd78123b6f035d47a3aaa08e58fd6788a19a11ab99e4638ff90e',
+    '38aed9f90c8933c2f9898d8734590e6f5df446cc7840c058b567c17e7259cd23',
+    'c44f3615b0c8dcab245d34d8cfd28387263601e4b93d879da57f984452039b56',
+    'b0abd3dbe91419339d51cad035f2d469df3a99b7b138754dda69e52a4a836e4a',
+    'ec3965a8f00b1523d9d742e5d0bc6a4a56f25be51b3af01377cb90b76440144b',
+    'd44e2ec5ec928ba7340c10d79716ec2267cb791e3597ffcd30b4b6c827648575',
+    '27dbb8b95f0644712790d6906aa997734587a257ab067c9b06bd4b309f7a0e3c',
+    '1c5930b19dabbd5df228cf8830544e137a65815be2b6cfc90f220caa2adf7aec',
+    '67decfdd1ab85642e4f72afb228ff658947341b243d93b8b7af51be0ada49652',
+    'e3699ca09c268ef3f2f5e7eb40d62944c6563464680f521fd22b52b750141294',
+    '785d74a9da5dad5a0182564eba743b8b58b7af5cf88c2d7be53f87a732b6efa0',
+    '87b027f2ebb3be8a50102e81b1cc4c55eaacce5b897c835af4547f1e476caa8d',
+    '41ff2674d59e024bb4b64cc800d2d227c10b7aeca3eb25628bb4d95f21f3bcbd',
+    '887fa05310209608f911708ff112316f1e1d79a2e9d7b89c90ab35b47d28e027',
+    '2d0c1ea863f0a653a680c849d12f0cedab4f41bf1a19c69574a38a712b5cd662',
+    '382bf80117d9c2539c59bdc6b4b7064a8aff48901ce882cc1e543cf5a80600e6',
+    'b88b41cdb09c6c7c6c1aaf5b800efdac554c5d62c622afa2bcf24015f4f8e5a4',
+    '516c9356ad469e9b69d7d096af81bb5a3392fdfaf6b5f53bec4bd455220d6369',
+    'cade717ef7fa8fd2391e516f6ce35645d61537ee9917839c22f0fd11b9062cb1',
+    '295361e85252fd4b3cf39cd0844d2958b73fdce783566b3e4fa081d170b07790',
+    'f6a9db17c8b183dd57a52a40666a54265ae9e0e54c8c3c94b350287caf16565e',
+    '1dba106cfd41a451e05f5937cf37bdbeed9d45b7dcd171ffb60f0614962137ea',
+    '23de7b9ee32289e9cf22e399641fafb26ac9ec3340841197cfab175e9f33e686',
+    '391e6f01210fd142b6e6191f5b1df4d934c167469dd33ce1e82ad930a4a93078',
+    'e48b2f0944b5c6edff39172c61df715ab99092966a93ee2577cf56d9647dce56',
+    '2dddfd264916ecdb5401be26466311f113ed202ef03fd74ca3e4e1d59a0c5c0b',
+    '8421b703d6d6f2cbd83776427ac147571497ef1287d575f13a993641f2c3b037',
+    '83c2c91de96e475789de15d7054960c402f33aa2a94bb91bdda23d75a4af777e',
+    '13053dbed67d4bf423bd5841d697813b2152ae009e43fe98b487693d6a606584',
+    '82f34e9a743b4e89612912890cb2a1cc515b75e71e9524f890f314cdc39969eb',
+    '99a070e71365cb51a78b197b8a5a73dceec7b8411dcc0eee2fd35448324cd8fd',
+    '65a2831bf7ff77a0435c81bca49702f7187ce1507a6f41bfae994d7d79ec7646',
+    '577e4b511190b9f62d415b198959d186bedca1a9fda90424c4861f3795575c0f',
+    '53b156c46da7fa3315cf06b2f1f7d8087796f831e71c037267851c2cdcccdc08',
+    '3bbb69551f70b188049d1e970b5fedf970b1b762187ee96d4c7d0f85a33363d3',
+    'ca52f9a9060e3e21a65fb5947a17aadea8cb17d1a7cf2677ae74823baec6770e',
+    '0810db52acce525b2f71d6e1d4c6b9355195d00d1f3595f55d69e52dd1cec1ec',
+    '784db21e059c2f4241861d4a6203d777dd9dd62f10ca2f42a7258baaad532588',
+    '6475f7f029988990f47d105453c4c244ae9322b13982df31134d495888b2616f',
+    '6db081f3272c5d97ec6248f7968103ed608de3652650c6693eacd22dbfe2f318',
+    'f1fac42e96d515fb02329d60b941f8b3fb765b4110601e2bab0f63cad1564703',
+    '5c437a6e8934be5afbdf965af19d86dbddcbcd2b19953e271cd59c443027e3d8',
+    '4ea7eaa2f0857307f836412fb3b04d8aec89f952aabc14faf925c661acb602a3',
+    '62c47ed052ad8a3e0530d63c2c37cc4b84d0e73b1348a5a141224ac50112dc85',
+    'c9411fe5b3f755f4819e17662b6aa5a91e813feb04430098e860289a76d5185f',
+    'a58f2c34685c74cc4ac1f14933a5caaf4fd3031f61aecbc061e6793cae38a428',
+    '5bae511483c9aced30b564bfc287b948448ed4011f9507f190f7ab439be51c40',
+    'fe80f74d1684e22d2294a40d69e77fa1379fd90944e54297bf622cb5c56bf0c0',
+    '53167861512d6befeb2fbf10d8cb3e05ee00b1d0410665bfb02fbc28521c89ec',
+    '3fb714fd6e308eb517255369fa5c7f12fe49c054b01c288b71866bf79bab3fd6',
+    '09cc16597e9cfc7b7da6bf31daaad0df6c2a9bda893a1823324a16ddb95e93e5',
+    '938b3db47b58551b7e9ee64b809e80447d2d95225035b339defed8e417cc0b33',
+    '1da7df08cdb1b02fd95fcff262414b88afdf3069a73b6535786cddbabc14a650',
+    'e06b6141294bec370572a6763a583a2e99e97d8d09722e95eda7009f173b3b6f',
+    '18bdb31c52d21cbe93b531aecff5d736091b1de93e3f6de39399f0466cd9290a',
+    '59fae38152c183f598163940116fb88b58e1ff632345ed464d9e38d3bfee8b5f',
+    '4f42d84f5e89be3d888b4dcaf199a5d9c332e1067a73f39d2ff92971498a7285',
+    '0048636bbe168146ec66a2107d2afa99a314539942b5573e07d79c5d0ef3499b',
+    '92c4f41eab0e8d1e78a1ab921e351abc632b7099405fc8a3ae682ac3f7c91212',
+    '723cf1f73ecd985991563d49a9b528168746baa8953b5f43fb7b0acc76fb0d8c',
+    '9472580edc80ae248611699565b51010929d7ab5bad5d41f97b54c8ab32dc785',
+    '6559c8582e911173fcea0520ca32a1094bade553fc2dcdb98729db996258705f',
+    '988cbd1845d332355f6a2e9ac46c41bf4bfeaa15f14075887e2f056944e812bf',
+    '0f9ec9381a683cc20acea3b8bba5358c867813c6a1f9f0c7022ce63eb7a0fe6d',
+    '77286e2f354abfb01be4ba6d706c01864e58026e4128d4be74ee0b8094450c4d',
+    '0081e0fadc6cae29345cfe2f57a9048ca037c0b78cd368f768573d88cbdbc3a9',
+    'ae17505494695d320c700556c71daeafa8fabc947cd9201658dcf364234156f5',
+    'd8337f4d12bf6e374dd8dffc93e8870fe70354292a53d2d811ff356f8128c200',
+    '2d9278c5464bd820cb7d91e026e6ac96d7d8aee9ecba49796fd7ce0050aef4f0',
+    'a21c30379c8160e31d831b1cb16be8ed1273b6c65411188bbfa6ee17572b83e6',
+    '8ca2f40b25ca69ee54fb0515bbfc6a91c8e6b1b644d07353fe3fd3e73b9e2ef2',
+    '6eb4c10898404fcde3694563298ba9671cdc290a120670b1a4eb3b78c151af58',
+    'b85d2fb3e43d97e50b4c7c5d217ab3d9c6dc5837b31bc0788b9cff1f9612a5a5',
+];
 // ★ 0.161：学习数量设置——控制 AI 回复气泡底部生词复习区与知识卡片提炼等待页复习区
 // 每次展示的词条数；单词库顶栏 ⚙ 设置弹窗提供 1 / 2（默认）/ 自由输入（1~20）三选项；
 // PersistenceV2 独立全新 key 跨重启保存（与 AiPreference 同模式，无旧快照缺字段坑）
