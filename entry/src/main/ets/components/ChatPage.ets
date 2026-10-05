@@ -37,7 +37,7 @@ import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
-import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）；★ 0.189.0：本地引擎化
+import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
@@ -2250,8 +2250,8 @@ export struct ChatPage {
                                           .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
 .onClick(() => {
   this.stopTTS();
-  // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
-  wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), () => this.showToastSafe('本机语音引擎不可用'));
+  // ★ 0.189.2：口音提示改弹窗（英式无包/美式缺包——showAccentDialogs 共用工厂）
+  wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
 })
                                       }
                                    }
@@ -2725,8 +2725,8 @@ export struct ChatPage {
                           .margin({ left: 4 })
 .onClick(() => {
   this.stopTTS();
-  // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
-  wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), () => this.showToastSafe('本机语音引擎不可用'));
+  // ★ 0.189.2：口音提示改弹窗（英式无包/美式缺包——showAccentDialogs 共用工厂）
+  wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
 })
                       }
                     }
@@ -2955,8 +2955,8 @@ export struct ChatPage {
                       .margin({ left: 6 })
                        .onClick(() => {
                          this.stopTTS();
-                         // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
-                         wordSpeaker.speak(this.wordPopupSpeakText(), () => this.showToastSafe('本机语音引擎不可用'));
+                         // ★ 0.189.2：口音提示改弹窗（showAccentDialogs 共用工厂）
+                         wordSpeaker.speak(this.wordPopupSpeakText(), showAccentDialogs(this.getUIContext()));
                        })
                   }
                   .margin({ bottom: 4 })

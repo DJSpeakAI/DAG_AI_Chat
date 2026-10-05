@@ -28,7 +28,8 @@ import { WordItem, WordBankStore } from '../common/WordModel';
 import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
 import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：下次复习时间标签（记忆算法）
-import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton
+import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.1：发音语音包管理（listVoices 状态查询 + downloadVoice 应用内下载）
+import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
 import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 
@@ -85,6 +86,11 @@ export struct WordBankPage {
   phoneticAccentStore: PhoneticAccentStore = connectPhoneticAccent(); // persisted accent (false=美式 default, true=英式)
   @Local phoneticConfirmVisible: boolean = false; // switch confirm dialog (wipes phonetics on confirm)
   @Local pendingAccentBritish: boolean = false;   // accent to apply after confirm
+
+  // ★ 0.189.1：发音语音包（en-US Laura）状态 + 下载进度（⚙ 弹窗「发音语音包」区）
+  @Local voicePackStatus: string = 'unknown'; // EnVoiceStatus: unknown/installed/downloadable/none
+  @Local voicePackDownloading: boolean = false;
+  @Local voicePackProgress: string = '';
 
   // ★ 0.148: back-fill id/createTime on entries saved before 0.148.
   // Array head = newer (head-insert history), so descending timestamps
@@ -157,6 +163,62 @@ export struct WordBankPage {
     } catch (e) {
       // toast 失败静默忽略
     }
+  }
+
+  // ★ 0.189.1：查询美式语音包状态（打开 ⚙ 时强制刷新）
+  refreshVoicePackStatus(): void {
+    localTts.queryEnVoiceStatus(true).then((status: EnVoiceStatus) => {
+      this.voicePackStatus = status;
+    });
+  }
+
+  // ★ 0.189.1：应用内下载美式语音包（downloadVoice 带进度回调）
+  downloadVoicePack(): void {
+    if (this.voicePackDownloading) {
+      return;
+    }
+    this.voicePackDownloading = true;
+    this.voicePackProgress = '';
+    localTts.downloadEnVoice({
+      onStart: () => {
+        this.voicePackProgress = '下载中…';
+      },
+      onProgress: (info: string) => {
+        this.voicePackProgress = info.length > 0 ? `下载中：${info}` : '下载中…';
+      },
+      onComplete: () => {
+        this.voicePackDownloading = false;
+        this.voicePackStatus = 'installed';
+        this.voicePackProgress = '';
+        this.showToast('美式语音包已就绪，单词发音启用真美式');
+      },
+      onCancelled: () => {
+        this.voicePackDownloading = false;
+        this.voicePackProgress = '';
+      },
+      onError: (code: number, message: string) => {
+        this.voicePackDownloading = false;
+        this.voicePackProgress = '';
+        this.showToast(`语音包下载失败（${code}）：${message.substring(0, 60)}`);
+      }
+    });
+  }
+
+  // ★ 0.189.1：语音包状态文案（含下载进度态）
+  voicePackLabel(): string {
+    if (this.voicePackDownloading) {
+      return this.voicePackProgress.length > 0 ? this.voicePackProgress : '下载中…';
+    }
+    if (this.voicePackStatus === 'installed') {
+      return '✓ 已安装（真美式发音）';
+    }
+    if (this.voicePackStatus === 'downloadable') {
+      return '未安装（当前用系统音色）';
+    }
+    if (this.voicePackStatus === 'none') {
+      return '本机不支持（用系统音色）';
+    }
+    return '查询中…';
   }
 
   // ---- editor dialog (add & edit share it) ----
@@ -344,6 +406,7 @@ export struct WordBankPage {
           this.learnCustomInput = this.learnCountStore.learnCount > 3 ? `${this.learnCountStore.learnCount}` : '';
           this.learnInputError = '';
           this.learnSettingsVisible = true;
+          this.refreshVoicePackStatus(); // ★ 0.189.1：打开 ⚙ 即查美式语音包状态
         })
       if (!this.multiSelectMode) {
         // ★ 0.148: add button — top bar's right, opens the editor dialog
@@ -468,141 +531,193 @@ export struct WordBankPage {
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
-        // ★ 0.185.0: section label — learn count section (title now covers
-        // both learn count and phonetic accent)
-        Text('复习显示数量')
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 16 })
-        Text('每次复习展示的词条数，生效于：AI 回复底部复习区、知识卡片提炼等待页')
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-        Row() {
-          Button('1')
+          .margin({ bottom: 12 })
+        // ★ 0.189.2：排版重构——三区卡片化（SURFACE_SOFT 底 + RADIUS_CONTROL 圆角，对齐
+        //   云同步状态卡规格；区块标题 14 主色半粗 + 描述 11 弱化），替代原先平铺堆叠的灰字
+        // ── 卡片 1：复习显示数量 ──
+        Column() {
+          Text('复习显示数量')
             .fontSize(14)
-            .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-            .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .onClick(() => {
-              this.learnCountStore.learnCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
-              this.learnSettingsVisible = false;
-            })
-          Button('2（默认）')
-            .fontSize(14)
-            .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-            .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.learnCountStore.learnCount = 2;
-              this.learnSettingsVisible = false;
-            })
-          // ★ 0.161.2: quick option "3" added beside "2" (user request)
-          Button('3')
-            .fontSize(14)
-            .fontColor(this.learnCountStore.learnCount === 3 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-            .backgroundColor(this.learnCountStore.learnCount === 3 ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.learnCountStore.learnCount = 3;
-              this.learnSettingsVisible = false;
-            })
-        }
-        .width('100%')
-        .margin({ top: 8 })
-        Row() {
-          Text('自由输入：')
-            .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
-          TextInput({ text: this.learnCustomInput, placeholder: '1~20' })
-            .fontSize(14)
-            .layoutWeight(1)
-            .height(40)
-            .padding({ left: 12, right: 12 })
-            .borderRadius(RADIUS_CONTROL)
-            .backgroundColor(SURFACE_SOFT)
-            .type(InputType.Number)
-            .onChange((value: string) => {
-              this.learnCustomInput = value;
-              this.learnInputError = ''; // 输入变化即清错误提示
-            })
-          Button('确定')
-            .fontSize(14)
+            .fontWeight(600)
             .fontColor(TEXT_PRIMARY)
-            .backgroundColor(BRAND_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ left: 8 })
-            .padding({ left: 14, right: 14 })
-            .onClick(() => {
-              const n = parseInt(this.learnCustomInput, 10);
-              if (!Number.isNaN(n) && n >= 1 && n <= 20) {
-                this.learnCountStore.learnCount = n;
+          Text('AI 回复底部复习区、提炼等待页每次展示的词条数')
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 2 })
+          Row() {
+            Button('1')
+              .fontSize(14)
+              .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .layoutWeight(1)
+              .onClick(() => {
+                this.learnCountStore.learnCount = 1; // PersistenceV2 自动落盘，两处复习区即时生效
                 this.learnSettingsVisible = false;
-              } else {
-                this.learnInputError = '请输入 1~20 的整数';
-              }
-            })
+              })
+            Button('2（默认）')
+              .fontSize(14)
+              .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+              .onClick(() => {
+                this.learnCountStore.learnCount = 2;
+                this.learnSettingsVisible = false;
+              })
+            // ★ 0.161.2: quick option "3" added beside "2" (user request)
+            Button('3')
+              .fontSize(14)
+              .fontColor(this.learnCountStore.learnCount === 3 ? TEXT_PRIMARY : (TEXT_SECONDARY))
+              .backgroundColor(this.learnCountStore.learnCount === 3 ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+              .onClick(() => {
+                this.learnCountStore.learnCount = 3;
+                this.learnSettingsVisible = false;
+              })
+          }
+          .width('100%')
+          .margin({ top: 10 })
+          Row() {
+            Text('自由输入：')
+              .fontSize(14)
+              .fontColor(TEXT_SECONDARY)
+            TextInput({ text: this.learnCustomInput, placeholder: '1~20' })
+              .fontSize(14)
+              .layoutWeight(1)
+              .height(40)
+              .padding({ left: 12, right: 12 })
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(SURFACE_NODE) // ★ 0.189.2：卡片内输入框用 SURFACE_NODE 与卡片底 SURFACE_SOFT 形成对比
+              .type(InputType.Number)
+              .onChange((value: string) => {
+                this.learnCustomInput = value;
+                this.learnInputError = ''; // 输入变化即清错误提示
+              })
+            Button('确定')
+              .fontSize(14)
+              .fontColor(TEXT_PRIMARY)
+              .backgroundColor(BRAND_PRIMARY)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ left: 8 })
+              .padding({ left: 14, right: 14 })
+              .onClick(() => {
+                const n = parseInt(this.learnCustomInput, 10);
+                if (!Number.isNaN(n) && n >= 1 && n <= 20) {
+                  this.learnCountStore.learnCount = n;
+                  this.learnSettingsVisible = false;
+                } else {
+                  this.learnInputError = '请输入 1~20 的整数';
+                }
+              })
+          }
+          .width('100%')
+          .margin({ top: 10 })
+          if (this.learnInputError.length > 0) {
+            Text(this.learnInputError)
+              .fontSize(12)
+              .fontColor(DANGER)
+              .margin({ top: 6 })
+          }
         }
         .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .alignItems(HorizontalAlign.Start)
+        // ── 卡片 2：音标口音（★ 0.185.0；切换需确认——清空现有音标，确认弹窗叠加于本弹窗之上）──
+        Column() {
+          Text('音标口音')
+            .fontSize(14)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+          Text('划词查词生成音标的口音，切换将清空现有音标')
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 2 })
+          Row() {
+            Button('美式（默认）')
+              .fontSize(14)
+              .fontColor(!this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
+              .backgroundColor(!this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .layoutWeight(1)
+              .onClick(() => {
+                if (!this.phoneticAccentStore.british) {
+                  return; // already American — nothing to do
+                }
+                this.pendingAccentBritish = false;
+                this.phoneticConfirmVisible = true;
+              })
+            Button('英式')
+              .fontSize(14)
+              .fontColor(this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
+              .backgroundColor(this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
+              .borderRadius(RADIUS_CONTROL)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+              .onClick(() => {
+                if (this.phoneticAccentStore.british) {
+                  return; // already British — nothing to do
+                }
+                this.pendingAccentBritish = true;
+                this.phoneticConfirmVisible = true;
+              })
+          }
+          .width('100%')
+          .margin({ top: 10 })
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .alignItems(HorizontalAlign.Start)
         .margin({ top: 12 })
-        if (this.learnInputError.length > 0) {
-          Text(this.learnInputError)
-            .fontSize(12)
-            .fontColor(DANGER)
-            .margin({ top: 6 })
-        }
-        // ★ 0.185.0: phonetic accent section — 美式（默认）/ 英式；switching
-        // needs confirm (wipes existing phonetics), confirm dialog stacks above
-        Text('音标口音')
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 16 })
-        Text('划词查词生成音标的口音，切换将清空现有音标')
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-        Row() {
-          Button('美式（默认）')
+        // ── 卡片 3：发音语音包（★ 0.189.1：en-US Laura 状态 + 应用内下载）──
+        Column() {
+          Text('发音语音包')
             .fontSize(14)
-            .fontColor(!this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(!this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .onClick(() => {
-              if (!this.phoneticAccentStore.british) {
-                return; // already American — nothing to do
-              }
-              this.pendingAccentBritish = false;
-              this.phoneticConfirmVisible = true;
-            })
-          Button('英式')
-            .fontSize(14)
-            .fontColor(this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .layoutWeight(1)
-            .margin({ left: 8 })
-            .onClick(() => {
-              if (this.phoneticAccentStore.british) {
-                return; // already British — nothing to do
-              }
-              this.pendingAccentBritish = true;
-              this.phoneticConfirmVisible = true;
-            })
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+          Text('美式发音包 Laura：单词发音用真美式音色（系统语音包，免费离线）')
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 2 })
+          Row() {
+            Text(this.voicePackLabel())
+              .fontSize(13)
+              .fontColor(this.voicePackStatus === 'installed' && !this.voicePackDownloading ? '#4CAF50' : TEXT_SECONDARY)
+              .layoutWeight(1)
+            if (this.voicePackStatus === 'downloadable' && !this.voicePackDownloading) {
+              Button('下载')
+                .fontSize(13)
+                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(BRAND_PRIMARY)
+                .borderRadius(RADIUS_CONTROL)
+                .padding({ left: 14, right: 14 })
+                .onClick(() => {
+                  this.downloadVoicePack();
+                })
+            }
+          }
+          .width('100%')
+          .margin({ top: 10 })
         }
         .width('100%')
-        .margin({ top: 8 })
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .alignItems(HorizontalAlign.Start)
+        .margin({ top: 12 })
         Button('关闭')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .backgroundColor(Color.Transparent)
           .width('100%')
-          .margin({ top: 12 })
+          .margin({ top: 16 })
           .onClick(() => {
             this.learnSettingsVisible = false;
           })
@@ -910,8 +1025,8 @@ export struct WordBankPage {
                             .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_PRIMARY : (TEXT_TERTIARY))
                             .margin({ left: 6 })
                             .onClick(() => {
-                              // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
-                              wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), () => this.showToast('本机语音引擎不可用'));
+                              // ★ 0.189.2：口音提示改弹窗（英式无包/美式缺包——showAccentDialogs 共用工厂）
+                              wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
                             })
                         }
                         .margin({ top: 2 })

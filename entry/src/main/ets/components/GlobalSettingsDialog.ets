@@ -2,8 +2,9 @@
 // GlobalSettingsDialog.ets — 全局设置弹窗（★ 0.150）
 // ============================================================
 // 本文件是应用的全局设置弹窗（ChatPage 顶栏 ⚙ 与 BBTreeCanvas 画布 ⚙ 共用同一实例数据）：
-//   - Tab 1「API 配置」：原 SettingsPage 表单整体搬入（对话 Key/Endpoint/模型下拉 +
-//     音频 Key/音频模型/音频 Endpoint），含 0.139 旧值迁移逻辑
+//   - Tab 1「API 配置」：对话 Key/Endpoint/模型下拉（★ 0.189.1：音频 Key/音频模型/
+//     音频 Endpoint 随云端 TTS 取消整体移除——发音/朗读已走本地 CoreSpeechKit，
+//     火山配置存档见 docs/0.165+/0.189.0 §9）
 //   - Tab 2「AI 偏好」：自定义称呼（默认空，填写后短/中/长全部回复模式生效）+
 //     自动鼓励开关（默认开启，仅中/长回复生成鼓励，短回复不生成）
 //   - 保存：两 Tab 全部修改一次写入持久化 + toast「已保存」，不关弹窗（用户自己 ✕）
@@ -40,10 +41,7 @@ const MODEL_LIST: ModelOption[] = [
   { id: 'glm-5-3-flash-260828', name: 'GLM-5.3-Flash', type: '多模态（图片理解）', price: '0.8 元/百万token' },
 ];
 
-// ★ 0.139：预置音频模型列表（TTS 朗读用）——「Doubao-语音合成2.0」（openspeech HTTP 单向流，官方文档实证）
-const AUDIO_MODEL_LIST: ModelOption[] = [
-  { id: 'seed-tts-2.0', name: 'Doubao-语音合成2.0', type: '通用语音合成', price: 'openspeech HTTP 接口，官方文档实证' },
-];
+// ★ 0.189.1：AUDIO_MODEL_LIST（预置音频模型）已随云端 TTS 配置区移除
 
 // 全局设置弹窗 — Tab1 API 配置（原 SettingsPage 搬入）+ Tab2 AI 偏好（★ 0.150 新增）
 @ComponentV2
@@ -65,11 +63,8 @@ export struct GlobalSettingsDialog {
   @Local editModel: string = '';
   @Local selectedModelIndex: number = 0;   // 下拉选中索引
   @Local isDropdownOpen: boolean = false;   // 下拉面板展开状态
-  // ★ 0.133：音频模型本地编辑副本（单一数据源：下拉选中与手动输入都写入 editAudioModel）
-  @Local editAudioModel: string = '';
-  @Local editAudioEndpoint: string = '';
-  @Local editAudioKey: string = ''; // ★ 0.140：音频 API Key 编辑副本（豆包语音 Key，与对话方舟 Key 相互独立）
-  @Local isAudioDropdownOpen: boolean = false; // 音频模型下拉面板展开状态
+  // ★ 0.189.1：音频编辑副本（editAudioModel/editAudioEndpoint/editAudioKey/isAudioDropdownOpen）
+  //   已随云端 TTS 配置区移除
 
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
@@ -77,28 +72,13 @@ export struct GlobalSettingsDialog {
   // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
   @Local syncGranted: boolean = false;
 
-  // ★ 0.134：音频模型触发器显示可读名字（预置列表 id→name 映射；自定义 ID 显示 ID 本身；空值显示未配置）
-  audioModelDisplayName(id: string): string {
-    if (id.length === 0) {
-      return '未配置';
-    }
-    for (let i = 0; i < AUDIO_MODEL_LIST.length; i++) {
-      if (AUDIO_MODEL_LIST[i].id === id) {
-        return AUDIO_MODEL_LIST[i].name;
-      }
-    }
-    return id;
-  }
+  // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
   aboutToAppear() {
     // 初始化 Tab1 编辑副本
     this.editKey = this.apiConfig.apiKey;
     this.editEndpoint = this.apiConfig.endpoint;
     this.editModel = this.apiConfig.model;
-    // ★ 0.133：音频配置编辑副本
-    this.editAudioModel = this.apiConfig.audioModel;
-    this.editAudioEndpoint = this.apiConfig.audioEndpoint;
-    this.editAudioKey = this.apiConfig.audioKey; // ★ 0.140：音频 Key 编辑副本初始化
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourage = this.aiPreference.encourageEnabled;
@@ -107,23 +87,7 @@ export struct GlobalSettingsDialog {
       this.syncGranted = granted;
     });
 
-    // ★ 0.139：旧值迁移——方舟端点组合（doubao-tts，两次真机实测 404）与播客 ID 一并迁移到 openspeech 2.0 协议
-    // （原迁移逻辑在 SettingsPage aboutToAppear；SettingsPage 改弹窗后无入口，迁移职责随表单搬入本组件）
-    if (this.editAudioModel === 'doubao-tts' || this.editAudioModel === 'doubao-tts-anchor-65-241005') {
-      this.editAudioModel = 'seed-tts-2.0';
-      this.apiConfig.audioModel = this.editAudioModel; // 迁移直接落持久化（PersistenceV2 自动保存），避免「未保存」误拦
-    }
-    // ★ 0.139：旧端点迁移——方舟 audio/speech 与播客 wss 端点都重置到 openspeech HTTP 单向流端点
-    if (this.editAudioEndpoint === 'https://ark.cn-beijing.volces.com/api/v3/audio/speech' ||
-      this.editAudioEndpoint === 'wss://openspeech.bytedance.com/api/v3/sami/podcasttts' ||
-      this.editAudioEndpoint.length === 0) {
-      this.editAudioEndpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
-      this.apiConfig.audioEndpoint = this.editAudioEndpoint;
-    }
-    // ★ 0.139：音色迁移——1.0 音色（zh_female_cancan）配 2.0 模型会报错，重置为 2.0 默认音色（官方注意事项：不可混用）
-    if (this.apiConfig.audioVoice === 'zh_female_cancan' || this.apiConfig.audioVoice.length === 0) {
-      this.apiConfig.audioVoice = 'zh_female_vv_uranus_bigtts';
-    }
+    // ★ 0.189.1：0.139 音频旧值迁移逻辑（audioModel/audioEndpoint/audioVoice）已随云端 TTS 移除
 
     // 回显已保存的模型；找不到则默认第 0 项（Doubao-Seed-2.1-lite）
     let found = false;
@@ -138,17 +102,13 @@ export struct GlobalSettingsDialog {
       this.selectedModelIndex = 0;
       this.editModel = MODEL_LIST[0].id;
     }
-    // ★ 0.133：音频模型不做强制回显覆盖（用户可能保存过自定义 ID，保留原值）
   }
 
-  // ★ 0.135/0.150/0.151：是否有未保存的修改（✕ 关闭拦截判断；九项 = Tab1 六项 + Tab2 三项）
+  // ★ 0.135/0.150/0.151：是否有未保存的修改（✕ 关闭拦截判断；★ 0.189.1：音频三项随云端 TTS 移除）
   hasUnsavedChanges(): boolean {
     return this.editKey.trim() !== this.apiConfig.apiKey ||
       this.editEndpoint.trim() !== this.apiConfig.endpoint ||
       this.editModel.trim() !== this.apiConfig.model ||
-      this.editAudioModel.trim() !== this.apiConfig.audioModel ||
-      this.editAudioEndpoint.trim() !== this.apiConfig.audioEndpoint ||
-      this.editAudioKey.trim() !== this.apiConfig.audioKey || // ★ 0.140：音频 Key 纳入未保存判断
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
       this.editEncourage !== this.aiPreference.encourageEnabled;   // ★ 0.150：鼓励开关（★ 0.167.8：画布模式判断随 Tab 删除）
   }
@@ -187,9 +147,7 @@ export struct GlobalSettingsDialog {
     this.apiConfig.apiKey = this.editKey.trim();
     this.apiConfig.endpoint = this.editEndpoint.trim();
     this.apiConfig.model = this.editModel.trim();
-    this.apiConfig.audioModel = this.editAudioModel.trim(); // ★ 0.133
-    this.apiConfig.audioEndpoint = this.editAudioEndpoint.trim(); // ★ 0.133
-    this.apiConfig.audioKey = this.editAudioKey.trim(); // ★ 0.140：音频 Key 写入持久化
+    // ★ 0.189.1：音频三项（audioModel/audioEndpoint/audioKey）写入已随云端 TTS 移除
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageEnabled = this.editEncourage;
@@ -318,125 +276,9 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .margin({ bottom: 24 })
 
-      // ★ 0.140：音频 API Key 输入（豆包语音控制台 Key，与对话方舟 Key 相互独立——两套体系不通用）
-      Column() {
-        Text('音频 API Key')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-        TextInput({ text: $$this.editAudioKey, placeholder: '填入豆包语音控制台新建的 Key' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
-        // 提示：音频 Key 与对话 Key 相互独立
-        Text('⚠️ 语音合成走豆包语音（openspeech）体系，Key 需在豆包语音控制台新建，与上方对话用的方舟 API Key 相互独立、不通用。')
-          .fontSize(11)
-          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .margin({ bottom: 16 })
-
-      // ★ 0.133：音频模型配置（TTS 朗读用，预置下拉 + 手动编辑，单一数据源 editAudioModel）
-      Column() {
-        Text('音频模型（TTS 朗读）')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-
-        // 下拉触发器：显示当前音频模型 ID
-        Row() {
-          Text(this.audioModelDisplayName(this.editAudioModel))
-            .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .layoutWeight(1)
-          Text(this.isAudioDropdownOpen ? '▲' : '▼')
-            .fontSize(12)
-            .fontColor(TEXT_TERTIARY)
-        }
-        .width('100%')
-        .height(48)
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
-        .padding({ left: 12, right: 12 })
-        .onClick(() => {
-          this.isAudioDropdownOpen = !this.isAudioDropdownOpen;
-        })
-
-        // 下拉面板：预置音频模型选项
-        if (this.isAudioDropdownOpen) {
-          Column() {
-            ForEach(AUDIO_MODEL_LIST, (model: ModelOption) => {
-              Column() {
-                Text(model.name)
-                  .fontSize(14)
-                  .fontColor(TEXT_PRIMARY)
-                Text(`${model.type} · ${model.price}`)
-                  .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
-                  .margin({ top: 2 })
-              }
-              .width('100%')
-              .padding(12)
-              .backgroundColor(model.id === this.editAudioModel
-                ? (SURFACE_HOVER)
-                : (SURFACE_NODE))
-              .onClick(() => {
-                this.editAudioModel = model.id;
-                this.isAudioDropdownOpen = false;
-              })
-            }, (model: ModelOption) => model.id)
-          }
-          .width('100%')
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_NODE)
-          .border({ width: 1, color: STROKE_CARD })
-          .margin({ top: 4 })
-        }
-
-        // 手动编辑：可输入自定义音频模型 ID（覆盖下拉选择）
-        TextInput({ text: $$this.editAudioModel, placeholder: '可手动输入自定义音频模型 ID' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
-          .margin({ top: 8 })
-
-        // 提示：音频模型说明
-        Text('⚠️ 用于 AI 消息喇叭朗读。语音合成 2.0 走 openspeech HTTP 接口，音色使用内置默认值（zh_female_vv_uranus_bigtts），无需填写音色 ID。')
-          .fontSize(11)
-          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .margin({ bottom: 16 })
-
-      // ★ 0.133：音频 Endpoint 输入（TTS 接口地址，与对话 Endpoint 相互独立）
-      Column() {
-        Text('音频 Endpoint')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-        TextInput({ text: $$this.editAudioEndpoint, placeholder: 'TTS 接口地址' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
-      }
-      .width('100%')
-      .margin({ bottom: 16 })
+      // ★ 0.189.1：音频配置三区（音频 API Key / 音频模型 / 音频 Endpoint）已随云端 TTS
+      //   取消整体移除——发音/朗读走本地 CoreSpeechKit（免费离线），火山配置存档见
+      //   docs/0.165+/0.189.0 本地TTS免费离线.md §9
     }
     .width('100%')
   }
