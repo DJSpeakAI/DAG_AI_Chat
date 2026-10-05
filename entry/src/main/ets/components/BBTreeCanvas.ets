@@ -14,7 +14,8 @@
 // 技术栈：鸿蒙 ArkUI V2（气泡组件渲染 + 连线 Canvas 绘制）
 // ============================================================
 
-import { AppStorageV2, PersistenceV2, display } from '@kit.ArkUI'; // ★ 0.168：display 屏宽断点（平板/手机边栏形态）
+import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.196.4：display 移除（isTablet 改读 WindowMode）
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局） ★ 0.168：display 屏宽断点（平板/手机边栏形态）
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
 import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token；★ 0.173.1：删「工作区」标签后 FONT_SIZE_LABEL 无使用处，移出 import
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
@@ -59,7 +60,12 @@ export struct BBTreeCanvas {
   @Local tabRenameText: string = '';
 
   // ★ 0.168：左侧边栏（Pixso 工作台稿落地）——平板 208 常驻 / 手机抽屉（★ 0.170.2 抽屉内容对齐平板完整版，同宽 208）
-  @Local isTablet: boolean = false;        // 断点：屏宽 ≥600vp = 平板宽边栏
+  // ★ 0.196.4：isTablet 改读窗口宽度共享真相源（WindowMode，Index 根 onAreaChange 写入）——
+  //   原屏宽判定在分屏/悬浮窗时不变（仍≥600vp）导致小窗仍渲染平板布局（用户实测黑屏+挤压）
+  windowMode: WindowMode = connectWindowMode();
+  @Computed get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
   @Local sidebarVisible: boolean = false;  // 手机抽屉开关（平板常驻不用）
   // ★ 0.173.1：单击选中气泡（画布页本地视觉焦点，不污染全局 currentBubbleStore 对话语义）
   @Local selectedNodeId: string = '';
@@ -75,14 +81,8 @@ export struct BBTreeCanvas {
 
   aboutToAppear(): void {
     // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
-    // px→vp 手动换算 vp = px ÷ densityPixels（全局 px2vp 已废弃，且 aboutToAppear 阶段
-    // getUIContext() 尚未挂树不可用）；getDefaultDisplaySync 声明可抛异常 → try-catch 兜底
-    try {
-      const d = display.getDefaultDisplaySync();
-      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
-    } catch (e) {
-      this.isTablet = false; // 取显示信息失败：保守按手机处理（抽屉窄栏），不中断首帧
-    }
+    // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange
+    //   按窗口实宽写入；分屏/悬浮窗实时切换手机/平板布局）
   }
 
   // ★ 0.167.2：连线层 Canvas 命令式绘制（弃 Path——Path 无 viewport 属性，未设时 ArkUI 自动把
@@ -606,6 +606,9 @@ export struct BBTreeCanvas {
     } else if (kind === 'knowledge') {
       // 不收抽屉：同上，返回时边栏保持
       this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+    } else if (kind === 'review') {
+      // ★ 0.196.1：知识复习页（不收抽屉，同词库/知识库）
+      this.pathStack.pushPath({ name: 'ReviewPage' });
     } else if (kind === 'statistics') {
       // ★ 0.192.0：统计页（不收抽屉，同词库/知识库）
       this.pathStack.pushPath({ name: 'StatisticsPage' });
@@ -615,9 +618,6 @@ export struct BBTreeCanvas {
     } else if (kind === 'settings') {
       this.closeSidebar();
       this.globalSettingsVisible = true;
-    } else if (kind === 'account') {
-      // ★ 0.195.0：账号行点击 → 统计页（AppSideBar 事件路由；不收抽屉同词库/知识库）
-      this.pathStack.pushPath({ name: 'StatisticsPage' });
     } else if (kind === '') {
       // ★ 0.195.0：点边栏空白（AppSideBar 根 onClick）——手机收抽屉
       this.closeSidebar();

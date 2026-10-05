@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // WordBankPage.ets — Word bank page (0.145 MVP / 0.148 CRUD upgrade)
 // ============================================================
 // Full entry management per the 0.148 spec:
@@ -31,7 +31,7 @@ import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0
 import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.1：发音语音包管理（listVoices 状态查询 + downloadVoice 应用内下载）
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
 import intl from '@ohos.intl'; // ★ 0.195.0：字母排序 Collator（zh：英文 A-Z + 中文按拼音统一比较；本 SDK 的 @kit.ArkTS 未导出 intl，走 @ohos.intl——measure 同款坑）
-import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（顶栏左间距对齐气泡树信息条 28/14 双分支）
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
 
@@ -94,20 +94,18 @@ export struct WordBankPage {
   @Local voicePackDownloading: boolean = false;
   @Local voicePackProgress: string = '';
 
-  // ★ 0.195.0：大屏断点（≥600vp，同 ChatPage/Index 判定）——顶栏左间距对齐气泡树信息条（28/14 双分支）
-  @Local isTablet: boolean = false;
+  // ★ 0.195.0：大屏断点（≥600vp）——顶栏左间距对齐气泡树信息条（28/14 双分支）
+  // ★ 0.196.4：改读窗口宽度共享真相源（WindowMode）——分屏/悬浮窗实时切手机布局
+  windowMode: WindowMode = connectWindowMode();
+  @Computed get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
 
   // ★ 0.148: back-fill id/createTime on entries saved before 0.148.
   // Array head = newer (head-insert history), so descending timestamps
   // keep the legacy display order stable under the default desc sort.
   aboutToAppear(): void {
-    // ★ 0.195.0：大屏断点检测（同 ChatPage：≥600vp）
-    try {
-      const d = display.getDefaultDisplaySync();
-      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
-    } catch (_e) {
-      this.isTablet = false;
-    }
+    // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
     const now = Date.now();
     for (let i = 0; i < this.wordBank.words.length; i++) {
       const w = this.wordBank.words[i];
@@ -778,11 +776,15 @@ export struct WordBankPage {
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
+      .onClick(() => {}) // ★ 0.196.2：消费面板点击防冒泡到遮罩（ClickEvent 无 stopPropagation，空 handler 挡住）
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .backgroundColor(OVERLAY)
+    .onClick(() => {
+      this.learnSettingsVisible = false; // ★ 0.196.2 用户拍板：点空白关闭（同「关闭」按钮=不保存退出）
+    })
   }
 
   // ★ 0.185.0: phonetic accent switch confirm dialog — exact warning text

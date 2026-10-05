@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // GlobalSettingsDialog.ets — 全局设置弹窗（★ 0.150）
 // ============================================================
 // 本文件是应用的全局设置弹窗（ChatPage 顶栏 ⚙ 与 BBTreeCanvas 画布 ⚙ 共用同一实例数据）：
@@ -109,7 +109,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.196.0';
+const APP_VERSION: string = 'v0.196.4';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -1223,13 +1223,17 @@ export struct GlobalSettingsDialog {
 
   build() {
     Stack() {
-      // 遮罩：点击不关闭（0.148 教训——弹窗内输入中误触遮罩会丢输入，故不加 onClick）
+      // 遮罩：★ 0.196.2 用户拍板——点击空白关闭（走 requestClose 安全路径：有未保存改动先弹确认，无改动直接关；
+      //   0.148 教训「误触丢输入」由未保存确认兜底，不再一刀切禁点）
       Column() {
         Blank()
       }
       .width('100%')
       .height('100%')
       .backgroundColor('rgba(0,0,0,0.5)')
+      .onClick(() => {
+        this.requestClose();
+      })
 
       // 面板
       Column() {

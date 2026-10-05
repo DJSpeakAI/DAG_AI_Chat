@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // KnowledgeBankPage.ets — Knowledge bank page (0.146 / 0.148 CRUD upgrade)
 // ============================================================
 // Full entry management per the 0.148 spec (same interaction set as the
@@ -32,7 +32,7 @@ import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
-import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（顶栏左间距对齐气泡树信息条 28/14 双分支）
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 
@@ -41,17 +41,15 @@ export struct KnowledgeBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // isolated PersistenceV2 instance
 
-  // ★ 0.195.0：大屏断点（≥600vp，同 ChatPage/Index 判定）——顶栏左间距对齐气泡树信息条（28/14 双分支）
-  @Local isTablet: boolean = false;
+  // ★ 0.195.0：大屏断点（≥600vp）——顶栏左间距对齐气泡树信息条（28/14 双分支）
+  // ★ 0.196.4：改读窗口宽度共享真相源（WindowMode）——分屏/悬浮窗实时切手机布局
+  windowMode: WindowMode = connectWindowMode();
+  @Computed get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
 
   aboutToAppear(): void {
-    // ★ 0.195.0：大屏断点检测（同 ChatPage：≥600vp）
-    try {
-      const d = display.getDefaultDisplaySync();
-      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
-    } catch (_e) {
-      this.isTablet = false;
-    }
+    // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
   }
 
   // ★ 0.148: search / sort state
@@ -506,11 +504,15 @@ export struct KnowledgeBankPage {
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
+      .onClick(() => {}) // ★ 0.196.2：消费面板点击防冒泡到遮罩（ClickEvent 无 stopPropagation，空 handler 挡住）
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .backgroundColor(OVERLAY)
+    .onClick(() => {
+      this.cardSettingsVisible = false; // ★ 0.196.2 用户拍板：点空白关闭（同「关闭」按钮）
+    })
   }
 
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss

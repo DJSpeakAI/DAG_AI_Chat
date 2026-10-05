@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000074, // ★ 0.196.0：知识复习功能开工——评分按钮时间化（只放时间不放文字）；★ 0.195.1：优化迭代（版本注释瘦身+协作铁律）；更早历史见 MEMORY.md 版本表
+    "versionCode": 1000078, // ★ 0.196.4：窗口宽度模式（分屏/悬浮窗100%手机布局，WindowMode共享真相源）；★ 0.196.3：实测修正轮；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

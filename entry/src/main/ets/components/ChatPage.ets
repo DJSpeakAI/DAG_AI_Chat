@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // ChatPage.ets — 对话页面（气泡内聊天界面）
 // ============================================================
 // 本文件是用户与 AI 对话的主界面，功能包括：
@@ -46,8 +46,8 @@ import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153�
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
-import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（返回箭头大屏专属显示）
-import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
+import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -106,7 +106,7 @@ const chatScrollMemory: Map<string, number> = new Map();
 // aboutToAppear 启动 / aboutToDisappear 必然清理（组件随占位气泡卸载），零泄漏。
 // phase 0→1→2 循环点亮三个点，属性动画 300ms 平滑过渡大小与颜色。
 @ComponentV2
-struct WaitingDots {
+export struct WaitingDots { // ★ 0.196.2：export——ReviewPage 完成页「总结正在生成」复用（0.190.5 原创组件）
   @Local phase: number = 0;
   private timerId: number = -1;
 
@@ -569,7 +569,12 @@ export struct ChatPage {
   // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
-  @Local isTablet: boolean = false; // ★ 0.195.0：大屏断点（≥600vp）——返回箭头大屏专属（小屏侧滑返回）
+  // ★ 0.195.0：大屏断点（≥600vp）——返回箭头大屏专属（小屏侧滑返回）
+  // ★ 0.196.4：改读窗口宽度共享真相源（WindowMode）——分屏/悬浮窗实时切手机布局
+  windowMode: WindowMode = connectWindowMode();
+  @Computed get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
   // ★ 0.189.0：云端分段管线状态（ttsSegments/请求播放索引/base64缓存/AVPlayer/临时文件/
   // 代际号）全部移除——本地引擎在 LocalTtsEngine 内部管理分段与排队，会话回调自动失效
   private scroller: Scroller = new Scroller();
@@ -1365,13 +1370,7 @@ export struct ChatPage {
   }
 
   aboutToAppear() {
-    // ★ 0.195.0：大屏断点检测（同 Index/BBTreeCanvas 判定：≥600vp）——返回箭头大屏专属显示
-    try {
-      const d = display.getDefaultDisplaySync();
-      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
-    } catch (_e) {
-      this.isTablet = false;
-    }
+    // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
     this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
     this.bookmarkCache = this.getBookmarkEntry(); // ★ 0.191.0：首帧渲染前载入书签（标记线即时显示）
     setTimeout(() => {
@@ -2367,11 +2366,14 @@ export struct ChatPage {
           .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.181.0：顶栏标题对齐 ScreenTitle（18 Bold→16 SemiBold）
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
+          .fontFamily(FONT_INTER_SEMIBOLD) // ★ 0.196.3：字体对齐气泡树信息条标题（用户实测两页视觉不一）
         // ★ 0.195.0：副标题统计行（模仿气泡树「N 个气泡 · N 条对话」——用户需求：知道当前对话已有多少条）
+        // ★ 0.196.3：颜色/字体/间距全对齐气泡树统计行（用户实测「一亮一暗、高度不一样」——
+        //   原 TEXT_TERTIARY(暗)+无 fontFamily+margin 1 → TEXT_SECONDARY(亮)+FONT_INTER+去 margin，以气泡树为准）
         Text(`${this.currentMessages.length} 条对话`)
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 1 })
+          .fontColor(TEXT_SECONDARY)
+          .fontFamily(FONT_INTER)
       }
       .alignItems(HorizontalAlign.Start)
       Blank()
@@ -3032,10 +3034,13 @@ export struct ChatPage {
                   .width(60)
                   .height(60)
                   .borderRadius(RADIUS_CONTROL)
-                  // ★ 0.195.0：待发图片点击放大预览（复用消息气泡同款 openImageViewer 全屏查看器，
-                  //   查看器点任意处收回——用户要求「点开放大、再点收回」，原缩略图点了没反应）
+                  // ★ 0.196.3 bugfix（用户实测「点了不能放大」）：待发图片不在任何消息里——
+                  //   openImageViewer 只收集已发送消息的图，待发图走它=静默 return 没反应；
+                  //   改为直接以 pendingImages 开查看器（同 openKnowledgeImagePreview 模式）
                   .onClick(() => {
-                    this.openImageViewer(img);
+                    this.imageViewerImages = [...this.pendingImages];
+                    this.imageViewerIndex = index;
+                    this.imageViewerVisible = true;
                   })
                 Text('×')
                   .fontSize(15)

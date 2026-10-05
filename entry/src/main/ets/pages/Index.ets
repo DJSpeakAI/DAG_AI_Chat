@@ -23,6 +23,8 @@ import { KnowledgeBankPage } from '../components/KnowledgeBankPage'; // ★ 0.14
 import { AnnotationPage } from '../components/AnnotationPage'; // ★ 0.152：屏幕圈选标注页路由
 import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：学习统计页路由
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
+import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday } from '../common/ChatModel';
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
@@ -54,7 +56,12 @@ struct Index {
   @Local reminderVisible: boolean = false;
   @Local reminderMode: number = 0;
   // ★ 0.195.0：大屏常驻边栏——断点检测（≥600vp 平板/PC）+ 设置弹窗（边栏「设置」入口）
-  @Local isTablet: boolean = false;
+  // ★ 0.196.4：isTablet 改窗口宽度共享真相源（WindowMode）——分屏/悬浮窗屏宽不变导致小窗仍渲染
+  //   平板布局（用户实测边栏挤压+黑屏）；本页根 onAreaChange 写入窗口实宽，首帧用屏宽猜测
+  windowMode: WindowMode = connectWindowMode();
+  @Computed get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
   // ★ 0.195.0 bugfix：边栏选中态跟踪——didShow 拦截拿目标页名（'navBar'=首页 → 清空无高亮；
   //   用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」，原画布项硬编码永久高亮已废）
   @Local currentRoute: string = '';
@@ -128,7 +135,9 @@ struct Index {
       this.pathStack.pushPath({ name: 'WordBankPage' });
     } else if (kind === 'knowledge') {
       this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
-    } else if (kind === 'statistics' || kind === 'account') {
+    } else if (kind === 'review') {
+      this.pathStack.pushPath({ name: 'ReviewPage' }); // ★ 0.196.1：知识复习页（Anki 式单卡）
+    } else if (kind === 'statistics') { // ★ 0.196.2：account 分支删除（头像改退出确认，不再发 onNavClick）
       this.pathStack.pushPath({ name: 'StatisticsPage' });
     } else if (kind === 'billing') {
       this.pathStack.pushPath({ name: 'BillingPage' });
@@ -159,11 +168,12 @@ struct Index {
 
   aboutToAppear() {
     // ★ 0.195.0：大屏断点检测（同 BBTreeCanvas 判定：屏宽 ≥600vp = 平板/PC 渲染常驻边栏）
+    // ★ 0.196.4：只做首帧初始猜测——真值由根 Stack onAreaChange 按窗口实宽写入（分屏/悬浮窗纠正）
     try {
       const d = display.getDefaultDisplaySync();
-      this.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+      this.windowMode.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
     } catch (_e) {
-      this.isTablet = false; // 取显示信息失败：保守按手机处理（无边栏，画布抽屉承担导航）
+      this.windowMode.isTablet = false; // 取显示信息失败：保守按手机处理（无边栏，画布抽屉承担导航）
     }
     // ★ 0.195.0 bugfix：边栏选中态动态跟踪——didShow 拿目标页名（'navBar'=首页清空高亮；
     //   push/pop/replacePath 全走这里，边栏高亮恒与主界面页面一致）
@@ -234,6 +244,8 @@ struct Index {
       StatisticsPage({ pathStack: this.pathStack })
     } else if (name === 'BillingPage') { // ★ 0.194.0：账单/订阅页（边栏「账单」）
       BillingPage({ pathStack: this.pathStack })
+    } else if (name === 'ReviewPage') { // ★ 0.196.1：知识复习页（边栏「复习」，Anki 式单卡）
+      ReviewPage({ pathStack: this.pathStack })
     }
   }
 
@@ -398,7 +410,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.196.0') // ★ 0.196.0：知识复习功能开工——评分按钮时间化；★ 0.195.1：优化迭代——更早历史见 MEMORY.md 版本表（唯一真相源）
+        Text('v0.196.4') // ★ 0.196.4：窗口宽度模式（分屏/悬浮窗手机布局）；★ 0.196.3：实测修正轮——更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -443,5 +455,10 @@ struct Index {
     .height('100%')
     .backgroundColor(BG_APP) // ★ 0.174.1：全局兜底底色（各页背景未铺到的安全区露暗紫不露黑）
     .expandSafeArea([SafeAreaType.SYSTEM]) // ★ 0.174.1：背景延伸进状态栏/导航条安全区——满屏
+    // ★ 0.196.4：窗口实宽写入共享模式——根 Stack 满窗，onAreaChange 在分屏/悬浮窗 resize 时
+    //   实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）
+    .onAreaChange((oldVal: Area, newVal: Area) => {
+      this.windowMode.isTablet = (newVal.width as number) >= 600;
+    })
   }
 }

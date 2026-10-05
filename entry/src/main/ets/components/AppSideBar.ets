@@ -5,7 +5,8 @@
 // 导航逻辑全部经 onNavClick(kind) 注入宿主（本组件零导航）：
 //   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
 
-import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil';
+import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID } from '../utils/HuaweiAccountUtil';
+import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像退出确认（getHostContext 转 common.Context 调 logoutHuaweiID）
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
 @ComponentV2
@@ -29,6 +30,9 @@ export struct AppSideBar {
     if (kind === 'knowledge') {
       return this.currentRoute === 'KnowledgeBankPage';
     }
+    if (kind === 'review') {
+      return this.currentRoute === 'ReviewPage'; // ★ 0.196.1：知识复习页
+    }
     if (kind === 'statistics') {
       return this.currentRoute === 'StatisticsPage';
     }
@@ -49,6 +53,9 @@ export struct AppSideBar {
     if (kind === 'knowledge') {
       return $r('app.media.library');
     }
+    if (kind === 'review') {
+      return $r('app.media.refresh'); // ★ 0.196.1：复习（循环箭头=重复记忆语义；后续可换专属图标）
+    }
     if (kind === 'statistics') {
       return $r('app.media.chart');
     }
@@ -65,6 +72,9 @@ export struct AppSideBar {
     }
     if (kind === 'knowledge') {
       return '知识库';
+    }
+    if (kind === 'review') {
+      return '知识复习'; // ★ 0.196.2：用户拍板「复习」→「知识复习」（边栏更明确）
     }
     if (kind === 'statistics') {
       return '统计';
@@ -191,10 +201,11 @@ export struct AppSideBar {
       .alignItems(VerticalAlign.Center)
       .margin({ top: 20, bottom: 24 })
 
-      // ── 导航项：气泡树（主）/ 单词库 / 知识库 / 统计 / 账单 ──
+      // ── 导航项：气泡树（主）/ 单词库 / 知识库 / 复习 / 统计 / 账单 ──
       this.SideBarNavItem('canvas')
       this.SideBarNavItem('wordbank')
       this.SideBarNavItem('knowledge')
+      this.SideBarNavItem('review') // ★ 0.196.1：知识复习（用户定稿：知识库下方）
       this.SideBarNavItem('statistics')
       this.SideBarNavItem('billing')
 
@@ -220,7 +231,29 @@ export struct AppSideBar {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
-        this.onNavClick('account'); // ★ 0.195.0：账号行点击经事件交宿主（原直跳统计页，两宿主行为一致）
+        // ★ 0.196.2 用户拍板：点头像=华为账号退出确认弹窗（原跳统计页废弃——统计已有边栏独立入口；
+        //   系统 AlertDialog 同 0.189.2 口音提示先例）
+        // ★ 0.196.3 bugfix（用户实测「退出后再点没反应」）：未登录点头像=直接拉起登录
+        if (!this.account.isLoggedIn) {
+          const loginContext = this.getUIContext().getHostContext() as common.Context;
+          loginWithHuaweiID(loginContext);
+          return;
+        }
+        this.getUIContext().showAlertDialog({
+          title: '退出华为账号',
+          message: '退出后将停止云同步，本地学习数据不受影响。',
+          primaryButton: {
+            value: '取消',
+            action: () => {}
+          },
+          secondaryButton: {
+            value: '退出',
+            action: () => {
+              const context = this.getUIContext().getHostContext() as common.Context;
+              logoutHuaweiID(context);
+            }
+          }
+        });
       })
     }
     .width(208)
