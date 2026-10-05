@@ -28,7 +28,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
-import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）
+ import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -476,6 +476,7 @@ export struct ChatPage {
   bookmarkStore: ChatBookmarkStore = connectChatBookmarks(); // ★ 0.191.0：阅读书签持久化（方案 B，跨重启）
   @Local bookmarkCache: BookmarkEntry | null = null; // ★ 0.191.0：本气泡书签缓存（渲染期高频查询免逐段 JSON 解析）
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：AI 偏好（称呼 + 鼓励开关，独立 key 'ai-preference-v1'）
+  statStore: StatisticsStore = connectStatistics(); // ★ 0.192.0：学习统计（只增不减，删除消息/气泡不影响已统计数据）
   canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：画布模式（'flat'/'tabs'，独立 key 'canvas-mode-v1'）
   tabForest: TabForestStore = connectTabForest();         // ★ 0.151：Tab 池（tabsJson + activeTabId，独立 key 'tab-forest-v1'）
   @Local inputText: string = '';
@@ -841,7 +842,7 @@ export struct ChatPage {
   // ★ 0.190.5：等待态视图——三点动画 + 阶段反馈 + 回复模式
   // ★ 0.191.0 定稿（用户指示）：全部信息浓缩一行；文案两态——已提交请求 / 等待服务器返回；无省略号（三点动画已表达进行中）
   @Builder
-  waitingView(content: string) {
+  waitingView() { // ★ 0.191.0 清理：单行化后不再区分 LOADING/THINKING 文案，死参数 content 移除
     Row() {
       WaitingDots()
       Text(this.streamPhase === 1 ? '已提交请求'
@@ -908,6 +909,7 @@ export struct ChatPage {
     }
     const isPodcast = this.sendMode === 'podcast'; // ★ 0.133：本次发送模式
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
+    recordStat(this.statStore, 'userMsg', 0, 0); // ★ 0.192.0：统计埋点——用户消息 +1（只增不减，删除不影响）
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
     this.saveTree(); // ★ 0.151：按模式分池保存
@@ -965,6 +967,7 @@ export struct ChatPage {
         }
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
+        recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累计
         // 流式完成时滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
@@ -1054,6 +1057,7 @@ export struct ChatPage {
         }
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
+        recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
       },
@@ -2057,6 +2061,7 @@ export struct ChatPage {
       this.currentBubbleStore.bubbleY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
+    recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——创建子气泡 +1
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局（返回画布时 onShown 消费）
     this.stopTTS(); // ★ 0.151-D：切气泡前补停 TTS（原依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此停）
@@ -2459,7 +2464,7 @@ export struct ChatPage {
                            //   通道渲染纯文本，改三点跳动动画+回复模式提示（长模式加耐心等待）；
                            //   Markdown 通道占位时传空串（parseMarkdown('') 零段渲染，不重复显示）
                            if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
-                             this.waitingView(msg.content)
+                              this.waitingView()
                            }
                             ForEach(this.parseMarkdown(msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING ? '' : msg.content), (seg: MdSegment, idx: number) => {
                              // ★ 0.191.0 定稿：清除入口已移除——标记/取消统一走划词工具栏

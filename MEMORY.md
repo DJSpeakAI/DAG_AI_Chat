@@ -88,7 +88,7 @@ BubbleNode新增historySummary字段（@Trace），子气泡继承父分支摘�
 |0.191.0|阅读位置记忆A+B+多模态高亮（用户批准 A+B 都做；评估时给过成功率 A=85%/B=90%+）：①**方案A 会话级高度记忆**——模块级 Map<bubbleId, yOffset>（页面销毁不丢同会话存活；像素值跨设备/字体漂移**不做持久化**，重启走书签/底部兜底）；记录点=aboutToDisappear+createChildBubble 切气泡前（此路径不触发 disappear **须手动记录**）；恢复=restoreReadingPosition()（A 记忆→B 书签→底部兜底，替代原固定滚底）②**方案B 手动书签**——划词工具栏加「标记」（isAiSegmentKey 仅 AI 正文段 key=messageId\|纯数字 显示；用户消息\|u/复习区 rk*/rkd*/rw* 排除）→书签=**段落序号**（parseMarkdown 段索引，不受图片/字体影响跨重启稳定）→命中段前渲染「🔖 上次读到此处（点击清除）」BRAND_SECONDARY 标记线；持久化 ChatBookmarkStore 独立 key 'chat-bookmarks-v1'（**单 JSON 字符串字段**存全部气泡书签——避 Record 字面量+往类加字段旧快照坑）；每气泡一个书签新标覆盖旧标；无 A 记忆时（重启后）scrollToIndex 跳书签消息③**多模态高亮**（用户指示：强烈推荐+高亮，后续图表上传等 AI 辅助功能依赖多模态）——模型下拉提示 TextSpan 三段：「强烈推荐使用」灰+「多模态模型」紫高亮+说明灰|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.191.0（versionCode 1000065）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.192.0（versionCode 1000066）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）
 - 迭代文档命名：版本号 变更内容.md（如 0.185.0 音标口音切换.md；同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；规则详见 project_rule.md §7，2026-10-04 用户定稿）
 - 版本线主文档：docs/0.165+/0.167.md（精简版，0.165+ 段；历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，2026-10-04 端口 33685）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**

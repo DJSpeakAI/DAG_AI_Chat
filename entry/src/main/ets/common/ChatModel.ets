@@ -323,6 +323,85 @@ export function connectAiPreference(): AiPreference {
   return PersistenceV2.connect(AiPreference, 'ai-preference-v2', () => new AiPreference()) as AiPreference;
 }
 
+// ============================================================
+// ★ 0.192.0：学习统计（用户定稿）——按天聚合轻量库，PersistenceV2 持久化
+// 设计：单 JSON 字符串字段存全部日记录（同书签/偏好模式，避 Record 字面量坑）；
+//   只增不减——消息/气泡删除不影响已统计数据（累计口径，用户明确要求）。
+// 埋点：sendMessage（用户消息+1）/ onDone（AI 回复+1 + token 累加）/
+//   createChildBubble + 新建树/Tab（气泡+1）。
+// ============================================================
+export interface StatDayEntry {
+  date: string;         // 日期键 'YYYY-MM-DD'（本地时区）
+  userMsgs: number;     // 用户消息条数
+  aiMsgs: number;       // AI 回复条数
+  bubbles: number;      // 创建气泡数
+  inputTokens: number;  // 输入 token 累计
+  outputTokens: number; // 输出 token 累计
+}
+
+export interface StatDayData {
+  days: StatDayEntry[];
+}
+
+@ObservedV2
+export class StatisticsStore {
+  @Trace raw: string = '{"days":[]}';
+}
+
+// ★ 0.192.0：连接统计持久化实例（全新 key，无历史迁移需求）
+export function connectStatistics(): StatisticsStore {
+  return PersistenceV2.connect(StatisticsStore, 'statistics-v1', () => new StatisticsStore()) as StatisticsStore;
+}
+
+// ★ 0.192.0：本地日期键 'YYYY-MM-DD'（统计按用户本地天聚合，不用 UTC 防跨天错位）
+export function statDateKey(ts: number): string {
+  const d = new Date(ts);
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+// ★ 0.192.0：读取全部日记录（解析失败返回空表）
+export function getStatDays(store: StatisticsStore): StatDayEntry[] {
+  try {
+    const data = JSON.parse(store.raw) as StatDayData;
+    if (data.days !== undefined && data.days !== null) {
+      return data.days;
+    }
+  } catch (_e) {
+    // 解析失败视为空表
+  }
+  return [];
+}
+
+// ★ 0.192.0：写统计（原子操作：读-改-写整表；天记录不存在则创建）
+// userMsg/aiMsg/bubble 各自 +1；tokens 传增量（默认 0）
+export function recordStat(store: StatisticsStore, kind: string, inTok: number, outTok: number): void {
+  const days = getStatDays(store);
+  const key = statDateKey(Date.now());
+  let entry: StatDayEntry | undefined = undefined;
+  for (let i = 0; i < days.length; i++) {
+    if (days[i].date === key) {
+      entry = days[i];
+      break;
+    }
+  }
+  if (entry === undefined) {
+    entry = { date: key, userMsgs: 0, aiMsgs: 0, bubbles: 0, inputTokens: 0, outputTokens: 0 };
+    days.push(entry);
+  }
+  if (kind === 'userMsg') {
+    entry.userMsgs += 1;
+  } else if (kind === 'aiMsg') {
+    entry.aiMsgs += 1;
+  } else if (kind === 'bubble') {
+    entry.bubbles += 1;
+  }
+  entry.inputTokens += inTok;
+  entry.outputTokens += outTok;
+  store.raw = JSON.stringify({ days: days } as StatDayData);
+}
+
 // ★ 0.161：学习数量设置——控制 AI 回复气泡底部生词复习区与知识卡片提炼等待页复习区
 // 每次展示的词条数；单词库顶栏 ⚙ 设置弹窗提供 1 / 2（默认）/ 自由输入（1~20）三选项；
 // PersistenceV2 独立全新 key 跨重启保存（与 AiPreference 同模式，无旧快照缺字段坑）

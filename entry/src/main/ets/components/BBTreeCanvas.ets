@@ -15,7 +15,7 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2, display } from '@kit.ArkUI'; // ★ 0.168：display 屏宽断点（平板/手机边栏形态）
-import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch } from '../common/ChatModel';
+import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
 import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token；★ 0.173.1：删「工作区」标签后 FONT_SIZE_LABEL 无使用处，移出 import
 import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
@@ -70,6 +70,7 @@ export struct BBTreeCanvas {
   // ★ 0.182.0：画布空白双击判定——上次点击时间戳（纯逻辑判定不驱动 UI，private 非 @Local）
   private lastCanvasTapTime: number = 0;
   account: HuaweiAccountStore = connectHuaweiAccount(); // 边栏底部头像/昵称（华为账号登录态）
+  statStore: StatisticsStore = connectStatistics(); // ★ 0.192.0：学习统计埋点（新建树/Tab）
 
   aboutToAppear(): void {
     // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
@@ -456,6 +457,7 @@ export struct BBTreeCanvas {
   addRootBubble(): void {
     const root = new BubbleNode(generateNodeId(), null, [], 200, 0); // x 初始值无所谓，autoLayout 会重排
     this.store.nodeList.push(root);
+    recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——新建树（根气泡）+1
     this.autoLayout();
     this.fitViewport();
   }
@@ -484,6 +486,7 @@ export struct BBTreeCanvas {
     const tabs = parseTabs(this.tabForest.tabsJson);
     const root = new BubbleNode(generateNodeId(), null, [], 200, 0);
     const tree = new BubbleTree([root]);
+    recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——新增 Tab（自带新树）+1
     tabs.push({ id: tabId, name: getRootDisplayName(root), treeJson: serializeBubbleTree(tree) }); // ★ 0.151-bugfix2：Tab 名 = 树根显示名（空白新根 =「空气泡」，与根气泡文字一致；重命名 Tab 即给树起名）
     this.tabForest.tabsJson = serializeTabs(tabs);
     upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（新增 Tab 后 Tab 池上云）
@@ -600,6 +603,9 @@ export struct BBTreeCanvas {
     if (kind === 'knowledge') {
       return $r('app.media.library');
     }
+    if (kind === 'statistics') {
+      return $r('app.media.chart'); // ★ 0.192.0：统计入口（柱状图图标）
+    }
     return $r('app.media.settings');
   }
 
@@ -610,6 +616,9 @@ export struct BBTreeCanvas {
     }
     if (kind === 'knowledge') {
       return '知识库';
+    }
+    if (kind === 'statistics') {
+      return '统计'; // ★ 0.192.0：统计入口
     }
     if (kind === 'settings') {
       return '设置';
@@ -626,6 +635,9 @@ export struct BBTreeCanvas {
     } else if (kind === 'knowledge') {
       // 不收抽屉：同上，返回时边栏保持
       this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+    } else if (kind === 'statistics') {
+      // ★ 0.192.0：统计页（不收抽屉，同词库/知识库）
+      this.pathStack.pushPath({ name: 'StatisticsPage' });
     } else if (kind === 'settings') {
       this.closeSidebar();
       this.globalSettingsVisible = true;
@@ -804,10 +816,11 @@ export struct BBTreeCanvas {
       .alignItems(VerticalAlign.Center)
       .margin({ top: 20, bottom: 24 })
 
-      // ── 导航项：画布（选中）/ 单词库 / 知识库（★ 0.173.1：删「工作区」分组标签，用户拍板） ──
+      // ── 导航项：画布（选中）/ 单词库 / 知识库 / 统计（★ 0.173.1：删「工作区」分组标签，用户拍板；★ 0.192.0 加统计） ──
       this.SideBarNavItem('canvas')
       this.SideBarNavItem('wordbank')
       this.SideBarNavItem('knowledge')
+      this.SideBarNavItem('statistics')
 
       // ── 弹性空隙（底部设置 + 账号沉底）──
       Blank()
@@ -830,6 +843,10 @@ export struct BBTreeCanvas {
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        // ★ 0.192.0：账号行点击 → 统计页（用户指定第二入口；不收抽屉同词库/知识库）
+        this.pathStack.pushPath({ name: 'StatisticsPage' });
+      })
     }
     .width(208) // ★ 0.170.2：手机抽屉同宽 208（原 72 窄栏——内容对齐平板后文字需要空间）
     .height('100%')
