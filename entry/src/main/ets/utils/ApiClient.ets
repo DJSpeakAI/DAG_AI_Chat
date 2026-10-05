@@ -6,7 +6,7 @@
 //   - queryWord()：AI 查词，结果入单词库（★ 0.145；★ 0.155：划词含中文走中译英，美式音标+英文格式）
 //   - queryKnowledge()：AI 知识卡片草稿提炼（★ 0.146）
 //   - queryKnowledgeFromImage()：AI 知识卡片草稿提炼·多模态版，屏幕圈选截图入知识库（★ 0.152）
-//   - synthesizeTTS()：语音合成，HTTP 分段请求（★ 0.136/0.139）
+//   - synthesizeTTS()：★ 0.189.0 已移除——云端 TTS 取消，发音/朗读改走本地 CoreSpeechKit（LocalTtsEngine.ets）；配置存档见 docs/0.165+/0.189.0 §9
 //   - StreamController：流式请求控制器，支持手动 cancel 终止请求
 //   - parseSSEChunk()：解析 SSE（Server-Sent Events）数据块
 //
@@ -19,8 +19,7 @@
 // ============================================================
 
 import { http } from '@kit.NetworkKit'; // ★ 0.136：webSocket 已随播客路径移除（TTS 回归 HTTP）
-import { buffer, util } from '@kit.ArkTS'; // ★ 0.139：util（UUID 生成 + Base64Helper 解码，openspeech 2.0 协议需要）
-import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.136：HTTP 请求异常回调类型
+import { buffer } from '@kit.ArkTS'; // ★ 0.132：streamChat 字节级 UTF-8 缓冲；★ 0.189.0：util 随 synthesizeTTS 移除
 import { ChatMessage, ApiConfig, generateMessageId, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.185.0：connectPhoneticAccent（音标口音，prompt 生成用）
 import { WordQueryResult } from '../common/WordModel'; // ★ 0.145：AI 查词结果结构
 import { KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：AI 卡片草稿结果结构
@@ -735,179 +734,11 @@ export function queryKnowledgeFromImage(
 }
 
 // ============================================================
-// ★ 0.139 重写：TTS（文本转语音）— openspeech /api/v3/tts/unidirectional（豆包语音合成 2.0）
 // ============================================================
-// 0.134/0.137 真机两次 HTTP 404 实锤：模型与端点是绑定的，方舟 ark…/audio/speech
-// 端点不服务语音合成模型（docs/0.139，依据用户提供的官方《豆包语音合成大模型 2.0 概览》）。
-// 本版采用官方 2.0 协议（openspeech HTTP Chunked 单向流）：
-//   - 端点：https://openspeech.bytedance.com/api/v3/tts/unidirectional
-//   - 鉴权：X-Api-Key（方舟 Key）+ X-Api-Resource-Id（模型资源 ID）+ X-Api-Request-Id（UUID）
-//   - 请求体：{ req_params: { text, speaker, audio_params: { format, sample_rate } } }
-//   - 响应：Chunked 流式 JSON，data 字段为 base64 音频片段，code=0 成功
-//   - 组合：resource=seed-tts-2.0 + speaker=zh_female_vv_uranus_bigtts（2.0 专用音色）
+// ★ 0.189.0：火山云端 TTS 已按用户指示整体移除（synthesizeTTS + openspeech 协议接口）。
+// 发音/朗读改走本地 CoreSpeechKit 引擎（utils/LocalTtsEngine.ets，免费离线）。
+// 云端完整配置存档（端点/鉴权/协议/音色/历史教训）见
+// docs/0.165+/0.189.0 本地TTS双引擎方案.md §9——恢复时照抄即可。
+// ============================================================
 
-// TTS 音频参数（openspeech 2.0 协议 audio_params）
-interface AudioParams {
-  format: string;      // 音频格式：mp3
-  sample_rate: number; // 采样率：24000
-}
-
-// TTS 请求参数（openspeech 2.0 协议 req_params）
-interface ReqParams {
-  text: string;      // 待合成文本
-  speaker: string;   // 音色 ID（2.0 模型只能用 2.0 音色）
-  audio_params: AudioParams;
-}
-
-// TTS 请求体（openspeech 2.0 协议）
-interface SpeechRequestBody {
-  req_params: ReqParams;
-}
-
-// 单段 TTS 合成：HTTP POST openspeech /api/v3/tts/unidirectional（0.139 官方 2.0 协议）
-// onDone: 成功回调音频 base64（mp3）
-// onError: 失败回调（错误信息）
-// 返回 StreamController，支持手动 cancel（停止朗读时中断进行中的请求）
-export function synthesizeTTS(
-  text: string,
-  config: ApiConfig,
-  onDone: (audioBase64: string) => void,
-  onError: (error: string) => void
-): StreamController {
-  let cancelled = false;
-
-  // 端点兜底：旧版本持久化的方舟/播客端点（0.134-0.137 已证伪）→ 用官方 2.0 端点
-  let endpoint = config.audioEndpoint.trim();
-  if (endpoint.length === 0 || !endpoint.startsWith('https://')) {
-    endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
-  }
-
-  // 音色兜底：空值用 2.0 官方默认音色（2.0 模型只能用 2.0 音色，1.0 音色会报错）
-  const voice = config.audioVoice.trim().length > 0 ? config.audioVoice.trim() : 'zh_female_vv_uranus_bigtts';
-
-  // 请求 ID（openspeech 2.0 协议要求每次请求携带唯一 UUID）
-  const requestId = util.generateRandomUUID(false);
-
-  // 请求体（openspeech 2.0 协议 req_params 嵌套格式）
-  const body: SpeechRequestBody = {
-    req_params: {
-      text: text,
-      speaker: voice,
-      audio_params: {
-        format: 'mp3',
-        sample_rate: 24000
-      }
-    }
-  };
-
-  // ★ 0.140：音频 Key 空值检查——豆包语音 Key 与方舟 Key 相互独立，未填写直接明确报错（不拿空 Key 撞服务器）
-  if (config.audioKey.trim().length === 0) {
-    const errMsg = '音频 API Key 未填写：请在设置页「音频 API Key」填入豆包语音控制台新建的 Key（与对话 Key 相互独立）';
-    onError(errMsg);
-    return { cancel: () => { cancelled = true; } };
-  }
-
-  const httpRequest = http.createHttp();
-
-  httpRequest.request(endpoint, {
-    method: http.RequestMethod.POST,
-    header: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': config.audioKey, // ★ 0.140：豆包语音 Key（与方舟对话 Key 相互独立）
-      'X-Api-Resource-Id': config.audioModel,
-      'X-Api-Request-Id': requestId
-    },
-    extraData: JSON.stringify(body),
-    // 响应是 Chunked 流式 JSON 文本（data 字段 base64），按文本接收
-    expectDataType: http.HttpDataType.STRING,
-    connectTimeout: 15000,
-    readTimeout: 60000
-  }).then((resp: http.HttpResponse) => {
-    if (cancelled) {
-      return;
-    }
-    httpRequest.destroy();
-    const code = resp.responseCode;
-    // ★ 0.137 空值保护沿用：错误响应可能无 body（如 404 空 body），resp.result 为 undefined
-    const bodyText = resp.result ? (resp.result as string) : '';
-    if (code !== 200) {
-      // ★ 0.137：body 为空时明确显示「响应体为空」，不显示悬空冒号
-      const errMsg = bodyText.length > 0
-        ? `HTTP ${code}: ${bodyText.substring(0, 150)}`
-        : `HTTP ${code}（响应体为空）`;
-      onError(errMsg);
-      return;
-    }
-    // 200：解析 Chunked 流式 JSON——正则提取 code 校验 + 所有 data 字段 base64 片段拼接
-    if (bodyText.length === 0) {
-      onError('HTTP 200 但响应体为空');
-      return;
-    }
-    try {
-      // code 校验：code=0 成功，非 0 为业务错误（提取 message 一并显示）
-      const codeMatch = /"code"\s*:\s*(-?\d+)/.exec(bodyText);
-      if (codeMatch && parseInt(codeMatch[1], 10) !== 0) {
-        const msgMatch = /"message"\s*:\s*"([^"]*)"/.exec(bodyText);
-        const bizMsg = msgMatch ? msgMatch[1] : '未知业务错误';
-        const errMsg = `业务错误 code=${codeMatch[1]}: ${bizMsg}`;
-        onError(errMsg);
-        return;
-      }
-      // 提取所有 data 字段（Chunked 流式返回多段 base64 音频片段）
-      const dataReg = /"data"\s*:\s*"([^"]*)"/g;
-      const chunks: string[] = [];
-      let dataMatch = dataReg.exec(bodyText);
-      while (dataMatch !== null) {
-        if (dataMatch[1].length > 0) {
-          chunks.push(dataMatch[1]);
-        }
-        dataMatch = dataReg.exec(bodyText);
-      }
-      if (chunks.length === 0) {
-        onError('响应中无 data 音频字段');
-        return;
-      }
-      // 逐段 base64 解码 → ArrayBuffer 拼接 → 整体转 base64
-      const helper = new util.Base64Helper();
-      const decoded: Uint8Array[] = [];
-      let totalLen = 0;
-      for (let i = 0; i < chunks.length; i++) {
-        const seg = helper.decodeSync(chunks[i]);
-        decoded.push(seg);
-        totalLen += seg.byteLength;
-      }
-      const mergedBuf = new ArrayBuffer(totalLen);
-      const merged = new Uint8Array(mergedBuf);
-      let offset = 0;
-      for (let i = 0; i < decoded.length; i++) {
-        merged.set(decoded[i], offset);
-        offset += decoded[i].byteLength;
-      }
-      const audioBase64 = buffer.from(mergedBuf).toString('base64');
-      onDone(audioBase64);
-    } catch (e) {
-      onError('响应解析失败');
-      return;
-    }
-  }).catch((err: BusinessError) => {
-    if (cancelled) {
-      return;
-    }
-    httpRequest.destroy();
-    const errMsg = `请求异常: ${err.message}`;
-    onError(errMsg);
-  });
-
-  // 返回控制器，支持手动 cancel
-  const controller: StreamController = {
-    cancel: () => {
-      cancelled = true;
-      try {
-        httpRequest.destroy();
-      } catch (e) {
-        // 已销毁
-      }
-    }
-  };
-  return controller;
-}
+// ★ 0.189.0：synthesizeTTS 函数体已移除（云端 TTS 取消，见上方存档说明）

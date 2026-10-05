@@ -910,8 +910,8 @@ export struct WordBankPage {
                             .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_PRIMARY : (TEXT_TERTIARY))
                             .margin({ left: 6 })
                             .onClick(() => {
-                              const ctx = this.getUIContext().getHostContext();
-                              wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), this.apiConfig, ctx ? ctx.cacheDir : '');
+                              // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
+                              wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), () => this.showToast('本机语音引擎不可用'));
                             })
                         }
                         .margin({ top: 2 })

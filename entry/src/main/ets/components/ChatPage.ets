@@ -27,18 +27,18 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键�
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
-import { media } from '@kit.MediaKit'; // ★ 0.133：AVPlayer（语音朗读播放）
-import { BusinessError, pasteboard } from '@kit.BasicServicesKit'; // ★ 0.133：AVPlayer error 回调类型；★ 0.145：pasteboard（划词复制）
+import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
 import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
-import { streamChat, synthesizeTTS, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）
+import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
-import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）
+import { wordSpeaker } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例（复习区/单词库/翻译弹窗三处共用）；★ 0.189.0：本地引擎化
+import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
@@ -101,8 +101,7 @@ const SHORT_REPLY_PROMPT = '你的回答尽量简短，只输出核心结论，�
 const MEDIUM_REPLY_PROMPT = '回答简洁完整，条理清晰，避免冗余啰嗦。';
 const LONG_REPLY_PROMPT = '回答详细完整，分点展开，深度讲解原理，尽可能把内容讲透彻。';
 
-// ★ 0.136：TTS 单段文本上限（HTTP 单段请求长度限制，留余量取 280；0.135 沿用值保留）
-const TTS_MAX_SEGMENT_LEN = 280;
+// ★ 0.189.0：TTS_MAX_SEGMENT_LEN 已随云端管线移除——分段逻辑迁入 LocalTtsEngine（280 字/段）
 
 // ★ 新增：代码块组件，支持自动换行/横向滚动切换（0.122）
 @ComponentV2
@@ -476,17 +475,8 @@ export struct ChatPage {
   // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
-  // ★ 0.136 恢复 0.134 分段流水线：逐段合成（HTTP 单段请求）+ 顺序播放（base64 → 临时文件 → AVPlayer）
-  private ttsSegments: string[] = [];        // 文本分段队列
-  private ttsRequestIndex: number = 0;       // 当前请求段索引（合成进度）
-  private ttsPlayIndex: number = 0;          // 当前播放段索引（播放进度）
-  private ttsAudioCache: string[] = [];      // 已合成段落的 base64 缓存（请求与播放解耦）
-  private ttsWaitingForAudio: boolean = false; // 播放器空闲等待音频（true=播完缓存，等下一段合成）
-  private ttsCurrentFd: number = -1;         // 当前播放的临时文件 fd（-1 无，播放完关闭）
-  private ttsCurrentPath: string = '';       // 当前播放的临时文件路径（播放完删除）
-  private ttsRequestController: StreamController | null = null; // 进行中的 HTTP 合成请求
-  private ttsGeneration: number = 0;         // ★ 朗读会话代际号（stopTTS 递增，使在飞异步回调全部失效）
-  private avPlayer: media.AVPlayer | null = null;
+  // ★ 0.189.0：云端分段管线状态（ttsSegments/请求播放索引/base64缓存/AVPlayer/临时文件/
+  // 代际号）全部移除——本地引擎在 LocalTtsEngine 内部管理分段与排队，会话回调自动失效
   private scroller: Scroller = new Scroller();
   private streamController: StreamController | null = null;
   // ★ 0.152：屏幕圈选标注状态
@@ -911,99 +901,8 @@ export struct ChatPage {
     }
   }
 
-  // 长文本按句末标点切句，累积成 ≤ TTS_MAX_SEGMENT_LEN 的段（TTS 单次请求有长度上限）
-  splitTextForTTS(text: string): string[] {
-    const result: string[] = [];
-    if (text.trim().length === 0) {
-      return result;
-    }
-    // 1. 按句末标点 + 换行切句
-    const sentences: string[] = [];
-    let current = '';
-    for (let i = 0; i < text.length; i++) {
-      const ch = text.charAt(i);
-      current += ch;
-      if (ch === '。' || ch === '！' || ch === '？' || ch === '；' || ch === '\n' ||
-        ch === '!' || ch === '?' || ch === ';') {
-        sentences.push(current);
-        current = '';
-      }
-    }
-    if (current.length > 0) {
-      sentences.push(current);
-    }
-    // 2. 累积成段（≤ 上限）；超长句交给 splitLongSentence 处理
-    let seg = '';
-    for (let i = 0; i < sentences.length; i++) {
-      const s = sentences[i];
-      if (s.length > TTS_MAX_SEGMENT_LEN) {
-        if (seg.length > 0) {
-          result.push(seg);
-          seg = '';
-        }
-        const parts = this.splitLongSentence(s, TTS_MAX_SEGMENT_LEN);
-        for (let j = 0; j < parts.length; j++) {
-          result.push(parts[j]);
-        }
-        continue;
-      }
-      if (seg.length + s.length > TTS_MAX_SEGMENT_LEN) {
-        result.push(seg);
-        seg = s;
-      } else {
-        seg += s;
-      }
-    }
-    if (seg.length > 0) {
-      result.push(seg);
-    }
-    return result;
-  }
-
-  // 超长单句兜底：先按逗号类标点切小片累积，单片仍超上限则硬切
-  splitLongSentence(s: string, maxLen: number): string[] {
-    const pieces: string[] = [];
-    let cur = '';
-    for (let i = 0; i < s.length; i++) {
-      const ch = s.charAt(i);
-      cur += ch;
-      if (ch === '，' || ch === '、' || ch === ',' || ch === '：' || ch === ':') {
-        pieces.push(cur);
-        cur = '';
-      }
-    }
-    if (cur.length > 0) {
-      pieces.push(cur);
-    }
-    const parts: string[] = [];
-    let seg = '';
-    for (let i = 0; i < pieces.length; i++) {
-      const p = pieces[i];
-      if (p.length > maxLen) {
-        if (seg.length > 0) {
-          parts.push(seg);
-          seg = '';
-        }
-        let start = 0;
-        while (start < p.length) {
-          const end = Math.min(start + maxLen, p.length);
-          parts.push(p.substring(start, end));
-          start = end;
-        }
-        continue;
-      }
-      if (seg.length + p.length > maxLen) {
-        parts.push(seg);
-        seg = p;
-      } else {
-        seg += p;
-      }
-    }
-    if (seg.length > 0) {
-      parts.push(seg);
-    }
-    return parts;
-  }
+  // ★ 0.189.0：splitTextForTTS/splitLongSentence 已移除——分段逻辑迁入
+  // LocalTtsEngine.splitTextForTts（单一真相源，单词/朗读共用）
 
   // 点击喇叭入口：三态判断 + 播新停旧 + 启动朗读会话
   startTTS(msg: ChatMessage): void {
@@ -1029,175 +928,34 @@ export struct ChatPage {
     this.stopTTS();
     // ★ 0.149：与单词发音互斥——消息朗读开始前停掉单词 TTS
     wordSpeaker.stop();
-    // ★ 0.136 恢复 0.134 分段流水线：逐段 HTTP 合成 + 顺序播放
+    // ★ 0.189.0：本地引擎播报（CoreSpeechKit 免费离线）——分段/排队/会话失效
+    // 全在 LocalTtsEngine 内部管理；云端火山管线已按用户指示移除
     this.playingMessageId = msg.messageId;
     this.ttsLoadingMessageId = msg.messageId;
-    this.ttsSegments = this.splitTextForTTS(msg.content);
-    this.ttsRequestIndex = 0;
-    this.ttsPlayIndex = 0;
-    this.ttsAudioCache = [];
-    this.ttsWaitingForAudio = true; // ★ 0.142：初始即「等音频」——首段到达立即开播（原 false 死锁：onDone 不触发播放、无人再调 tryPlayNextAudio）
-    this.requestNextSegment();
-  }
-
-  // 请求下一段合成（串行流水线：上一段回调后才请求下一段，controller 始终指向在飞请求）
-  requestNextSegment(): void {
-    if (this.ttsRequestIndex >= this.ttsSegments.length) {
-      this.ttsRequestController = null; // 全部段落已发出
-      return;
-    }
-    const gen = this.ttsGeneration;
-    const index = this.ttsRequestIndex;
-    this.ttsRequestIndex++;
-    this.ttsRequestController = synthesizeTTS(
-      this.ttsSegments[index],
-      this.apiConfig,
-      (audioBase64: string) => {
-        if (gen !== this.ttsGeneration) {
-          return; // 会话已停止/被新会话取代，丢弃过期结果
-        }
-        this.ttsAudioCache.push(audioBase64);
-        // 播放器空闲（等音频）→ 立即开播
-        if (this.ttsWaitingForAudio) {
-          this.tryPlayNextAudio();
-        }
-        // 继续请求下一段（串行流水线）
-        this.requestNextSegment();
+    localTts.speakText(msg.content, {
+      onStart: () => {
+        this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
       },
-      (err: string) => {
-        if (gen !== this.ttsGeneration) {
-          return;
-        }
-        this.showToastSafe(`语音合成失败：${err.substring(0, 150)}`);
+      onComplete: () => {
+        this.stopTTS(); // 全部段播完——恢复正常态
+      },
+      onError: (code: number, message: string) => {
         this.stopTTS();
+        this.showToastSafe(`朗读失败（${code}）：${message}`);
       }
-    );
+    }).then((ok: boolean) => {
+      if (!ok) {
+        this.stopTTS();
+        this.showToastSafe('本机语音引擎不可用：请在系统设置检查「文字转语音」语音包是否已下载');
+      }
+    });
   }
 
-  // 尝试播放下一段缓存音频（有缓存开播；缓存播完等合成或正常收尾）
-  tryPlayNextAudio(): void {
-    if (this.playingMessageId === '') {
-      return; // 会话已停止
-    }
-    if (this.ttsPlayIndex >= this.ttsAudioCache.length) {
-      if (this.ttsAudioCache.length >= this.ttsSegments.length) {
-        // 全部段落合成完且播完 → 正常结束
-        this.stopTTS();
-      } else {
-        // 缓存播完但合成未完 → 等待下一段合成回调
-        this.ttsWaitingForAudio = true;
-      }
-      return;
-    }
-    this.ttsWaitingForAudio = false;
-    this.playSegment(this.ttsPlayIndex);
-  }
-
-  // 停止整个朗读会话：取消请求 + 释放播放器与临时文件 + 清空队列与状态（幂等，可安全重复调用）
+  // 停止整个朗读会话（★ 0.189.0：本地引擎版——停引擎+清状态，幂等，可安全重复调用）
   stopTTS(): void {
-    this.ttsGeneration++; // 使所有在飞的异步回调失效（会话代际号）
-    if (this.ttsRequestController) {
-      this.ttsRequestController.cancel();
-      this.ttsRequestController = null;
-    }
-    this.cleanupSegment();
-    this.ttsSegments = [];
-    this.ttsRequestIndex = 0;
-    this.ttsPlayIndex = 0;
-    this.ttsAudioCache = [];
-    this.ttsWaitingForAudio = false;
+    localTts.stop();
     this.playingMessageId = '';
     this.ttsLoadingMessageId = '';
-  }
-
-  // 清理当前段的播放器 + 临时文件 + fd（播放完成/停止时调用，幂等）
-  cleanupSegment(): void {
-    const player = this.avPlayer;
-    this.avPlayer = null;
-    if (player) {
-      player.release().catch(() => {
-        // 释放失败忽略（播放器已不可用）
-      });
-    }
-    if (this.ttsCurrentFd >= 0) {
-      try {
-        fileIo.closeSync(this.ttsCurrentFd);
-      } catch (e) {
-        // 已关闭
-      }
-      this.ttsCurrentFd = -1;
-    }
-    if (this.ttsCurrentPath.length > 0) {
-      try {
-        fileIo.unlinkSync(this.ttsCurrentPath);
-      } catch (e) {
-        // 已删除
-      }
-      this.ttsCurrentPath = '';
-    }
-  }
-
-  // 播放一段音频：base64 解码 → cacheDir 临时文件 → AVPlayer fd:// 播放（0.134 流水线恢复）
-  async playSegment(index: number): Promise<void> {
-    const gen = this.ttsGeneration;
-    // 开播：清除加载态（喇叭图标 ⏳ → 🔊）
-    this.ttsLoadingMessageId = '';
-    try {
-      // 设备能力检查：media.AVPlayer 不是全设备支持（消除 SysCap 告警的官方推荐做法）
-      if (!canIUse('SystemCapability.Multimedia.Media.AVPlayer')) {
-        this.showToastSafe('当前设备不支持音频播放');
-        this.stopTTS();
-        return;
-      }
-      // base64 → 二进制 → cacheDir 临时文件
-      const audioBytes = buffer.from(this.ttsAudioCache[index], 'base64');
-      const ctx = this.getUIContext().getHostContext(); // ★ 0.136：V2 组件无 getContext()，用 getHostContext() 取 Context
-      const cacheDir = ctx ? ctx.cacheDir : '';
-      const path = `${cacheDir}/tts_${Date.now()}.mp3`;
-      const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-      fileIo.writeSync(file.fd, audioBytes.buffer.slice(audioBytes.byteOffset, audioBytes.byteOffset + audioBytes.length) as ArrayBuffer);
-      if (gen !== this.ttsGeneration) {
-        // 写文件期间会话被停止 → 清理退出
-        fileIo.closeSync(file);
-        fileIo.unlinkSync(path);
-        return;
-      }
-      // fd 保持打开供播放器使用（fdSrc 模式），播放完成后 cleanupSegment 关闭
-      this.ttsCurrentFd = file.fd;
-      this.ttsCurrentPath = path;
-
-      const player = await media.createAVPlayer();
-      if (gen !== this.ttsGeneration) {
-        // 等待期间会话被停止/取代 → 释放新建的播放器并清理退出
-        player.release();
-        this.cleanupSegment();
-        return;
-      }
-      this.avPlayer = player;
-      player.on('stateChange', (state: string) => {
-        if (gen !== this.ttsGeneration) {
-          return; // 过期回调
-        }
-        if (state === 'initialized') {
-          player.prepare();
-        } else if (state === 'prepared') {
-          player.play();
-        } else if (state === 'completed') {
-          // 本段播完：清理 → 播下一段
-          this.cleanupSegment();
-          this.ttsPlayIndex++;
-          this.tryPlayNextAudio();
-        }
-      });
-      player.on('error', (err: BusinessError) => {
-        this.showToastSafe('音频播放失败');
-        this.stopTTS();
-      });
-      player.fdSrc = { fd: file.fd }; // fd 播放模式，触发 initialized → prepare → play
-    } catch (err) {
-      this.showToastSafe('音频播放失败');
-      this.stopTTS();
-    }
   }
 
   // 进入对话页面：延迟滚到底部，显示最新消息
@@ -2490,11 +2248,11 @@ export struct ChatPage {
                                         Text(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? '⏳' : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? '🔊' : '🔈'))
                                           .fontSize(12)
                                           .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
-                                          .onClick(() => {
-                                            this.stopTTS();
-                                            const ctx = this.getUIContext().getHostContext();
-                                            wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), this.apiConfig, ctx ? ctx.cacheDir : '');
-                                          })
+.onClick(() => {
+  this.stopTTS();
+  // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
+  wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), () => this.showToastSafe('本机语音引擎不可用'));
+})
                                       }
                                    }
                                     if (w.fullName.length > 0) {
@@ -2965,11 +2723,11 @@ export struct ChatPage {
                           .fontSize(12)
                           .fontColor(wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) || wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
                           .margin({ left: 4 })
-                          .onClick(() => {
-                            this.stopTTS();
-                            const ctx = this.getUIContext().getHostContext();
-                            wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), this.apiConfig, ctx ? ctx.cacheDir : '');
-                          })
+.onClick(() => {
+  this.stopTTS();
+  // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
+  wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), () => this.showToastSafe('本机语音引擎不可用'));
+})
                       }
                     }
                     if (w.fullName.length > 0) {
@@ -3195,11 +2953,11 @@ export struct ChatPage {
                       .fontSize(14)
                       .fontColor(wordSpeaker.speakingWord === this.wordPopupSpeakText() || wordSpeaker.loadingWord === this.wordPopupSpeakText() ? BRAND_SECONDARY : (TEXT_SECONDARY)) // ★ 0.182.0：喇叭空闲态调亮 TEXT_TERTIARY→TEXT_SECONDARY（用户反馈太暗）
                       .margin({ left: 6 })
-                      .onClick(() => {
-                        this.stopTTS();
-                        const ctx = this.getUIContext().getHostContext();
-                        wordSpeaker.speak(this.wordPopupSpeakText(), this.apiConfig, ctx ? ctx.cacheDir : '');
-                      })
+                       .onClick(() => {
+                         this.stopTTS();
+                         // ★ 0.189.0：本地引擎发音（免费离线）——config/cacheDir 参数随云端 TTS 移除
+                         wordSpeaker.speak(this.wordPopupSpeakText(), () => this.showToastSafe('本机语音引擎不可用'));
+                       })
                   }
                   .margin({ bottom: 4 })
                 }
