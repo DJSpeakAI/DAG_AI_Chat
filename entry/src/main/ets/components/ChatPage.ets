@@ -43,7 +43,7 @@ import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数�
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
-import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）
+import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 
@@ -725,9 +725,39 @@ export struct ChatPage {
     return result;
   }
 
+  // ★ 0.190.2：纯文本模型发图确认弹窗（Promise 包装 AlertDialog，await 取用户选择）
+  confirmSendImageToTextModel(): Promise<boolean> {
+    return new Promise<boolean>((resolve: (value: boolean) => void) => {
+      this.getUIContext().showAlertDialog({
+        title: '当前模型不支持图片',
+        message: '你选择的模型为纯文本模型，无法识别图片内容。建议在 ⚙ 设置中切换标注「多模态（可发图）」的模型。',
+        primaryButton: {
+          value: '取消发送',
+          action: () => {
+            resolve(false);
+          }
+        },
+        secondaryButton: {
+          value: '仍要发送',
+          action: () => {
+            resolve(true);
+          }
+        }
+      });
+    });
+  }
+
   async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
+    }
+    // ★ 0.190.2：纯文本模型发图拦截（用户批准方案）——预设清单已知纯文本 + 本次发送含图
+    //   → 弹窗提醒切换多模态；多模态/自定义/清单外 ID 能力未知不拦截（等对方报错走关键词提示）
+    if (this.pendingImages.length > 0 && isKnownTextOnlyModel(this.apiConfig.provider, this.apiConfig.model)) {
+      const proceed = await this.confirmSendImageToTextModel();
+      if (!proceed) {
+        return;
+      }
     }
     if (this.streamController) {
       this.streamController.cancel();
@@ -797,6 +827,11 @@ export struct ChatPage {
         this.isLoading = false;
         this.streamController = null;
         aiMsg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
+        // ★ 0.190.2：错误含图片关键词 → 附加多模态建议（自定义模型能力未知，对方报错才知道）
+        if (errMsg.toLowerCase().includes('image') || errMsg.toLowerCase().includes('vision') ||
+          errMsg.includes('图片') || errMsg.includes('多模态')) {
+          aiMsg.content += '\n💡 当前模型可能不支持图片，建议在 ⚙ 设置中切换多模态模型。';
+        }
         // 错误时也滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
@@ -874,6 +909,11 @@ export struct ChatPage {
         this.isLoading = false;
         this.streamController = null;
         msg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
+        // ★ 0.190.2：错误含图片关键词 → 附加多模态建议（与 sendMessage onError 同机制）
+        if (errMsg.toLowerCase().includes('image') || errMsg.toLowerCase().includes('vision') ||
+          errMsg.includes('图片') || errMsg.includes('多模态')) {
+          msg.content += '\n💡 当前模型可能不支持图片，建议在 ⚙ 设置中切换多模态模型。';
+        }
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
       },

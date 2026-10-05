@@ -1371,9 +1371,9 @@ export struct BBTreeCanvas {
           if (!this.isTablet) {
             Column() {
               Row() {
-                // ★ 0.182.0：☰ 换 gitbranch 分叉符号——与 app logo/画布视觉语言统一（用户要求）；
-                //   只放符号本身不放整个 logo（logo 亮紫底太重），按钮背景 SURFACE_NODE 暗紫保持不变
-                Image($r('app.media.gitbranch'))
+                // ★ 0.190.2：Text('☰') 字符换回 0.168.4 原始 menu.svg 图标资源（用户反馈：字符
+                //   版偏小且不居中，「之前那个就很好看」——git 考古 4bba3c9 实锤原始即此图标 18×18）
+                Image($r('app.media.menu'))
                   .width(18)
                   .height(18)
               }

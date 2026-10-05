@@ -2,9 +2,12 @@
 // GlobalSettingsDialog.ets — 全局设置弹窗（★ 0.150）
 // ============================================================
 // 本文件是应用的全局设置弹窗（ChatPage 顶栏 ⚙ 与 BBTreeCanvas 画布 ⚙ 共用同一实例数据）：
-//   - Tab 1「API 配置」：对话 Key/Endpoint/模型下拉（★ 0.189.1：音频 Key/音频模型/
-//     音频 Endpoint 随云端 TTS 取消整体移除——发音/朗读已走本地 CoreSpeechKit，
-//     火山配置存档见 docs/0.165+/0.189.0 §9）
+//   - Tab 1「API 配置」：★ 0.190.0 提供商化——模型提供商 2×2 卡片（华为云 MaaS / 火山引擎 /
+//     DeepSeek 3 预设 + 自定义配置，其他服务商全走自定义）；预设=模型下拉（预置清单+「自定义」
+//     填 ID）+ API Key +「获取 API Key ↗」跳官网（端点内置不可编辑）；自定义=模型 URL+模型 ID+
+//     API Key 三字段；上下文窗口 Tokens 不要（用户指示：那是开发代码用配置，AI 回复用不到）
+//     （★ 0.189.1：音频 Key/音频模型/音频 Endpoint 随云端 TTS 取消整体移除——发音/朗读已走
+//     本地 CoreSpeechKit，火山配置存档见 docs/0.165+/0.189.0 §9）
 //   - Tab 2「AI 偏好」：自定义称呼（默认空，填写后短/中/长全部回复模式生效）+
 //     自动鼓励开关（默认开启，仅中/长回复生成鼓励，短回复不生成）
 //   - 保存：两 Tab 全部修改一次写入持久化 + toast「已保存」，不关弹窗（用户自己 ✕）
@@ -22,24 +25,110 @@
 // ============================================================
 
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference } from '../common/ChatModel'; // ★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
 import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
-import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）
 
-// 模型选项接口（与原 SettingsPage 一致，搬入保持组件自包含）
-interface ModelOption {
-  id: string;       // 模型ID（传给 API 的值）
-  name: string;     // 显示名称
-  type: string;     // 类型描述
-  price: string;    // 百万 token 价格描述
+// ============================================================
+// ★ 0.190.0/0.190.1：模型提供商预设（3 预设 + 自定义配置）
+// ============================================================
+// 用户拍板：默认只做 3 个提供商（华为云 MaaS / 火山方舟 / DeepSeek），其他全部走「自定义
+// 配置」；上下文窗口 Tokens 不要（那是开发代码用配置）；每个预设带「获取 API Key」链接
+// 跳**各自**官网；模型小字只标「多模态（可发图）/纯文本」——价格不标（太乱，用户自己上
+// 官网对比）；推荐使用多模态模型（可发图片，AI 能识别图片内容）。
+// 模型 ID 事实（2026-10 官方文档核实，ID≠展示名，全小写为主）：
+//   - 华为云 MaaS 模型列表页：glm-5.2 / glm-5.1 / kimi-k2.6 / deepseek-v4-pro /
+//     deepseek-v4-flash / deepseek-v4.1-flash（★0.190.1 修正：Kimi/DeepSeek 此前误大写；
+//     deepseek-v4.1-flash 是 MaaS 文档图片理解示例模型=多模态，其余五个能力表无视觉=纯文本）
+//   - DeepSeek 官方：deepseek-v4-pro / deepseek-v4-flash（旧 deepseek-chat/reasoner
+//     2026-07-24 弃用；deepseek-v4-flash 现由多模态的 V4.1-Flash 服务）
+//   - 火山方舟（★0.190.1 用户指定）：deepseek-v4-flash-ga-260731（V4-Flash 正式版，
+//     用户确认多模态）/ glm-5-3-flash-260828（多模态）
+// 端点（三家均 OpenAI 兼容 + Bearer 鉴权 → ApiClient 零改动）：
+//   - 华为云 MaaS：https://api.modelarts-maas.com/openai/v1/chat/completions
+//   - DeepSeek：  https://api.deepseek.com/chat/completions
+//   - 火山方舟：  https://ark.cn-beijing.volces.com/api/v3/chat/completions
+interface PresetModel {
+  id: string;    // 模型 ID（传给 API 的值）
+  name: string;  // 显示名称
+  desc: string;  // 能力标注：多模态（可发图）/ 纯文本
 }
 
-// 已开通模型列表（硬编码，2 个；与 SettingsPage 一致）★ 本轮：只留 DeepSeek 4.1 Flash + GLM 5.3 Flash（用户指定）
-const MODEL_LIST: ModelOption[] = [
-  { id: 'deepseek-v4-1-flash-260910', name: 'DeepSeek-V4.1-Flash', type: '多模态（图片理解）', price: '1~2 元/百万token' },
-  { id: 'glm-5-3-flash-260828', name: 'GLM-5.3-Flash', type: '多模态（图片理解）', price: '0.8 元/百万token' },
+interface ProviderPreset {
+  id: string;            // 'huawei' | 'volcano' | 'deepseek'
+  name: string;          // 卡片显示名
+  desc: string;          // 卡片小字
+  endpoint: string;      // 内置端点（OpenAI 兼容 chat/completions，预设不可编辑）
+  keyUrl: string;        // 「获取 API Key」跳转链接（各自官网）
+  keyPlaceholder: string; // API Key 输入框占位文案
+  models: PresetModel[]; // 预置模型（下拉末位 UI 层另挂「自定义…」选项）
+}
+
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: 'huawei', name: '华为云 MaaS', desc: 'ModelArts 模型即服务',
+    endpoint: 'https://api.modelarts-maas.com/openai/v1/chat/completions',
+    keyUrl: 'https://console.huaweicloud.com/maas/',
+    keyPlaceholder: '填入华为云 MaaS API Key',
+    models: [ // ID 全部来自华为云 MaaS 官方「模型列表」页（2026-10 核实）
+      { id: 'deepseek-v4.1-flash', name: 'DeepSeek-V4.1-Flash', desc: '多模态（可发图）' },
+      { id: 'glm-5.2', name: 'GLM-5.2', desc: '纯文本' },
+      { id: 'glm-5.1', name: 'GLM-5.1', desc: '纯文本' },
+      { id: 'kimi-k2.6', name: 'Kimi-K2.6', desc: '纯文本' },
+      { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', desc: '纯文本' },
+      { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', desc: '纯文本' },
+    ]
+  },
+  {
+    id: 'volcano', name: '火山方舟', desc: '方舟大模型 · 现网默认', // ★ 0.190.1：火山引擎→火山方舟（用户改名）
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+    keyUrl: 'https://console.volcengine.com/ark',
+    keyPlaceholder: '填入火山方舟 API Key',
+    models: [ // ★ 0.190.1：用户指定 2 模型（V4-Flash 正式版替换旧 260910 预览版）
+      { id: 'deepseek-v4-flash-ga-260731', name: 'DeepSeek-V4-Flash 正式版', desc: '多模态（可发图）' },
+      { id: 'glm-5-3-flash-260828', name: 'GLM-5.3-Flash', desc: '多模态（可发图）' },
+    ]
+  },
+  {
+    id: 'deepseek', name: 'DeepSeek', desc: 'DeepSeek 开放平台',
+    endpoint: 'https://api.deepseek.com/chat/completions',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    keyPlaceholder: '填入 DeepSeek API Key',
+    models: [ // 官方文档 ID（deepseek-v4-flash 现由多模态 V4.1-Flash 服务）
+      { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', desc: '纯文本' },
+      { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', desc: '多模态（可发图）' },
+    ]
+  },
 ];
+
+const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼容服务）
+
+// ★ 0.190.1：旧版模型 ID → 新清单映射（火山 260910 预览版已被 260731 正式版替代，
+// 用户明确「改成我用那个 Flash 正式版」——回显时自动落新模型，保存即生效）
+function mapLegacyModel(id: string): string {
+  if (id === 'deepseek-v4-1-flash-260910') {
+    return 'deepseek-v4-flash-ga-260731';
+  }
+  return id;
+}
+
+// ★ 0.190.2：预设模型能力查询（ChatPage 发图拦截用，用户批准方案）——
+// 已知纯文本返回 true；多模态 / 自定义配置 / 预设清单外手填 ID 一律返回 false
+// （能力未知不拦截——等对方 API 报错走 onError 关键词提示，不误伤）
+export function isKnownTextOnlyModel(provider: string, model: string): boolean {
+  for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+    if (PROVIDER_PRESETS[i].id === provider) {
+      for (let j = 0; j < PROVIDER_PRESETS[i].models.length; j++) {
+        if (PROVIDER_PRESETS[i].models[j].id === model) {
+          return !PROVIDER_PRESETS[i].models[j].desc.startsWith('多模态');
+        }
+      }
+      return false; // 预设提供商 + 清单外手填 ID：能力未知，不拦截
+    }
+  }
+  return false; // 自定义配置：能力未知，不拦截
+}
 
 // ★ 0.189.1：AUDIO_MODEL_LIST（预置音频模型）已随云端 TTS 配置区移除
 
@@ -57,14 +146,17 @@ export struct GlobalSettingsDialog {
   //   currentTab 索引保持 0=API 配置 / 1=AI 偏好 / 3=云同步 不重排（避免误伤云同步分支）
   @Local currentTab: number = 0;
 
-  // Tab1 编辑副本（点保存才写入持久化；与原 SettingsPage 一致）
-  @Local editKey: string = '';
-  @Local editEndpoint: string = '';
-  @Local editModel: string = '';
-  @Local selectedModelIndex: number = 0;   // 下拉选中索引
-  @Local isDropdownOpen: boolean = false;   // 下拉面板展开状态
-  // ★ 0.189.1：音频编辑副本（editAudioModel/editAudioEndpoint/editAudioKey/isAudioDropdownOpen）
-  //   已随云端 TTS 配置区移除
+  // Tab1 编辑副本（点保存才写入持久化）★ 0.190.0：提供商化重构
+  @Local editProvider: string = 'volcano';     // huawei / volcano / deepseek / custom
+  @Local curPresetIdx: number = 1;             // ★ 0.190.1：当前预设下标（0=华为/1=火山/2=DeepSeek；custom 时保持旧值不渲染）——@Builder 按值传参不刷新（真机实测：切换提供商后模型清单/获取Key链接仍是旧提供商），改由状态驱动
+  @Local selectedModelIndex: number = 0;        // 预设模型下拉选中索引（=models.length 表示「自定义…」）
+  @Local isModelDropdownOpen: boolean = false;  // 模型下拉面板展开状态
+  @Local editCustomModel: string = '';          // 「自定义…」模型 ID / 自定义配置的模型 ID
+  @Local editKey: string = '';                  // API Key
+  @Local editEndpoint: string = '';             // 自定义配置的模型 URL（预设端点内置不可编辑）
+  // ★ 0.190.0：会话级按提供商缓存 Key/URL——切换提供商不丢已输入内容（仅「保存」才落盘）
+  providerKeyCache: Map<string, string> = new Map();
+  providerEndpointCache: Map<string, string> = new Map();
 
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
@@ -75,10 +167,52 @@ export struct GlobalSettingsDialog {
   // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
   aboutToAppear() {
-    // 初始化 Tab1 编辑副本
+    // ★ 0.190.0：Tab1 提供商化初始化——回显持久化配置
     this.editKey = this.apiConfig.apiKey;
-    this.editEndpoint = this.apiConfig.endpoint;
-    this.editModel = this.apiConfig.model;
+    this.editProvider = this.apiConfig.provider;
+    // provider 合法性兜底（防异常值；不合法按端点重新推断）
+    let providerValid = this.editProvider === PROVIDER_CUSTOM;
+    for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+      if (PROVIDER_PRESETS[i].id === this.editProvider) {
+        providerValid = true;
+        break;
+      }
+    }
+    if (!providerValid) {
+      this.editProvider = inferProviderFromEndpoint(this.apiConfig.endpoint);
+    }
+    // 按提供商回显模型/端点
+    let presetIdx = -1;
+    for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+      if (PROVIDER_PRESETS[i].id === this.editProvider) {
+        presetIdx = i;
+        break;
+      }
+    }
+    // ★ 0.190.1：旧版模型 ID 先映射到新清单（260910 预览版→260731 正式版）
+    const persistedModel = mapLegacyModel(this.apiConfig.model);
+    if (presetIdx >= 0) {
+      this.curPresetIdx = presetIdx;
+      this.editEndpoint = PROVIDER_PRESETS[presetIdx].endpoint;
+      let found = false;
+      for (let i = 0; i < PROVIDER_PRESETS[presetIdx].models.length; i++) {
+        if (PROVIDER_PRESETS[presetIdx].models[i].id === persistedModel) {
+          this.selectedModelIndex = i;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        // 持久化模型不在预置清单（如旧版手填模型）→ 落在「自定义…」选项回显
+        this.selectedModelIndex = PROVIDER_PRESETS[presetIdx].models.length;
+        this.editCustomModel = this.apiConfig.model;
+      }
+    } else {
+      // 自定义配置：端点/模型全手填回显
+      this.editEndpoint = this.apiConfig.endpoint;
+      this.editCustomModel = this.apiConfig.model;
+      this.selectedModelIndex = 0;
+    }
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourage = this.aiPreference.encourageEnabled;
@@ -86,31 +220,16 @@ export struct GlobalSettingsDialog {
     isCloudSyncGranted().then((granted: boolean) => {
       this.syncGranted = granted;
     });
-
-    // ★ 0.189.1：0.139 音频旧值迁移逻辑（audioModel/audioEndpoint/audioVoice）已随云端 TTS 移除
-
-    // 回显已保存的模型；找不到则默认第 0 项（Doubao-Seed-2.1-lite）
-    let found = false;
-    for (let i = 0; i < MODEL_LIST.length; i++) {
-      if (MODEL_LIST[i].id === this.editModel) {
-        this.selectedModelIndex = i;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      this.selectedModelIndex = 0;
-      this.editModel = MODEL_LIST[0].id;
-    }
   }
 
-  // ★ 0.135/0.150/0.151：是否有未保存的修改（✕ 关闭拦截判断；★ 0.189.1：音频三项随云端 TTS 移除）
+  // ★ 0.135/0.150/0.151：是否有未保存的修改（✕ 关闭拦截判断；★ 0.190.0：提供商化四项对比）
   hasUnsavedChanges(): boolean {
-    return this.editKey.trim() !== this.apiConfig.apiKey ||
-      this.editEndpoint.trim() !== this.apiConfig.endpoint ||
-      this.editModel.trim() !== this.apiConfig.model ||
+    return this.editProvider !== this.apiConfig.provider ||
+      this.editKey.trim() !== this.apiConfig.apiKey ||
+      this.currentModelValue() !== this.apiConfig.model ||
+      this.currentEndpointValue() !== this.apiConfig.endpoint ||
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
-      this.editEncourage !== this.aiPreference.encourageEnabled;   // ★ 0.150：鼓励开关（★ 0.167.8：画布模式判断随 Tab 删除）
+      this.editEncourage !== this.aiPreference.encourageEnabled;   // ★ 0.150：鼓励开关
   }
 
   // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
@@ -143,15 +262,14 @@ export struct GlobalSettingsDialog {
 
   // ★ 0.150：保存——两 Tab 全部修改一次写入持久化 + toast 提示，不关弹窗（用户自己 ✕）
   saveAll(): void {
-    // Tab1：API 配置写入持久化
+    // ★ 0.190.0：Tab1 提供商化写入（预设端点强制回内置值，防旧数据残留）
+    this.apiConfig.provider = this.editProvider;
     this.apiConfig.apiKey = this.editKey.trim();
-    this.apiConfig.endpoint = this.editEndpoint.trim();
-    this.apiConfig.model = this.editModel.trim();
-    // ★ 0.189.1：音频三项（audioModel/audioEndpoint/audioKey）写入已随云端 TTS 移除
+    this.apiConfig.model = this.currentModelValue();
+    this.apiConfig.endpoint = this.currentEndpointValue();
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageEnabled = this.editEncourage;
-    // ★ 0.167.8：画布模式切换逻辑删除——模式切换已由画布页顶部分段控件即时承担（用户拍板）
     this.showToastSafe('已保存');
   }
 
@@ -164,60 +282,188 @@ export struct GlobalSettingsDialog {
     }
   }
 
-  // ★ 0.150：Tab1 内容——API 配置表单（原 SettingsPage L135-356 整体搬入，保存按钮除外）
+  // ★ 0.190.0：当前提供商在 PROVIDER_PRESETS 中的下标（-1 = 自定义配置）
+  presetIndex(): number {
+    for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+      if (PROVIDER_PRESETS[i].id === this.editProvider) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // ★ 0.190.0：当前表单的模型 ID（保存/未保存对比共用；预设=下拉选中或「自定义」手填，自定义配置=手填）
+  currentModelValue(): string {
+    const idx = this.presetIndex();
+    if (idx < 0) {
+      return this.editCustomModel.trim();
+    }
+    const models = PROVIDER_PRESETS[idx].models;
+    if (this.selectedModelIndex < models.length) {
+      return models[this.selectedModelIndex].id;
+    }
+    return this.editCustomModel.trim();
+  }
+
+  // ★ 0.190.0：当前表单的端点（预设=内置端点；自定义配置=手填 URL）
+  currentEndpointValue(): string {
+    const idx = this.presetIndex();
+    if (idx < 0) {
+      return this.editEndpoint.trim();
+    }
+    return PROVIDER_PRESETS[idx].endpoint;
+  }
+
+  // ★ 0.190.0：切换提供商——会话级缓存当前 Key/URL（切换不丢输入，仅「保存」才落盘）
+  onProviderTap(target: string): void {
+    if (target === this.editProvider) {
+      return;
+    }
+    this.providerKeyCache.set(this.editProvider, this.editKey);
+    if (this.presetIndex() < 0) {
+      this.providerEndpointCache.set(this.editProvider, this.editEndpoint);
+    }
+    this.editProvider = target;
+    this.isModelDropdownOpen = false;
+    this.editKey = this.providerKeyCache.get(target) ?? '';
+    let targetIdx = -1;
+    for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+      if (PROVIDER_PRESETS[i].id === target) {
+        targetIdx = i;
+        break;
+      }
+    }
+    if (targetIdx >= 0) {
+      this.curPresetIdx = targetIdx; // ★ 0.190.1：状态驱动表单刷新（@Builder 按值传参不刷新 bug 根治）
+      this.selectedModelIndex = 0;
+      this.editCustomModel = '';
+      this.editEndpoint = PROVIDER_PRESETS[targetIdx].endpoint;
+    } else {
+      this.editEndpoint = this.providerEndpointCache.get(target) ?? '';
+    }
+  }
+
+  // ★ 0.190.0：跳浏览器打开「获取 API Key」官网（openLink API12+；失败 toast 不崩溃）
+  openApiKeyUrl(url: string): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (context === undefined || context === null) {
+      this.showToastSafe('打开链接失败');
+      return;
+    }
+    try {
+      context.openLink(url).catch(() => {
+        this.showToastSafe('打开链接失败，请检查网络');
+      });
+    } catch (_e) {
+      this.showToastSafe('打开链接失败');
+    }
+  }
+
+  // ★ 0.190.0：Tab1 内容——模型提供商（2×2 卡片）+ 预设/自定义表单
   @Builder
   apiTabContent() {
     Column() {
-      // API Key 输入
+      // 模型提供商（2×2 卡片，选中=主紫底）
       Column() {
-        Text('API Key')
+        Text('模型提供商')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
-        TextInput({ text: $$this.editKey, placeholder: '填入火山方舟 API Key' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+        Row({ space: 8 }) {
+          this.providerCard(0)
+          this.providerCard(1)
+        }
+        .width('100%')
+        Row({ space: 8 }) {
+          this.providerCard(2)
+          this.providerCardCustom()
+        }
+        .width('100%')
+        .margin({ top: 8 })
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 16 })
 
-      // Endpoint 输入
-      Column() {
-        Text('Endpoint')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-        TextInput({ text: $$this.editEndpoint, placeholder: 'API 地址' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+      // 表单：预设提供商（下标>=0）/ 自定义配置
+      if (this.presetIndex() >= 0) {
+        this.presetFormContent() // ★ 0.190.1：无参化——内部读 curPresetIdx 状态驱动刷新（按值传参不刷新 bug 根治）
+      } else {
+        this.customFormContent()
       }
-      .width('100%')
-      .margin({ bottom: 16 })
+    }
+    .width('100%')
+  }
 
-      // Model 下拉选择
+  // ★ 0.190.0：提供商卡片（预设，index 对应 PROVIDER_PRESETS）
+  @Builder
+  providerCard(index: number) {
+    Column() {
+      Text(PROVIDER_PRESETS[index].name)
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(TEXT_PRIMARY)
+      Text(PROVIDER_PRESETS[index].desc)
+        .fontSize(11)
+        .fontColor(this.editProvider === PROVIDER_PRESETS[index].id ? 'rgba(255,255,255,0.8)' : TEXT_TERTIARY)
+        .margin({ top: 2 })
+    }
+    .layoutWeight(1)
+    .height(56)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(this.editProvider === PROVIDER_PRESETS[index].id ? BRAND_PRIMARY : SURFACE_SOFT)
+    .onClick(() => {
+      this.onProviderTap(PROVIDER_PRESETS[index].id);
+    })
+  }
+
+  // ★ 0.190.0：提供商卡片（自定义配置）
+  @Builder
+  providerCardCustom() {
+    Column() {
+      Text('自定义配置')
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(TEXT_PRIMARY)
+      Text('任意 OpenAI 兼容接口')
+        .fontSize(11)
+        .fontColor(this.editProvider === PROVIDER_CUSTOM ? 'rgba(255,255,255,0.8)' : TEXT_TERTIARY)
+        .margin({ top: 2 })
+    }
+    .layoutWeight(1)
+    .height(56)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(this.editProvider === PROVIDER_CUSTOM ? BRAND_PRIMARY : SURFACE_SOFT)
+    .onClick(() => {
+      this.onProviderTap(PROVIDER_CUSTOM);
+    })
+  }
+
+  // ★ 0.190.0/0.190.1：预设提供商表单——模型下拉（预置+「自定义…」）+ API Key（含各自官网获取链接）
+  //   ★ 0.190.1：无参化——@Builder 按值传参在预设间切换时不刷新（真机实测模型清单/获取Key链接
+  //   显示旧提供商），改读 @Local curPresetIdx 状态驱动；「接口地址已内置」小字删除（用户指示：
+  //   选了预设端点就默认了，不需要提示）；模型小字只标多模态/纯文本，价格不标（用户指示）
+  @Builder
+  presetFormContent() {
+    Column() {
+      // 模型名称下拉
       Column() {
-        Text('Model')
+        Text('模型名称')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
 
-        // 下拉触发器：显示当前选中模型名称 + 箭头
+        // 下拉触发器：当前选中模型名称 + 箭头
         Row() {
-          Text(MODEL_LIST[this.selectedModelIndex].name)
+          Text(this.selectedModelIndex < PROVIDER_PRESETS[this.curPresetIdx].models.length
+            ? PROVIDER_PRESETS[this.curPresetIdx].models[this.selectedModelIndex].name
+            : '自定义…')
             .fontSize(14)
             .fontColor(TEXT_PRIMARY)
             .layoutWeight(1)
-          Text(this.isDropdownOpen ? '▲' : '▼')
+          Text(this.isModelDropdownOpen ? '▲' : '▼')
             .fontSize(12)
             .fontColor(TEXT_TERTIARY)
         }
@@ -227,35 +473,49 @@ export struct GlobalSettingsDialog {
         .backgroundColor(SURFACE_SOFT)
         .padding({ left: 12, right: 12 })
         .onClick(() => {
-          this.isDropdownOpen = !this.isDropdownOpen;
+          this.isModelDropdownOpen = !this.isModelDropdownOpen;
         })
 
-        // 下拉面板：每个选项两行布局
-        if (this.isDropdownOpen) {
+        // 下拉面板：预置模型 + 末位「自定义…」
+        if (this.isModelDropdownOpen) {
           Column() {
-            ForEach(MODEL_LIST, (model: ModelOption, index: number) => {
+            ForEach(PROVIDER_PRESETS[this.curPresetIdx].models, (m: PresetModel, idx: number) => {
               Column() {
-                // 主文字：模型名称
-                Text(model.name)
+                Text(m.name)
                   .fontSize(14)
                   .fontColor(TEXT_PRIMARY)
-                // 小字：类型 + 价格
-                Text(`${model.type} · ${model.price}`)
+                Text(m.desc)
                   .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(m.desc.startsWith('多模态') ? BRAND_SECONDARY : TEXT_TERTIARY) // ★ 0.190.1：多模态高亮辅助紫（推荐语义）
                   .margin({ top: 2 })
               }
               .width('100%')
               .padding(12)
-              .backgroundColor(index === this.selectedModelIndex
-                ? (SURFACE_HOVER)
-                : (SURFACE_NODE))
+              .backgroundColor(idx === this.selectedModelIndex ? SURFACE_HOVER : SURFACE_NODE)
               .onClick(() => {
-                this.selectedModelIndex = index;
-                this.editModel = model.id;
-                this.isDropdownOpen = false;
+                this.selectedModelIndex = idx;
+                this.isModelDropdownOpen = false;
               })
-            }, (model: ModelOption) => model.id)
+            }, (m: PresetModel) => m.id)
+
+            // 「自定义…」选项（列表外模型手填 ID）
+            Column() {
+              Text('自定义…')
+                .fontSize(14)
+                .fontColor(TEXT_PRIMARY)
+              Text('填入列表外的模型 ID')
+                .fontSize(12)
+                .fontColor(TEXT_TERTIARY)
+                .margin({ top: 2 })
+            }
+            .width('100%')
+            .padding(12)
+            .backgroundColor(this.selectedModelIndex >= PROVIDER_PRESETS[this.curPresetIdx].models.length
+              ? SURFACE_HOVER : SURFACE_NODE)
+            .onClick(() => {
+              this.selectedModelIndex = PROVIDER_PRESETS[this.curPresetIdx].models.length;
+              this.isModelDropdownOpen = false;
+            })
           }
           .width('100%')
           .borderRadius(RADIUS_CONTROL)
@@ -264,23 +524,146 @@ export struct GlobalSettingsDialog {
           .margin({ top: 4 })
         }
 
-        // 提示：模型 ID 说明
-        // ★ 0.175.0：小字行间距规则（入 UI_GUIDELINES 四章，以云同步 Tab 为标准）——
-        //   连续多行提示小字 lineHeight 18，行隙节奏对齐云同步条目间距（margin 4）
-        Text('⚠️ 控制台展示名称≠API调用ID，预置模型示例：doubao-seed-2-1-lite-260915；数字之间是短横线`-`，禁止小数点，直接复制上表ID使用。')
+        // ★ 0.190.1：推荐多模态提示（用户指示：告知用户哪个能发图，推荐多模态）
+        Text('推荐使用多模态模型（可发送图片，AI 能识别图片内容）；列表外模型可选「自定义…」。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
       .width('100%')
-      .margin({ bottom: 24 })
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 16 })
 
-      // ★ 0.189.1：音频配置三区（音频 API Key / 音频模型 / 音频 Endpoint）已随云端 TTS
-      //   取消整体移除——发音/朗读走本地 CoreSpeechKit（免费离线），火山配置存档见
-      //   docs/0.165+/0.189.0 本地TTS免费离线.md §9
+      // 自定义模型 ID（选中「自定义…」时显示）
+      if (this.selectedModelIndex >= PROVIDER_PRESETS[this.curPresetIdx].models.length) {
+        Column() {
+          Text('模型 ID')
+            .fontSize(14)
+            .fontColor(TEXT_SECONDARY)
+            .margin({ bottom: 6 })
+          TextInput({ text: $$this.editCustomModel, placeholder: '填入模型 ID' })
+            .width('100%')
+            .height(48)
+            .fontSize(14)
+            .fontColor(TEXT_PRIMARY)
+            .placeholderColor(TEXT_TERTIARY)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_SOFT)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 16 })
+      }
+
+      // API Key + 「获取 API Key」跳**各自**官网链接（★ 0.190.1 bug 修复：此前因 @Builder
+      //   按值传参不刷新，切换提供商后链接仍是旧提供商的官网）
+      Column() {
+        Row() {
+          Text('API Key')
+            .fontSize(14)
+            .fontColor(TEXT_SECONDARY)
+          Blank()
+            .layoutWeight(1)
+          Text('获取 API Key ↗')
+            .fontSize(12)
+            .fontColor(BRAND_PRIMARY)
+            .onClick(() => {
+              this.openApiKeyUrl(PROVIDER_PRESETS[this.curPresetIdx].keyUrl);
+            })
+        }
+        .width('100%')
+        .margin({ bottom: 6 })
+
+        TextInput({ text: $$this.editKey, placeholder: PROVIDER_PRESETS[this.curPresetIdx].keyPlaceholder })
+          .width('100%')
+          .height(48)
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  // ★ 0.190.0：自定义配置表单——模型 URL（必填）+ 模型 ID + API Key
+  //   （上下文窗口 Tokens 按用户指示不要——那是开发代码用配置；温度等参数走 AI 偏好/默认值）
+  @Builder
+  customFormContent() {
+    Column() {
+      // 模型 URL（自定义服务必须提供，否则无法调用）
+      Column() {
+        Text('模型 URL')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        TextInput({ text: $$this.editEndpoint, placeholder: 'https://api.example.com/v1/chat/completions' })
+          .width('100%')
+          .height(48)
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+        Text('须为 OpenAI 兼容的 chat/completions 完整地址。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 16 })
+
+      // 模型 ID
+      Column() {
+        Text('模型 ID')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        TextInput({ text: $$this.editCustomModel, placeholder: '如 qwen-max / gpt-4o' })
+          .width('100%')
+          .height(48)
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 16 })
+
+      // API Key（部分本地/免费网关无需 Key，可留空）
+      Column() {
+        Text('API Key')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        TextInput({ text: $$this.editKey, placeholder: '填入该服务的 API Key' })
+          .width('100%')
+          .height(48)
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+        Text('部分本地/免费网关无需 Key，可留空。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
   // ★ 0.150：Tab2 内容——AI 对话偏好表单（自定义称呼 + 自动鼓励开关）

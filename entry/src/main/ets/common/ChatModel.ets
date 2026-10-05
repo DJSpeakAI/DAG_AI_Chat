@@ -197,7 +197,8 @@ export class ApiConfig {
   // 用户在设置页自定义过的 Key（持久化非空）优先，不被内置值覆盖。
   @Trace apiKey: string = '';
   @Trace endpoint: string = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
-  @Trace model: string = 'deepseek-v4-1-flash-260910'; // ★ 本轮：与 SettingsPage 预置列表第 0 项一致（DeepSeek-V4.1-Flash）
+  @Trace model: string = 'deepseek-v4-flash-ga-260731'; // ★ 0.190.1：默认模型换 V4-Flash 正式版（用户指定；旧 260910 预览版已被替代，设置页回显时 mapLegacyModel 自动映射）
+  @Trace provider: string = 'volcano'; // ★ 0.190.0：模型提供商（huawei/volcano/deepseek/custom；预设端点+模型清单见 GlobalSettingsDialog PROVIDER_PRESETS，ApiClient 不感知——端点/模型/Key 全走本类字段）
   @Trace audioModel: string = 'seed-tts-2.0'; // ★ 0.139：音频模型资源 ID（语音合成-2.0，openspeech HTTP 单向流端点，官方文档实证）
   @Trace audioVoice: string = 'zh_female_vv_uranus_bigtts'; // ★ 0.139：TTS 音色 ID（2.0 格式；2.0 模型只能用 2.0 音色，设置页不显示音色框）
   @Trace audioEndpoint: string = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'; // ★ 0.139：TTS 端点（openspeech HTTP 单向流，与 LLM endpoint 相互独立）
@@ -206,18 +207,36 @@ export class ApiConfig {
   @Trace audioKey: string = '';
 }
 
+// ★ 0.190.0：由端点推断提供商（v2→v3 迁移用——存量用户只可能是火山默认端点或自定义端点；
+// 华为 MaaS / DeepSeek 为 0.190.0 新增预设，旧数据不会是这两家）
+export function inferProviderFromEndpoint(endpoint: string): string {
+  if (endpoint.includes('volces.com')) {
+    return 'volcano';
+  }
+  if (endpoint.includes('modelarts-maas.com')) {
+    return 'huawei';
+  }
+  if (endpoint.includes('api.deepseek.com')) {
+    return 'deepseek';
+  }
+  return 'custom';
+}
+
 // ★ 0.143：连接 API 配置持久化实例——key 从 'api-config' 换为 'api-config-v2'
 // 根因：PersistenceV2 磁盘旧快照（0.140 之前创建）没有 audioKey 字段，新增属性写不进旧快照、
 // 重启即丢（用户实测：对话 Key 能存、音频 Key 不能存——差异即根因实锤）。换 key 强制重建全量
 // 快照（新快照出生即含全部字段），audioKey 从此与 apiKey 同等持久化。工厂函数内读旧 key 数据
 // 迁移历史配置（对话 Key/端点/模型等），用户无需重填；audioKey 旧快照从未存成功，需重填一次。
+// ★ 0.190.0：key 再从 'api-config-v2' 换为 'api-config-v3'——同理（新增 provider 字段写不进
+// v2 旧快照）；v2 数据全量迁移（含休眠音频字段），provider 由端点推断（inferProviderFromEndpoint）。
 export function connectApiConfig(): ApiConfig {
-  return PersistenceV2.connect(ApiConfig, 'api-config-v2', () => {
-    const old = PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig()) as ApiConfig;
+  return PersistenceV2.connect(ApiConfig, 'api-config-v3', () => {
+    const old = PersistenceV2.connect(ApiConfig, 'api-config-v2', () => new ApiConfig()) as ApiConfig;
     const fresh = new ApiConfig();
     fresh.apiKey = old.apiKey;
     fresh.endpoint = old.endpoint;
     fresh.model = old.model;
+    fresh.provider = inferProviderFromEndpoint(old.endpoint);
     fresh.audioModel = old.audioModel;
     fresh.audioVoice = old.audioVoice;
     fresh.audioEndpoint = old.audioEndpoint;
