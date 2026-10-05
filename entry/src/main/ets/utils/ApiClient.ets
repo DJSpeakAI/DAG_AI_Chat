@@ -251,6 +251,54 @@ function extractStreamError(raw: string): string {
   return '';
 }
 
+// ============================================================
+// ★ 0.190.6：错误场景分类（用户批准方案）——原始英文错误 → 中文场景说明 + 建议操作
+// + 保留原始错误（用户反馈时可截图快速定位）；兜底场景引导去 ⚙ 设置 → 关于与反馈
+// 0.190.2 的图片关键词检测已合并进本函数（单一真相源）
+// ============================================================
+export function classifyStreamError(raw: string): string {
+  const lower = raw.toLowerCase();
+  // 图片不支持（原 0.190.2 逻辑合并）
+  if (lower.includes('image') || lower.includes('vision') || raw.includes('图片') || raw.includes('多模态')) {
+    return `当前模型可能不支持图片\n💡 建议在 ⚙ 设置中切换标注「多模态（可发图）」的模型\n\n原始错误：${raw}`;
+  }
+  // 超时（0.190.4 后长回复/思考模型生成久属正常，300s 上限才触发）
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return `请求超时——AI 生成时间过长或网络不稳定\n💡 可点击 🔄 重试；长回复/深度思考模型生成较久属正常\n\n原始错误：${raw}`;
+  }
+  // 网络断开
+  if (lower.includes('connection') || lower.includes('network') || lower.includes('getaddrinfo') ||
+    lower.includes('enotfound') || lower.includes('econnrefused') || lower.includes('unreachable')) {
+    return `网络连接失败——设备似乎未联网\n💡 请检查 Wi-Fi/移动网络后重试\n\n原始错误：${raw}`;
+  }
+  // 鉴权失败
+  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key') ||
+    lower.includes('authentication') || lower.includes('api key')) {
+    return `API Key 无效或已过期\n💡 请到 ⚙ 设置检查 API Key（可点「获取 API Key」去官网重新获取）\n\n原始错误：${raw}`;
+  }
+  // 欠费/余额不足
+  if (lower.includes('402') || lower.includes('balance') || lower.includes('arrears') ||
+    lower.includes('overdue') || raw.includes('欠费') || raw.includes('余额')) {
+    return `账户余额不足或已欠费\n💡 请到对应 AI 平台官网充值后重试\n\n原始错误：${raw}`;
+  }
+  // 限流
+  if (lower.includes('429') || lower.includes('rate limit') || raw.includes('限流') || raw.includes('频繁')) {
+    return `请求过于频繁被限流\n💡 请稍等片刻再重试\n\n原始错误：${raw}`;
+  }
+  // 模型不存在/下线
+  if (lower.includes('404') || lower.includes('not found') || lower.includes('not exist') ||
+    lower.includes('model_not_exist') || lower.includes('does not exist')) {
+    return `模型 ID 不存在或已下线\n💡 请到 ⚙ 设置更换模型\n\n原始错误：${raw}`;
+  }
+  // 服务器错误
+  if (lower.includes('500') || lower.includes('502') || lower.includes('503') || lower.includes('504') ||
+    lower.includes('internal') || lower.includes('server error')) {
+    return `AI 服务端暂时不可用\n💡 请稍后重试；持续出现可到 ⚙ 设置更换提供商\n\n原始错误：${raw}`;
+  }
+  // 兜底：未知错误 + 反馈引导（用户要求：兜底场景引导去设置页联系我们）
+  return `请求出错（未知原因）\n💡 可重试；如持续出现，请到 ⚙ 设置 → 关于与反馈 联系我们（附上下方原始错误截图）\n\n原始错误：${raw}`;
+}
+
 // ========== 流式聊天主函数 ==========
 // 发起火山引擎 SSE 流式请求
 // onChunk: 每收到一段文本回调（实时追加到 AI 消息 content）
@@ -384,22 +432,32 @@ export function streamChat(
   };
 
   // 发起流式请求
-  httpRequest.requestInStream(config.endpoint, {
-    method: http.RequestMethod.POST,
-    header: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`
-    },
-    extraData: JSON.stringify(body),
-    connectTimeout: 30000,
-    readTimeout: 60000,
-  }).catch((err: Error) => {
-    if (cancelled) {
-      return;
+  // ★ 0.190.4：try-catch 兜底——requestInStream 同步异常（如底层会话异常态）此前直接抛出，
+  //   调用方 sendMessage 的 isLoading 卡 true → 后续所有发送被 guard 挡死（真机实测
+  //   「出错后发送不出去」）；此处统一捕获走 onError，调用方状态机正常恢复
+  try {
+    httpRequest.requestInStream(config.endpoint, {
+      method: http.RequestMethod.POST,
+      header: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      extraData: JSON.stringify(body),
+      connectTimeout: 30000,
+      readTimeout: 300000, // ★ 0.190.4：60s→300s——GLM-5.3-Flash 等深度思考不可关闭模型（华为MaaS文档：glm-5.3「深度思考（不可关闭）」）+长回复生成总时长轻松超60s，真机实测长回复模式 Operation timeout；DeepSeek 思考可开关生成快不触发。流式期间数据持续到达，300s 上限只拦真死连接
+    }).catch((err: Error) => {
+      if (cancelled) {
+        return;
+      }
+      onError(err.message);
+      cleanupRequest(httpRequest);
+    });
+  } catch (e) {
+    if (!cancelled) {
+      onError(e instanceof Error ? e.message : '请求发起失败');
     }
-    onError(err.message);
     cleanupRequest(httpRequest);
-  });
+  }
 
   // 返回控制器，支持手动 cancel
   const controller: StreamController = {

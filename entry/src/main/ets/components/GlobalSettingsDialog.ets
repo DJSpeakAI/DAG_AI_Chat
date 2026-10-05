@@ -25,6 +25,8 @@
 // ============================================================
 
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
+import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
+import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）
 import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
@@ -103,6 +105,12 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
 ];
 
 const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼容服务）
+
+// ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
+// versionCode 三处同步（改版本时同步更新此处）
+const APP_VERSION: string = 'v0.190.7';
+// ★ 0.190.6：反馈邮箱（用户提供）
+const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
 // ★ 0.190.1：旧版模型 ID → 新清单映射（火山 260910 预览版已被 260731 正式版替代，
 // 用户明确「改成我用那个 Flash 正式版」——回显时自动落新模型，保存即生效）
@@ -694,19 +702,15 @@ export struct GlobalSettingsDialog {
       .margin({ bottom: 24 })
 
       // 自动鼓励开关
+      // ★ 0.190.5：删「回复开头附 1~2 句学习鼓励」描述小字（下方 💡 解释已含此信息，用户指示）；
+      //   排版对齐「自定义称呼」区节奏——label 行（14/TEXT_SECONDARY）+ 下方提示小字
       Column() {
         Row() {
-          Column() {
-            Text('自动鼓励')
-              .fontSize(14)
-              .fontColor(TEXT_PRIMARY)
-            Text('回复开头附 1~2 句学习鼓励')
-              .fontSize(11)
-              .fontColor(TEXT_TERTIARY)
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
+          Text('自动鼓励')
+            .fontSize(14)
+            .fontColor(TEXT_SECONDARY)
+          Blank()
+            .layoutWeight(1)
 
           // Toggle 用 onChange 回调写 @Local（isOn 仅初始值参数；不用 $$ 双向绑定，回调模式最稳）
           Toggle({ type: ToggleType.Switch, isOn: this.editEncourage })
@@ -724,6 +728,7 @@ export struct GlobalSettingsDialog {
           .margin({ top: 4 })
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 24 })
     }
     .width('100%')
@@ -818,6 +823,154 @@ export struct GlobalSettingsDialog {
     .width('100%')
   }
 
+  // ★ 0.190.6：复制反馈邮箱到剪贴板
+  copyFeedbackEmail(): void {
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, FEEDBACK_EMAIL);
+      pasteboard.getSystemPasteboard().setData(data).catch(() => {});
+      this.showToastSafe('邮箱已复制');
+    } catch (_e) {
+      this.showToastSafe('复制失败，请手动记录邮箱');
+    }
+  }
+
+  // ★ 0.190.6：写反馈邮件——mailto 跳系统邮件应用，主题+设备信息（型号/系统/版本）自动预填，
+  //   用户只需补问题描述与截图（应用内无法直接带附件发邮件，截图在邮件应用里添加）；
+  //   无邮件应用时降级：复制邮箱 + toast 提示手动发送
+  openFeedbackMail(): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (context === undefined || context === null) {
+      this.copyFeedbackEmail();
+      return;
+    }
+    const subject = encodeURIComponent(`DAGAI 反馈（${APP_VERSION}）`);
+    const body = encodeURIComponent(
+      `问题描述：\n\n\n—— 以下信息自动附加 ——\n应用版本：${APP_VERSION}\n设备型号：${deviceInfo.productModel}\n系统：${deviceInfo.osFullName}（API ${deviceInfo.sdkApiVersion}）\n（建议附上问题截图）`);
+    const url = `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`;
+    try {
+      context.openLink(url).catch(() => {
+        this.copyFeedbackEmail();
+        this.showToastSafe('未找到邮件应用，邮箱已复制请手动发送');
+      });
+    } catch (_e) {
+      this.copyFeedbackEmail();
+      this.showToastSafe('未找到邮件应用，邮箱已复制请手动发送');
+    }
+  }
+
+  // ★ 0.190.6：隐私政策（app 内置文本展示；上架时按华为官方要求接入 AGC 标准化隐私声明
+  //   托管服务——系统自动弹隐私弹窗，应用内入口改调 privacyManager.getAppPrivacyMgmtInfo
+  //   查询托管链接，保持与弹窗一致）
+  showPrivacyPolicy(): void {
+    this.getUIContext().showAlertDialog({
+      title: '隐私政策',
+      message: 'DAGAI 尊重并保护你的隐私：\n\n1. 不收集：本应用不收集、不上传任何个人信息。\n\n2. 本地存储：对话、单词库、知识库及 AI 配置（含 API Key）全部存储在设备本地，卸载即清除。\n\n3. AI 服务：对话内容仅在你主动发送时，按你配置的 AI 服务商（火山方舟 / 华为云 MaaS / DeepSeek / 自定义）接口直接传输，用于生成回复，本应用不经手留存。\n\n4. 云同步：如你开启云同步，数据经华为云空间加密，仅在你登录的华为账号设备间同步。\n\n5. 权限：仅在你主动选择图片时访问相册，无其他敏感权限。\n\n6. 联系我们：' + FEEDBACK_EMAIL,
+      confirm: { // ★ AlertDialogParamWithConfirm 单按钮属性名是 confirm（非 confirmButton）
+        value: '我知道了',
+        action: () => {}
+      }
+    });
+  }
+
+  // ★ 0.190.6：Tab5 关于——版本号 + 反馈与联系（邮箱复制 / mailto 预填设备信息）+ 隐私政策入口
+  @Builder
+  aboutTabContent() {
+    Column() {
+      // 版本
+      Column() {
+        Text('版本')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        Text(APP_VERSION)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(TEXT_PRIMARY)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 16 })
+
+      // 反馈与联系
+      Column() {
+        Text('反馈与联系')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+
+        // 邮箱行（点击复制）
+        Row() {
+          Text(FEEDBACK_EMAIL)
+            .fontSize(14)
+            .fontColor(BRAND_PRIMARY)
+            .layoutWeight(1)
+          Text('复制')
+            .fontSize(12)
+            .fontColor(TEXT_SECONDARY)
+        }
+        .width('100%')
+        .height(48)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.copyFeedbackEmail();
+        })
+
+        // 写反馈邮件（mailto 预填设备信息）
+        Button('✉ 写反馈邮件')
+          .width('100%')
+          .height(48)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(TEXT_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .margin({ top: 8 })
+          .onClick(() => {
+            this.openFeedbackMail();
+          })
+
+        Text('💡 建议附上问题描述与截图，便于快速定位；设备型号、系统版本、应用版本已自动填入邮件。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 16 })
+
+      // 隐私政策
+      Column() {
+        Text('隐私政策')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        Button('查看隐私政策')
+          .width('100%')
+          .height(48)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(SURFACE_SOFT)
+          .fontColor(TEXT_SECONDARY)
+          .borderRadius(RADIUS_CONTROL)
+          .onClick(() => {
+            this.showPrivacyPolicy();
+          })
+        Text('💡 本应用不收集任何个人信息，数据全部存储在设备本地。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+  }
+
   build() {
     Stack() {
       // 遮罩：点击不关闭（0.148 教训——弹窗内输入中误触遮罩会丢输入，故不加 onClick）
@@ -883,6 +1036,17 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 3;
             })
+          Text('关于') // ★ 0.190.6：Tab5 关于（版本号+反馈与联系+隐私政策）
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 4 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 4 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 4 ? BRAND_PRIMARY : Color.Transparent)
+            .margin({ left: 4 })
+            .onClick(() => {
+              this.currentTab = 4;
+            })
         }
         .width('100%')
         .padding(3)
@@ -896,6 +1060,8 @@ export struct GlobalSettingsDialog {
             this.apiTabContent()
           } else if (this.currentTab === 1) {
             this.prefTabContent()
+          } else if (this.currentTab === 4) {
+            this.aboutTabContent() // ★ 0.190.6：Tab5 关于
           } else {
             this.cloudTabContent() // ★ 0.165.2：Tab4 云同步（★ 0.167.8：画布分支随 Tab 删除）
           }
@@ -909,7 +1075,8 @@ export struct GlobalSettingsDialog {
         // 底部按钮行（固定底部；保存不关弹窗）
         // ★ 0.175.0：①保存右侧加「返回」按钮（次级样式，走 requestClose——有未保存修改时二次确认）
         //   ②云同步 Tab 无保存概念，补全宽「返回」——三 Tab 底部不空、统一协调
-        if (this.currentTab !== 3) {
+        // ★ 0.190.6：关于 Tab（4）同云同步——无保存概念，全宽返回
+        if (this.currentTab !== 3 && this.currentTab !== 4) {
           Row() {
             Button('保存')
               .layoutWeight(1)

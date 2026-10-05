@@ -32,7 +32,7 @@ import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistD
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
-import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）
+import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
@@ -92,6 +92,50 @@ class KnowledgeReviewCacheEntry {
 // 注意：PLACEHOLDER_LOADING 字面值与历史持久化数据一致，不可改动（旧数据的过滤判断依赖它）
 const PLACEHOLDER_LOADING = 'AI正在回复中，请稍候...';
 const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
+
+// ============================================================
+// ★ 0.190.5：三点跳动等待动画（用户选定方案：非静态等待，三点滚动表示正在等 AI 回复）
+// ============================================================
+// 0.160.2 秒表（⏱ 读秒）失败教训=页级定时器难清理；本组件**自管定时器**——
+// aboutToAppear 启动 / aboutToDisappear 必然清理（组件随占位气泡卸载），零泄漏。
+// phase 0→1→2 循环点亮三个点，属性动画 300ms 平滑过渡大小与颜色。
+@ComponentV2
+struct WaitingDots {
+  @Local phase: number = 0;
+  private timerId: number = -1;
+
+  aboutToAppear(): void {
+    this.timerId = setInterval(() => {
+      this.phase = (this.phase + 1) % 3;
+    }, 400);
+  }
+
+  aboutToDisappear(): void {
+    if (this.timerId >= 0) {
+      clearInterval(this.timerId);
+      this.timerId = -1;
+    }
+  }
+
+  build() {
+    Row({ space: 4 }) {
+      Text('●')
+        .fontSize(this.phase === 0 ? 10 : 6)
+        .fontColor(this.phase === 0 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .animation({ duration: 300, curve: Curve.EaseInOut })
+      Text('●')
+        .fontSize(this.phase === 1 ? 10 : 6)
+        .fontColor(this.phase === 1 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .animation({ duration: 300, curve: Curve.EaseInOut })
+      Text('●')
+        .fontSize(this.phase === 2 ? 10 : 6)
+        .fontColor(this.phase === 2 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .animation({ duration: 300, curve: Curve.EaseInOut })
+    }
+    .height(14)
+    .alignItems(VerticalAlign.Center)
+  }
+}
 
 // ★ 0.133：播客模式系统 prompt（发送时临时追加到消息末尾，不持久化、不进入后续上下文）
 const PODCAST_PROMPT = '你的回答会用于语音朗读，请输出自然流畅的中文口语段落。禁止输出代码块、表格、列表、markdown 标记、特殊符号。只用连续自然的文字，适合耳朵收听。';
@@ -725,6 +769,39 @@ export struct ChatPage {
     return result;
   }
 
+  // ★ 0.190.5：等待态视图——三点动画 + 当前回复模式提示（长模式加「请耐心等待」；
+  //   用户要求：等待中必须告知用户当前用的短/中/长模式，长模式特别提示耐心等待）
+  @Builder
+  waitingView(content: string) {
+    Column() {
+      Row() {
+        WaitingDots()
+        Text(content === PLACEHOLDER_THINKING ? 'AI 正在深度思考' : 'AI 正在回复')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ left: 8 })
+        // ★ 0.190.7：仅短/长模式显示模式小字（特殊模式才需提示；中回复=默认模式不啰嗦，用户指示）
+        if (this.replyLengthMode === 'short' || this.replyLengthMode === 'long') {
+          Text(`· ${this.replyLengthMode === 'short' ? '短' : '长'}回复模式`)
+            .fontSize(12)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ left: 4 })
+        }
+      }
+      .width('100%')
+
+      if (this.replyLengthMode === 'long') {
+        Text('长回复生成时间较久，请耐心等待…')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
   // ★ 0.190.2：纯文本模型发图确认弹窗（Promise 包装 AlertDialog，await 取用户选择）
   confirmSendImageToTextModel(): Promise<boolean> {
     return new Promise<boolean>((resolve: (value: boolean) => void) => {
@@ -748,6 +825,12 @@ export struct ChatPage {
   }
 
   async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
+    // ★ 0.190.4：卡死自愈（须在 guard 前）——isLoading=true 但 streamController=null 是异常态
+    //   （正常流两者同步设置/清除；真机实测超时出错后偶发卡此态，guard 挡死后续所有发送
+    //   「发送不出去」），检测到即强制恢复放行，用户永远不会再被卡死
+    if (this.isLoading && this.streamController === null) {
+      this.isLoading = false;
+    }
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
@@ -826,12 +909,9 @@ export struct ChatPage {
         // onError：解锁 + 日志 + 错误气泡
         this.isLoading = false;
         this.streamController = null;
-        aiMsg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
-        // ★ 0.190.2：错误含图片关键词 → 附加多模态建议（自定义模型能力未知，对方报错才知道）
-        if (errMsg.toLowerCase().includes('image') || errMsg.toLowerCase().includes('vision') ||
-          errMsg.includes('图片') || errMsg.includes('多模态')) {
-          aiMsg.content += '\n💡 当前模型可能不支持图片，建议在 ⚙ 设置中切换多模态模型。';
-        }
+        // ★ 0.190.6：错误场景分类（ApiClient 单一真相源）——中文场景+建议操作+保留原始错误；
+        //   0.190.2 图片关键词检测已合并进 classifyStreamError
+        aiMsg.content = classifyStreamError(errMsg);
         // 错误时也滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
@@ -852,6 +932,10 @@ export struct ChatPage {
   // ★ 0.149：刷新按钮——原位重新生成指定 AI 回复（置加载占位后按链路上下文重新请求，
   // buildBranchMessageList 自动剔除占位使旧回复不进入新请求；消息不删、位置不变）
   async regenerateMessage(msg: ChatMessage): Promise<void> {
+    // ★ 0.190.4：卡死自愈（同 sendMessage，须在 guard 前）
+    if (this.isLoading && this.streamController === null) {
+      this.isLoading = false;
+    }
     if (this.isLoading || !this.currentBubble) {
       return;
     }
@@ -908,12 +992,8 @@ export struct ChatPage {
         // onError：解锁 + 错误提示
         this.isLoading = false;
         this.streamController = null;
-        msg.content = `请求出错，请检查网络/API配置\n${errMsg}`;
-        // ★ 0.190.2：错误含图片关键词 → 附加多模态建议（与 sendMessage onError 同机制）
-        if (errMsg.toLowerCase().includes('image') || errMsg.toLowerCase().includes('vision') ||
-          errMsg.includes('图片') || errMsg.includes('多模态')) {
-          msg.content += '\n💡 当前模型可能不支持图片，建议在 ⚙ 设置中切换多模态模型。';
-        }
+        // ★ 0.190.6：错误场景分类（与 sendMessage onError 同机制）
+        msg.content = classifyStreamError(errMsg);
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
       },
@@ -2039,7 +2119,7 @@ export struct ChatPage {
                           .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
                           .backgroundColor(BRAND_PRIMARY)
                           .copyOption(CopyOptions.LocalDevice)
-                          .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本自动换行，防溢出屏幕
+                          .constraintSize({ maxWidth: '90%' }) // ★ 0.190.3：气泡最大宽度 85%→90%（用户要求对话列表再加宽一点点）；0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                             onAppear: () => {
@@ -2066,8 +2146,14 @@ export struct ChatPage {
                           // 由下方 Markdown 通道渲染（原始行为，content @Trace 驱动，一直可靠）。此前占位行+
                           // Markdown 反向 visibility 双通道并存导致占位文字重复显示两次（已修复）。
                           // ★ 0.160.2：AI 回复秒表（⏱）已按用户决定整体移除，本区不再渲染任何计时组件。
-                         Column() {
-                          ForEach(this.parseMarkdown(msg.content), (seg: MdSegment, idx: number) => {
+                          Column() {
+                           // ★ 0.190.5：等待态视图——占位文字（LOADING/THINKING）不再走 Markdown
+                           //   通道渲染纯文本，改三点跳动动画+回复模式提示（长模式加耐心等待）；
+                           //   Markdown 通道占位时传空串（parseMarkdown('') 零段渲染，不重复显示）
+                           if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
+                             this.waitingView(msg.content)
+                           }
+                           ForEach(this.parseMarkdown(msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING ? '' : msg.content), (seg: MdSegment, idx: number) => {
                             if (seg.type === 0) {
                               // 普通文本段
                               // ★ 0.145：划词翻译——AI 文本段同样长按划词（key 纳入段索引 idx，与用户消息 key 空间隔离）
@@ -2443,7 +2529,7 @@ export struct ChatPage {
                             .alignItems(HorizontalAlign.Start)
                           }
                           }
-                          .constraintSize({ maxWidth: '85%' }) // ★ 0.148：气泡最大宽度约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
+                          .constraintSize({ maxWidth: '90%' }) // ★ 0.190.3：气泡最大宽度 85%→90%（用户要求对话列表再加宽一点点）；0.148 原约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
                         .borderRadius(RADIUS_CONTROL)
                         .backgroundColor(SURFACE_NODE)
