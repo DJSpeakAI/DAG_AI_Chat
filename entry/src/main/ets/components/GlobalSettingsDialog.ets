@@ -28,7 +28,8 @@ import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）
-import { requestSyncPermission, isCloudSyncOn } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.8：isCloudSyncOn——状态=权限&&应用级开关
+import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
+import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
@@ -110,7 +111,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.196.9';
+const APP_VERSION: string = 'v0.196.10';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -182,9 +183,15 @@ export struct GlobalSettingsDialog {
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
-  // ★ 0.165.2 Tab3 云同步：是否真正开着（★ 0.196.8 语义升级：系统权限授予 && 应用级开关开——
-  //   退出账号后开关强制关，权限仍在也显示未开启，与账号登录态一致）
-  @Local syncGranted: boolean = false;
+  // ★ 0.196.10：云同步状态改响应式——permGranted（系统权限，开弹窗时异步查一次）&&
+  //   cloudSwitch.enabled（应用级开关 @Trace，登录弹窗开启/退出强制关时**实时刷新**状态卡，
+  //   不用重开设置弹窗；原 @Local syncGranted 开弹窗快照一次，开启后状态卡滞留「未开启」）
+  @Local permGranted: boolean = false;
+  cloudSwitch: CloudSyncStore = connectCloudSync();
+  @Computed
+  get syncOn(): boolean {
+    return this.permGranted && this.cloudSwitch.enabled;
+  }
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.194.0：云同步 VIP 守卫
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.196.8：云同步↔账号绑定——未登录拦截「开启」
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.195.0：复习显示（全局设置直达——0=关闭复习区）
@@ -249,9 +256,9 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
-    // ★ 0.196.8：云同步状态 = 权限授予 && 应用级开关开（退出账号后开关已关 → 显示未开启）
-    isCloudSyncOn().then((on: boolean) => {
-      this.syncGranted = on;
+    // ★ 0.196.10：系统权限状态（开弹窗时查一次；开关侧 cloudSwitch.enabled 是 @Trace 实时）
+    isCloudSyncGranted().then((granted: boolean) => {
+      this.permGranted = granted;
     });
   }
 
@@ -986,15 +993,26 @@ export struct GlobalSettingsDialog {
     Column() {
       // 状态卡片
       Row() {
-        Text(this.syncGranted ? '✓' : '○')
-          .fontSize(18)
-          .fontColor(this.syncGranted ? '#4CAF50' : (TEXT_TERTIARY))
+        // ★ 0.196.10 用户拍板：状态图标改「圈+勾」——未开启=描边圈+淡色勾（透明感，纯状态
+        //   指示不可点；原空心圆「○」像可点按钮，用户实测「让我去点，实际点了没用」）；
+        //   开启=绿圈+绿勾+淡绿底
+        Stack() {
+          Text('✓')
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.syncOn ? '#4CAF50' : TEXT_TERTIARY)
+        }
+        .width(22)
+        .height(22)
+        .borderRadius(11)
+        .border({ width: 1.5, color: this.syncOn ? '#4CAF50' : STROKE_CARD })
+        .backgroundColor(this.syncOn ? 'rgba(76,175,80,0.12)' : Color.Transparent)
         Column() {
-          Text(this.syncGranted ? '云同步已开启' : '云同步未开启')
+          Text(this.syncOn ? '云同步已开启' : '云同步未开启')
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
             .fontColor(TEXT_PRIMARY)
-          Text(this.syncGranted
+          Text(this.syncOn
             ? '本设备对话数据将自动与云端保持一致'
             : (!this.account.isLoggedIn
               ? '云同步与华为账号绑定——请先登录华为账号' // ★ 0.196.8：未登录优先提示（用户拍板：先登录再开同步）
@@ -1012,7 +1030,7 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .padding(12)
       .borderRadius(RADIUS_CONTROL)
-      .backgroundColor(this.syncGranted
+      .backgroundColor(this.syncOn
         ? ('rgba(76,175,80,0.12)')
         : (SURFACE_SOFT))
       .margin({ bottom: 16 })
@@ -1020,7 +1038,9 @@ export struct GlobalSettingsDialog {
       // 开启按钮（已开启则不显示——重复弹窗无意义；拒绝过可再点重试）
       // ★ 0.194.0：非 VIP 时按钮替换为「订阅后开启」——云同步是唯一会员功能，到期只锁这里
       // ★ 0.196.8：未登录时按钮点击拦截——云同步与华为账号绑定，先登录（用户拍板）
-      if (!this.syncGranted) {
+      // ★ 0.196.10：拦截 toast 升级登录引导弹窗——「登录华为账号」直拉登录（用户拍板：
+      //   原让用户回主页/边栏登录多此一举）；弹窗 Index 根挂载，登录成功自动接云同步询问链
+      if (!this.syncOn) {
         if (!this.account.isLoggedIn) {
           Button('开启云同步')
             .width('100%')
@@ -1032,7 +1052,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .margin({ bottom: 16 })
             .onClick(() => {
-              this.showToastSafe('云同步需登录华为账号，请先登录后再开启');
+              connectConfirmDialog().loginPromptVisible = true;
             })
         } else if (isVip(this.subscription)) {
           Button('开启云同步')
@@ -1051,7 +1071,7 @@ export struct GlobalSettingsDialog {
                 return;
               }
               requestSyncPermission(context).then((granted: boolean) => {
-                this.syncGranted = granted;
+                this.permGranted = granted; // ★ 0.196.10：开关侧 enabled 已在 requestSyncPermission 内落 true——状态卡实时刷新
                 this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
               });
             })

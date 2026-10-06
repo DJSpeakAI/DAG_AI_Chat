@@ -16,6 +16,7 @@ import { SURFACE_NODE, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, STROKE_CARD,
 export class ConfirmDialogStore {
   @Trace logoutConfirmVisible: boolean = false; // 「退出华为账号」确认（边栏头像触发）
   @Trace cloudSyncPromptVisible: boolean = false; // 登录后「是否开启云同步」询问（三条登录路径触发）
+  @Trace loginPromptVisible: boolean = false; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导（设置页触发）
 }
 
 // 连接应用级单例（key 'confirm-dialog'）
@@ -31,8 +32,44 @@ export struct AppConfirmDialog {
   @Param message: string = '';
   @Param confirmText: string = '确定';
   @Param cancelText: string = '取消';
+  // ★ 0.196.10：确认钮放左侧（用户拍板：登录引导弹窗「左下角登录华为账号，右边取消」；
+  //   默认 false = 取消左/确认右标准序）
+  @Param confirmOnLeft: boolean = false;
   @Event onConfirm: () => void = () => {};
   @Event onCancel: () => void = () => {};
+
+  // 取消钮（弱化：SURFACE_NODE 底 + STROKE_CARD 描边）
+  @Builder
+  cancelButtonBuilder() {
+    Button(this.cancelText)
+      .layoutWeight(1)
+      .height(48)
+      .fontSize(FONT_SIZE_CARD_TITLE_SM)
+      .fontWeight(FontWeight.Medium)
+      .backgroundColor(SURFACE_NODE)
+      .fontColor(TEXT_SECONDARY)
+      .border({ width: 1, color: STROKE_CARD })
+      .borderRadius(RADIUS_CONTROL)
+      .onClick(() => {
+        this.onCancel();
+      })
+  }
+
+  // 确认钮（主紫）
+  @Builder
+  confirmButtonBuilder() {
+    Button(this.confirmText)
+      .layoutWeight(1)
+      .height(48)
+      .fontSize(FONT_SIZE_CARD_TITLE_SM)
+      .fontWeight(FontWeight.Medium)
+      .backgroundColor(BRAND_PRIMARY)
+      .fontColor(TEXT_PRIMARY)
+      .borderRadius(RADIUS_CONTROL)
+      .onClick(() => {
+        this.onConfirm();
+      })
+  }
 
   build() {
     if (this.visible) {
@@ -61,31 +98,15 @@ export struct AppConfirmDialog {
           .lineHeight(22)
           .fontColor(TEXT_SECONDARY)
 
-        // 双按钮：取消（SURFACE_NODE 描边弱化）+ 确认（主紫）——ReminderDialog 倒计时模式同款
+        // 双按钮：默认取消左/确认右；confirmOnLeft 时确认左/取消右（0.196.10 登录引导）
         Row({ space: 10 }) {
-          Button(this.cancelText)
-            .layoutWeight(1)
-            .height(48)
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(SURFACE_NODE)
-            .fontColor(TEXT_SECONDARY)
-            .border({ width: 1, color: STROKE_CARD })
-            .borderRadius(RADIUS_CONTROL)
-            .onClick(() => {
-              this.onCancel();
-            })
-          Button(this.confirmText)
-            .layoutWeight(1)
-            .height(48)
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .onClick(() => {
-              this.onConfirm();
-            })
+          if (this.confirmOnLeft) {
+            this.confirmButtonBuilder()
+            this.cancelButtonBuilder()
+          } else {
+            this.cancelButtonBuilder()
+            this.confirmButtonBuilder()
+          }
         }
         .width('100%')
         .margin({ top: 16 })

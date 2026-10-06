@@ -425,7 +425,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.196.9') // ★ 0.196.9：取消登录静默+确认弹窗暗紫化（AppConfirmDialog）；★ 0.196.8：云同步↔账号耦合——更早历史见 MEMORY.md 版本表
+        Text('v0.196.10') // ★ 0.196.10：云同步状态图标圈+勾+登录引导弹窗；★ 0.196.9：取消静默+弹窗暗紫化——更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -494,6 +494,23 @@ struct Index {
       },
       onCancel: () => {
         this.confirmDialog.cloudSyncPromptVisible = false;
+      }
+    })
+    // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（设置页触发；用户拍板：左「登录华为
+    //   账号」右「取消」，点登录直拉 doLogin——成功后自动接「是否开启云同步」询问链，不用回主页）
+    AppConfirmDialog({
+      visible: this.confirmDialog.loginPromptVisible,
+      title: '需要登录',
+      message: '云同步与华为账号绑定，请先登录华为账号。',
+      confirmText: '登录华为账号',
+      cancelText: '取消',
+      confirmOnLeft: true,
+      onConfirm: () => {
+        this.confirmDialog.loginPromptVisible = false;
+        this.doLogin();
+      },
+      onCancel: () => {
+        this.confirmDialog.loginPromptVisible = false;
       }
     })
     }
