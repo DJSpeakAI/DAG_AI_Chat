@@ -111,7 +111,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.197.2';
+const APP_VERSION: string = 'v0.197.3';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -1399,8 +1399,11 @@ export struct GlobalSettingsDialog {
         //   ②云同步 Tab 无保存概念，补全宽「返回」——三 Tab 底部不空、统一协调
         // ★ 0.190.6：关于 Tab（4）同云同步——无保存概念，全宽返回
         // ★ 0.197.2：复习 Tab(5) 改保存模式（用户反馈：要保存按钮）——与 API/AI 偏好同款保存+返回
+        // ★ 0.197.3：等宽修复——间隙从「返回」按钮的 margin left 12 改为 Row({ space: 12 })：
+        //   margin 参与布局会把返回挤窄 12vp（用户实测两按钮宽度不一样）；space 均分剩余空间，
+        //   双按钮 layoutWeight(1) 像素级等宽等高（UI_GUIDELINES 设置弹窗·底部保存按钮行）
         if (this.currentTab !== 3 && this.currentTab !== 4) {
-          Row() {
+          Row({ space: 12 }) {
             Button('保存')
               .layoutWeight(1)
               .height(48)
@@ -1420,7 +1423,6 @@ export struct GlobalSettingsDialog {
               .backgroundColor(SURFACE_SOFT)
               .fontColor(TEXT_SECONDARY)
               .borderRadius(RADIUS_CONTROL)
-              .margin({ left: 12 })
               .onClick(() => {
                 this.requestClose();
               })

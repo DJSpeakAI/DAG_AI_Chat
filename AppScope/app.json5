@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000090, // ★ 0.197.2：全局设置复习Tab改保存模式(编辑副本+保存按钮,与API/AI偏好Tab统一;脏检查纳入复习两项);★ 0.197.1：评分按钮内边距;更早历史见 MEMORY.md
+    "versionCode": 1000091, // ★ 0.197.3：保存/返回按钮等宽修复(间隙Row space 12替代返回钮单侧margin——margin参与layoutWeight分配挤窄12vp,用户实测两按钮宽度不一样;UI_GUIDELINES同步入档等宽强制规则);★ 0.197.2：复习Tab保存按钮;更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

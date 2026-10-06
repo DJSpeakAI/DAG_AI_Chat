@@ -74,7 +74,7 @@
 | 手机 | 缩进步长 | 20 / 层级 |
 | 手机 | 兄弟节点间距 | 12 |
 | 设置弹窗 | 小字行间距（★ 0.175.0 入规则，以云同步 Tab 为标准） | 字号 11 / TEXT_TERTIARY；副标题与主标题距 2；提示/条目与上方内容距 4、条目间 4；连续多行提示小字 lineHeight 18（行隙节奏与条目间距一致，勿用默认行高） |
-| 设置弹窗 | 底部保存按钮行（★ 0.197.2 入规则——复习 Tab 加入保存模式后全弹窗统一，以 API/AI 偏好 Tab 为标准） | 双按钮各 layoutWeight(1) 等宽：**保存（左）= BRAND_PRIMARY 底 + TEXT_PRIMARY 字**，**返回（右）= SURFACE_SOFT 底 + TEXT_SECONDARY 字** + margin left 12；统一 height 48 / fontSize CardTitleSm(13) / FontWeight Medium / 圆角 RADIUS_CONTROL，行 margin top 12。按钮行固定在内容区（Scroll）**之外**的弹窗底部——表单超屏滚动时保存不被推出（0.140 教训）。保存不关弹窗 + toast「已保存」；返回走 requestClose（有未保存修改时 AlertDialog 二次确认）。无保存概念 Tab（云同步/关于）用全宽「返回」同规格 |
+| 设置弹窗 | 底部保存按钮行（★ 0.197.2 入规则——复习 Tab 加入保存模式后全弹窗统一，以 API/AI 偏好 Tab 为标准；★ 0.197.3 等宽强制） | 双按钮**必须像素级等宽等高**：`Row({ space: 12 })` 内各 `.layoutWeight(1)` + `.height(48)`——**间隙一律用 Row space，禁止挂单侧 margin**（margin 参与 layoutWeight 分配会把该侧按钮挤窄，0.197.3 用户实测不等宽 bug）。**保存（左）= BRAND_PRIMARY 底 + TEXT_PRIMARY 字**，**返回（右）= SURFACE_SOFT 底 + TEXT_SECONDARY 字**；统一 fontSize CardTitleSm(13) / FontWeight Medium / 圆角 RADIUS_CONTROL，行 margin top 12。按钮行固定在内容区（Scroll）**之外**的弹窗底部——表单超屏滚动时保存不被推出（0.140 教训）。保存不关弹窗 + toast「已保存」；返回走 requestClose（有未保存修改时 AlertDialog 二次确认）。无保存概念 Tab（云同步/关于）用全宽「返回」同规格 |
 
 ## 五、布局规格
 
