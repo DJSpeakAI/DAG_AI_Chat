@@ -1035,6 +1035,8 @@ export struct BBTreeCanvas {
               //   原 plus0 svg+文字 pill 双态分支随删（UI 统一不分屏宽）
               Button('+')
                 .fontSize(20)
+                .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准，
+                //   所有页面顶栏 Row 固定 40vp；原 Button 默认高有歧义（内容自适应），显式钉死）
                 .backgroundColor(Color.Transparent)
                 .fontColor(TEXT_PRIMARY)
                 .padding({ left: 8, right: 8 })
@@ -1047,6 +1049,8 @@ export struct BBTreeCanvas {
                 })
             }
             .width('100%')
+            .height(40) // ★ 0.196.6：顶栏 Row 显式 40vp——与气泡页顶栏像素级同高（原由 ➕ 默认高撑起，
+            //   实测与气泡页 40vp icon 包裹行存在 36px 级差异；显式钉死消除歧义）
 
             // Tab 栏（仅选项卡模式；横向滚动、✕ 删除、长按重命名——交互全保留）
             if (this.canvasModeStore.mode === 'tabs') {

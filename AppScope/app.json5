@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000080, // ★ 0.196.4：窗口宽度模式（分屏/悬浮窗100%手机布局，WindowMode共享真相源）；★ 0.196.3：实测修正轮；更早历史见 MEMORY.md
+    "versionCode": 1000081, // ★ 0.196.6：导航栏高度全页统一（顶栏Row显式40vp以气泡页为基准）；★ 0.196.4：窗口宽度模式；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

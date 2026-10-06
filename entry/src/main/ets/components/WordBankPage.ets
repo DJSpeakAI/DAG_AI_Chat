@@ -463,6 +463,7 @@ export struct WordBankPage {
         // ★ 0.148: add button — top bar's right, opens the editor dialog
         Button('+')
           .fontSize(20)
+          .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
           .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
@@ -482,6 +483,7 @@ export struct WordBankPage {
       }
     }
     .width('100%')
+    .height(40) // ★ 0.196.6：顶栏 Row 显式 40vp——五页导航栏统一（原由 ➕ 默认高撑起有歧义，显式钉死）
     .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（left 28/14 双分支 + top 8/right 14，与 ChatPage 同步）
   }
 

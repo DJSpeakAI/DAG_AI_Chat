@@ -2417,6 +2417,8 @@ export struct ChatPage {
       })
     }
     .width('100%')
+    .height(40) // ★ 0.196.6：顶栏 Row 显式 40vp——导航栏统一基准（UI_GUIDELINES 10.2：本页顶栏为全应用
+    //   导航栏高度基准，其余四页 .height(40) 对齐；原由 icon 包裹行隐式撑起，显式钉死消除歧义）
     .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（Pad 实测：信息条标题 590px vs 本页 540px 差 20vp；left 28/14=信息条 ≥520 双分支，top 8/right 14 同款）
   }
 

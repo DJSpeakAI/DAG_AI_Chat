@@ -306,6 +306,8 @@ export struct ReviewPage {
       }
     }
     .width('100%')
+    .height(40) // ★ 0.196.6：顶栏 Row 显式 40vp——五页导航栏统一（UI_GUIDELINES 10.2：以气泡页顶栏为基准；
+    //   原由标签行 30+3+3=36vp 撑起矮于气泡页 40vp，显式钉死消除页间差异）
     .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 })
   }
 
