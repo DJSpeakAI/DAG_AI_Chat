@@ -32,6 +32,13 @@ import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloud
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
+import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
+import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
+import {
+  buildBackupPayload, writeInternalBackup, restoreFromPayload,
+  getBackupSettings, setAutoBackupEnabled, setExternalUri, pickBackupFile, pickAndReadBackupFile,
+  writeExternalBackup, maybeAutoBackup, BackupPayload
+} from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
 
@@ -111,7 +118,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.204.4';
+const APP_VERSION: string = 'v0.205.5';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -162,6 +169,13 @@ export struct GlobalSettingsDialog {
 
   apiConfig: ApiConfig = connectApiConfig();       // ★ 0.143：换 key 'api-config-v2' 工厂
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：全新 key 'ai-preference-v1'
+  wordBank = connectWordBank(); // ★ 0.205.0：备份恢复合并写词库
+  knowledgeBank = connectKnowledgeBank(); // ★ 0.205.0：备份恢复合并写知识库
+  // ★ 0.205.0 备份 Tab 状态快照（进 Tab 时从 preferences 刷新——非响应式存储，手动同步）
+  @Local bkAutoEnabled: boolean = false;
+  @Local bkUriReady: boolean = false;   // 已选目录（uri 只存不显示——系统 uri 串对用户无意义）
+  @Local bkLastExt: number = 0;         // 上次外部备份时间戳
+  @Local bkBusy: boolean = false;       // picker/写入进行中（防重复点击）
 
   // Tab 切换（自绘按钮 + 条件渲染，不用 Tabs 组件）
   // ★ 0.167.8 用户拍板：删「画布」Tab（画布多树模式切换已由画布页顶部分段控件承担，此处重复）；
@@ -1177,6 +1191,243 @@ export struct GlobalSettingsDialog {
     this.privacyVisible = true;
   }
 
+  // ============================================================
+  // ★ 0.205.0：备份 Tab——数据安全三道防线
+  // ============================================================
+
+  // 备份状态快照刷新（preferences 非响应式，进 Tab/操作后手动同步）
+  refreshBackupSnapshot(): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const s = getBackupSettings(ctx);
+    this.bkAutoEnabled = s.autoEnabled;
+    this.bkUriReady = s.uri.length > 0;
+    this.bkLastExt = s.lastExternalAt;
+  }
+
+  formatBkTime(ts: number): string {
+    if (ts <= 0) {
+      return '尚未备份';
+    }
+    const d = new Date(ts);
+    const pad = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // 每日自动备份开关（开=弹系统选择器选目录+立即备份一份；取消=回弹关闭）
+  onAutoToggle(on: boolean): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (!on) {
+      setAutoBackupEnabled(ctx, false);
+      this.bkAutoEnabled = false;
+      return;
+    }
+    this.bkBusy = true;
+    pickBackupFile(ctx).then((uri: string) => {
+      this.bkBusy = false;
+      if (uri.length === 0) {
+        this.bkAutoEnabled = false; // 用户取消——开关回弹
+        setAutoBackupEnabled(ctx, false);
+        this.showToastSafe('未选择目录，未开启自动备份');
+        return;
+      }
+      setExternalUri(ctx, uri);
+      setAutoBackupEnabled(ctx, true);
+      this.bkAutoEnabled = true;
+      this.bkUriReady = true;
+      // 选完目录立即备份一份（验证可写+给用户即时正反馈）
+      writeExternalBackup(ctx, buildBackupPayload(this.wordBank, this.knowledgeBank)).then((ok: boolean) => {
+        if (ok) {
+          this.showToastSafe('已开启：备份文件已保存到所选位置');
+        } else {
+          this.showToastSafe('目录不可写，请尝试更改目录');
+        }
+        this.refreshBackupSnapshot();
+      });
+    });
+  }
+
+  // 更改目录（新目录立即备份一份；旧目录文件不删不管——用户拍板）
+  onChangeDir(): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    this.bkBusy = true;
+    pickBackupFile(ctx).then((uri: string) => {
+      this.bkBusy = false;
+      if (uri.length === 0) {
+        return; // 取消保持原目录
+      }
+      setExternalUri(ctx, uri);
+      this.bkUriReady = true;
+      writeExternalBackup(ctx, buildBackupPayload(this.wordBank, this.knowledgeBank)).then((ok: boolean) => {
+        this.showToastSafe(ok ? '已切换目录并备份' : '新目录不可写，请重试');
+        this.refreshBackupSnapshot();
+      });
+    });
+  }
+
+  // 立即备份（手动）
+  onBackupNow(): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (!this.bkUriReady) {
+      this.showToastSafe('请先开启每日自动备份并选择目录');
+      return;
+    }
+    writeExternalBackup(ctx, buildBackupPayload(this.wordBank, this.knowledgeBank)).then((ok: boolean) => {
+      this.showToastSafe(ok ? '备份成功' : '目录不可写，请更改目录');
+      this.refreshBackupSnapshot();
+    });
+  }
+
+  // ★ 0.205.3 删 onRestoreInternal/bkLastInternal——内部备份完全后台静默（用户拍板：设置页露出只会让用户混乱）
+
+  // 从备份文件导入（用户手里的 .dagbak——卸载重装/换机恢复用）
+  onImportFile(): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    this.bkBusy = true;
+    pickAndReadBackupFile(ctx).then((p: BackupPayload | undefined) => {
+      this.bkBusy = false;
+      if (p === undefined) {
+        this.showToastSafe('已取消或文件无效');
+        return;
+      }
+      const n = restoreFromPayload(this.wordBank, this.knowledgeBank, p);
+      writeInternalBackup(ctx, buildBackupPayload(this.wordBank, this.knowledgeBank)); // 导入后立即内部备份
+      this.showToastSafe(`已合并导入 ${n} 条`);
+      this.refreshBackupSnapshot();
+    });
+  }
+
+  // ★ 0.205.0：备份 Tab UI
+  @Builder
+  backupTabContent() {
+    Column({ space: 12 }) {
+      // 推荐横幅（用户拍板：好意推荐——备份文件是卸载/换机后唯一能救的）
+      Row({ space: 8 }) {
+        Text('💡')
+          .fontSize(16)
+        Column({ space: 2 }) {
+          Text('推荐：开启每日自动备份')
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(BRAND_SECONDARY)
+          Text('应用更新不会丢数据；但卸载/换机后，备份文件是唯一恢复方式')
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .padding(10)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_SOFT)
+
+      // ── 卡片一：外部备份（用户目录）──
+      Column({ space: 10 }) {
+        Row() {
+          Text('备份文件（推荐）')
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(TEXT_PRIMARY)
+          Blank()
+            .layoutWeight(1)
+          if (this.bkUriReady) {
+            Text('更改目录')
+              .fontSize(12)
+              .fontColor(BRAND_SECONDARY)
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(SURFACE_HOVER)
+              .onClick(() => {
+                if (!this.bkBusy) {
+                  this.onChangeDir();
+                }
+              })
+          }
+        }
+        .width('100%')
+
+        // 每日自动备份开关（默认关）
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('每日自动备份')
+              .fontSize(FONT_SIZE_CARD_TITLE_SM)
+              .fontColor(TEXT_PRIMARY)
+            Text('每晚 0 点自动备份；错过则下次打开应用时补备')
+              .fontSize(11)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.bkAutoEnabled })
+            .selectedColor(BRAND_PRIMARY)
+            .onChange((on: boolean) => {
+              if (!this.bkBusy) {
+                this.onAutoToggle(on);
+              }
+            })
+        }
+        .width('100%')
+
+        Text(this.bkUriReady ? `备份位置：已选择 ✓　上次备份：${this.formatBkTime(this.bkLastExt)}` : '备份位置：未选择（开启开关后选择保存位置）')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+
+        Button('立即备份')
+          .width('100%')
+          .height(40)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(this.bkUriReady ? BRAND_PRIMARY : SURFACE_HOVER)
+          .fontColor(this.bkUriReady ? TEXT_PRIMARY : TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .onClick(() => {
+            this.onBackupNow();
+          })
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_NODE)
+      .alignItems(HorizontalAlign.Start)
+
+      // ── 卡片二：导入（卸载重装/换机恢复）──
+      // ★ 0.205.3 用户拍板：删「应用内部备份」卡——后台静默自动，不需要用户感知
+      //   （恢复兜底仍在：启动检测空库+有备份自动弹「发现应用内部备份」）
+      Column({ space: 10 }) {
+        Text('导入备份文件')
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(TEXT_PRIMARY)
+          .width('100%')
+        Text('选择之前导出的 .dagbak 文件，合并导入（同 ID 以备份为准，现有数据不会被删除）')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+        Button('选择文件并导入')
+          .width('100%')
+          .height(40)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(SURFACE_SOFT)
+          .fontColor(TEXT_SECONDARY)
+          .borderRadius(RADIUS_CONTROL)
+          .onClick(() => {
+            if (!this.bkBusy) {
+              this.onImportFile();
+            }
+          })
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_NODE)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+  }
+
   // ★ 0.190.6：Tab5 关于——版本号 + 反馈与联系（邮箱复制 / mailto 预填设备信息）+ 隐私政策入口
   @Builder
   aboutTabContent() {
@@ -1312,8 +1563,10 @@ export struct GlobalSettingsDialog {
         .margin({ bottom: 12 })
 
         // Tab 切换行（★ 0.174.1：改分段控件——轨道 SEGMENTED_TRACK + 选中段 BRAND_PRIMARY，与画布页分段控件同规格；★ 0.167.8：删「画布」Tab）
-        Row() {
-          Text('API 配置')
+        // ★ 0.205.3：①「备份」移到司忆区后（用户拍板）②横向 Scroll 包裹——6 个 Tab 超出弹窗最大宽度时可滑动（用户实测溢出）
+        Scroll() {
+          Row() {
+            Text('API 配置')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(this.currentTab === 0 ? FontWeight.Medium : FontWeight.Normal)
             .fontColor(this.currentTab === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
@@ -1353,6 +1606,18 @@ export struct GlobalSettingsDialog {
               this.editReviewLearn = this.learnCountStore.learnCount;
               this.editReviewKnowledge = this.knowledgeCountStore.knowledgeCount;
             })
+          Text('备份') // ★ 0.205.3：移到司忆区后（用户拍板；currentTab=6 不重排既有索引）
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 6 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 6 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 6 ? BRAND_PRIMARY : Color.Transparent)
+            .margin({ left: 4 })
+            .onClick(() => {
+              this.currentTab = 6;
+              this.refreshBackupSnapshot(); // 进 Tab 刷新备份状态快照
+            })
           Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(this.currentTab === 3 ? FontWeight.Medium : FontWeight.Normal)
@@ -1375,7 +1640,11 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 4;
             })
+          }
         }
+        .scrollable(ScrollDirection.Horizontal) // 0.205.3：Tab 超宽可横向滑动（Row 内容自适应宽度）
+        .scrollBar(BarState.Off) // 0.205.4 用户拍板：滚动杠不要
+        .edgeEffect(EdgeEffect.Spring)
         .width('100%')
         .padding(3)
         .borderRadius(RADIUS_CONTROL)
@@ -1384,7 +1653,9 @@ export struct GlobalSettingsDialog {
 
         // 内容区：Scroll 包裹（Tab1 表单超屏可滚动，0.140 教训——保存按钮固定底部不被推出）
         Scroll() {
-          if (this.currentTab === 0) {
+          if (this.currentTab === 6) {
+            this.backupTabContent() // ★ 0.205.0：备份 Tab（三道防线）
+          } else if (this.currentTab === 0) {
             this.apiTabContent()
           } else if (this.currentTab === 1) {
             this.prefTabContent()
@@ -1410,7 +1681,7 @@ export struct GlobalSettingsDialog {
         // ★ 0.197.3：等宽修复——间隙从「返回」按钮的 margin left 12 改为 Row({ space: 12 })：
         //   margin 参与布局会把返回挤窄 12vp（用户实测两按钮宽度不一样）；space 均分剩余空间，
         //   双按钮 layoutWeight(1) 像素级等宽等高（UI_GUIDELINES 设置弹窗·底部保存按钮行）
-        if (this.currentTab !== 3 && this.currentTab !== 4) {
+        if (this.currentTab !== 3 && this.currentTab !== 4 && this.currentTab !== 6) {
           Row({ space: 12 }) {
             Button('保存')
               .layoutWeight(1)

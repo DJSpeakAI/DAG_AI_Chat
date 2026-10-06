@@ -40,6 +40,7 @@ import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204
 import { buildWidgetState } from '../utils/WidgetHostBridge'; // ★ 0.204.0：同上；★ 0.204.3：ensureWidgetFormIds formId 自愈
 import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3：卸载重装后残留卡片推送自愈
 import { connectDailyReviewCount } from '../components/ReviewPage'; // ★ 0.204.0：每日量（快照按量截断；ReviewPage 不反向 import Index，无循环）
+import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -61,6 +62,9 @@ struct Index {
   subscription: SubscriptionStore = connectSubscription();
   // ★ 0.195.0：订阅提醒弹窗状态（ReminderDialog 自定义弹窗驱动：0=首登欢迎 / 1~7=剩余天数）
   @Local reminderVisible: boolean = false;
+  // ★ 0.205.0：空库+有内部备份→恢复询问弹窗（数据安全第二道防线兜底）
+  @Local restorePromptVisible: boolean = false;
+  pendingRestore: BackupPayload | undefined = undefined; // 待恢复载荷（弹窗确认后消费；大对象不放装饰字段）
   @Local reminderMode: number = 0;
   // ★ 0.195.0：大屏常驻边栏——断点检测（≥600vp 平板/PC）+ 设置弹窗（边栏「设置」入口）
   // ★ 0.196.4：isTablet 改窗口宽度共享真相源（WindowMode）——分屏/悬浮窗屏宽不变导致小窗仍渲染
@@ -236,6 +240,18 @@ struct Index {
         // ★ 0.204.3：formId 自愈——卸载重装后 preferences 清空，桌面残留卡片收不到推送（用户实测）；
         //   查询系统已发布卡片回写 form_ids + 补推（幂等：已有记录直接返回）
         ensureWidgetFormIds(this.getUIContext().getHostContext() as common.Context);
+        // ★ 0.205.0 三道防线·启动链：①内部双备份 ②空库+有备份→询问恢复（第二道兜底）③超 24h 外部自动备份
+        const ctx = this.getUIContext().getHostContext() as common.Context;
+        if (wb.words.length > 0 || kb.cards.length > 0) {
+          writeInternalBackup(ctx, buildBackupPayload(wb, kb)); // 正常有数据→备份
+        } else {
+          const p = readInternalBackup(ctx); // 库空但有备份→可能升级异常清空/误删→询问恢复
+          if (p !== undefined && (p.words.length > 0 || p.cards.length > 0)) {
+            this.pendingRestore = p;
+            this.restorePromptVisible = true;
+          }
+        }
+        maybeAutoBackup(ctx, wb, kb);
       } catch (_e) {
         // 静默（下次进复习页会重建）
       }
@@ -462,7 +478,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.204.4') // ★ 0.204.4：多卡片修复（formId 改文件直存——主进程不再因 preferences 缓存漏推新卡片）——更早历史见 MEMORY.md
+        Text('v0.205.5') // ★ 0.205.5：恢复端逐条空壳丢弃（第二道网）——更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -504,6 +520,30 @@ struct Index {
     })
     // ★ 0.196.9：退出华为账号确认（边栏头像触发——原系统 AlertDialog 灰底，用户实测反馈
     //   与暗紫风格不符；确认走 doLogout：退出 + 云同步强制关一条龙）
+    AppConfirmDialog({
+      visible: this.restorePromptVisible, // ★ 0.205.0：空库检测到内部备份→询问恢复
+      title: '发现应用内部备份',
+      message: '当前单词库与知识库为空，但检测到之前的内部备份。是否恢复？',
+      confirmText: '恢复数据',
+      cancelText: '暂不恢复',
+      onConfirm: () => {
+        this.restorePromptVisible = false;
+        const p = this.pendingRestore;
+        this.pendingRestore = undefined;
+        if (p !== undefined) {
+          const wb = connectWordBank();
+          const kb = connectKnowledgeBank();
+          const n = restoreFromPayload(wb, kb, p);
+          writeInternalBackup(this.getUIContext().getHostContext() as common.Context, buildBackupPayload(wb, kb));
+          this.getUIContext().getPromptAction().showToast({ message: `已恢复 ${n} 条数据`, duration: 2000 });
+        }
+      },
+      onCancel: () => {
+        this.restorePromptVisible = false;
+        this.pendingRestore = undefined; // 用户明确选择空库——保留备份不删（下次仍可从设置恢复）
+      }
+    })
+    // ★ 0.196.9：退出华为账号确认（原注释位——上移为恢复弹窗让位）
     AppConfirmDialog({
       visible: this.confirmDialog.logoutConfirmVisible,
       title: '退出华为账号',

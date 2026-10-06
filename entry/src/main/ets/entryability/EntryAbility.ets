@@ -16,6 +16,9 @@ import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字�
 import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
+import { buildBackupPayload, writeInternalBackup } from '../utils/BackupUtil'; // 0.205.0 三道防线：退后台自动内部备份
+import { connectWordBank } from '../utils/WordStoreUtil';
+import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -192,5 +195,13 @@ export default class EntryAbility extends UIAbility {
     // 鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）
     const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
     lifecycle.isBackground = true;
+    // ★ 0.205.0 三道防线：退后台时内部双备份（本会话最后状态落沙箱——升级异常/损坏的最后兜底）
+    try {
+      const wb = connectWordBank();
+      const kb = connectKnowledgeBank();
+      writeInternalBackup(this.context, buildBackupPayload(wb, kb));
+    } catch (_e) {
+      // 备份失败静默（下次启动会再备）
+    }
   }
 }
