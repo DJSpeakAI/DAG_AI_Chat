@@ -321,8 +321,13 @@ export struct ReviewPage {
           .fontSize(30)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
-          .maxLines(2)
+          // ★ 0.197.0 用户拍板：英文展示词截断绝对不允许——maxLines+minFontSize/maxFontSize
+          //   触发自适应缩字号（放不下自动缩字体而非省略号；3 行 × 16px 下限，长英文短语必 100% 完整展示）
+          .maxLines(3)
+          .minFontSize(16)
+          .maxFontSize(30)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.Center) // 换行后各行居中（原单行靠 alignItems 居中，折行后左歪）
         if ((this.currentItem() as WordItem).usPhonetic !== '') {
           Row({ space: 6 }) {
             Text((this.currentItem() as WordItem).usPhonetic)
@@ -369,7 +374,10 @@ export struct ReviewPage {
           .fontSize(24)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
-          .maxLines(2)
+          // ★ 0.197.0：同单词卡——自适应缩字号防截断（用户拍板：展示词必须 100% 完整展示）
+          .maxLines(3)
+          .minFontSize(14)
+          .maxFontSize(24)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .textAlign(TextAlign.Center)
         Text((this.currentItem() as KnowledgeCard).definition)
@@ -557,6 +565,7 @@ export struct ReviewPage {
           }
           .width('100%')
           .layoutWeight(1)
+          .padding({ bottom: 32 }) // ★ 0.197.0 用户拍板：评分按钮不顶格——底部留白 32vp（上边距由 Blank 弹性天然保证）
         }
       }
       .width('100%')
