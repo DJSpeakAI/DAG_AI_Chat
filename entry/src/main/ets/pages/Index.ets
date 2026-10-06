@@ -440,7 +440,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.197.3') // ★ 0.197.3：保存/返回按钮等宽修复(Row space 12 替代单侧 margin)；★ 0.197.2：复习Tab保存按钮——更早历史见 MEMORY.md 版本表
+        Text('v0.200.2') // ★ 0.200.2：动画调参（弹跳2.8倍+放慢3倍+飞行卡片放大）；★ 0.200.1：keyframe动画重做——更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

@@ -24,7 +24,7 @@
 //     but not rendered (ArkUI Text has no LaTeX engine).
 // ============================================================
 
-import { Type } from '@kit.ArkUI'; // @Type decorator: required by PersistenceV2 nested class arrays
+import { Type, AppStorageV2 } from '@kit.ArkUI'; // @Type decorator: required by PersistenceV2 nested class arrays; ★ 0.200.0 AppStorageV2（CardImportStore）
 
 // A single knowledge card stored in the knowledge bank
 @ObservedV2
@@ -73,4 +73,42 @@ export class KnowledgeBankStore {
 export interface KnowledgeQueryResult {
   title: string;
   definition: string;
+}
+
+// ============================================================
+// ★ 0.200.0：知识卡片导入气泡对话——跨页共享 store + 导航辅助
+// ============================================================
+// 生命周期：入口（知识库列表/编辑弹窗/复习页）写入 → 画布选择模式消费（action 保留）
+//           → ChatPage.onShown 落地消费后清空 action。
+// 模式同 AnnotationResultStore（AppStorageV2 内存态不落盘；action 空 = 无导入进行中）。
+@ObservedV2
+export class CardImportStore {
+  @Trace action: string = '';      // '' 无 / 'import' 导入对话 / 'branch' 创建子气泡
+  @Trace title: string = '';       // 卡片标题
+  @Trace definition: string = '';  // 卡片定义
+  @Trace imageUri: string = '';    // 卡片图（base64 data URI；'' = 无图）
+}
+
+export function connectCardImport(): CardImportStore {
+  return AppStorageV2.connect(CardImportStore, 'card-import', () => new CardImportStore()) as CardImportStore;
+}
+
+/** 回画布四态导航（★ 0.200.0，逻辑同 Index.sideBarNav('canvas')——知识库/复习页发起导入后回画布：
+ *  ①画布已在栈顶不动 ②画布在栈中连续 pop 到顶 ③不在栈中 replacePath 顶页直换 ④空栈 pushPath） */
+export function navBackToCanvas(pathStack: NavPathStack): void {
+  const names = pathStack.getAllPathName();
+  const idx = names.indexOf('BBTreeCanvas');
+  if (idx >= 0 && idx === names.length - 1) {
+    return; // 已在画布
+  }
+  if (idx >= 0) {
+    const pops = names.length - 1 - idx;
+    for (let i = 0; i < pops; i++) {
+      pathStack.pop(); // 连续 pop 到画布为顶
+    }
+  } else if (names.length > 0) {
+    pathStack.replacePath({ name: 'BBTreeCanvas' }); // 画布不在栈：顶页替换
+  } else {
+    pathStack.pushPath({ name: 'BBTreeCanvas' }); // 空栈（首页）：进画布
+  }
 }

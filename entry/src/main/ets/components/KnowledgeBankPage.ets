@@ -25,7 +25,7 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（跨页 store + 回画布导航）
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
@@ -40,6 +40,24 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 export struct KnowledgeBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // isolated PersistenceV2 instance
+
+  // ── ★ 0.200.0：知识卡片导入气泡（入口 A 列表 / 入口 B 编辑弹窗）──
+  cardImport: CardImportStore = connectCardImport(); // 跨页共享 store（画布/ChatPage 消费）
+  @Local askSheetVisible: boolean = false; // 「问 AI」二选一面板
+  @Local askSheetTitle: string = '';       // 面板展示的卡片快照（列表入口暂存）
+  @Local askSheetDefinition: string = '';
+  @Local askSheetImage: string = '';
+
+  /** ★ 0.200.0：写入导入 store + 回画布进入选择模式（A/B 入口共用；B 入口传编辑器当前字段值——未保存的编辑也能导入） */
+  startCardImport(action: string, title: string, definition: string, imageUri: string): void {
+    this.cardImport.action = action;
+    this.cardImport.title = title;
+    this.cardImport.definition = definition;
+    this.cardImport.imageUri = imageUri;
+    this.askSheetVisible = false;
+    this.editorVisible = false; // B 入口：关编辑弹窗
+    navBackToCanvas(this.pathStack);
+  }
 
   // ★ 0.195.0：大屏断点（≥600vp）——顶栏左间距对齐气泡树信息条（28/14 双分支）
   // ★ 0.196.4：改读窗口宽度共享真相源（WindowMode）——分屏/悬浮窗实时切手机布局
@@ -517,6 +535,76 @@ export struct KnowledgeBankPage {
     })
   }
 
+  // ── ★ 0.200.0 入口 A 配套：「问 AI」二选一面板（底部卡片，暗紫设计语言；点遮罩取消）──
+  @Builder
+  askAiSheet() {
+    Column() {
+      Blank()
+      Column() {
+        Text('把这张卡片导入气泡去问 AI？')
+          .fontSize(15)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(this.askSheetTitle)
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 4 })
+        Button('导入气泡对话')
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(BRAND_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .width('100%')
+          .margin({ top: 16 })
+          .onClick(() => {
+            this.startCardImport('import', this.askSheetTitle, this.askSheetDefinition, this.askSheetImage);
+          })
+        Text('选一个气泡 → 卡片填入它的输入框，补充问题后发送')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Button('创建子气泡')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(RADIUS_CONTROL)
+          .border({ width: 1, color: BRAND_SECONDARY })
+          .width('100%')
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.startCardImport('branch', this.askSheetTitle, this.askSheetDefinition, this.askSheetImage);
+          })
+        Text('选一个父气泡 → 新建子气泡并填入卡片')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Button('取消')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .backgroundColor(Color.Transparent)
+          .width('100%')
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.askSheetVisible = false;
+          })
+      }
+      .width('100%')
+      .borderRadius({ topLeft: RADIUS_NAV, topRight: RADIUS_NAV })
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+      .padding({ left: 20, right: 20, top: 20, bottom: 28 })
+      .onClick(() => {}) // 消费面板点击防冒泡到遮罩
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .onClick(() => {
+      this.askSheetVisible = false;
+    })
+  }
+
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss
   @Builder
   editorDialog() {
@@ -609,6 +697,34 @@ export struct KnowledgeBankPage {
         }
         .width('100%')
         .margin({ top: 20 })
+
+        // ── ★ 0.200.0 入口 B：导入气泡行（「保存/返回」下方；传编辑器当前字段——未保存的编辑也能导入）──
+        //   次级描边样式（描边紫+透明底），与主操作「保存」区分层级
+        Row() {
+          Button('导入气泡对话')
+            .fontSize(13)
+            .fontColor(BRAND_SECONDARY)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .border({ width: 1, color: BRAND_SECONDARY })
+            .layoutWeight(1)
+            .onClick(() => {
+              this.startCardImport('import', this.editorTitle, this.editorDefinition, this.editorImageUri);
+            })
+          Button('创建子气泡')
+            .fontSize(13)
+            .fontColor(BRAND_SECONDARY)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(RADIUS_CONTROL)
+            .border({ width: 1, color: BRAND_SECONDARY })
+            .layoutWeight(1)
+            .margin({ left: 12 })
+            .onClick(() => {
+              this.startCardImport('branch', this.editorTitle, this.editorDefinition, this.editorImageUri);
+            })
+        }
+        .width('100%')
+        .margin({ top: 12 })
       }
       .width('86%')
       .borderRadius(RADIUS_NAV)
@@ -879,7 +995,28 @@ export struct KnowledgeBankPage {
                     })
 
                     if (!this.multiSelectMode) {
-                      // Single-delete button — hidden while multi-selecting
+                      // ★ 0.200.0 入口 A：「问 AI」——用户拍板：浏览即产生问题，问 AI 不该隔着一次点击
+                      //   与 × 同列（多选模式随 × 隐藏）；紫渐变底 + 白线条 icon（同 gitbranch 图标容器规格）
+                      Column() {
+                        Image($r('app.media.ask_ai'))
+                          .width(18)
+                          .height(18)
+                      }
+                      .width(32)
+                      .height(32)
+                      .borderRadius(9)
+                      .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+                      .justifyContent(FlexAlign.Center)
+                      .alignItems(HorizontalAlign.Center)
+                      .margin({ right: 4 })
+                      .onClick(() => {
+                        // ArkUI 点击不冒泡：本按钮自身消费，不触发卡片 onClick 进编辑弹窗
+                        this.askSheetTitle = c.title;
+                        this.askSheetDefinition = c.definition;
+                        this.askSheetImage = c.imageUri;
+                        this.askSheetVisible = true;
+                      })
+                      // 单删按钮 —— 多选模式下隐藏
                       Button('×')
                         .fontSize(16)
                         .fontColor(DANGER)
@@ -928,6 +1065,10 @@ export struct KnowledgeBankPage {
         .width('100%')
         .height('100%')
 
+        // ★ 0.200.0: 问 AI 二选一面板（最顶层）
+        if (this.askSheetVisible) {
+          this.askAiSheet()
+        }
         // ★ 0.148: dialogs stacked above the page content
         if (this.editorVisible) {
           this.editorDialog()
@@ -953,6 +1094,11 @@ export struct KnowledgeBankPage {
     .hideTitleBar(true)
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
+      // ★ 0.200.0: 问 AI 面板最顶层先关
+      if (this.askSheetVisible) {
+        this.askSheetVisible = false;
+        return true;
+      }
       // ★ 0.160: image preview closes first (topmost layer)
       if (this.editorImagePreviewVisible) {
         this.editorImagePreviewVisible = false;

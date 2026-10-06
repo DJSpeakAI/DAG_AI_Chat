@@ -1,33 +1,35 @@
 ﻿# Project Memory
 > 项目基线文档，仅保存架构、定型功能、核心规则、未完成任务；单次调试流水存入docs迭代文档。
-> ★ 0.192.0：AI 助手上下文自律与 Prompt 编写军规见 **docs/CONTEXT_MANAGEMENT.md**（project_rule.md §8 强制引用）——阈值整理/阶段总结清单/写入纪律/长会话自救。
+> ★ 0.192.0：AI 助手上下文自律与 Prompt 编写军规见 **docs/CONTEXT_MANAGEMENT.md**（project_rule.md §8 强制引用）。
 
 ## FACT 项目固定基线
 1. DAG气泡树项目架构
    BubbleNode 结构：携带parentID（单父模型），节点内部保存 messages: ChatMessage[]。
    技术栈：鸿蒙 ArkUI V2，结构体使用@ObservedV2，新增字段必须添加@Trace。
-   页面与组件：BBTreeCanvas.ets、ChatPage.ets、WordBankPage.ets、KnowledgeBankPage.ets、GlobalSettingsDialog.ets；ApiClient.ets 负责火山方舟API请求。
+   页面与组件：BBTreeCanvas.ets、ChatPage.ets、WordBankPage.ets、KnowledgeBankPage.ets、ReviewPage.ets、GlobalSettingsDialog.ets；ApiClient.ets 负责 AI 流式请求（多提供商）。
 
 2. 已定型核心功能清单
-- 气泡树对话、火山方舟流式API、多模态图片上传、本地持久化(PersistenceV2)
+- 气泡树对话、流式API、多模态图片上传、本地持久化(PersistenceV2)
 - Markdown渲染，代码块语法高亮，代码块自动换行按钮左对齐
 - 图片全屏预览，屏幕圈选截图，图片提炼知识卡片
-- 划词翻译、单词库生词复习、知识库卡片管理
-- TTS语音朗读（HTTP合成路线），单词发音单例复用，缩略词播全称
+- 划词翻译、单词库生词复习、知识库卡片管理、知识复习页（ReviewPage，Anki 式单卡）
+- TTS语音朗读（本地 CoreSpeechKit 双引擎：中文聆小珊+英文Laura，0.189.0 起替代云端），单词发音单例复用，缩略词播全称
 - LaTeX数学公式本地渲染，画布自动排版
-- 全局设置弹窗：API Key、Endpoint、模型选择；支持 DeepSeek / GLM / Doubao Seed 模型切换
+- 全局设置弹窗：API提供商化（华为MaaS/火山方舟/DeepSeek 预设+自定义）、AI偏好、云同步、订阅、关于
+- 学习统计页（StatisticsStore 按天聚合，只增不减）
 - 流式渲染：ForEach Key碰撞修复；role映射修复prompt泄漏
 - 生命周期：提炼弹窗180s超时，切后台自动中断请求；页面销毁停止定时器
 - 返回键拦截：弹窗打开时，返回键优先关闭弹窗
 - 华为账号登录（Account Kit 纯客户端授权，AGC 应用 6917618071300773117）
-- 云同步（RDB+cloudSync 快照行模式，2026-10-03 双端调测通过）
-- UI：暗紫主题锁定暗色（方案A）；Pixso 设计稿 canvas 线已落地（0.167~0.173）
+- 云同步（RDB+cloudSync 快照行模式；与华为账号登录态耦合，同开同关，0.196.8）
+- 订阅体系（¥9.9/月+¥99/年 IAP 占位；到期只锁云同步其他可用，0.194.0）
+- UI：暗紫主题锁定暗色（方案A）；Pixso 设计稿 canvas 线已落地；四主页面背景 BG_CANVAS
 
 ## PENDING 待开发任务
-（★ 0.193.0 清理：原「任务1 DAG链路回溯与10+15摘要压缩」早已实现——buildBranchMessageList 现为 token 化阈值制，死条目删除；当前无待开发任务，2.0 学习模块方向见对话记录）
+（当前无待开发任务；2.0 学习模块方向见对话记录）
 
 ## 版本迭代简表
-> 只留核心能力与关键教训；完整记录见 docs/ 主文档。
+> 一行结论（版本+一句话+关键教训），不记过程细节（约束#5）；完整记录见 docs/（总索引 docs/index.md，0.165+ 段在 docs/0.165+/）。
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
@@ -35,88 +37,98 @@
 |0.114~0.118|图片预览、输入框自适应、DAG上下文压缩（待开发）|
 |0.121~0.124|Markdown、代码块高亮、深色模式、画布自动排版|
 |0.132|ForEach Key复用bug修复，流式打字机效果|
-|0.136~0.142|TTS语音合成（HTTP路线），分段播放、死锁修复|
+|0.136~0.142|TTS语音合成（HTTP路线，0.189.0 起被本地引擎替代），分段播放、死锁修复|
 |0.143|PersistenceV2存储迁移，API Key落盘修复|
 |0.145|单词库MVP：划词翻译，生词复习|
 |0.146|知识库：划词提炼卡片，知识卡复习|
 |0.147|画布气泡自定义标题、长按菜单|
 |0.151|LaTeX渲染、画布平铺/选项卡双模式（两池数据互通为语义基准）|
 |0.152|矩阵渲染、屏幕圈选截图提炼|
-|0.153|提炼弹窗超时、错误中文提示、Token统计（AI回复秒表已删，提炼弹窗读秒保留）|
-|0.160.x|Prompt泄漏修复、ForEach Key碰撞修复；**ArkUI V2铁律：ForEach item内visibility/if初始求值必须Visible，None/false移出渲染树后通知永不到达**；API key内置默认（**上架前须删**）；docs/0.160.md|
-|0.161.x|学习数量设置、API Key外置rawfile/config.json；**git教训：GitHub Push Protection拦截Key→reset --soft重写历史；unblock-secret链接绝对勿点**；docs/0.161.md|
-|0.162.1|新建分支过渡动画（链式animateTo淡出→切store→淡入440ms防刷屏）；docs/0.162.md|
-|0.163.x|代码块按钮icon化、更名DAG AI Chat、用户logo；**教训：bundleName勿动**（调试profile绑死包名）；docs/0.163.md|
-|0.164.x|华为账号登录跑通；**教训：①Account Kit登录须AGC手动申请调试Profile+手动签名（DevEco自动签名无有效Client ID）②受限权限须Profile ACL显式授权③错误码上屏是排查利器**；docs/0.164.md（错误码速查表）|
-|0.165.x|云同步双端调测收官；**踩坑：新SDK删类型名→类型推断；循环依赖用回调注入；下行写池绝不upsert防回环；AGC入口是「云空间」非云数据库**；遗留v0.165.3=同步状态提示+云空间开关引导；docs/0.165.md|
-|0.166.x|圈注图丢失修复（根因=动画回调清空pendingImages→addBubble加carryImages参数）；平板首页占左栏（Navigation Auto分栏→Stack单栏）；主题锁定暗色方案A（亮色分支代码保留勿删）|
-|0.167.x|Pixso canvas落地：UI_GUIDELINES+DesignTokens双真相源、连线Canvas命令式绘制、子树占位防重叠、等比缩放+限幅方向感知；**教训：Path无viewport自动缩放commands=连线飞左上角真根因；topSafe与信息条padding联动**；遗留：缩放放大恢复路径待补验；docs/0.167.md|
-|0.168.x|画布左侧边栏：平板208常驻/手机抽屉（☰按钮唤出、删边缘右滑热区）；导航「哪进哪回」；**平台坑：①overlay不参与hit test ②系统手势区占左缘0~65px ③手势中途挂载带onClick组件致触摸流重路由（抽屉自关根因→唤出判定移onActionEnd）**|
+|0.153|提炼弹窗超时、错误中文提示、Token统计|
+|0.160.x|Prompt泄漏修复；**铁律：ForEach item内visibility/if初始求值必须Visible，None/false移出渲染树后通知永不到达**；API key内置默认（上架前须删）|
+|0.161.x|学习数量设置、API Key外置rawfile/config.json；教训：GitHub Push Protection拦截Key→reset --soft重写历史，unblock-secret链接绝对勿点|
+|0.162.1|新建分支过渡动画（链式animateTo淡出→切store→淡入440ms防刷屏）|
+|0.163.x|代码块按钮icon化、更名DAG AI Chat；教训：bundleName勿动（调试profile绑死包名）|
+|0.164.x|华为账号登录跑通；教训：Account Kit须AGC手动Profile+手动签名、受限权限须Profile ACL显式授权、错误码上屏是排查利器|
+|0.165.x|云同步双端调测收官；教训：下行写池绝不upsert防回环、AGC入口是「云空间」非云数据库|
+|0.166.x|圈注图丢失修复（动画回调清空pendingImages→addBubble加carryImages参数）；平板首页占左栏；主题锁定暗色方案A|
+|0.167.x|Pixso canvas落地：UI_GUIDELINES+DesignTokens双真相源、连线Canvas命令式绘制；教训：Path无viewport自动缩放时commands错位（连线飞左上角）|
+|0.168.x|画布左侧边栏（平板208常驻/手机抽屉）；教训：overlay不参与hit test、手势中途挂载onClick组件致触摸流重路由（唤出判定移onActionEnd）|
 |0.169~0.171|复习区划词悬浮栏（翻译/入知识库/复制）、边栏信息与UI微调、连线高度缩短启动|
-|0.172.x|连线缩短（verticalSpacing 113，层间距公式113×s）；气泡卡片加「N条对话·X分钟前」（messageId解析时间戳，零模型改动）|
-|0.173.x|气泡拉宽NODE_W 170；单击选中态（selectedNodeId优先、回落current）；边栏副标题「你的AI学习伴侣」；**核心教训：TapGesture count:1/count:2并列绑定单击抢先阻断双击，单双击并存须只绑count:1手动判定（两次tap<300ms=双击）**|
-|0.174.x|首页+设置弹窗UI优化（token收敛、分段控件、主紫按钮）；**满屏教训：NavBarContent底部420px被clip→Stack包Navigation+expandSafeArea铺满全屏；setWindowBackgroundColor手机端不可用；SemiBold=数字600+Inter-SemiBold**|
-|0.175.0|设置三Tab协调：保存右侧加「返回」；小字行间距以云同步为标准（多行提示lineHeight 18）入UI_GUIDELINES；称呼示例「好奇宝宝」|
-|0.176.0|信息条左上角返回箭头删除（边栏落地后画布即主页面，pop回Index入口由边栏导航承担）|
-|0.177.0|IDE分层图标警告修复（icon改指layered_image）；冷启动旧logo闪现修复（startIcon.png漏换，同图替换）|
-|0.178.0|冷启动logo闪现根治：startWindowIcon透明化（全透明png）+start_window_background两处→#120B1F；信息条标题「知识画布」→「气泡树」；桌面短名DAGAI保留|
-|0.179.0|首页改版：主按钮「进入气泡树」、按钮+登录区下移拇指区、标题32/副标题14；**布局：Blank弹性占位2:3:1（有layoutWeight子元素时justifyContent Center失效）**|
-|0.180.0|边栏跳转单词库/知识库不收抽屉，返回画布边栏保持打开（哪进哪回状态保持）；**教训：pushPath压栈不销毁源页面、组件状态路由往返天然保留，跳转前主动重置入口UI状态反而破坏哪进哪回**|
-|0.181.x|ChatPage 按稿收敛（DesignTokens 批量套色、isDark/getThemeStore 清零、圆角/字重对齐：气泡 RADIUS_NODE/面板 RADIUS_NAV/控件 RADIUS_CONTROL/标题字重 600）；首页标题下移 56vp（弹性占位 2.5:2.5 对冲）；**教训：版本号同步点共三处=app.json5+Index.ets 注释+首页显示文本**|
-|0.182.x|画布/对话页六项打磨+两连调：☰→gitbranch、发送+▾合体（isLoading 置灰守卫、▾保持可用）、喇叭 icon 调亮四处、点输入框外收键盘（根容器 onClick clearFocus）、画布空白双击放大（一档 1.25、中心移动走 1/3 缓动）、选项卡根节点删除修复（confirmDeleteBubble 改调 deleteTab 复用确认弹窗）；**教训：①GestureEvent 无 x/y 属性，取点击位置须用 onClick 的 ClickEvent.x/y（组件局部坐标）②交互位移类须缓动勿突变跳转（用户嫌「太唐突」）**|
-|0.183.x|单词库/知识库两页（含各自设置弹窗）按稿收敛：isDark 三元死代码清零（getThemeStore 方法删）、操作蓝 #1976D2→BRAND_PRIMARY、删除红 #F44336→DANGER、弹窗面板灰→SURFACE_NODE、输入框灰→SURFACE_SOFT、遮罩→OVERLAY、圆角 8/6/4→RADIUS_CONTROL、12→RADIUS_NAV、Bold→600、列表卡片升级 SURFACE_NODE+STROKE_CARD 描边；两页根 Stack 补 BG_APP 底色（原透 NavDestination 纯黑）；**教训：①NavDestination 自带 #FF000000 黑底，页面根容器不设底色即透黑②像素验证以 UI 树 json 的 backgroundColor/bounds 为铁证——截图与 UI 树同一像素坐标系勿做分辨率换算，且遮罩压暗色（#241640×50%≈#120B20）恰与 BG_APP #120B1F 同色、易误判遮罩未生效**|
-|0.184.0|屏幕标注页双升级：①补充要求输入框（圈注后写「标题写什么/内容围绕什么展开」——存入知识库图+文一起发 AI 按用户要求精准提炼，ApiClient 双提示词按 note 有无切换；导入对话/创建子气泡时文字填入对话输入框）②标注页 UI 对齐暗紫 DesignTokens（isDark 三元清零、顶栏撤销/清空 icon 化、返回确认弹窗覆盖补充要求）；**教训：addBubble 扩 carryText 随切换回调带入（与 0.166.1 carryImages 同模式，防 140ms 动画回调清空）**|
-|0.185.0|单词库设置弹窗（⚙）新增音标口音切换：美式（默认）/英式两选项，切换先确认弹窗「切换音标后，原先的音标将会被删除」，确认后 clearAllPhonetics 清空现有音标+toast、后续查词按新口音生成（ApiClient 双提示词口音参数化 buildWordQueryPrompt(british)/buildWordQueryZhPrompt(british)）；**教训：PersistenceV2 新字段必须全新 key（phonetic-accent-v1 仿 learn-count-v1），挂旧 key 读取为 undefined**|
-|0.186.0|文档管理+AI token优化+核心文档精简线：①docs/按版本段重组织（0.140-0.152/0.160-0.164/0.165+三段+归档archive/），加总索引 index.md ②分层按需加载（L1总索引/L2段索引/L3详情/L4归档，project_rule.md 加 §5）③0.164.md 32.6KB→5.2KB 精简（砍已排除项细表/错误码速查/AGC步骤/签名执行记录）|
-|0.187.0|单词库记忆算法（简化遗忘曲线 R=e^(-t/S)，方案B：下次复习=现在+S，用户拍板）：①复习区（气泡底部+提炼弹窗）👆点词展开 3 档评分——生疏（首评10分钟/复评×0.5，下限10分钟）、尚可（首评12小时/复评×1.6）、熟知（首评2天/复评×2.4），S 上限365天；评分后显示「下次复习：X」②展示即复习（抽进复习区即 reviewCount++，不点评固定顺延6h；**到期闸门防抖**：仅 now≥nextReviewAt 才计数——替代豆包提的固定24h防抖，24h 会把词卡在到期态霸占复习位18小时）③选词替换纯随机（到期词按遗忘风险R升序→新词→未来词）④单词本列表加「下次复习」行（已到期红/未学习灰）+排序3态（最新↓/最早↑/需复习↑）⑤算法纯后台隐藏（MemoryAlgorithm.ets，WordItem 加 strength/reviewCount/lastReviewAt/nextReviewAt 4字段，存量数据 normalizeMemoryFields 兜底）；**教训：①复习区缓存原按词库长度失效——加1词=全量重抽=几十次虚假复习，改按消息ID永久固定+读取时滤已删词②单位统一存「天」浮点（10分钟=0.00694天），防分钟/小时/天混用BUG**；完整算法文档 docs/0.165+/0.187.0 记忆算法与复习系统.md（含参数表+ArkTS核心代码+未来开放设置构思，用户要单独研究）|
-|0.188.0|知识库复刻记忆算法+三角图标+AI报错诊断：①知识卡同款复刻——KnowledgeCard 加4记忆字段、pickReviewCards 遗忘曲线选卡、展示即复习、3档评分UI（气泡/提炼弹窗两处，评分区@Builder 泛化 MemoryItem=WordItem|KnowledgeCard 联合类型共用）②知识库列表加「下次复习」行+排序3态移顶栏右上角（单词库同款，用户要求右上角）③复习区图标 👆→▼/▲ 紫色三角（BRAND_SECONDARY 辅助紫=提示语义，UI_GUIDELINES 对齐；展开态 ▼转▲）④**streamChat 零内容流诊断**（extractStreamError：HTTP 4xx/5xx 的 JSON 错误体无 data: 前缀、此前被 SSE 解析器静默吞掉统一显示「AI 未返回文本内容」——真实原因 key失效/模型下线/限流 不可见；现零内容时解析原始体提取 error.message 走 onError 展示，合法SSE无error才维持通用提示）；**教训：requestInStream 无状态码校验，错误体与正常流同走 dataReceive——诊断要留原始体预览（rawPreview 600字符截断）**；用户报「AI 未返回文本内容」排查结论：非 v0.187.0 回归（发送链路未动），是火山侧变化+错误暴露缺陷，等真机复现看真实错误|
-|0.189.0|本地TTS免费离线（CoreSpeechKit，用户拍板：云端火山TTS取消、仅本地）：①新建 LocalTtsEngine.ets——canIUse 探测+createEngine 懒创建（失败置 null 可重试）、splitTextForTts 分段（280字/段，自 ChatPage 迁入单一真相源）、首段抢占 queueMode1+后续排队 queueMode0 无缝连播、会话回调 onStart/onComplete/onError 用 **requestId 集合严格限定当前会话**（旧会话迟到回调一律忽略，免代际号）、stop 幂等；单例 localTts 供 WordSpeaker/ChatPage 共用=引擎级互斥②WordSpeaker 本地引擎化（HTTP合成→base64→临时文件→AVPlayer 链路全删，speak(word, onUnavailable?) 签名简化）③消息朗读直连本地引擎（云端分段管线 4 方法+11 状态全删，stopTTS 简化为停引擎+清状态）④**火山TTS配置存档 docs/0.165+/0.189.0 §9**（端点 openspeech 2.0/鉴权三件套/音色 bigtts/历史教训——用户找 URL 花了很久，恢复照抄+git 历史 be98570）⑤设置页音频字段保留休眠；**关键事实（SDK d.ts 实读）：文本上限 10000 字符（用户 AI 说的 500 是 API11 早期旧限制）、中英都支持（en-US Laura person8 需下载语音包=英文发音升级路径）、requestId 仅字母数字中文禁连字符、全设备引擎实例上限3、MatePad 11.5S活力版=HarmonyOS 7.0.0.109 API26 完全支持**；验收要点：断网发音朗读正常、长文连播无缝、英文单词发音质量试听（不合格→en-US 第二引擎）|
-|0.189.1|口音联动+设置页TTS清理（用户批准方案+追加需求）：①**LocalTtsEngine 双引擎**——zhEngine（聆小珊 person13 内置）消息朗读 + enEngine（en-US Laura person8）单词发音真美式，设备实例上限3用2，两引擎 listener 共用会话跟踪器（requestId 全局唯一）②**listVoices 运行时查 Laura 状态**（命名空间级 API19+，INSTALLED/GA/EOM；清单不写死——华为未来上 en-GB/日/韩音色零代码升级，用户语言学习者方向的战略预留）③**downloadVoice 应用内下载**（单词库⚙弹窗「发音语音包」区：状态文案+下载按钮+进度；错误码 1002300010=已下载幂等处理）④**WordSpeaker 口音路由**——Laura 已装→en 引擎；美式+可下载未装→onNeedUsPack 提示（每会话一次，引导⚙下载）；英式→系统无 en-GB 音色（清单封闭仅3个：聆小珊/聆飞哲/Laura）→onNoBritishPack 一次性提示后照常播；未装→聆小珊兜底；hooks 由调用方 toast（单例无 UI）⑤**设置页音频 API 配置区整体删除**（用户指示）——GlobalSettingsDialog 音频三区+0.139迁移逻辑+僵尸 SettingsPage.ets 整文件+Index 路由注册（0.150起零入口）；**教训：ArkTS 严格模式 Record<string,Object> 对象字面量被拒（arkts-no-untyped-obj-literals）——须程序化构建 extra['key']=value；SpeakListener/SpeakParams 字面量须显式类型注解**|
-|0.189.2|口音提示弹窗化+⚙弹窗排版重构（用户实测反馈两条）：①**英式无包提示 toast→AlertDialog**（用户强调：好不容易切英式却给美式发音是重要信息，toast 一闪而过太轻——弹窗「系统暂无英式语音包，当前将按美式发音播放」+确定按钮，用户偏好弹窗）②美式缺包引导同步弹窗化（「美式语音包未下载，发音将使用系统默认音色」+「去设置下载」引导⚙）③**showAccentDialogs(ui) 共用工厂**（WordSpeaker.ets 导出，返回 WordSpeakHooks——onNeedUsPack/onNoBritishPack 走 showAlertDialog、onEngineUnavailable 保持 toast；4 处调用点 ChatPage×3+WordBankPage×1 一行接入 `wordSpeaker.speak(text, showAccentDialogs(this.getUIContext()))`，单一真相源）④**单词库 ⚙ 设置弹窗三区卡片化**（原平铺堆叠灰字乱）——复习显示数量/音标口音/发音语音包各成 SURFACE_SOFT 底+RADIUS_CONTROL 圆角卡片+padding12，区块标题 14 半粗主色+描述 11 弱化，卡片内 TextInput 改 SURFACE_NODE 底与卡片形成对比，交互逻辑全保留|
-|0.190.0|API配置提供商化（用户参考CodeArts截图拍板：3预设+自定义、上下文窗口不要、获取API Key跳官网）：①**模型提供商 2×2 卡片**——华为云MaaS/火山引擎/DeepSeek 3 预设+自定义配置（其他服务商全走自定义），选中=BRAND_PRIMARY 底②**预设表单**=模型名称下拉（预置清单+末位「自定义…」填ID）+API Key+「获取 API Key ↗」openLink 跳官网（华为 console.huaweicloud.com/maas / 火山 console.volcengine.com/ark / DeepSeek platform.deepseek.com/api_keys）+内置端点小字展示（不可编辑）③**模型清单**——火山=用户现网2模型（deepseek-v4-1-flash-260910/glm-5-3-flash-260828）、华为=抄CodeArts清单（glm-5.2/glm-5.1/Kimi-K2.6/DeepSeek-V4-Pro/DeepSeek-V4-Flash）、DeepSeek=官方ID（deepseek-v4-pro/deepseek-v4-flash；旧deepseek-chat/reasoner 2026-07-24弃用）④**自定义配置**=模型URL（必填——用户问是否一定要有：是，无端点无法调用）+模型ID+API Key 三字段；上下文窗口Tokens按用户指示不要（那是开发代码用配置）⑤**ApiConfig 加 provider 字段**——key 'api-config-v2'→'api-config-v3'（0.143教训：旧快照新增字段不落盘），迁移时 provider 由端点推断（inferProviderFromEndpoint：volces.com→volcano/modelarts-maas.com→huawei/api.deepseek.com→deepseek/其余→custom）⑥会话级 Map 按提供商缓存 Key/URL（切换提供商不丢输入，仅保存落盘）⑦**ApiClient 零改动**——三家预设均 OpenAI 兼容+Bearer（华为MaaS api.modelarts-maas.com/openai/v1/chat/completions、DeepSeek api.deepseek.com/chat/completions，2026-10 官方文档核实）|
-|0.190.1|API配置实测七连调+☰回归（用户真机反馈）：①**修 @Builder 按值传参不刷新 bug**（真机实测：切换提供商后模型清单/获取Key链接/占位文案仍是旧提供商——presetFormContent(index) 参数化在预设间切换时 if 分支布尔值不变不重建、ArkUI 按值传参不触发 @Builder 内部刷新；**教训：@Builder 需要随状态变化的渲染必须无参化、内部读 @Local 状态**，presetFormContent 无参化改读 curPresetIdx，onProviderTap/aboutToAppear 同步）②「获取 API Key」各跳各自官网（bug①修复后生效）③火山引擎→**火山方舟**（用户改名），模型换用户指定2个：deepseek-v4-flash-ga-260731（V4-Flash正式版，多模态）+glm-5-3-flash-260828；旧260910预览版 mapLegacyModel 回显自动映射（保存即生效），ChatModel 默认 model 同步④华为MaaS模型ID官方「模型列表」页全量修正（kimi-k2.6/deepseek-v4-pro/deepseek-v4-flash 全小写，此前误大写）+补 deepseek-v4.1-flash（MaaS文档图片理解示例=多模态）⑤模型小字只标**多模态（可发图）/纯文本**（多模态高亮 BRAND_SECONDARY），价格全删（用户指示：价格乱，用户自己上官网对比）+下拉提示「推荐使用多模态模型」⑥「接口地址已内置」小字删除（用户指示：选预设即默认，无需提示）⑦画布左下角抽屉按钮 gitbranch 分叉→☰ 三横线（用户要求：☰=有内容可打开的抽屉语义，0.182.0「与logo统一」方向被否决）|
-|0.190.2|发图拦截+☰图标回归（用户批准方案+图标反馈）：①**纯文本模型发图拦截**——isKnownTextOnlyModel(provider, model)（GlobalSettingsDialog 导出查 PROVIDER_PRESETS，ChatPage 导入）：已知纯文本+pendingImages 非空→sendMessage 发送前 AlertDialog「当前模型不支持图片…建议切换多模态」取消发送/仍要发送（Promise 包装 showAlertDialog，await 取用户选择）；多模态/自定义配置/清单外手填 ID 能力未知**不拦截**（不误伤）②**错误关键词提示**——sendMessage/regenerateMessage 两处 onError 检测 errMsg 含 image/vision/图片/多模态→气泡附加「💡 当前模型可能不支持图片，建议切换多模态模型」（自定义模型对方报错才知道；0.188.0 extractStreamError 已展示真实错误，此为追加建议）③画布左下角 Text('☰') 字符→**menu.svg 图标 18×18**（用户反馈：字符版偏小不居中「之前那个就很好看」——git 考古 4bba3c9 实锤 0.168.4 原始即 Image($r('app.media.menu'))；**教训：图标优先用 svg 资源不用字符，字符字形基线偏移不居中且大小难控**）|
-|0.190.3|对话气泡加宽（用户要求「对话列表宽度再加长一点点」）：用户/AI 气泡 constraintSize maxWidth 85%→90%（ChatPage 两处同步——0.148 原约束防长文本溢出屏幕，90% 仍留边距不顶满）|
-|0.190.4|GLM-5.3-Flash 长回复超时+发送卡死修复（用户真机实测：火山方舟 GLM-5.3-Flash 短回复正常/中回复超长带思考/长回复 Operation timeout，出错后发送卡死；同 Key 同端点 DeepSeek 无问题）：①**readTimeout 60s→300s**——根因：GLM-5.3-Flash 深度思考**不可关闭**（华为MaaS文档实证 glm-5.3「深度思考（不可关闭）」，GLM-5.2 才可开关）+长回复生成总时长轻松超 60s；DeepSeek 思考可开关生成快不触发——**一半模型特性一半超时太短**（回答用户「是不是大模型的问题」）②**requestInStream try-catch 兜底**（ApiClient 中心点一处覆盖发送/刷新/查词全链路——同步异常此前直接抛出，sendMessage 的 isLoading 卡 true→后续发送全被 guard 挡死）③**卡死自愈**（sendMessage/regenerateMessage 开头 guard **前**检测 isLoading=true && streamController=null 异常态→强制恢复放行——**教训：自愈逻辑必须放 guard 前，放 guard 后先 return 到不了**）；中回复超长带思考=GLM-5.3-Flash 思考不可关闭的模型特性（思考走 reasoning_content 显示思考态占位），超时修复后观察|
-|0.190.5|等待态模式提示+三点动画+AI偏好排版（用户三需求）：①**等待态视图**——占位文字（LOADING/THINKING）不再走 Markdown 通道渲染纯文本，改 WaitingDots 三点跳动动画+「AI 正在回复/深度思考 · 短/中/长回复模式」+长模式「长回复生成时间较久，请耐心等待…」（用户要求：等待中必须告知当前模式，长模式特别提示耐心等待）；Markdown 通道占位时传空串防重复渲染②**WaitingDots 组件自管定时器**（用户读秒vs三点动画选了三点滚动；0.160.2 秒表失败教训=页级定时器难清理——**组件级 aboutToAppear 启动/aboutToDisappear 必然清理零泄漏**，phase 0→1→2 循环点亮+300ms 属性动画）③**AI 偏好排版**——删「回复开头附 1~2 句学习鼓励」描述小字（下方💡解释已含，用户指示），自动鼓励区对齐「自定义称呼」节奏（label 14/TEXT_SECONDARY+Blank+Toggle 右置）|
-|0.190.6|错误场景分类+关于Tab（用户批准方案+提供邮箱 1725912449@qq.com）：①**classifyStreamError 错误分类**（ApiClient 单一真相源，ChatPage 两处 onError 接入）——原始英文错误→中文场景说明+建议操作+**保留原始错误**（用户反馈截图可快速定位）；9 场景：图片不支持（0.190.2 逻辑合并）/超时/断网/Key无效/欠费/限流/模型下线/服务器错误/**兜底未知**（引导「⚙设置→关于与反馈联系我们」——用户要求兜底必须有反馈引导）②**设置弹窗「关于」Tab**（Tab5，currentTab=4）——版本号（APP_VERSION 常量，**版本号四处同步**：app.json5/Index.ets/GlobalSettingsDialog APP_VERSION/MEMORY.md）+**反馈与联系**（邮箱点击复制 pasteboard；「✉写反馈邮件」mailto 跳系统邮件应用——主题+设备型号 deviceInfo.deviceModel+系统 osFullName/API+应用版本自动预填，用户只补描述与截图；**应用内无法直接带附件发邮件**（SMTP 凭证入包泄露风险），截图在邮件应用里加；无邮件应用降级复制邮箱）+**隐私政策**（app 内置文本弹窗：不收集个人信息/本地存储/AI服务直传不经手/云同步华为加密/相册权限/联系方式；**上架时按华为官方要求接 AGC 标准化隐私声明托管**——系统自动弹隐私弹窗+应用内入口改调 privacyManager.getAppPrivacyMgmtInfo 查托管链接，华为要求：上架必填可互联网访问的隐私政策 URL+应用内可便捷查看入口）③底部按钮：关于/云同步 Tab 无保存概念→全宽返回|
-|0.190.7|等待态模式小字精简（用户指示）：中回复模式（默认）不再显示「·中回复模式」小字——仅短/长特殊模式显示提示（waitingView 加 if short/long 条件），默认模式不啰嗦|
-|0.190.8|隐私政策弹窗自定义化（用户指示：灰色系统弹窗不好看，按我们的 UI 格式来）：AlertDialog→应用暗紫设计语言自定义弹窗（GlobalSettingsDialog build Stack 顶层 privacyVisible 驱动：遮罩点击关闭+SURFACE_NODE 面板+RADIUS_NAV+Scroll 正文分段 ForEach+主紫「我知道了」）；**事实：华为只要求应用内有便捷查看隐私政策入口+内容合规，不规定 UI 样式**——AlertDialog 灰弹窗非强制，自定义样式合规|
-|0.191.0|阅读位置记忆A+B+多模态高亮（用户批准 A+B 都做；评估时给过成功率 A=85%/B=90%+）：①**方案A 会话级高度记忆**——模块级 Map<bubbleId, yOffset>（页面销毁不丢同会话存活；像素值跨设备/字体漂移**不做持久化**，重启走书签/底部兜底）；记录点=aboutToDisappear+createChildBubble 切气泡前（此路径不触发 disappear **须手动记录**）；恢复=restoreReadingPosition()（A 记忆→B 书签→底部兜底，替代原固定滚底）②**方案B 手动书签**——划词工具栏加「标记」（isAiSegmentKey 仅 AI 正文段 key=messageId\|纯数字 显示；用户消息\|u/复习区 rk*/rkd*/rw* 排除）→书签=**段落序号**（parseMarkdown 段索引，不受图片/字体影响跨重启稳定）→命中段前渲染「🔖 上次读到此处（点击清除）」BRAND_SECONDARY 标记线；持久化 ChatBookmarkStore 独立 key 'chat-bookmarks-v1'（**单 JSON 字符串字段**存全部气泡书签——避 Record 字面量+往类加字段旧快照坑）；每气泡一个书签新标覆盖旧标；无 A 记忆时（重启后）scrollToIndex 跳书签消息③**多模态高亮**（用户指示：强烈推荐+高亮，后续图表上传等 AI 辅助功能依赖多模态）——模型下拉提示 TextSpan 三段：「强烈推荐使用」灰+「多模态模型」紫高亮+说明灰|
-|0.192.0|学习统计页（用户定稿：双入口+只增不减+AI鼓励找亮点）：①统计存储 StatisticsStore 按天聚合轻量库（key statistics-v1，单 JSON 字符串字段——对话条数/气泡数/token；**只增不减**：删除消息/气泡不影响已统计）②埋点：sendMessage 用户消息+1 / onDone AI回复+1+token（含 regenerate）/ createChildBubble+新建树Tab 气泡+1 ③统计页 StatisticsPage：AI鼓励卡（档位跟随鼓励三档+称谓拼入+**核心=数据再差也找亮点吹**，天/周环比挑增长最高的）+日/周/月/年四维柱状图+三大块卡片（对话/学习资产含未来7天待复习/token）④双入口：边栏知识库下方「统计」（chart.svg）+账号行点击；**教训：Navigation 路由页根组件必须 NavDestination+hideTitleBar(true)（0.159 模式），直接 Column 作根=全黑屏**|
-|0.193.0|上下文工程五项（学习 Claude Code 源码泄露经验，用户批准 A+B+C+D+E 全做）：①**A 摘要结构化**——SUMMARY_PROMPT 五部分清单（用户问题逐条枚举/核心概念/已推导结论/关键约定/当前进度，≤500字），摘要质量=分支记忆质量 ②**B prompt 集中管理**——新建 common/Prompts.ts 单一真相源（播客/长度/鼓励/统计鼓励/摘要/卡片提炼全收拢），页面禁止散落 prompt ③**C 军规复查**——卡片提炼三 prompt 数字锚定（"精简/压缩"违规词→"2~8字/不超过60字"）④**D MEMORY.md 瘦身**——删过时 PENDING 死条目 ⑤**E 压缩阈值 token 化**——buildBranchMessageList 条数制(25条)→token 估算制（触发线 24000 估算token≈1.6万字；保留预算 8000 token 替代固定15条；短对话不压缩全量质量更高；needRegenerate 增量保持条数制零迁移）；IDE 侧：docs/CONTEXT_MANAGEMENT.md（上下文自律+10条军规+用户画像）+project_rule.md §8|
-|0.194.0|订阅体系（用户定稿：¥9.9/月+¥99/年 IAP 占位；到期只锁云同步其他 100% 可用）：①SubscriptionStore（key subscription-v1：freeTrialStart/subscriptionExpire/redeemedCodes/purchaseHistory）②账单页 BillingPage（状态卡四态+IAP 占位+兑换码+记录+发票指路华为订单中心）③200 种子码 DAGAI-XXXXX-XXXXX（scripts/gen-redeem-codes.ps1 生成+SHA256 哈希白名单离线校验防反推；明文清单 gitignore 用户自管；每码+90 天可叠加顺延）④登录免费试用 30 天（stampFreeTrialOnLogin 三处统一：doLogin/启动补查/账单页登录；**bugfix：兑码叠加基准含试用期末**——30+90=120 天，原实现并行吞试用期）⑤**兑换前置登录**（未登录隐藏输入框+登录按钮+doRedeem 兜底拦截——用户实测未登录可兑后堵上）⑥云同步 VIP 守卫（GlobalSettingsDialog 非 VIP「订阅后开启」）|
-|0.195.0|到期提醒+UI大统一+大屏常驻边栏（用户 Pad 验收全过）：①**到期提醒**——SubscriptionStore 增 reminderState（checkDailyReminder 到期前 7 天每日一次/markReminderShownToday/markWelcomeShown），ReminderDialog 自定义暗紫弹窗（倒计时+「去账单」CTA），Index doLogin 欢迎+onPageShow 每日+账单页三接入②**UI 大统一**——顶栏左/上间距以气泡树信息条为基准（对话/单词库/知识库三页 left 8→28(大屏)/14(小屏)+top 8+right 14，Pad 实测 590px 对齐；UI_GUIDELINES 10.1 信息条=基准本尊）；icon 两档制 20/18+相邻间距 8vp；emoji→svg（settings/refresh/edit/speaker 三态/undo/trash/bubbles）；输入框 TextArea 原生 constraintSize（measureTextSize 密度单位坑弃用）；单词库字母排序（intl.Collator 走 @ohos.intl——@kit.ArkTS 不导出）+排序互斥 === 修复③**大屏常驻边栏重构**——AppSideBar 共享组件抽取（Index Row[边栏208\|Navigation layoutWeight(1)]，BBTreeCanvas 平板分支删除）；sideBarNav 回画布四态（栈顶 no-op/栈中 pop 到顶/不在栈 replacePath/空栈 push）；**选中态动态跟踪**（pathStack.setInterception didShow 拿路由名→@Param currentRoute 注入，ChatPage/AnnotationPage 归气泡树，设置弹窗开着亮设置——修用户实测「停统计页边栏仍亮气泡树」原硬编码永久高亮）④**画布入场重排**——onAreaChange 首次回调补 autoLayout（修冷启动渲染历史散落坐标：用户实测 4 根气泡散布→整齐竖列；画布无手动拖拽定位，入场规范化安全）⑤画布顶格（顶边距 24→0+顶圆角归零，59px 空条消灭）+对话页返回箭头大屏专属（≥600vp）⑥**装机教训：hdc 装机必须递增 versionCode**（同号安装设备可能不刷新代码——实测「装了不生效」排查两小时；**HAP 验尸法**：解包 modules.abc 搜字符串（如 v0.195.0）定责构建侧/设备侧；hvigor 增量缓存坏过一次 BuildJS 3ms 假编译，Clean 重编 CompileArkTS 21s 才真编）|
-|0.195.1|优化迭代（用户指示「优化 memory 那一套+代码，重新提交一版」）：①**版本注释瘦身**——app.json5 20.7KB→1KB / Index.ets 40.4KB→23.3KB（版本历史注释只留近两版，历史指向 MEMORY.md 版本表唯一真相源；新增全局硬性约束 #7 禁止注释墙）②**协作铁律入档**——全局硬性约束 #6：连不上/IP 变/任何异常**先问用户再动手**（用户拍板「不懂就来问我，别浪费我的钱」；设备 IP 经常变，问一句省一小时排查）③BBTreeCanvas 缩进修正（0.195.0 编辑残留 9 空格）|
-|0.196.0|知识复习功能开工·第一步评分按钮时间化（用户截图拍板）：①MemoryAlgorithm 新增 previewIntervalDays（不落盘预览这档评完的间隔，与 applyRating 同一套首评绝对/复评系数/钳制逻辑）+ formatIntervalDays（间隔天数→中文短标签：分钟/小时/天/个月，UI 侧加「后」）②ChatPage ratingArea（气泡复习区+提炼弹窗共用一处）：主标签「生疏/尚可/熟知」**保留**，灰色小字描述（几乎想不起来等）→**复习时间**（10分钟后/12小时后/2天后，复评按当前强度×0.5/×1.6/×2.4 动态算）；按钮 layoutWeight(1) 三等分→**固定窄宽 96**（平板拉伸太难看，用户拍板全设备窄胶囊）③**教训：用户 DevEco 开着的旧缓冲区会覆盖 AI 的文件修改**（本次 4 文件被还原重做一遍）——改代码期间用户勿在 DevEco 保存旧文件④下一步：知识复习页面（复习用知识卡片，「跟传统页面有一点点不同」——细节待用户展开）|
-|0.196.1|知识复习页上线（用户定稿全需求，Anki 式单卡）：①**ReviewPage**——一页一卡居中（区别传统列表页；场景=等 AI 回复时专注背单词），顶部 2 标签切换单词库/知识库（分段控件同画布样式），队列按记忆算法排表（到期风险→新词→未来，pickReviewWords/pickReviewCards 全量），评分按钮三行全上（生疏+几乎想不起来+10分钟后——界面大描述回归，用户拍板「加了很漂亮」，宽 130）②**背完不循环**——完成页「恭喜你！今天的复习任务已经完成」+ AI 鼓励（复用统计页 buildStatEncouragePrompt+streamChat 带会话数据「共复习 N 个（生疏 X/尚可 Y/熟知 Z）」；鼓励档位 off 或 AI 失败→默认一句话兜底，用户拍板「鼓励永远要有」）③**入口**：边栏「知识库」下方「复习」项（唯一入口，refresh.svg 图标）——AppSideBar 四处接线（label/icon/isItemActive/导航项）+ Index sideBarNav+pageMap + BBTreeCanvas 手机抽屉④**元服务 vs 服务卡片结论（用户拍板搁置元服务）**：元服务独立沙箱读不到主 App 本地词库=对咱们没网就废→搁置；桌面背单词走**主应用服务卡片**（100% 本地离线可用，复习页做完后的下一步）|
-|0.196.2|复习页六项修正+三 bug 修（用户实测反馈轮）：①**以天为单位**（用户拍板核心逻辑）：当天队列=到期+新词（未来排期不掺入），「继续复习」=把明天之后的未来内容提前背（future 按 nextReviewAt 升序）；当日完成状态落盘 ReviewDailyState（key review-daily-v1，同日多次完成累计），**当天完成后再进直接跳完成页重新生成鼓励**②完成页：总结独立成卡（SURFACE_SOFT）+加载态「总结正在生成」+WaitingDots 三点动画（ChatPage export 复用）+两按钮继续复习/完成（无未来内容时隐藏继续）③单词卡加喇叭发音（wordSpeaker 三态 svg 同单词库）④评分按钮宽自适应 130/104（手机 3×130 溢出实测）⑤边栏「复习」→「知识复习」⑥**头像点击=华为账号退出确认**（系统 AlertDialog 同 0.189.2 先例；原跳统计页废弃，Index/BBTreeCanvas account 死分支清除）⑦**三个设置弹窗点空白关闭**（全局设置走 requestClose 安全路径=有未保存先确认；两库 ⚙ 弹窗面板加空 onClick 防冒泡——ClickEvent 无 stopPropagation 的替代法）⑧进度 1 基显示「第 N/共 M」|
-|0.196.3|实测修正轮（用户截图/录像反馈）：①**顶栏颜色字体对齐气泡树**（用户实测「一亮一暗、高度不一样」）：对话页副标题 TEXT_TERTIARY→TEXT_SECONDARY+FONT_INTER、标题补 FONT_INTER_SEMIBOLD、去 margin 1——以气泡树信息条为准②**待发图片点击放大 bugfix**：openImageViewer 只收集已发送消息的图，待发图走它=静默 return；改直接以 pendingImages 开查看器③**未登录点头像=拉起登录**（loginWithHuaweiID；用户实测退出后再点没反应）④复习卡喇叭移音标旁（单词独占一行居中；无音标喇叭独立一行；缩写词读全称不变）⑤复习页知识卡显示图片（imageUri，原只有标题+定义）⑥「恭喜你！」标点悬挂（margin-left 26=！全角宽，恭喜你 3 字与副标题居中对齐）⑦**侧边栏滑动 bug 根因查明（非 bug）**：用户录像时 App 在**小窗/分屏**（实测窗口 1128×2444 竖屏=451vp<600vp 断点）→ 自动切手机模式=抽屉边栏会滑动；全屏横屏 2800×1840 边栏固定 ✓（s2/s3 双 dump 实锤窗口尺寸突变）——断点行为待用户拍板保留或改|
-|0.196.4|窗口宽度模式（用户实测验证「修复好了牛逼」）：①新建 common/WindowMode.ets（AppStorageV2 共享真相源，@Trace isTablet）②**根因**：各页 isTablet 用 display 屏宽判定——分屏/悬浮窗时**屏宽不变**（Pad 仍 1120vp≥600）→ 小窗仍渲染平板布局（边栏挤压+黑屏，用户 PS 叠图+录像实锤）③**修复**：Index 根 Stack onAreaChange 按窗口实宽写入（resize 实时跟随，首帧屏宽猜测一帧内校正）；BBTreeCanvas/ChatPage/两库/ReviewPage 五页 @Computed get isTablet() 读共享实例（旧用法 this.isTablet 零改动），各页 display 检测代码+import 全删④**待办**：顶栏像素级对齐（用户 PS 叠图：标题 y 差约 60px+背景色 BG_CANVAS vs BG_APP 不一）——待全屏实测定位信息条内部偏移|
- |0.196.6|导航栏高度全页统一（用户 PS 实锤：气泡页顶栏内容底边到导航底边 336px / 气泡树 300px，差 36px；用户三次拍板「导航栏必须所有的统一为气泡页面的高度」）：**所有页面顶栏 Row 显式 `.height(40)` 固定高**（气泡页为基准本尊，气泡树/单词库/知识库/复习四页向它对齐），➕ 按钮显式 `.height(40)`，顶栏总高 56vp；修复前各页靠 Button 默认高/标签行撑起 → 高度有歧义（复习页 Row 仅 36vp）；UI_GUIDELINES 10.1「Row 高度机制」行同步改写（禁止依赖隐式撑高）；补 0.196.5 漏同步的 Index.ets/GlobalSettingsDialog 版本号|
- |0.196.5|顶栏像素级对齐+背景统一（用户 PS 叠图复验「牛逼」）：①**Y 向对齐根因**：画布信息条 Row 由 40vp ➕ 撑高、标题列垂直居中（较顶放下移~10px），对话页顶栏无 40vp 控件标题顶着放——两页标题 y 错位；修复：对话页三个 icon 包裹行 `.height(40)` 撑高 Row + 标题列 `space:2`（同画布 Column({space:2}) 结构）→ 两页标题同高同 y 像素级一致②**背景统一**：四主页面（对话/单词库/知识库/复习）根底色 BG_APP→**BG_CANVAS #160D26**（与画布面板同色；用户叠图「底下背景色不一样」；首页仍 BG_APP）③**UI_GUIDELINES 10.1 补三条**（用户要求入档）：顶栏 Row 40vp 撑高机制（新页顶栏强制有一个 40vp 控件）/标题列结构 Column({space:2}){16/600/Inter-SemiBold, 11/TEXT_SECONDARY/Inter}/四主页面背景 BG_CANVAS|
- |0.196.7|顶栏 Row 高度 40→56 + 适应全图重排填补空洞（用户拍板「以气泡树叶为标准」「不要空着」）：①**顶栏根因**：ArkUI `.height(n)` 含 padding——0.196.6 的顶栏 Row `.height(40)` + padding 8/8 把内容区压到 24vp，三个 icon 包裹行 40vp 溢出居中，顶栏整体比树页高 8vp（icons 中心 y137 vs 树页 ➕ y157；标题 Text y107-154 vs 树页 115-162）→ **修复**：ChatPage/WordBank/KnowledgeBank/Review 四页顶栏 Row `.height(40)`→`.height(56)`（=8padding+40内容+8padding，与树页外层 Column frame 等效：Row y88-228≈树页 88-227，内容区 y108-208≈树页 107-207，标题列自然高 34vp 居中=树页逐像素一致）；树页 BBTreeCanvas 保持原结构（Column padding 8/8 + 内层 Row height40 无 padding）为基准本尊；UI_GUIDELINES 10.1「Row 高度机制」行同步改写（显式 .height(56)，禁止隐式撑高）②**适应全图=重排+适配**（用户实测：删中间树后空洞永远留着，点适应全图只缩放不补位）：右下角适应全图按钮 `fitViewport()`→`autoLayout()+fitViewport()`——layoutFlatForest 多根纵向堆叠，下面的树整体上移填补空缺；气泡不可拖动（PanGesture 仅画布平移）无自定义位置可破坏；tabs 模式删子节点空洞同样受益；autoLayout 自带 saveTree/redrawEdges|
- |0.196.8|云同步↔华为账号登录态耦合（用户拍板「同时开/同时关」；实测痛点：退出账号后云同步仍显示已开启——系统权限 DISTRIBUTED_DATASYNC 授予后应用无法撤销，云侧已无账号会话实际同步不了）：①**CloudSyncUtil 加应用级开关** CloudSyncStore（PersistenceV2 key 'cloud-sync-switch'，@Trace enabled）——激活条件升级「权限授予 && 开关开」（initCloudDb 同步改）；新增 setCloudSyncEnabled（统一入口：开→权限在即激活/不在待授权，关→deactivateCloudSync 退订 dataChange 下行+清激活标记）/isCloudSyncOn（状态=权限&&开关，设置页显示用）/promptEnableCloudSyncAfterLogin（登录后 AlertDialog「是否开启云同步」，isVip 由调用方传入防循环依赖——ChatModel 已 import CloudSyncUtil；非 VIP 不弹）/disableCloudSyncOnLogout（退出→开关强制关+toast，没开过不打扰）；requestSyncPermission 授权成功同步落开关 true②**三条登录路径**（首页 doLogin/边栏头像/账单页 doLoginFromBilling）成功后统一弹「是否开启云同步」③**两条退出路径**（首页退出按钮/边栏头像确认弹窗——文案本就预告「退出后将停止云同步」）成功后强制关开关（logoutHuaweiID 无论取消授权成败都清本地登录态）④**设置页云同步 Tab**：状态语义升级 isCloudSyncGranted→isCloudSyncOn；未登录点「开启云同步」→toast「云同步需登录华为账号，请先登录后再开启」拦截；状态卡描述加未登录分支「云同步与华为账号绑定——请先登录华为账号」|
- |0.196.9|取消登录静默 + 确认弹窗暗紫化（用户实测两反馈）：①**取消登录红字 bug**：首页点登录→取消→红字「已取消授权【code=1001502012…】」常驻首页（loginTip 显示非空 tip）——修复：HuaweiAccountUtil 导出 AUTH_CANCELLED_TIP='已取消授权'，errorToTip 对 1001502012 提前 return 固定短提示（不附 code 调试后缀不打错误日志——用户主动取消是正常行为非错误）；Index.doLogin/BillingPage.doLoginFromBilling 判 tip===AUTH_CANCELLED_TIP 静默 return（AppSideBar 本就无错误显示）②**两确认弹窗暗紫化**（用户问「是我们 app 的还是系统的」——答：app 调的系统 AlertDialog，可改）：「退出华为账号」确认（0.196.2 起系统灰底）+「是否开启云同步」询问（0.196.8 新加系统灰底）与暗紫风格不符——新建 **AppConfirmDialog** 通用组件（components/AppConfirmDialog.ets：0.190.8 隐私弹窗/0.195.0 ReminderDialog 同款设计——遮罩 rgba(0,0,0,0.5)+SURFACE_NODE 面板+RADIUS_NAV+STROKE_CARD 描边+主紫确认钮/取消弱化描边钮；@Param title/message/confirmText/cancelText + onConfirm/onCancel，遮罩点击=取消防误触）+ **ConfirmDialogStore**（AppStorageV2 key 'confirm-dialog'，@Trace logoutConfirmVisible/cloudSyncPromptVisible——应用级共享不落盘，重启不残留弹窗）；**挂载点唯一：Index 根 Stack 顶层**（盖住 Navigation 全部子页——AppSideBar 常驻/抽屉两形态全兜住，规避在 208vp 边栏内挂全屏遮罩被裁剪）；AppSideBar 头像退出确认改 store 触发（logoutHuaweiID 引用随删——确认走 Index doLogout 一条龙）；CloudSyncUtil promptEnableCloudSyncAfterLogin 拆 shouldPromptCloudSyncAfterLogin（判定）+enableCloudSyncNow（执行）——弹窗 UI 移 Index 挂载；系统级授权窗（DISTRIBUTED_DATASYNC）无法自定义保持系统样式|
- |0.196.10|云同步设置页 UX 两连改（用户实测两反馈）：①**状态图标「圈+勾」**：未开启原是空心圆「○」Text——用户实测「让我有去点的意识，实际点了没用」→ 改 Stack 圆形容器（22×22/borderRadius 11/border 1.5）+内嵌「✓」：未开启=STROKE_CARD 描边圈+TEXT_TERTIARY 淡勾+透明底（纯状态指示不可点），开启=#4CAF50 绿圈+绿勾+rgba(76,175,80,0.12) 淡绿底②**未登录点「开启云同步」toast→登录引导弹窗**（用户拍板「多此一举，还要让用户返回主页/边栏登录」）：AppConfirmDialog 加 @Param confirmOnLeft（确认钮放左——用户指定「左下角登录华为账号，右边取消」；@Builder cancelButtonBuilder/confirmButtonBuilder 双钮抽取复用）+ConfirmDialogStore 加 @Trace loginPromptVisible；设置页未登录分支 onClick 改 store 触发；Index 根挂第三弹窗（title「需要登录」/confirmOnLeft/确认→doLogin 直拉登录——成功后自动接「是否开启云同步」询问链，全程不离开设置页）③**状态卡响应式实时刷新**（顺带修）：原 @Local syncGranted 开弹窗快照一次——弹窗内开启云同步后状态卡滞留「未开启」要重开；改 permGranted（@Local，权限开弹窗时查一次）&& cloudSwitch.enabled（CloudSyncStore @Trace 实时）@Computed get syncOn()——开启/退出强制关时状态卡即时变|
- |0.196.11|云同步入口登录分流（用户实测反馈「从云同步入口进来登录的，登录完再问要不要开云同步多此一举——我的入口就是要开云同步」）：Index.doLogin 加 fromSyncEntry 参数——**入口即意图**：设置页「开启云同步」→登录引导弹窗→doLogin(true)，登录成功 isVip 直接 enableCloudSyncNow（首次会弹系统授权窗，授权即开；非 VIP toast 会员提示），**不再弹「是否开启云同步」询问**；普通登录路径（首页按钮 doLogin(false)/边栏头像/账单页）保持询问弹窗（用户意图只是登录，问是否开同步合理）|
- |0.196.12|代码优化轮（零功能变更，纯清理）：①**删死代码** isCloudSyncOn——0.196.10 设置页状态改响应式 @Computed（permGranted && cloudSwitch.enabled）后无调用方②**设置页「开启云同步」按钮去重**——未登录/VIP 两分支按钮样式 12 行完全相同，合并为一个 Button + onClick 内分流（未登录→登录引导弹窗 return；已登录 VIP→requestSyncPermission）；非 VIP「订阅后开启」样式不同保持独立③**BillingPage 加 showToastSafe**（GlobalSettingsDialog 同款 try-catch 静默包裹）——5 处裸 showToast 统一收口，消编译警告「Function may throw exceptions」|
- |0.197.0|复习页卡面两修（用户实测两反馈）：①**英文展示词截断绝对不允许**（用户拍板「不管怎么样都要限制在窗口里 100% 展示，哪怕换行，点点点 100% 不行」）：单词 Text 原 fontSize30+maxLines(2)+Ellipsis——长英文短语（如 Natural Language Processing）必截「Natural Language …」→ 改**自适应缩字号**：maxLines(3)+minFontSize(16)+maxFontSize(30)（放不下自动缩字体而非省略号）+textAlign Center（折行后各行居中，原折行左歪）；知识卡标题同款（24→minFontSize14/maxLines3）②**评分按钮底部留白**（用户实测「顶格顶底不太好」）：卡片+评分组外层 Column（Blank 弹性居中结构）加 padding bottom 32vp——按钮永不贴屏幕底边，上边距由 Blank 弹性天然保证|
- |0.197.1|评分按钮内部留白（0.197.0 ②的延续——用户澄清「指的是按钮框离它上面内容的边，文字贴按钮框上下边：上 0/下 1-2vp，框的高度增加一点」）：三评分按钮（生疏/尚可/熟知）各加 `.padding({top:12, bottom:12})`——ArkUI Button 自定义内容默认压贴边，显式内边距撑高 ~24vp，文字离框边留白|
- |0.197.2|全局设置「复习」Tab 加保存按钮（用户反馈「复习选项卡没有保存按钮，添加一个，注意 UI_GUIDELINES」）：①**交互模式改造**——原即时生效无保存概念（快速项/确定直接写 store）→ 改**编辑副本+保存**（与 API/AI 偏好 Tab 统一）：新增 @Local editReviewLearn/editReviewKnowledge，快速项/输入确定只写副本，saveAll 统一落 store（learnCountStore/knowledgeCountStore，PersistenceV2 落盘两处复习区即时生效）；种子回显三处（aboutToAppear + 复习 Tab 点击 + 弹窗打开）②**脏检查纳入** hasUnsavedChanges 加两副本 vs store 对比——有未保存修改关闭弹窗走既有二次确认③**底部按钮** 复习 Tab(5) 从全宽「返回」分支移入「保存+返回」分支（条件 !== 3 && !== 4）④**UI_GUIDELINES 间距表新增「设置弹窗底部保存按钮行」行**（0.197.2 入规则：保存左 BRAND_PRIMARY/返回右 SURFACE_SOFT、height 48/CardTitleSm/RADIUS_CONTROL、按钮行固定 Scroll 之外防表单超屏推出保存、保存不关弹窗+toast、无保存概念 Tab 全宽返回）|
- |0.197.3|保存/返回按钮等宽修复（用户实测「保存和返回这 2 个按钮的宽度不一样，一定要一样；规格写进 UI_GUIDELINES」）：根因——间隙挂在「返回」按钮的 `.margin({ left: 12 })` 上，margin 参与 layoutWeight 分配把返回挤窄 12vp → 修复：`Row()` 改 `Row({ space: 12 })`、删返回钮单侧 margin，双按钮 layoutWeight(1) 均分剩余空间**像素级等宽等高**；UI_GUIDELINES「设置弹窗·底部保存按钮行」行同步改写（0.197.3 等宽强制：间隙一律用 Row space、禁止挂单侧 margin + bug 教训入档）|
+|0.172.x|连线缩短（verticalSpacing 113）；气泡卡片加「N条对话·X分钟前」（messageId解析时间戳，零模型改动）|
+|0.173.x|气泡拉宽+单击选中态；**教训：单双击并存须只绑count:1手动判定（两次tap<300ms=双击）**|
+|0.174.x|首页+设置弹窗UI优化；教训：满屏须Stack包Navigation+expandSafeArea（NavBarContent底部被clip）、SemiBold=数字600+Inter-SemiBold|
+|0.175.0|设置三Tab协调（保存右侧加「返回」）；小字行距标准 lineHeight 18；称呼示例「好奇宝宝」|
+|0.176.0|信息条返回箭头删除（边栏落地后画布即主页面）|
+|0.177.0|IDE分层图标警告修复（icon改指layered_image）；冷启动旧logo闪现修复（startIcon.png漏换）|
+|0.178.0|冷启动logo根治：startWindowIcon透明化；信息条标题「气泡树」；桌面短名DAGAI保留|
+|0.179.0|首页改版（主按钮「进入气泡树」、拇指区、标题32）；教训：有layoutWeight子元素时justifyContent Center失效，用Blank弹性占位|
+|0.180.0|边栏跳转不收抽屉（哪进哪回）；教训：pushPath压栈不销毁源页、跳转前勿主动重置入口UI状态|
+|0.181.x|ChatPage按稿收敛（DesignTokens批量套色、圆角/字重对齐）；教训：版本号同步点三处（0.190.6 扩为四处）|
+|0.182.x|画布/对话页六项打磨（☰、发送+▾合体、点输入框外收键盘、双击放大等）；**教训：GestureEvent无x/y，取点击位置须用onClick的ClickEvent；交互位移须缓动勿突变**|
+|0.183.x|单词库/知识库按稿收敛（isDark清零、DesignTokens全对齐）；**教训：NavDestination自带黑底，页面根容器不设底色即透黑**|
+|0.184.0|屏幕标注页双升级（补充要求输入框+暗紫对齐）；教训：addBubble扩carryText随切换回调带入（同carryImages模式）|
+|0.185.0|单词库音标口音切换（美式默认/英式，切换确认+清空+双提示词参数化）；**教训：PersistenceV2新字段必须全新key，挂旧key读取为undefined**|
+|0.186.0|docs按版本段重组织+AI token优化：分层按需加载（L1总索引/L2段索引/L3详情/L4归档）|
+|0.187.0|单词库记忆算法（简化遗忘曲线R=e^(-t/S)，方案B用户拍板）：3档评分/展示即复习/到期闸门防抖/复习缓存按消息ID永久固定；**单位统一存「天」浮点防混用BUG**；详见 docs/0.165+/0.187.0|
+|0.188.0|知识库复刻记忆算法+紫色三角图标（BRAND_SECONDARY辅助紫=提示语义）+extractStreamError零内容流诊断（HTTP错误体不再被SSE解析器静默吞掉）|
+|0.189.0|本地TTS免费离线（CoreSpeechKit，用户拍板取消云端火山）：双引擎zh聆小珊+en Laura、requestId会话严格限定、单例互斥；文本上限10000字符（500是API11旧限制）|
+|0.189.1|口音联动（listVoices运行时查Laura、应用内下载语音包、设置页音频API区整体删除）；**教训：ArkTS严格模式Record字面量被拒，须程序化构建 extra['key']=value**|
+|0.189.2|口音提示toast→AlertDialog弹窗化（重要信息用户偏好弹窗）+⚙弹窗三区卡片化|
+|0.190.0|API配置提供商化（华为MaaS/火山方舟/DeepSeek 3预设+自定义；ApiConfig provider字段key 'api-config-v2'→'v3'；三家全OpenAI兼容ApiClient零改动）|
+|0.190.1|API配置实测七连调（获取Key各跳官网、模型清单官方修正、价格删除）；**教训：@Builder需要随状态变化的渲染必须无参化、内部读@Local（按值传参不刷新）**|
+|0.190.2|纯文本模型发图拦截（isKnownTextOnlyModel+AlertDialog）+错误关键词提示；**教训：图标优先用svg资源不用字符（字形基线偏移不居中）**|
+|0.190.3|对话气泡加宽 maxWidth 85%→90%|
+|0.190.4|GLM-5.3-Flash长回复超时修复：readTimeout 60s→300s（深度思考不可关闭）+requestInStream try-catch兜底+**卡死自愈逻辑必须放guard前**|
+|0.190.5|等待态模式提示+WaitingDots三点动画（组件级定时器aboutToAppear启动/aboutToDisappear清理零泄漏）|
+|0.190.6|classifyStreamError错误分类9场景（保留原始错误便于定位）+关于Tab（版本号四处同步、反馈邮箱、隐私政策、mailto预填）|
+|0.190.7|中回复模式小字精简（仅短/长特殊模式显示提示）|
+|0.190.8|隐私政策弹窗自定义化（暗紫设计语言；华为只要求内容合规+应用内便捷入口，不规定UI样式）|
+|0.191.0|阅读位置记忆A+B：会话级高度Map（不持久化，A记忆→B书签→底部兜底）+段落书签ChatBookmarkStore（独立key单JSON字段）+多模态高亮|
+|0.192.0|学习统计页：StatisticsStore按天聚合只增不减+AI鼓励找亮点+四维柱状图+双入口；**教训：Navigation路由页根组件必须NavDestination+hideTitleBar(true)，直接Column作根=全黑屏**|
+|0.193.0|上下文工程五项：摘要结构化SUMMARY_PROMPT/Prompts.ts集中管理/卡片提炼prompt数字锚定/MEMORY瘦身/压缩阈值token化（24000估算token触发线）|
+|0.194.0|订阅体系（¥9.9/月+¥99/年IAP占位；到期只锁云同步）：SubscriptionStore+200种子码SHA256哈希白名单离线校验+30天试用（兑码叠加基准含试用期）+兑码前置登录+云同步VIP守卫|
+|0.195.0|到期提醒ReminderDialog+UI大统一（顶栏间距以信息条为基准/icon两档20·18/emoji→svg）+大屏常驻边栏AppSideBar共享组件（选中态setInterception动态跟踪）；**教训：hdc装机必须递增versionCode（HAP验尸法：解包modules.abc搜字符串定责）**|
+|0.195.1|版本注释瘦身（只留近2版）+协作铁律入档（约束#6先问用户）+缩进修正|
+|0.196.0|知识复习开工：previewIntervalDays+评分按钮时间化（灰色描述→复习时间）+固定窄宽96；**教训：用户DevEco开着的旧缓冲区会覆盖AI的文件修改——改代码期间用户勿保存旧文件**|
+|0.196.1|ReviewPage上线（Anki式单卡/背完不循环/完成页AI鼓励档位off兜底「鼓励永远要有」/边栏「知识复习」唯一入口）；元服务搁置（沙箱读不到本地词库）→桌面走主应用服务卡片|
+|0.196.2|复习以天为单位（用户拍板核心逻辑）：当日队列=到期+新词、ReviewDailyState当日完成落盘再进跳完成页、完成页总结独立卡+WaitingDots、喇叭发音、头像点击=退出确认、三设置弹窗点空白关闭|
+|0.196.3|顶栏颜色字体对齐气泡树+待发图片直开查看器bugfix+未登录点头像拉起登录+复习卡喇叭移音标旁+知识卡显示图片+「恭喜你！」标点悬挂|
+|0.196.4|WindowMode.ets窗口宽度模式：**分屏/悬浮窗时屏宽不变窗宽变**（isTablet误判根因），Index onAreaChange按窗口实宽写AppStorageV2共享真相源，五页@Computed读|
+|0.196.5|顶栏像素级对齐（icons行.height(40)撑高+标题列space:2）+四主页面背景统一BG_CANVAS #160D26|
+|0.196.6|顶栏Row高度全页统一.height(40)（气泡页为基准本尊，禁止依赖隐式撑高）|
+|0.196.7|顶栏.height(40)→56（**ArkUI .height含padding**，40把内容压到24vp致溢出错位）+适应全图=autoLayout()+fitViewport()（重排填补空洞）|
+|0.196.8|云同步↔登录态耦合同开同关（用户拍板）：CloudSyncStore应用级开关（key 'cloud-sync-switch'）+登录后询问+退出强制关+设置页未登录toast拦截|
+|0.196.9|取消登录静默（AUTH_CANCELLED_TIP对1001502012固定短提示）+AppConfirmDialog通用暗紫确认弹窗+ConfirmDialogStore（**挂载点唯一=Index根Stack顶层**）|
+|0.196.10|云同步状态圈勾图标（纯状态指示不可点）+未登录点开启→登录引导弹窗（confirmOnLeft确认钮放左）+状态卡@Computed响应式实时刷新|
+|0.196.11|云同步入口登录分流：入口即意图（fromSyncEntry=true登录成功直接开同步，不再弹询问）|
+|0.196.12|代码优化轮：删isCloudSyncOn死代码/设置页开启按钮两分支去重/BillingPage showToastSafe收口|
+|0.197.0|复习卡面两修：**英文展示词自适应缩字号（minFontSize16/maxLines3，用户拍板截断绝对不允许）**+卡片组padding bottom 32|
+|0.197.1|评分按钮内部留白padding top/bottom 12（文字离框边）|
+|0.197.2|全局设置复习Tab保存按钮：编辑副本+保存统一落store+脏检查纳入hasUnsavedChanges|
+|0.197.3|保存/返回按钮等宽修复：**间隙一律用Row({space:12})禁止挂单侧margin**（margin参与layoutWeight分配挤窄按钮）|
+|0.198.0|复习完成页删副标题「今天的复习任务已经完成」（下方AI鼓励已表达同义）|
+|0.198.1|评分按钮手机溢出首修（**真机翻车**）：固定 .width(96)×3+间距=300vp 超手机气泡内容区→改 layoutWeight(1)+maxWidth 96 钳制，实测反而更溢出——**ArkUI 平台坑：layoutWeight 与 constraintSize 组合测量不可靠（constraintSize 使按钮退出权重精确分配、被内容撑开），此组合禁用**|
+|0.198.2|评分按钮二修（**在 Scroll 内无效**）：.width('30%')+maxWidth 96——百分比本身没错，但 ratingArea 在横向 Scroll 内，**Scroll 给子组件宽度约束无上限，百分比/layoutWeight/100% 全部失效**回退内容自适应（96 钳制恒 300vp），真机依旧溢出|
+|0.198.3|评分区溢出**真根因修复**（用户三次实测反馈逼出）：ratingArea 在 ForEach 的横向 Scroll（scrollable Horizontal）内部是溢出真因——评分区移出 Scroll 放 ForEach item 的 Scroll 之后（4 处同构：气泡生词区/气泡知识卡区/编辑弹窗两区），恢复气泡内容区约束后 '30%'+maxWidth 96 生效（手机自动缩窄/平板钳 96 窄胶囊）；**铁律：横向 Scroll 子组件内禁止依赖 width 百分比与 layoutWeight 做自适应布局——约束无上限全失效，需自适应的组件必须放 Scroll 外**|
+|0.198.4|评分按钮宽度固定 96|
+|0.198.5|评分按钮 layoutWeight 均分对齐词卡右缘+maxWidth96 兜底（density3.0 实锤：屏幕 376vp，气泡内容区 289.7vp，300vp 五轮溢出总根源）|
+|0.199.0|上下文压缩升级（用户拍板双需求）：①**触发线 TOKEN_TRIGGER 24000→48000**（≈3.2 万字、~100 轮对话才压缩；flash 输入 1M≈1 元上调无感+模型 128K 窗口余量足；保留预算 8000 不变）②**等待态新增阶段 3「整理历史记忆中」**（摘要生成是一次完整 LLM 调用 5~15s，此前该期间误显示"已提交请求"而请求实际未发出——buildBranchMessageList 摘要 try/finally 置 phase=3→恢复 1，waitingView 四元分支，文案无省略号遵循 0.191.0 定稿）；**决策依据：压缩是质量策略非省钱妥协（Lost in the Middle 中部衰减+摘要=蒸馏信噪比更高），消费端不暴露上下文档位是行业共识（ChatGPT/Claude 只给开关不给档位）**|
+|0.200.2|导入动画调参（用户实测 0.200.1「还不错但没惊艳到」三指示）：①**弹跳峰值 1.14→2.8**（用户原话「都做动画了索性夸张一点，放大 3 倍」——translate 补偿公式自动适配）②**整体放慢 ~3 倍**（飞行 520→1400ms/弹跳 460→1050ms/导航等待 300→750ms——用户「嗖一下没感觉」）③**飞行卡片 120×48→200×84+字号15**+终点缩放 0.3→0.5（用户「像一粒东西看不清内容」）+光晕 ×22→×60 同步夸张；**动画调参方法论：时长/幅度/可读性三轴独立调**|
+|0.200.1|导入动画重做（用户实测 0.200.0 动画翻车「不想用语言解释」——三大根因全修）：①**弹跳锚点左上=向右下窜**→scale 锚点保持左上（0.167.4 缩放语义不动）+**负 translate 数学补偿**（bounceTx/bounceTy，中心原地弹跳）②**发光/弹跳瞬切无过渡**→importGlow 连续值 0~1 渐变（border 宽 1+glow/shadow radius 12+glow×22 数值插值）+keyframeAnimateTo 四段回弹 1→1.14→0.98→1 ③**直线匀速飞行无质感**→keyframe 三段弧线（中点抬高 60 抛物线）+微旋转 -6°→4°→0°+缩放 1→0.7→0.3；另：变暗 0.55→0.4（原太重）、横幅顶部滑入/确认条底部滑入（TransitionEffect）、导航等待 430→300ms（回弹峰值即交棒）；**教训：ArkUI scale 锚点与 position 语义强耦合（c2s 坐标换算假设锚点左上），动画改锚点=破坏缩放交互——用 translate 补偿替代改锚点；keyframeAnimateTo 全局名 ArkTS 不可见，须 UIContext 实例+（param,keyframes）双参数签名**|
+|0.200.0|知识卡片导入气泡对话（灵魂功能·业务闭环：卡片→提问，用户拍板三入口+L3 特效全量；docs/0.165+/0.200.0 文档）：①**三入口**——知识库列表「问 AI」icon（用户强理由：浏览即产生问题，点进去才能问不可接受）+编辑弹窗双按钮（传编辑器当前字段，未保存也能导）+复习页知识卡右上 icon（Stack TopEnd 不占版面），均弹二选一「导入气泡对话/创建子气泡」②**画布选择模式**——CardImportStore（AppStorageV2）+navBackToCanvas 四态回画布；变暗层 hitTestBehavior None 穿透（拖拽缩放保留）；单击=锁定（复用 selectedNodeId 高亮+信息行换「导入目标」）+底部确认条（✓导入/重选/点空白解锁）；横幅取消/返回键清 store 零残留③**L3 动画链**——飞行卡片（横幅位→气泡中心，与气泡同层画布坐标系零��算，450ms 缩至 0.25）→气泡弹跳 1.15+紫光晕（isImportGlow）→进对话输入区渐显 300ms④**落地复用圈注 0.184.0 全套**（import 填 inputText/pendingImages；branch 走 addBubble carryText/carryImages+isLoading 降级 toast）；文字格式「📚 知识卡片｜标题+定义+（我想问：）」**不自动发送**；**教训：①@Builder 内 if/else 块后禁止直接链属性（须先闭合容器再链）②svg 资源名=文件名，连字符禁用（ask-ai.svg→ask_ai.svg）③ArkUI 点击不冒泡=按钮自身消费，无需 stopPropagation④uitest uiInput 注入对 Button 组件不响应（存量按钮同样点不动）=设备自动化环境限制，容器 onClick 可注入**|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.197.3（versionCode 1000091）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）；★ 0.195.0 起装机**必须递增 versionCode**（同号安装设备可能不刷新代码）
-- 迭代文档命名：版本号 变更内容.md（如 0.185.0 音标口音切换.md；同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；规则详见 project_rule.md §7，2026-10-04 用户定稿）
-- 版本线主文档：docs/0.165+/0.167.md（精简版，0.165+ 段；历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
-- 真机测试设备：MatePad 11.5 S 活力版（平板，**192.168.2.16** 无线调试，2026-10-04 端口 33685，型号查询返回 SLG-W10）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试，型号 CHZ-AL00）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**；★ 2026-10-06 实测教训：两台 IP 勿搞反（搞反后对手机卸载/装机白折腾一轮），`param get const.product.model` 可验身份
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.200.1（versionCode 1000100）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）；★ 0.195.0 起装机**必须递增 versionCode**
+- 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
+- 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
+- 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，装机测试用）+ 畅享 90 Pro Max（手机，192.168.2.9，用户日常自用勿占用）；★ 实测教训：两台 IP 勿搞反（搞反白折腾一轮），`param get const.product.model` 可验身份
 
 ## 全局硬性约束
 1. 代码清理规则：全部删除console/hilog调试打印；注释掉的大块死代码直接删除。
 2. 开发流程：新增功能优先在docs新建md文档，确认方案后再写代码；全局重构/代码清理新开对话。
 3. 网络请求：SSE流式请求支持Abort中断；对话不限制180s超时，仅提炼弹窗180s超时。
-4. UI 开发以根目录 **UI_GUIDELINES.md** 为唯一设计真相源（色值/圆角/文字/间距/组件规格/布局），禁止在页面代码散落写色值；DesignTokens.ets 为 token 单一来源；大纲未覆盖场景按同组件规格类推，落地后回填。
-5. MEMORY.md 记录从简（2026-10-04 拍板）：已完成的改动/功能只记一行结论（版本+一句话+关键教训），不记过程细节；仅两类保留完整记录——①未解决的 bug（排查链：根因/已排除假设/当前状态，解决后立即压缩为一行）②迭代 3 次以上的功能（定案前保留决策链）。原因：memory 是给 AI 看的，已做好的功能知道就行，只有未解决的问题才需要细节供 AI 续接。
-6. **遇到问题第一时间问用户（2026-10-06 用户拍板，最高优先级）**：设备连不上/IP 变了/任何异常或不确定——**先问用户再动手**，禁止自己盲排查烧 token（用户就在设备旁边，一句话能省一小时排查）；设备 IP 会经常变（用户多次重连过），连不上≠设备没了，问用户即知现状。
-7. 版本注释瘦身（2026-10-06 拍板）：app.json5 / Index.ets 的版本历史注释**只保留最近 2 个版本**，更早的历史一律指向 MEMORY.md 版本表（唯一真相源）——禁止逐版本无限追加注释墙（0.195.0 时 app.json5 曾膨胀到 20.7KB 单行注释）。
+4. UI 开发以根目录 **UI_GUIDELINES.md** 为唯一设计真相源（色值/圆角/文字/间距/组件规格），禁止页面代码散落写色值；DesignTokens.ets 为 token 单一来源；大纲未覆盖场景按同组件规格类推，落地后回填。
+5. MEMORY.md 记录从简（2026-10-04 拍板）：已完成的改动只记一行结论（版本+一句话+关键教训），不记过程细节；仅两类保留完整记录——①未解决的 bug（排查链）②迭代 3 次以上的功能（定案前决策链）。
+6. **遇到问题第一时间问用户（2026-10-06 拍板，最高优先级）**：设备连不上/IP 变了/任何异常或不确定——**先问用户再动手**，禁止盲排查烧 token；设备 IP 会经常变，连不上≠设备没了。
+7. 版本注释瘦身（2026-10-06 拍板）：app.json5 / Index.ets 的版本历史注释**只保留最近 2 个版本**，更早历史一律指向 MEMORY.md 版本表（唯一真相源），禁止逐版本无限追加注释墙。

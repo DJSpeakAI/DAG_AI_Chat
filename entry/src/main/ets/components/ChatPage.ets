@@ -31,7 +31,7 @@ import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（
  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, ENCOURAGE_LIGHT_PROMPT, ENCOURAGE_HEAVY_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）+鼓励三档
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
-import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型
+import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
@@ -583,6 +583,8 @@ export struct ChatPage {
   annotationPref: AnnotationPrefStore = connectAnnotationPref();       // 首次使用提示 flag（PersistenceV2 独立 key，跨重启只提示一次）
   annotationDraft: AnnotationDraftStore = connectAnnotationDraft();   // 截图草稿（ChatPage → AnnotationPage）
   annotationResult: AnnotationResultStore = connectAnnotationResult(); // 标注结果（AnnotationPage → ChatPage，onShown 消费）
+  cardImport: CardImportStore = connectCardImport(); // ★ 0.200.0：知识卡片导入（画布确认后 → 本页落地，onShown 消费）
+  @Local importArrived: number = 1; // ★ 0.200.0：导入落地渐显（常态 1；落地瞬间 0→1 的 300ms 动画——L3 末拍）
   @Local annotationNotifyVisible: boolean = false; // 首次使用说明弹窗可见
 
   // ★ 0.181.0：getThemeStore 已删除——锁暗色后 ChatPage 色值全量收敛 DesignTokens（UI_GUIDELINES.md 单一来源）
@@ -782,11 +784,12 @@ export struct ChatPage {
   // ★ 新增：链路回溯 + 摘要滑动窗口压缩（0.117）
   async buildBranchMessageList(currentNode: BubbleNode): Promise<ChatMessage[]> {
     // ★ 0.193.0 E 项：token 化阈值（学习 Claude Code 按容量触发，替代原 25 条条数制）——
-    //   触发线 24000 估算 token（约 1.6 万字）：短对话即使 30+ 条也不压缩（全量上下文质量更高）；
+    //   ★ 0.199.0：触发线 24000→48000（用户拍板——flash 输入成本 1M≈1 元上调无感，模型窗口 128K 余量充足；
+    //   约 3.2 万字、~100 轮对话才触发，超长学习会话也几乎全量；保留预算 8000 不变）；
     //   保留预算 8000 token：最近消息按容量保留（替代固定 15 条）；摘要窗口=全量-保留段（替代固定前 10 条）；
     //   估算规则：中文≈1字1.5token + 每条固定开销 50；
     //   needRegenerate 增量判断保持条数制（historySummaryCount 持久化字段语义不变，零迁移风险）
-    const TOKEN_TRIGGER = 24000;
+    const TOKEN_TRIGGER = 48000;
     const TOKEN_RECENT_KEEP = 8000;
     const MSG_OVERHEAD = 50;
 
@@ -843,12 +846,16 @@ export struct ChatPage {
 
     if (needRegenerate) {
       try {
+        this.streamPhase = 3; // ★ 0.199.0：阶段 3——整理历史记忆中（摘要生成是一次完整 LLM 调用 5~15s，
+        // 此前该期间误显示"已提交请求"而请求实际未发出；等待态透明化，用户知道 AI 在整理而非卡死）
         const summary = await this.generateSummaryWithLLM(toSummarize);
         currentNode.historySummary = summary;
         currentNode.historySummaryCount = totalCount;
         this.saveTree(); // ★ 0.151：按模式分池保存
       } catch (e) {
         // 摘要生成失败静默降级（沿用旧摘要继续组装，不阻断对话）
+      } finally {
+        this.streamPhase = 1; // ★ 0.199.0：恢复阶段 1（成败都继续发送，请求即将真正发出）
       }
     }
 
@@ -862,6 +869,7 @@ export struct ChatPage {
 
   // ★ 0.191.0：流式请求阶段（等待态一行提示——用户核心诉求：干等难受，必须告知当前在哪一步）
   // 0=无 1=已提交请求（点发送/刷新瞬间） 2=等待服务器返回（思考模型思考阶段——锅甩给服务器，用户知道不是自己设备的问题）
+  // 3=整理历史记忆中（★ 0.199.0：上下文超 48K 触发线时的摘要生成期间，一次完整 LLM 调用 5~15s，平时不出现）
   // 「正在接收内容」状态已删（用户指出：首字节一到占位即消失，该状态永远显示不出来=死代码）
   @Local streamPhase: number = 0;
 
@@ -871,7 +879,8 @@ export struct ChatPage {
   waitingView() { // ★ 0.191.0 清理：单行化后不再区分 LOADING/THINKING 文案，死参数 content 移除
     Row() {
       WaitingDots()
-      Text(this.streamPhase === 1 ? '已提交请求'
+      Text(this.streamPhase === 3 ? '整理历史记忆中' // ★ 0.199.0：阶段 3——上下文压缩摘要生成期间（无省略号，遵循 0.191.0 定稿：三点动画已表达进行中）
+        : this.streamPhase === 1 ? '已提交请求'
         : this.streamPhase === 2 ? '等待服务器返回'
         : 'AI 正在回复')
         .fontSize(14)
@@ -1715,9 +1724,13 @@ export struct ChatPage {
         .fontColor(this.reviewRatedMap.get(key) === 'hard' ? DANGER : (this.reviewRatedMap.get(key) === 'easy' ? '#3BB273' : '#F5A623'))
         .margin({ top: 3 })
     } else if (this.reviewExpandKey === key) {
-      // ★ 0.196.0 用户拍板（截图修正）：①主标签「生疏/尚可/熟知」保留，灰色小字描述→复习时间（加「后」：
-      //   10分钟后/12小时后/2天后，复评按当前强度×0.5/×1.6/×2.4 动态算）②按钮固定窄宽 96——
-      //   平板上 layoutWeight(1) 三等分拉伸太难看，全设备保持窄胶囊观感
+      // ★ 0.198.5 对齐终修（真机 density 实锤定案）：手机全屏 density=3.0（▲10vp=30px/Wisdom 13vp 字宽/
+      //   width(96)=288px 三重铁证），屏幕仅 376vp、气泡内容区仅 289.7vp——此前拿 0.196.3 分屏小窗记录
+      //   「1128px=451vp」当全屏换算基准，内容区被高估 1.2 倍，导致 96×3+12=300vp>289.7vp 五轮"溢出"
+      //   误判（width(96) 其实一直精确生效）。用户拍板：熟知右缘须与词卡文字区右缘对齐，贴边留白难看
+      //   → 按钮 layoutWeight(1) 均分铺��词卡区（右缘精确对齐，手机均分 92.6vp 观感与 96 几乎一致），
+      //   平板均分超 96 被 maxWidth 钳回窄胶囊（守住 0.196.0 拍板；0.198.1 的 maxWidth 失效结论仅适用
+      //   横向 Scroll 内无界环境，0.198.4 铁证：Row 在词卡 Column 内拿到的基准 869px 精确正确）
       Row({ space: 6 }) {
         Button() {
           Column() {
@@ -1725,7 +1738,8 @@ export struct ChatPage {
             Text(`${formatIntervalDays(previewIntervalDays(w, 'hard'))}后`).fontSize(9).fontColor(TEXT_TERTIARY)
           }
         }
-        .width(96)
+        .layoutWeight(1)
+        .constraintSize({ maxWidth: 96 })
         .backgroundColor('#26E5484D')
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
@@ -1737,7 +1751,8 @@ export struct ChatPage {
             Text(`${formatIntervalDays(previewIntervalDays(w, 'good'))}后`).fontSize(9).fontColor(TEXT_TERTIARY)
           }
         }
-        .width(96)
+        .layoutWeight(1)
+        .constraintSize({ maxWidth: 96 })
         .backgroundColor('#26F5A623')
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
@@ -1749,14 +1764,14 @@ export struct ChatPage {
             Text(`${formatIntervalDays(previewIntervalDays(w, 'easy'))}后`).fontSize(9).fontColor(TEXT_TERTIARY)
           }
         }
-        .width(96)
+        .layoutWeight(1)
+        .constraintSize({ maxWidth: 96 })
         .backgroundColor('#263BB273')
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
           this.onReviewRate(key, w, 'easy');
         })
       }
-      .width('100%')
       .margin({ top: 4 })
     }
   }
@@ -2177,6 +2192,46 @@ export struct ChatPage {
       // 截图失败友好提示（对应需求「捕获失败/黑屏做友好提示」的兜底）
       this.showToastSafe('截图失败，请重试');
     }
+  }
+
+  // ★ 0.200.0：知识卡片导入落地（画布确认导航进来时 onShown 触发；action 空 = 普通进入直接跳过）
+  // 文字格式：📚 知识卡片｜标题 + 定义 + 「（我想问：）」引导行——不自动发送，等用户补充问题（用户拍板）
+  consumeCardImport(): void {
+    const action = this.cardImport.action;
+    if (action.length === 0) {
+      return;
+    }
+    // 一次性消费（立即清空，防 onShown 重复触发）
+    const title = this.cardImport.title;
+    const definition = this.cardImport.definition;
+    const imageUri = this.cardImport.imageUri;
+    this.cardImport.action = '';
+    this.cardImport.title = '';
+    this.cardImport.definition = '';
+    this.cardImport.imageUri = '';
+    const text = `📚 知识卡片｜${title}\n${definition}\n\n（我想问：）`;
+    const imgs: string[] = imageUri.length > 0 ? [imageUri] : [];
+    // 渐显动画起手（L3 末拍）：0 → 1
+    this.importArrived = 0;
+    if (action === 'import') {
+      // ① 导入对话：文字填输入框（已有草稿换行追加，圈注 import 同规则）+ 图挂输入区
+      this.pendingImages = [...this.pendingImages, ...imgs];
+      this.inputText = this.inputText.length > 0 ? `${this.inputText}\n${text}` : text;
+    } else {
+      // ② 创建子气泡：复用圈注 branch 全套（isLoading 降级 + carryText/carryImages 随 140ms 回调带入）
+      if (this.isLoading) {
+        this.pendingImages = [...this.pendingImages, ...imgs];
+        this.inputText = this.inputText.length > 0 ? `${this.inputText}\n${text}` : text;
+        this.showToastSafe('AI 正在回复，卡片已导入当前对话，回复完成后可再创建子气泡');
+      } else {
+        this.addBubble(imgs, text);
+      }
+    }
+    setTimeout(() => {
+      animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+        this.importArrived = 1;
+      });
+    }, 60);
   }
 
   // 标注页 pop 回来时消费结果（NavDestination.onShown 触发；action 空 = 非标注返回，直接跳过）
@@ -2834,20 +2889,25 @@ export struct ChatPage {
                                           this.clearSelectionState();
                                         }
                                       })
-                                      .onTextSelectionChange((start: number, end: number) => {
-                                        this.handleSelectionChange(`${msg.messageId}|rwe${idx}`, w.explain, start, end);
-                                      })
-                                      // ★ 0.187.0：评分区——展开 3 档按钮 / 已评分显示下次复习
-                                      this.ratingArea(`${msg.messageId}|${w.id}`, w)
-                                  }
-                                  .alignItems(HorizontalAlign.Start)
-                               }
-                               .scrollable(ScrollDirection.Horizontal)
-                               .scrollBar(BarState.Off)
-                               .align(Alignment.Start)
-                               .width('100%')
-                               .margin({ top: idx > 0 ? 6 : 0 })
-                             }, (w: WordItem) => w.word)
+                                       .onTextSelectionChange((start: number, end: number) => {
+                                         this.handleSelectionChange(`${msg.messageId}|rwe${idx}`, w.explain, start, end);
+                                       })
+                                   }
+                                   .alignItems(HorizontalAlign.Start)
+                                }
+                                .scrollable(ScrollDirection.Horizontal)
+                                .scrollBar(BarState.Off)
+                                .align(Alignment.Start)
+                                .width('100%')
+                                .margin({ top: idx > 0 ? 6 : 0 })
+                                // ★ 0.187.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                                // ★ 0.198.3 溢出根因修复：评分区必须放横向 Scroll 外——横向 Scroll 给子组件的
+                                // 宽度约束无上限（内容可超视口滑动），内部 width 百分比/layoutWeight 全部失效
+                                // 回退内容自适应（96 钳制恒 300vp），前三轮（0.196.0 固定宽/0.198.1 layoutWeight/
+                                // 0.198.2 百分比）在 Scroll 内怎么改都溢出；评分区内容固定无需滚动，移出后恢复
+                                // 气泡内容区（90%屏-padding10）约束，'30%' 生效——手机自动缩窄、平板钳 96 窄胶囊
+                                this.ratingArea(`${msg.messageId}|${w.id}`, w)
+                              }, (w: WordItem) => w.word)
                            }
                            .alignItems(HorizontalAlign.Start)
                          }
@@ -2929,20 +2989,21 @@ export struct ChatPage {
                                           this.clearSelectionState();
                                         }
                                       })
-                                       .onTextSelectionChange((start: number, end: number) => {
-                                         this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
-                                       })
-                                       // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
-                                       this.ratingArea(`${msg.messageId}|${card.id}`, card)
-                                   }
-                                   .alignItems(HorizontalAlign.Start)
-                                }
-                                .scrollable(ScrollDirection.Horizontal)
-                                .scrollBar(BarState.Off)
-                                .align(Alignment.Start)
-                                .width('100%')
-                                .margin({ top: idx > 0 ? 6 : 0 })
-                              }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
+                                        .onTextSelectionChange((start: number, end: number) => {
+                                          this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
+                                        })
+                                    }
+                                    .alignItems(HorizontalAlign.Start)
+                                 }
+                                 .scrollable(ScrollDirection.Horizontal)
+                                 .scrollBar(BarState.Off)
+                                 .align(Alignment.Start)
+                                 .width('100%')
+                                 .margin({ top: idx > 0 ? 6 : 0 })
+                                 // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                                 // ★ 0.198.3 评分区移出横向 Scroll（同生词区根因——Scroll 内宽度约束失效）
+                                 this.ratingArea(`${msg.messageId}|${card.id}`, card)
+                               }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
                             }
                             .alignItems(HorizontalAlign.Start)
                           }
@@ -3153,6 +3214,7 @@ export struct ChatPage {
         }
         .width('100%')
         .padding({ left: 6, right: 6, top: 8, bottom: 8 }) // ★ 0.143：输入区顶部留白——消息列表/图片预览与输入框原本贴边，加 top 12 与列表顶部 padding 呼应
+        .opacity(this.importArrived) // ★ 0.200.0：导入落地渐显（L3 末拍 0→1 300ms；常态恒 1 不影响日常输入/截图）
         }
         .width('100%')
         .height('100%')
@@ -3320,8 +3382,6 @@ export struct ChatPage {
                       .fontColor(TEXT_SECONDARY)
                       .maxLines(1)
                       .margin({ top: 2 })
-                    // ★ 0.187.0：评分区——展开 3 档按钮 / 已评分显示下次复习
-                    this.ratingArea(`edit|${w.id}`, w)
                   }
                   .alignItems(HorizontalAlign.Start)
                   }
@@ -3330,6 +3390,8 @@ export struct ChatPage {
                   .align(Alignment.Start)
                   .width('100%')
                   .margin({ bottom: idx === this.editReviewWords.length - 1 ? 0 : 6 })
+                  // ★ 0.187.0：评分区 / ★ 0.198.3 移出横向 Scroll（同气泡复习区根因——Scroll 内宽度约束失效）
+                  this.ratingArea(`edit|${w.id}`, w)
                 }, (w: WordItem) => w.word)
               }
               if (this.editReviewCards.length > 0) {
@@ -3373,22 +3435,22 @@ export struct ChatPage {
                         })
                     }
                   }
-                   Text(card.definition)
-                     .fontSize(12)
-                     .fontColor(TEXT_SECONDARY)
-                     .maxLines(1)
-                     .margin({ top: 2 })
-                   // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
-                   this.ratingArea(`editcard|${card.id}`, card)
-                 }
-                 .alignItems(HorizontalAlign.Start)
-                 }
-                .scrollable(ScrollDirection.Horizontal)
-                .scrollBar(BarState.Off)
-                .align(Alignment.Start)
-                .width('100%')
-                .margin({ top: idx > 0 ? 6 : 0, bottom: idx === this.editReviewCards.length - 1 ? 12 : 0 })
-                }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
+                    Text(card.definition)
+                      .fontSize(12)
+                      .fontColor(TEXT_SECONDARY)
+                      .maxLines(1)
+                      .margin({ top: 2 })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  }
+                 .scrollable(ScrollDirection.Horizontal)
+                 .scrollBar(BarState.Off)
+                 .align(Alignment.Start)
+                 .width('100%')
+                 .margin({ top: idx > 0 ? 6 : 0, bottom: idx === this.editReviewCards.length - 1 ? 12 : 0 })
+                 // ★ 0.188.0：评分区 / ★ 0.198.3 移出横向 Scroll（同气泡复习区根因——Scroll 内宽度约束失效）
+                 this.ratingArea(`editcard|${card.id}`, card)
+                 }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
               }
 
               // 保存 / 取消
@@ -4145,6 +4207,7 @@ export struct ChatPage {
     // ★ 0.152：标注页 pop 返回时消费标注结果（import/branch/knowledge 三分支；
     // onShown 首次进入及其他页面返回时 action 为空直接跳过）
     .onShown(() => {
+      this.consumeCardImport(); // ★ 0.200.0：知识卡片导入落地（画布确认导航进来）
       this.consumeAnnotationResult();
     })
     // ★ 0.153：切后台中断提炼已改由 onAppBackgroundChange（@Monitor 监听全局

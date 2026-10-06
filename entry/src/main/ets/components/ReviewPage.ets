@@ -8,7 +8,7 @@
 // ⑥完成页：恭喜 + 总结卡（「总结正在生成」+三点动画，用户拍板改文案）+ 继续复习/完成两按钮
 
 import { WordItem, WordBankStore } from '../common/WordModel';
-import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（复习即问场景）
 import { ChatMessage, ApiConfig, AiPreference, connectApiConfig, connectAiPreference, generateMessageId } from '../common/ChatModel';
 import { buildStatEncouragePrompt } from '../common/Prompts';
 import { connectWordBank } from '../utils/WordStoreUtil';
@@ -19,7 +19,7 @@ import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -49,6 +49,21 @@ function todayKey(): string {
 @ComponentV2
 export struct ReviewPage {
   @Param pathStack: NavPathStack = new NavPathStack();
+
+  // ── ★ 0.200.0 入口 C：复习页「问 AI」（复习遇到不懂的概念立刻问——100% 场景）──
+  cardImport: CardImportStore = connectCardImport();
+  @Local askSheetVisible: boolean = false;
+
+  /** ★ 0.200.0：写入导入 store + 回画布进入选择模式（取当前复习中的知识卡） */
+  startCardImport(action: string): void {
+    const card = this.currentItem() as KnowledgeCard;
+    this.cardImport.action = action;
+    this.cardImport.title = card.title;
+    this.cardImport.definition = card.definition;
+    this.cardImport.imageUri = card.imageUri;
+    this.askSheetVisible = false;
+    navBackToCanvas(this.pathStack);
+  }
   wordBank: WordBankStore = connectWordBank();
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank();
   apiConfig: ApiConfig = connectApiConfig();
@@ -313,6 +328,8 @@ export struct ReviewPage {
   // ── 复习卡（居中单卡——用户拍板「一页只展示一个卡片，居中展示」）──
   @Builder
   cardArea() {
+    // ★ 0.200.0：外层 Stack（TopEnd）——承载右上角「问 AI」icon（绝对定位不占卡片版面，保住一页一卡居中美学）
+    Stack({ alignContent: Alignment.TopEnd }) {
     Column({ space: 10 }) {
       if (this.mode === 'word') {
         // ★ 0.196.3 用户拍板：单词独占一行居中（原单词+喇叭同行=单词被挤偏不在正中）；
@@ -388,14 +405,35 @@ export struct ReviewPage {
           .maxLines(8)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
+      }
+      .width('100%')
+      .padding(32)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+      .alignItems(HorizontalAlign.Center)
+      // ★ 0.200.0 入口 C：右上角「问 AI」——仅知识卡显示（单词走遗忘曲线无导入需求）；
+      //   Stack TopEnd 绝对定位不占版面空间（保住一页一卡居中美学）；icon 规格同知识库列表入口
+      if (this.mode === 'knowledge') {
+        Column() {
+          Image($r('app.media.ask_ai'))
+            .width(16)
+            .height(16)
+        }
+        .width(30)
+        .height(30)
+        .borderRadius(9)
+        .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .margin(10)
+        .onClick(() => {
+          this.askSheetVisible = true;
+        })
+      }
     }
     .width('76%')
     .constraintSize({ maxWidth: 520 })
-    .padding(32)
-    .borderRadius(RADIUS_NAV)
-    .backgroundColor(SURFACE_NODE)
-    .border({ width: 1, color: STROKE_CARD })
-    .alignItems(HorizontalAlign.Center)
   }
 
   // ── 评分区：3 档按钮三行全上（界面大，描述回归——用户拍板「加了很漂亮」）──
@@ -456,17 +494,14 @@ export struct ReviewPage {
   @Builder
   doneArea() {
     Column({ space: 0 }) {
-      // ★ 0.196.3 用户拍板（标点悬挂）：「恭喜你」3 字与下方副标题居中对齐，「！」往后悬挂——
-      //   整串居中时恭喜你中心偏左 ！/2，margin-left=！全角宽(1em=26px) 使文本右移 ！/2 恰好归正
+      // ★ 0.196.3 用户拍板（标点悬挂）：「！」往后悬挂——整串居中时恭喜你中心偏左 ！/2，
+      //   margin-left=！全角宽(1em=26px) 使文本右移 ！/2，大标题视觉重心恰好居中
+      // ★ 0.198.0：副标题「今天的复习任务已经完成」删除（用户拍板——下方 AI 鼓励已表达同义，重复）
       Text('恭喜你！')
         .fontSize(26)
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
         .margin({ left: 26 })
-      Text('今天的复习任务已经完成')
-        .fontSize(15)
-        .fontColor(TEXT_SECONDARY)
-        .margin({ top: 6 })
       // ★ 0.196.2 排版优化（用户实测反馈）：总结独立成卡（SURFACE_SOFT 底）视觉分层；
       //   加载态文案用户拍板改「总结正在生成」+ 三点跳动动画（WaitingDots 复用）
       Column() {
@@ -540,9 +575,81 @@ export struct ReviewPage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  // ── ★ 0.200.0 入口 C 配套：「问 AI」二选一面板（底部卡片，同知识库列表入口设计语言；点遮罩取消）──
+  @Builder
+  askAiSheet() {
+    Column() {
+      Blank()
+      Column() {
+        Text('把这张卡片导入气泡去问 AI？')
+          .fontSize(15)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text((this.currentItem() as KnowledgeCard).title)
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 4 })
+        Button('导入气泡对话')
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(BRAND_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .width('100%')
+          .margin({ top: 16 })
+          .onClick(() => {
+            this.startCardImport('import');
+          })
+        Text('选一个气泡 → 卡片填入它的输入框，补充问题后发送')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Button('创建子气泡')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(RADIUS_CONTROL)
+          .border({ width: 1, color: BRAND_SECONDARY })
+          .width('100%')
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.startCardImport('branch');
+          })
+        Text('选一个父气泡 → 新建子气泡并填入卡片')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Button('取消')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .backgroundColor(Color.Transparent)
+          .width('100%')
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.askSheetVisible = false;
+          })
+      }
+      .width('100%')
+      .borderRadius({ topLeft: RADIUS_NAV, topRight: RADIUS_NAV })
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+      .padding({ left: 20, right: 20, top: 20, bottom: 28 })
+      .onClick(() => {}) // 消费面板点击防冒泡到遮罩
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .onClick(() => {
+      this.askSheetVisible = false;
+    })
+  }
+
   build() {
     // ★ 0.159 模式：NavDestination + hideTitleBar(true)（自绘顶栏）——直接 Column 作根 = 全黑屏
     NavDestination() {
+      // ★ 0.200.0：Stack 包裹——顶层挂「问 AI」面板（原 Column 主内容不动）
+      Stack() {
       Column() {
         this.topBar()
         if (this.finished) {
@@ -576,7 +683,20 @@ export struct ReviewPage {
       .width('100%')
       .height('100%')
       .backgroundColor(BG_CANVAS)
+      // ★ 0.200.0：问 AI 二选一面板（Stack 顶层）
+      if (this.askSheetVisible) {
+        this.askAiSheet()
+      }
+      }
     }
     .hideTitleBar(true)
+    // ★ 0.200.0：面板打开时返回键先关面板
+    .onBackPressed(() => {
+      if (this.askSheetVisible) {
+        this.askSheetVisible = false;
+        return true;
+      }
+      return false;
+    })
   }
 }

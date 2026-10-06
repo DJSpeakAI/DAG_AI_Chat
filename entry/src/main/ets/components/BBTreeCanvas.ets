@@ -22,6 +22,7 @@ import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：�
 import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件（手机抽屉用；平板常驻边栏已升 Index 级）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
+import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.200.0：知识卡片导入气泡（跨页 store：知识库/复习页写入 → 画布选择模式消费）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -78,6 +79,155 @@ export struct BBTreeCanvas {
   private lastCanvasTapTime: number = 0;
   account: HuaweiAccountStore = connectHuaweiAccount(); // 边栏底部头像/昵称（华为账号登录态）
   statStore: StatisticsStore = connectStatistics(); // ★ 0.192.0：学习统计埋点（新建树/Tab）
+
+  // ── ★ 0.200.0：知识卡片导入气泡——选择模式状态 + L3 动画 ──
+  cardImport: CardImportStore = connectCardImport();
+  @Local importSelecting: boolean = false; // 选择模式激活（cardImport.action 非空时 onShown 置位）
+  @Local importTargetId: string = '';     // 已锁定目标气泡（'' = 未锁定；锁定后确认条弹出）
+  @Local importFlyX: number = 0;          // 飞行卡片位置（画布坐标系——与气泡同层零换算）
+  @Local importFlyY: number = 0;
+  @Local importFlyScale: number = 1;      // 飞行中缩小（1 → 0.25）
+  @Local importFlying: boolean = false;   // 飞行动画播放中（锁定一切点击）
+  @Local importBounceId: string = '';     // 到达后弹跳的气泡
+  @Local importBounceScale: number = 1;   // 弹跳 scale（★ 0.200.1：keyframe 1→1.14→0.98→1 四段回弹；锚点保持左上+负 translate 补偿=原地弹跳）
+  @Local importFlyRotate: number = 0;     // ★ 0.200.1：飞行卡片微旋转（-6°→4°→0°，弧线飞行质感）
+  @Local importGlow: number = 0;          // ★ 0.200.1：到达发光强度 0~1 连续渐入（替代原 boolean 瞬切——瞬切生硬是动画翻车主因之一）
+  @Local importDim: number = 0;           // 变暗层透明度（0→0.4 淡入；hitTest 穿透保留拖拽缩放）
+
+  /** ★ 0.200.0：进入选择模式（onShown 检测——action 非空 = 知识库/复习页刚发起导入） */
+  enterImportSelecting(): void {
+    if (this.cardImport.action.length === 0) {
+      return;
+    }
+    this.importTargetId = '';
+    this.importFlying = false;
+    this.importBounceId = '';
+    this.importGlow = 0;
+    this.importSelecting = true;
+    animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+      this.importDim = 0.4; // ★ 0.200.1：0.55→0.4（原值太重，气泡辨识度下降）
+    });
+  }
+
+  /** ★ 0.200.0：取消选择模式（横幅「取消」——清 store 零残留；飞行中禁取消——动画 onFinish 已定向导航，半途取消会进对话却无内容） */
+  cancelImportSelecting(): void {
+    if (this.importFlying) {
+      return;
+    }
+    this.cardImport.action = '';
+    this.cardImport.title = '';
+    this.cardImport.definition = '';
+    this.cardImport.imageUri = '';
+    animateTo({ duration: 200, curve: Curve.EaseIn, onFinish: () => {
+      this.importSelecting = false;
+      this.importTargetId = '';
+      this.selectedNodeId = '';
+      this.redrawEdges();
+    } }, () => {
+      this.importDim = 0;
+    });
+  }
+
+  /** ★ 0.200.0：选择模式下单击气泡 = 锁定目标（复用 selectedNodeId 高亮 + 确认条弹出） */
+  lockImportTarget(bubble: BubbleNode): void {
+    this.importTargetId = bubble.nodeID;
+    this.selectedNodeId = bubble.nodeID; // 复用选中态高亮（连线高亮同步）
+    this.redrawEdges();
+  }
+
+  /** ★ 0.200.0：解锁目标（确认条「重选」/ 点画布空白） */
+  unlockImportTarget(): void {
+    this.importTargetId = '';
+    this.selectedNodeId = '';
+    this.redrawEdges();
+  }
+
+  /** ★ 0.200.0：确认条目标标题 */
+  importTargetTitle(): string {
+    const t = this.store.nodeList.find(n => n.nodeID === this.importTargetId);
+    return t ? this.getBubbleTitle(t) : '';
+  }
+
+  /** ★ 0.200.1：确认导入 → L3 动画重写（keyframe 多关键帧：弧线飞行带微旋转 + 四段回弹 + 发光渐入）
+   *   0.200.0 初版三大翻车根因：①弹跳锚点左上=向右下窜 ②发光/弹跳瞬切无过渡 ③直线匀速飞行无质感 */
+  confirmImport(): void {
+    const target = this.store.nodeList.find(n => n.nodeID === this.importTargetId);
+    if (!target) {
+      return;
+    }
+    this.importFlying = true;
+    // 起点：画布顶部中心（横幅位）；终点：目标气泡中心（c2s 屏幕坐标，与气泡同层零换算）
+    // ★ 0.200.2：卡片 120×48→200×84，中心偏移同步（-100/-42）
+    const startX = this.viewW / 2 - 100;
+    const startY = 12;
+    const endX = this.c2sX(target.x) + (NODE_W * this.canvasScale) / 2 - 100;
+    const endY = this.c2sY(target.y) + (NODE_H * this.canvasScale) / 2 - 42;
+    // 弧线中点：水平取中、垂直抬高 60（抛物线感）
+    const midX = (startX + endX) / 2;
+    const midY = Math.min(startY, endY) - 60;
+    this.importFlyX = startX;
+    this.importFlyY = startY;
+    this.importFlyScale = 1;
+    this.importFlyRotate = -6;
+    // 飞行三段 keyframe：起（原大微倾）→ 中（缩小过半+反向微倾+弧顶）→ 终（收到 0.3 回正）
+    // ★ UIContext.keyframeAnimateTo(param, keyframes) 双参数分离签名（param=onFinish 等全局项，keyframes=状态数组）
+    // ★ 0.200.2 用户实测调参：整体放慢 ~3 倍（原 520ms「嗖一下没感觉」）+ 终点 0.5（原 0.3 缩成一粒看不清）
+    this.getUIContext().keyframeAnimateTo({
+      onFinish: () => {
+        // 到达：关飞行层 → 目标气泡夸张回弹 + 发光渐入
+        // ★ 0.200.2：弹跳峰值 1.14→2.8（用户拍板「都做动画了索性夸张一点，放大 3 倍」），时���×3
+        this.importFlying = false;
+        this.importBounceId = target.nodeID;
+        this.getUIContext().keyframeAnimateTo({}, [
+          { duration: 380, curve: Curve.EaseOut, event: () => {
+            this.importBounceScale = 2.8;
+            this.importGlow = 1;
+          } },
+          { duration: 320, curve: Curve.EaseInOut, event: () => {
+            this.importBounceScale = 0.92;
+            this.importGlow = 0.7;
+          } },
+          { duration: 350, curve: Curve.EaseOut, event: () => {
+            this.importBounceScale = 1;
+            this.importGlow = 0.55;
+          } }
+        ]);
+        // ★ 0.200.2：750ms（原 300）——夸张弹跳完整感知后再交棒
+        setTimeout(() => {
+          this.finishImportNav(target);
+        }, 750);
+      }
+    }, [
+      { duration: 750, curve: Curve.EaseOut, event: () => {
+        this.importFlyX = midX;
+        this.importFlyY = midY;
+        this.importFlyScale = 0.8;
+        this.importFlyRotate = 4;
+      } },
+      { duration: 650, curve: Curve.EaseIn, event: () => {
+        this.importFlyX = endX;
+        this.importFlyY = endY;
+        this.importFlyScale = 0.5;
+        this.importFlyRotate = 0;
+      } }
+    ]);
+  }
+
+  /** ★ 0.200.0：动画收官导航（同双击进对话的 current 交棒三连） */
+  finishImportNav(target: BubbleNode): void {
+    this.importSelecting = false;
+    this.importTargetId = '';
+    this.importBounceId = '';
+    this.importGlow = 0;
+    this.importBounceScale = 1;
+    this.importFlyRotate = 0;
+    this.importDim = 0;
+    this.selectedNodeId = '';
+    this.currentBubbleStore.nodeID = target.nodeID;
+    this.currentBubbleStore.bubbleX = target.x;
+    this.currentBubbleStore.bubbleY = target.y;
+    this.pathStack.pushPath({ name: 'ChatPage' });
+  }
 
   aboutToAppear(): void {
     // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
@@ -341,6 +491,27 @@ export struct BBTreeCanvas {
   // ★ 0.173.1：气泡是否处于选中态（卡片高亮/「双击进入对话」/chevron/连线高亮共用判断）
   isBubbleSelected(bubble: BubbleNode): boolean {
     return bubble.nodeID === this.getFocusNodeId();
+  }
+
+  // ★ 0.200.0：气泡是否处于导入到达发光态（★ 0.200.1：连续值判定）
+  isImportGlow(bubble: BubbleNode): boolean {
+    return this.importGlow > 0.05 && bubble.nodeID === this.importBounceId;
+  }
+
+  // ★ 0.200.1：弹跳 translate 补偿——scale 锚点保持左上（0.167.4 缩放语义不动），
+  // 负向 translate 抵消放大偏移 = 气泡中心原地不动，视觉真正的「原地弹跳」
+  bounceTx(bubble: BubbleNode): number {
+    if (bubble.nodeID !== this.importBounceId) {
+      return 0;
+    }
+    return -(this.importBounceScale - 1) * NODE_W * this.canvasScale / 2;
+  }
+
+  bounceTy(bubble: BubbleNode): number {
+    if (bubble.nodeID !== this.importBounceId) {
+      return 0;
+    }
+    return -(this.importBounceScale - 1) * NODE_H * this.canvasScale / 2;
   }
 
   // ★ 判断连线是否属于选中分支（0.123；★ 0.173.1：焦点跟随单击选中）
@@ -827,7 +998,7 @@ export struct BBTreeCanvas {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (this.isBubbleSelected(bubble)) {
-                Text('双击进入') // ★ 0.195.0：「双击进入对话」→「双击进入」（用户拍板：根气泡两行不可接受，砍字保一行）
+                Text(this.importSelecting ? '导入目标' : '双击进入') // ★ 0.200.0：选择模式锁定态文案（避免「双击进入」误导）
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
                   .fontColor(BRAND_SECONDARY)
@@ -855,14 +1026,18 @@ export struct BBTreeCanvas {
           .padding({ top: 12, bottom: 12, left: 14, right: 14 })
           .borderRadius(RADIUS_NODE)
           // 选中态 = 悬停态规格：SURFACE_HOVER 底 + STROKE_BRAND 描边 + 阴影（UI_GUIDELINES 六-6；★ 0.173.1：单击选中同款）
-          .backgroundColor(this.isBubbleSelected(bubble) ? SURFACE_HOVER : SURFACE_NODE)
+          // ★ 0.200.1：导入到达发光=连续渐变（border 宽 1+glow / shadow radius 12+glow×22 数值插值——替代瞬切）
+          .backgroundColor(this.isImportGlow(bubble) ? SURFACE_HOVER : (this.isBubbleSelected(bubble) ? SURFACE_HOVER : SURFACE_NODE))
           .border({
-            width: 1,
-            color: this.isBubbleSelected(bubble) ? STROKE_BRAND : STROKE_CARD
+            width: this.isImportGlow(bubble) ? 1 + this.importGlow : 1,
+            color: this.isImportGlow(bubble) ? BRAND_SECONDARY
+              : (this.isBubbleSelected(bubble) ? STROKE_BRAND : STROKE_CARD)
           })
-          .shadow(this.isBubbleSelected(bubble)
-            ? { radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 }
-            : { radius: 0, color: 'rgba(0,0,0,0)', offsetX: 0, offsetY: 0 })
+          .shadow(this.isImportGlow(bubble)
+            ? { radius: 12 + this.importGlow * 60, color: 'rgba(124,77,255,0.65)', offsetX: 0, offsetY: 0 } // ★ 0.200.2：×22→×60 光晕随夸张弹跳同步放大
+            : (this.isBubbleSelected(bubble)
+              ? { radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 }
+              : { radius: 0, color: 'rgba(0,0,0,0)', offsetX: 0, offsetY: 0 }))
           .position({
             x: this.c2sX(bubble.x),
             y: this.c2sY(bubble.y)
@@ -870,11 +1045,17 @@ export struct BBTreeCanvas {
           // ★ 0.167.4：整体等比缩放（传统思维导图模式，用户拍板）——渲染层 scale 变换锚点左上，
           //   气泡视觉尺寸 = NODE_W*s × NODE_H*s（内部字号/图标/竖线零改动，整体等比）；
           //   布局层间隙 siblingGap=40 恒正 → 等比变换下间隙 40*s 永远为正，重叠在数学上不可能
+          //   ★ 0.200.0：导入到达弹跳（L3）——目标气泡 scale 额外乘 importBounceScale（1→1.15→1 弹性）
           .scale({
-            x: this.canvasScale,
-            y: this.canvasScale,
+            x: this.canvasScale * (bubble.nodeID === this.importBounceId ? this.importBounceScale : 1),
+            y: this.canvasScale * (bubble.nodeID === this.importBounceId ? this.importBounceScale : 1),
             centerX: 0,
             centerY: 0
+          })
+          // ★ 0.200.1：弹跳中心补偿——锚点保持左上（0.167.4 缩放语义不动），负 translate 抵消放大偏移=原地弹跳
+          .translate({
+            x: this.bounceTx(bubble),
+            y: this.bounceTy(bubble)
           })
           // ── 单击选中 + 手动双击进入（★ 0.173.2：系统 TapGesture(count:2) 与单击手势并列绑定时，
           //    ArkUI 手势仲裁让单击第一击抬起即识别成功、吃掉双击识别流（真机实证双击失效），
@@ -883,6 +1064,13 @@ export struct BBTreeCanvas {
           .gesture(
             TapGesture({ count: 1 })
               .onAction(() => {
+                // ★ 0.200.0：选择模式接管——单击 = 锁定导入目标（不进双击判定、不进对话；飞行中忽略）
+                if (this.importSelecting) {
+                  if (!this.importFlying) {
+                    this.lockImportTarget(bubble);
+                  }
+                  return;
+                }
                 const now = Date.now();
                 // 双击路径：进入对话（导航前清本地选中，交棒 current 选中语义）
                 if (this.lastTapNodeId === bubble.nodeID && now - this.lastTapTime < 300) {
@@ -911,6 +1099,52 @@ export struct BBTreeCanvas {
               })
           )
         }, (bubble: BubbleNode) => bubble.nodeID)
+
+        // ── ★ 0.200.0：选择模式变暗层 + L3 飞行卡片（与气泡同层 = 画布坐标系零换算）──
+        if (this.importSelecting) {
+          // 变暗层：纯视觉氛围（hitTest 穿透——画布拖拽/缩放/气泡点击全部保留）
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor(BG_APP)
+            .opacity(this.importDim)
+            .hitTestBehavior(HitTestMode.None)
+          // 飞行卡片：标题迷你卡（横幅位 → 目标气泡中心，飞行中收至 0.5）
+          // ★ 0.200.2：120×48→200×84 + 字号 15/18——用户反馈「像一粒东西看不清内容」，要能看清是张卡片
+          if (this.importFlying) {
+            Row({ space: 8 }) {
+              Text('📚')
+                .fontSize(18)
+              Text(this.cardImport.title)
+                .fontSize(15)
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .constraintSize({ maxWidth: 140 })
+            }
+            .width(200)
+            .height(84)
+            .padding({ left: 16, right: 16 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: 2, color: BRAND_SECONDARY })
+            .shadow({ radius: 16, color: 'rgba(124,77,255,0.45)', offsetX: 0, offsetY: 6 })
+            .position({ x: this.importFlyX, y: this.importFlyY })
+            .scale({
+              x: this.importFlyScale,
+              y: this.importFlyScale,
+              centerX: '50%',
+              centerY: '50%'
+            })
+            .rotate({
+              angle: this.importFlyRotate,
+              centerX: '50%',
+              centerY: '50%'
+            }) // ★ 0.200.1：飞行微旋转（-6°→4°→0° 弧线质感）
+            .hitTestBehavior(HitTestMode.None)
+          }
+        }
           }
           .width('100%')
           .height('100%')
@@ -972,6 +1206,13 @@ export struct BBTreeCanvas {
           // 与 viewW/viewH 同系；点气泡被气泡自身手势消费不落此处，正好符合「空白处」语义；
           // 与 PanGesture 共存：拖动超阈值后点击识别失败不误触。
           .onClick((event: ClickEvent) => {
+            // ★ 0.200.0：选择模式下点空白 = 解锁目标（不放大、不退出选择模式）
+            if (this.importSelecting) {
+              if (!this.importFlying && this.importTargetId !== '') {
+                this.unlockImportTarget();
+              }
+              return;
+            }
             const now = Date.now();
             const isDoubleTap = now - this.lastCanvasTapTime < 300;
             this.lastCanvasTapTime = now;
@@ -1197,6 +1438,76 @@ export struct BBTreeCanvas {
 
       // ★ 0.167：平铺/选项卡两套自绘标题行（0.151-D）已删除——统一由上方信息条
       //   （分段控件切换模式 + 新建气泡按钮）+ Tab 栏 + 右下角缩放控件承担（UI_GUIDELINES 五/六）
+
+      // ── ★ 0.200.0：导入选择模式横幅 + 确认条（顶层 Stack——盖画布与信息条，参与点击）──
+      if (this.importSelecting) {
+        // 顶部横幅：动作引导 + 取消
+        Row({ space: 10 }) {
+          Text(this.cardImport.action === 'branch' ? `选一个父气泡（「${this.cardImport.title}」→ 新建子气泡）` : `选一个气泡导入（「${this.cardImport.title}」）`)
+            .fontSize(13)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          Button('取消')
+            .fontSize(13)
+            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(Color.Transparent)
+            .padding({ left: 8, right: 8 })
+            .onClick(() => {
+              this.cancelImportSelecting();
+            })
+        }
+        .width('86%')
+        .padding({ left: 16, right: 6, top: 10, bottom: 10 })
+        .borderRadius(RADIUS_NAV)
+        .backgroundColor(SURFACE_NODE)
+        .border({ width: 1, color: BRAND_SECONDARY })
+        .shadow({ radius: 20, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 8 })
+        .position({ x: '7%', y: 72 }) // 信息条（56vp）下方悬浮
+        .transition(TransitionEffect.OPACITY.animation({ duration: 250, curve: Curve.EaseOut })
+          .combine(TransitionEffect.translate({ y: -50 }).animation({ duration: 250, curve: Curve.EaseOut }))) // ★ 0.200.1：横幅顶部滑入
+
+        // 底部确认条：目标锁定后弹出（✓ 确认 / 重选）
+        if (this.importTargetId !== '' && !this.importFlying) {
+          Row({ space: 10 }) {
+            Text(`${this.cardImport.action === 'branch' ? '新建子气泡于' : '导入到'}「${this.importTargetTitle()}」`)
+              .fontSize(13)
+              .fontWeight(600)
+              .fontColor(TEXT_PRIMARY)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            Button('重选')
+              .fontSize(13)
+              .fontColor(TEXT_SECONDARY)
+              .backgroundColor(Color.Transparent)
+              .padding({ left: 8, right: 8 })
+              .onClick(() => {
+                this.unlockImportTarget();
+              })
+            Button('导入 ✓')
+              .fontSize(13)
+              .fontColor(TEXT_PRIMARY)
+              .backgroundColor(BRAND_PRIMARY)
+              .borderRadius(RADIUS_CONTROL)
+              .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+              .onClick(() => {
+                this.confirmImport();
+              })
+          }
+          .width('86%')
+          .padding({ left: 16, right: 8, top: 10, bottom: 10 })
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(SURFACE_NODE)
+          .border({ width: 1, color: BRAND_PRIMARY })
+          .shadow({ radius: 20, color: 'rgba(0,0,0,0.5)', offsetX: 0, offsetY: 8 })
+          .position({ x: '7%', y: '74%' }) // 底部悬浮（缩放控件上方）
+          .transition(TransitionEffect.OPACITY.animation({ duration: 250, curve: Curve.EaseOut })
+            .combine(TransitionEffect.translate({ y: 50 }).animation({ duration: 250, curve: Curve.EaseOut }))) // ★ 0.200.1：确认条底部滑入
+        }
+      }
 
       // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起；遮罩点击不关闭，✕/返回键走弹窗内未保存确认）
       if (this.globalSettingsVisible) {
@@ -1426,6 +1737,11 @@ export struct BBTreeCanvas {
     // 「返回气泡树」按钮；改 hideTitleBar + 内容区自绘标题行（平铺：←+标题+按钮组；选项卡：Tab 栏+按钮组）
     .hideTitleBar(true)
     .onBackPressed(() => {
+      // ★ 0.200.0：导入选择模式打开时返回键先退出选择模式（清 store 零残留），不直接退应用
+      if (this.importSelecting) {
+        this.cancelImportSelecting();
+        return true;
+      }
       // ★ 0.150：全局设置弹窗打开时拦截返回键——递增计数器触发弹窗内 requestClose
       // （有未保存修改时二次确认，不直接丢弃）；无弹窗返回 false 走默认行为（退出应用）
       if (this.globalSettingsVisible) {
@@ -1440,6 +1756,8 @@ export struct BBTreeCanvas {
       return false;
     })
     .onShown(() => {
+      // ★ 0.200.0：知识库/复习页发起导入回到画布 → 进入选择模式（action 空 = 普通返回，零副作用）
+      this.enterImportSelecting();
       // ★ 0.126：从 ChatPage 返回时，若 needsRelayout 则重新布局 + 适配视口
       if (this.store.needsRelayout) {
         this.autoLayout();
