@@ -71,7 +71,10 @@ struct Index {
   confirmDialog: ConfirmDialogStore = connectConfirmDialog(); // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——根 Stack 挂载消费）
 
   // ★ 0.164：点击华为账号登录
-  doLogin() {
+  // ★ 0.196.11：fromSyncEntry 参数——登录来源分流（用户实测反馈：从设置页「开启云同步」
+  //   入口进来登录的，入口即意图，登录成功**直接开云同步**，不再弹「是否开启云同步」多此一举；
+  //   主页/边栏/账单页等普通登录路径保持询问弹窗）
+  doLogin(fromSyncEntry: boolean) {
     if (this.isProcessing) {
       return;
     }
@@ -95,10 +98,22 @@ struct Index {
         this.reminderMode = 0;
         this.reminderVisible = true;
       }
-      // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与边栏头像/账单页登录同款耦合流程）
-      // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
-      if (tip === '' && shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
-        this.confirmDialog.cloudSyncPromptVisible = true;
+      if (tip === '') {
+        if (fromSyncEntry) {
+          // ★ 0.196.11：云同步入口登录——入口即意图，成功直接开（VIP 墙内）；非 VIP 提示订阅
+          if (isVip(this.subscription)) {
+            enableCloudSyncNow(this.getUIContext());
+          } else {
+            try {
+              this.getUIContext().getPromptAction().showToast({ message: '云同步为会员功能，请到边栏「账单」页订阅', duration: 1500 });
+            } catch (_e) {
+              // 静默失败（toast 非关键路径）
+            }
+          }
+        } else if (shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+          // ★ 0.196.8：普通路径登录成功 → 弹「是否开启云同步」；★ 0.196.9：AppConfirmDialog 暗紫
+          this.confirmDialog.cloudSyncPromptVisible = true;
+        }
       }
     });
   }
@@ -411,7 +426,7 @@ struct Index {
           .alignItems(VerticalAlign.Center)
           .enabled(!this.isProcessing)
           .onClick(() => {
-            this.doLogin();
+            this.doLogin(false); // ★ 0.196.11：普通登录路径——成功后询问是否开云同步
           })
         }
         // ★ 0.164：登录/退出结果提示（错误时显示，深浅色适配）
@@ -425,7 +440,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.196.10') // ★ 0.196.10：云同步状态图标圈+勾+登录引导弹窗；★ 0.196.9：取消静默+弹窗暗紫化——更早历史见 MEMORY.md 版本表
+        Text('v0.196.11') // ★ 0.196.11：云同步入口登录分流（入口即意图直接开）；★ 0.196.10：状态图标圈+勾+登录引导弹窗——更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -497,7 +512,9 @@ struct Index {
       }
     })
     // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（设置页触发；用户拍板：左「登录华为
-    //   账号」右「取消」，点登录直拉 doLogin——成功后自动接「是否开启云同步」询问链，不用回主页）
+    //   账号」右「取消」，点登录直拉 doLogin）
+    // ★ 0.196.11：fromSyncEntry=true——入口即意图，登录成功**直接开云同步**不再弹询问
+    //   （用户实测反馈：从云同步入口进来的，登录完再问「要不要开云同步」多此一举）
     AppConfirmDialog({
       visible: this.confirmDialog.loginPromptVisible,
       title: '需要登录',
@@ -507,7 +524,7 @@ struct Index {
       confirmOnLeft: true,
       onConfirm: () => {
         this.confirmDialog.loginPromptVisible = false;
-        this.doLogin();
+        this.doLogin(true);
       },
       onCancel: () => {
         this.confirmDialog.loginPromptVisible = false;
