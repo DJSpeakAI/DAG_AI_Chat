@@ -1148,6 +1148,10 @@ export struct BBTreeCanvas {
             .borderRadius(RADIUS_CONTROL)
             .justifyContent(FlexAlign.Center)
             .onClick(() => {
+              // ★ 0.196.7 用户拍板：适应全图=先重排再适配——删除中间树/节点后留下的空洞在此填补
+              //   （layoutFlatForest 多根纵向堆叠：下面的树整体上移；气泡本身不可拖动，
+              //   无用户自定义位置可破坏；autoLayout 自带 saveTree 落盘 + redrawEdges）
+              this.autoLayout();
               this.fitViewport();
             })
           }

@@ -483,7 +483,7 @@ export struct WordBankPage {
       }
     }
     .width('100%')
-    .height(40) // ★ 0.196.6：顶栏 Row 显式 40vp——五页导航栏统一（原由 ➕ 默认高撑起有歧义，显式钉死）
+    .height(56) // ★ 0.196.7：顶栏 Row 40→56——height 含 padding，原 40+padding8/8 把内容区压到 24vp（顶栏比树页高 8vp，Pad 实测）；56=8padding+40内容+8padding 与树页外层 Column frame 等效，与 ChatPage 同步
     .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（left 28/14 双分支 + top 8/right 14，与 ChatPage 同步）
   }
 
