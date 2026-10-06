@@ -102,9 +102,10 @@
  |0.196.11|云同步入口登录分流（用户实测反馈「从云同步入口进来登录的，登录完再问要不要开云同步多此一举——我的入口就是要开云同步」）：Index.doLogin 加 fromSyncEntry 参数——**入口即意图**：设置页「开启云同步」→登录引导弹窗→doLogin(true)，登录成功 isVip 直接 enableCloudSyncNow（首次会弹系统授权窗，授权即开；非 VIP toast 会员提示），**不再弹「是否开启云同步」询问**；普通登录路径（首页按钮 doLogin(false)/边栏头像/账单页）保持询问弹窗（用户意图只是登录，问是否开同步合理）|
  |0.196.12|代码优化轮（零功能变更，纯清理）：①**删死代码** isCloudSyncOn——0.196.10 设置页状态改响应式 @Computed（permGranted && cloudSwitch.enabled）后无调用方②**设置页「开启云同步」按钮去重**——未登录/VIP 两分支按钮样式 12 行完全相同，合并为一个 Button + onClick 内分流（未登录→登录引导弹窗 return；已登录 VIP→requestSyncPermission）；非 VIP「订阅后开启」样式不同保持独立③**BillingPage 加 showToastSafe**（GlobalSettingsDialog 同款 try-catch 静默包裹）——5 处裸 showToast 统一收口，消编译警告「Function may throw exceptions」|
  |0.197.0|复习页卡面两修（用户实测两反馈）：①**英文展示词截断绝对不允许**（用户拍板「不管怎么样都要限制在窗口里 100% 展示，哪怕换行，点点点 100% 不行」）：单词 Text 原 fontSize30+maxLines(2)+Ellipsis——长英文短语（如 Natural Language Processing）必截「Natural Language …」→ 改**自适应缩字号**：maxLines(3)+minFontSize(16)+maxFontSize(30)（放不下自动缩字体而非省略号）+textAlign Center（折行后各行居中，原折行左歪）；知识卡标题同款（24→minFontSize14/maxLines3）②**评分按钮底部留白**（用户实测「顶格顶底不太好」）：卡片+评分组外层 Column（Blank 弹性居中结构）加 padding bottom 32vp——按钮永不贴屏幕底边，上边距由 Blank 弹性天然保证|
+ |0.197.1|评分按钮内部留白（0.197.0 ②的延续——用户澄清「指的是按钮框离它上面内容的边，文字贴按钮框上下边：上 0/下 1-2vp，框的高度增加一点」）：三评分按钮（生疏/尚可/熟知）各加 `.padding({top:12, bottom:12})`——ArkUI Button 自定义内容默认压贴边，显式内边距撑高 ~24vp，文字离框边留白|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.197.0（versionCode 1000088）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）；★ 0.195.0 起装机**必须递增 versionCode**（同号安装设备可能不刷新代码）
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.197.1（versionCode 1000089）**；★ 0.190.6 起版本号**四处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md）；★ 0.195.0 起装机**必须递增 versionCode**（同号安装设备可能不刷新代码）
 - 迭代文档命名：版本号 变更内容.md（如 0.185.0 音标口音切换.md；同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；规则详见 project_rule.md §7，2026-10-04 用户定稿）
 - 版本线主文档：docs/0.165+/0.167.md（精简版，0.165+ 段；历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，**192.168.2.16** 无线调试，2026-10-04 端口 33685，型号查询返回 SLG-W10）+ 畅享 90 Pro Max（手机，192.168.2.9 无线调试，型号 CHZ-AL00）；**2026-10-04 用户指示：装机测试用 pad，手机用户日常自用勿占用**；★ 2026-10-06 实测教训：两台 IP 勿搞反（搞反后对手机卸载/装机白折腾一轮），`param get const.product.model` 可验身份

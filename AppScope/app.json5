@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000088, // ★ 0.197.0：复习卡英文词自适应缩字号(maxLines3+minFontSize16防截断,用户拍板点点点绝对不允许)+知识卡标题同款+评分按钮底部留白32vp(原顶格);★ 0.196.12：代码优化;更早历史见 MEMORY.md
+    "versionCode": 1000089, // ★ 0.197.1：评分三按钮加上下padding12vp(原文字贴按钮框上下边,用户拍板框加高文字不贴边);★ 0.197.0：复习卡英文词自适应缩字号+评分按钮底部留白;更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

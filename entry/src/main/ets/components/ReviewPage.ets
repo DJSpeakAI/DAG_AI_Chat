@@ -400,6 +400,8 @@ export struct ReviewPage {
 
   // ── 评分区：3 档按钮三行全上（界面大，描述回归——用户拍板「加了很漂亮」）──
   // ★ 0.196.2：宽度自适应 130/104——手机上 3×130+20 溢出屏幕（用户实测右边按钮超框）
+  // ★ 0.197.1：三按钮加上下 padding 12vp——原文字贴按钮框上下边（上 0/下 1-2vp，用户实测
+  //   「框的高度增加一点，不要文字和边贴在一起」）；Button 自定义内容默认压贴边，显式内边距撑高
   @Builder
   ratingArea() {
     Row({ space: 10 }) {
@@ -411,6 +413,7 @@ export struct ReviewPage {
         }
       }
       .width(this.isTablet ? 130 : 104)
+      .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：文字离框边留白
       .backgroundColor('#26E5484D')
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
@@ -424,6 +427,7 @@ export struct ReviewPage {
         }
       }
       .width(this.isTablet ? 130 : 104)
+      .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：同上
       .backgroundColor('#26F5A623')
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
@@ -437,6 +441,7 @@ export struct ReviewPage {
         }
       }
       .width(this.isTablet ? 130 : 104)
+      .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：同上
       .backgroundColor('#263BB273')
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
