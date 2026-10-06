@@ -38,7 +38,14 @@ export function connectHuaweiAccount(): HuaweiAccountStore {
 // ── 官方错误码 → 用户可读中文提示（Account Kit 文档建议的 UI 交互处理） ──
 // ★ 0.164.4 调试增强：提示末尾附上原始 code + 服务端 message，并同步 console 日志，
 //    便于装机截图/DevEco Log 窗口定位真实错误（此前 1001502003 文案掩盖了服务端具体原因）
+// ★ 0.196.9：用户主动取消授权（1001502012）是正常行为非错误——固定短提示、不附 code
+//    调试后缀、不打错误日志；调用方据 AUTH_CANCELLED_TIP 静默处理（首页红字 bug 用户实测报）
+export const AUTH_CANCELLED_TIP: string = '已取消授权';
+
 function errorToTip(error: BusinessError): string {
+  if (error.code === 1001502012) {
+    return AUTH_CANCELLED_TIP; // 用户主动取消——正常行为，静默素材（调用方判断后不显示）
+  }
   let tip: string;
   if (error.code === 1001502001) {
     tip = '未登录华为账号，请先在系统设置中登录华为账号';

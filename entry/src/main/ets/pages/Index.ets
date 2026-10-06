@@ -26,12 +26,13 @@ import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定
-import { promptEnableCloudSyncAfterLogin, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合
+import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
+import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
 import { GlobalSettingsDialog } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
-import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录
+import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
 import { BG_APP, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_BRAND, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.174.1：UI Token 单一来源（删 isDark 三元——v0.166.3 锁暗色后浅色分支是死代码）；★ 0.174.2：删 BRAND_SECONDARY/RADIUS_LOGO（首页 Logo 区移除后无引用）
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
 
@@ -67,6 +68,7 @@ struct Index {
   //   用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」，原画布项硬编码永久高亮已废）
   @Local currentRoute: string = '';
   @Local globalSettingsVisible: boolean = false;
+  confirmDialog: ConfirmDialogStore = connectConfirmDialog(); // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——根 Stack 挂载消费）
 
   // ★ 0.164：点击华为账号登录
   doLogin() {
@@ -78,6 +80,11 @@ struct Index {
     const context = this.getUIContext().getHostContext() as common.Context;
     loginWithHuaweiID(context).then((tip: string) => {
       this.isProcessing = false;
+      // ★ 0.196.9：用户主动取消登录——静默返回（原红字「已取消授权【code=1001502012…」
+      //   常驻首页，用户实测报 bug；取消是正常行为非错误，不显示不打日志）
+      if (tip === AUTH_CANCELLED_TIP) {
+        return;
+      }
       if (tip !== '') {
         this.loginTip = tip;
       }
@@ -89,8 +96,9 @@ struct Index {
         this.reminderVisible = true;
       }
       // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与边栏头像/账单页登录同款耦合流程）
-      if (tip === '') {
-        promptEnableCloudSyncAfterLogin(this.getUIContext(), isVip(this.subscription));
+      // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
+      if (tip === '' && shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+        this.confirmDialog.cloudSyncPromptVisible = true;
       }
     });
   }
@@ -417,7 +425,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.196.8') // ★ 0.196.8：云同步↔华为账号耦合（登录弹窗/退出强制关/未登录拦截）；★ 0.196.7：顶栏40→56+适应全图重排——更早历史见 MEMORY.md 版本表
+        Text('v0.196.9') // ★ 0.196.9：取消登录静默+确认弹窗暗紫化（AppConfirmDialog）；★ 0.196.8：云同步↔账号耦合——更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -455,6 +463,37 @@ struct Index {
       onGoBilling: () => {
         this.reminderVisible = false;
         this.pathStack.pushPath({ name: 'BillingPage' });
+      }
+    })
+    // ★ 0.196.9：退出华为账号确认（边栏头像触发——原系统 AlertDialog 灰底，用户实测反馈
+    //   与暗紫风格不符；确认走 doLogout：退出 + 云同步强制关一条龙）
+    AppConfirmDialog({
+      visible: this.confirmDialog.logoutConfirmVisible,
+      title: '退出华为账号',
+      message: '退出后将停止云同步，本地学习数据不受影响。',
+      confirmText: '退出',
+      cancelText: '取消',
+      onConfirm: () => {
+        this.confirmDialog.logoutConfirmVisible = false;
+        this.doLogout();
+      },
+      onCancel: () => {
+        this.confirmDialog.logoutConfirmVisible = false;
+      }
+    })
+    // ★ 0.196.9：登录后「是否开启云同步」询问（三条登录路径触发 store——弹窗集中本处挂载）
+    AppConfirmDialog({
+      visible: this.confirmDialog.cloudSyncPromptVisible,
+      title: '开启云同步',
+      message: '已登录华为账号。是否开启云同步？开启后，登录同一华为账号的多台设备对话数据自动保持一致。',
+      confirmText: '开启云同步',
+      cancelText: '暂不开启',
+      onConfirm: () => {
+        this.confirmDialog.cloudSyncPromptVisible = false;
+        enableCloudSyncNow(this.getUIContext());
+      },
+      onCancel: () => {
+        this.confirmDialog.cloudSyncPromptVisible = false;
       }
     })
     }

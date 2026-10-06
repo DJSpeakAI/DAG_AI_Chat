@@ -6,8 +6,9 @@
 // 发票：由华为开具（用户在华为应用市场订单中心自助申请），App 内只放指路说明
 
 import { SubscriptionStore, connectSubscription, isVip, vipExpireTime, vipDaysLeft, redeemCode, stampFreeTrialOnLogin, markWelcomeShown } from '../common/ChatModel';
-import { promptEnableCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：登录后云同步弹窗（云同步↔账号耦合）
-import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录
+import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：登录后云同步弹窗（云同步↔账号耦合）；★ 0.196.9：弹窗 UI 移 AppConfirmDialog
+import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（云同步询问——Index 根挂载消费）
+import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
 import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
@@ -74,6 +75,10 @@ export struct BillingPage {
     const context = this.getUIContext().getHostContext() as common.Context;
     loginWithHuaweiID(context).then((tip: string) => {
       this.isLoggingIn = false;
+      // ★ 0.196.9：用户主动取消登录——静默（取消是正常行为非错误，不 toast）
+      if (tip === AUTH_CANCELLED_TIP) {
+        return;
+      }
       if (tip !== '') {
         this.getUIContext().getPromptAction().showToast({ message: tip });
         return;
@@ -87,7 +92,10 @@ export struct BillingPage {
         this.getUIContext().getPromptAction().showToast({ message: '登录成功' });
       }
       // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与首页/边栏头像登录同款耦合流程）
-      promptEnableCloudSyncAfterLogin(this.getUIContext(), isVip(this.subscription));
+      // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
+      if (shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+        connectConfirmDialog().cloudSyncPromptVisible = true;
+      }
     });
   }
 

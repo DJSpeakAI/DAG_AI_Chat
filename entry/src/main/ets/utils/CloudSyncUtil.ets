@@ -295,40 +295,28 @@ function toastSafe(uiContext: UIContext, msg: string): void {
   }
 }
 
-// 登录成功后弹窗：是否开启云同步？（「开启」→ 开关开；权限未授予则续弹系统授权窗）
+// ★ 0.196.9：登录后是否需要弹「是否开启云同步」询问（弹窗 UI 由 Index 根挂载的
+//   AppConfirmDialog 承担——系统 AlertDialog 灰底与暗紫风格不符，用户实测反馈）
 // isVipNow 由调用方传入（本文件不 import ChatModel——ChatModel 已 import 本文件，反向会循环依赖）；
 // 非 VIP 不弹（云同步是会员功能，设置页显示「订阅后开启」，弹了也是死路）
-export function promptEnableCloudSyncAfterLogin(uiContext: UIContext, isVipNow: boolean): void {
-  if (connectCloudSync().enabled) {
-    return; // 已开着（防御性保留——退出即关，正常流程到不了）
-  }
-  if (!isVipNow) {
-    return; // 非 VIP（到期/未订阅）：不弹窗引导
-  }
-  uiContext.showAlertDialog({
-    title: '开启云同步',
-    message: '已登录华为账号。是否开启云同步？开启后，登录同一华为账号的多台设备对话数据自动保持一致。',
-    primaryButton: {
-      value: '暂不开启',
-      action: () => {}
-    },
-    secondaryButton: {
-      value: '开启云同步',
-      action: () => {
-        const context = uiContext.getHostContext() as common.UIAbilityContext;
-        hasSyncPermission().then((granted: boolean) => {
-          if (granted) {
-            // 权限已在（如退出账号前授过）——开关一开即激活，无需再弹系统窗
-            setCloudSyncEnabled(true);
-            toastSafe(uiContext, '云同步已开启');
-          } else if (context !== undefined && context !== null) {
-            // 首次开启：弹系统授权窗（授权成功 requestSyncPermission 内部落开关+激活）
-            requestSyncPermission(context).then((ok: boolean) => {
-              toastSafe(uiContext, ok ? '云同步已开启' : '未授权，云同步保持关闭');
-            });
-          }
-        });
-      }
+export function shouldPromptCloudSyncAfterLogin(isVipNow: boolean): boolean {
+  return !connectCloudSync().enabled && isVipNow;
+}
+
+// ★ 0.196.9：用户在「是否开启云同步」弹窗点「开启」——开关开；权限未授予则续弹系统授权窗
+// （授权窗是系统级 UI 无法自定义；应用内弹窗已全部暗紫化）
+export function enableCloudSyncNow(uiContext: UIContext): void {
+  const context = uiContext.getHostContext() as common.UIAbilityContext;
+  hasSyncPermission().then((granted: boolean) => {
+    if (granted) {
+      // 权限已在（如退出账号前授过）——开关一开即激活，无需再弹系统窗
+      setCloudSyncEnabled(true);
+      toastSafe(uiContext, '云同步已开启');
+    } else if (context !== undefined && context !== null) {
+      // 首次开启：弹系统授权窗（授权成功 requestSyncPermission 内部落开关+激活）
+      requestSyncPermission(context).then((ok: boolean) => {
+        toastSafe(uiContext, ok ? '云同步已开启' : '未授权，云同步保持关闭');
+      });
     }
   });
 }

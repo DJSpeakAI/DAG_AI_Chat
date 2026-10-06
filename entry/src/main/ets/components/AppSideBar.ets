@@ -5,10 +5,11 @@
 // 导航逻辑全部经 onNavClick(kind) 注入宿主（本组件零导航）：
 //   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
 
-import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID } from '../utils/HuaweiAccountUtil';
+import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.9：logoutHuaweiID 删——退出确认弹窗移 Index 根挂载，确认后走 doLogout
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定
-import { promptEnableCloudSyncAfterLogin, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合
-import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像退出确认（getHostContext 转 common.Context 调 logoutHuaweiID）
+import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
+import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——Index 根挂载消费）
+import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
 @ComponentV2
@@ -234,38 +235,22 @@ export struct AppSideBar {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
-        // ★ 0.196.2 用户拍板：点头像=华为账号退出确认弹窗（原跳统计页废弃——统计已有边栏独立入口；
-        //   系统 AlertDialog 同 0.189.2 口音提示先例）
+        // ★ 0.196.2 用户拍板：点头像=华为账号退出确认弹窗（原跳统计页废弃——统计已有边栏独立入口）
         // ★ 0.196.3 bugfix（用户实测「退出后再点没反应」）：未登录点头像=直接拉起登录
         if (!this.account.isLoggedIn) {
           const loginContext = this.getUIContext().getHostContext() as common.Context;
           // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（云同步与账号绑定，用户拍板流程）
+          // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
           loginWithHuaweiID(loginContext).then((tip: string) => {
-            if (tip === '') {
-              promptEnableCloudSyncAfterLogin(this.getUIContext(), isVip(this.subscription));
+            if (tip === '' && shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+              connectConfirmDialog().cloudSyncPromptVisible = true;
             }
           });
           return;
         }
-        this.getUIContext().showAlertDialog({
-          title: '退出华为账号',
-          message: '退出后将停止云同步，本地学习数据不受影响。',
-          primaryButton: {
-            value: '取消',
-            action: () => {}
-          },
-          secondaryButton: {
-            value: '退出',
-            action: () => {
-              const context = this.getUIContext().getHostContext() as common.Context;
-              // ★ 0.196.8：退出 → 云同步开关强制关（无论取消授权成败，本地登录态都已清空——
-              //   logoutHuaweiID 内部保证；云侧已无账号会话，同步必须停）
-              logoutHuaweiID(context).then((_tip: string) => {
-                disableCloudSyncOnLogout(this.getUIContext());
-              });
-            }
-          }
-        });
+        // ★ 0.196.9：退出确认换 AppConfirmDialog 暗紫（原系统 AlertDialog 灰底，用户实测反馈
+        //   与暗紫风格不符）——弹窗 Index 根挂载；确认后走 doLogout（退出 + 云同步强制关一条龙）
+        connectConfirmDialog().logoutConfirmVisible = true;
       })
     }
     .width(208)
