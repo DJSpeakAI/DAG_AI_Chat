@@ -8,8 +8,8 @@
 // ⑥完成页：恭喜 + 总结卡（「总结正在生成」+三点动画，用户拍板改文案）+ 继续复习/完成两按钮
 
 import { WordItem, WordBankStore } from '../common/WordModel';
-import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（复习即问场景）
-import { ChatMessage, ApiConfig, AiPreference, connectApiConfig, connectAiPreference, generateMessageId } from '../common/ChatModel';
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, getCardImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（复习即问场景）
+import { ChatMessage, ApiConfig, AiPreference, connectApiConfig, connectAiPreference, generateMessageId, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel';
 import { buildStatEncouragePrompt } from '../common/Prompts';
 import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
@@ -41,6 +41,17 @@ export function connectReviewDailyState(): ReviewDailyState {
   return PersistenceV2.connect(ReviewDailyState, 'review-daily-v1', () => new ReviewDailyState()) as ReviewDailyState;
 }
 
+// ★ 0.202.0：每日复习条目数（复习页右上角 ⚙ 设置；10 默认 / 20 / 自定义 1~500）
+@ObservedV2
+export class DailyReviewCountStore {
+  @Trace wordCount: number = 10;      // 单词库每日复习条目
+  @Trace knowledgeCount: number = 10; // 知识库每日复习条目
+}
+
+export function connectDailyReviewCount(): DailyReviewCountStore {
+  return PersistenceV2.connect(DailyReviewCountStore, 'daily-review-count-v1', () => new DailyReviewCountStore()) as DailyReviewCountStore;
+}
+
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -53,6 +64,10 @@ export struct ReviewPage {
   // ── ★ 0.200.0 入口 C：复习页「问 AI」（复习遇到不懂的概念立刻问——100% 场景）──
   cardImport: CardImportStore = connectCardImport();
   @Local askSheetVisible: boolean = false;
+  // ── ★ 0.202.0：每日复习量（右上角 ⚙）──
+  dailyCount: DailyReviewCountStore = connectDailyReviewCount();
+  @Local countSettingsVisible: boolean = false; // ⚙ 弹窗开关
+  statStore: StatisticsStore = connectStatistics(); // ★ 0.202.3：司忆量埋点
 
   /** ★ 0.200.0：写入导入 store + 回画布进入选择模式（取当前复习中的知识卡） */
   startCardImport(action: string): void {
@@ -60,7 +75,7 @@ export struct ReviewPage {
     this.cardImport.action = action;
     this.cardImport.title = card.title;
     this.cardImport.definition = card.definition;
-    this.cardImport.imageUri = card.imageUri;
+    this.cardImport.imageUrisJson = JSON.stringify(getCardImages(card));
     this.askSheetVisible = false;
     navBackToCanvas(this.pathStack);
   }
@@ -100,12 +115,13 @@ export struct ReviewPage {
   // 未来排期不掺入——「继续复习」才把未来的提前背；当天已完成 → 直接完成页重新生成鼓励
   buildQueue(): void {
     const now = Date.now();
+    const dailyN = this.mode === 'word' ? this.dailyCount.wordCount : this.dailyCount.knowledgeCount; // ★ 0.202.0：每日量（⚙ 设置默认 10）
     if (this.mode === 'word') {
       const all = pickReviewWords(this.wordBank, this.wordBank.words.length, now);
-      this.queue = all.filter((w: MemoryItem): boolean => w.reviewCount === 0 || w.nextReviewAt <= now);
+      this.queue = all.filter((w: MemoryItem): boolean => w.reviewCount === 0 || w.nextReviewAt <= now).slice(0, dailyN);
     } else {
       const all = pickReviewCards(this.knowledgeBank, this.knowledgeBank.cards.length, now);
-      this.queue = all.filter((c: MemoryItem): boolean => c.reviewCount === 0 || c.nextReviewAt <= now);
+      this.queue = all.filter((c: MemoryItem): boolean => c.reviewCount === 0 || c.nextReviewAt <= now).slice(0, dailyN);
     }
     this.idx = 0;
     this.ratedHard = 0;
@@ -113,11 +129,12 @@ export struct ReviewPage {
     this.ratedEasy = 0;
     this.aiText = '';
     this.aiLoading = false;
-    if (this.isDoneToday()) {
+    if (this.queue.length === 0) {
       this.finished = true;
-      this.requestEncourage(); // 用户拍板：再进直接跳完成页 + 重新生成一次鼓励
+      this.requestEncourage(); // ★ 0.202.0 铁律修复：队列空才完成页（isDoneToday 一刀切已删——新卡必须当日学）
     } else {
       this.finished = false;
+      recordStat(this.statStore, 'siyi', this.queue.length, 0); // ★ 0.202.3：司忆量埋点（本队展示张数）
     }
   }
 
@@ -132,6 +149,11 @@ export struct ReviewPage {
       this.queue = all.filter((c: MemoryItem): boolean => c.reviewCount > 0 && c.nextReviewAt > now);
     }
     if (this.queue.length === 0) {
+      // ★ 0.202.0：future 空 → 兜底重拉当日队列（每日量外的剩余到期/新卡）→ 仍空 → 轻提示（永不空转）
+      this.buildQueue();
+      if (this.queue.length === 0) {
+        this.getUIContext().getPromptAction().showToast({ message: '今日内容已全部学完，明天再来吧', duration: 2000 });
+      }
       return;
     }
     this.idx = 0;
@@ -139,29 +161,16 @@ export struct ReviewPage {
     this.ratedGood = 0;
     this.ratedEasy = 0;
     this.finished = false;
+    recordStat(this.statStore, 'siyi', this.queue.length, 0); // ★ 0.202.3：司忆量埋点（继续复习队列）
     this.aiText = '';
     this.aiLoading = false;
   }
 
   // 完成页「继续复习」按钮显隐：有未来排期内容才显示
+  // ★ 0.202.0 铁律 2：库非空「继续复习」按钮常驻（"没有卡可学"在系统里不允许存在——
+  //   原判定只认已评分未来卡，全新卡时按钮消失=用户实测 bug）
   hasFutureContent(): boolean {
-    const now = Date.now();
-    if (this.mode === 'word') {
-      for (let i = 0; i < this.wordBank.words.length; i++) {
-        const w = this.wordBank.words[i];
-        if (w.reviewCount > 0 && w.nextReviewAt > now) {
-          return true;
-        }
-      }
-      return false;
-    }
-    for (let i = 0; i < this.knowledgeBank.cards.length; i++) {
-      const c = this.knowledgeBank.cards[i];
-      if (c.reviewCount > 0 && c.nextReviewAt > now) {
-        return true;
-      }
-    }
-    return false;
+    return this.mode === 'word' ? this.wordBank.words.length > 0 : this.knowledgeBank.cards.length > 0;
   }
 
   switchMode(m: string): void {
@@ -248,7 +257,7 @@ export struct ReviewPage {
       this.aiText = fallback;
       return;
     }
-    const dataText = `今天完成了一轮知识复习：共复习 ${total} 个${unit}（生疏 ${hard}、尚可 ${good}、熟知 ${easy}）`;
+    const dataText = `今天完成了一轮卡片复习：共复习 ${total} 个${unit}（生疏 ${hard}、尚可 ${good}、熟知 ${easy}）`;
     const sys = buildStatEncouragePrompt(this.aiPreference.encourageMode, this.aiPreference.aiNickname.trim(), dataText);
     this.aiLoading = true;
     this.aiText = '';
@@ -279,7 +288,7 @@ export struct ReviewPage {
   @Builder
   topBar() {
     Row() {
-      Text('知识复习')
+      Text('卡片复习')
         .fontSize(FONT_SIZE_SCREEN_TITLE)
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
@@ -319,6 +328,15 @@ export struct ReviewPage {
           .fontSize(12)
           .fontColor(TEXT_TERTIARY)
       }
+      // ★ 0.202.0：右上角 ⚙ 每日复习量设置（与全局设置「复习区」语义分开——此处管每日队列条目数）
+      Image($r('app.media.settings'))
+        .width(18)
+        .height(18)
+        .objectFit(ImageFit.Contain)
+        .margin({ left: 12 })
+        .onClick(() => {
+          this.openCountSettings();
+        })
     }
     .width('100%')
     .height(56) // ★ 0.196.7：顶栏 Row 40→56——height 含 padding，原 40+padding8/8 把内容区压到 24vp（顶栏比树页高 8vp，Pad 实测）；56=8padding+40内容+8padding 与树页外层 Column frame 等效，与 ChatPage 同步
@@ -379,13 +397,23 @@ export struct ReviewPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       } else {
         // ★ 0.196.3 用户反馈：知识卡有图要显示图（原只有标题+定义——知识库里带图的卡复习时图丢了）
-        if ((this.currentItem() as KnowledgeCard).imageUri !== '') {
-          Image((this.currentItem() as KnowledgeCard).imageUri)
-            .width('100%')
-            .constraintSize({ maxHeight: 220 })
-            .borderRadius(RADIUS_CONTROL)
-            .objectFit(ImageFit.Contain)
-            .margin({ bottom: 4 })
+        // ★ 0.202.1：多图横滑（单图无滑感）；图片兼容读取 getCardImages
+        if (getCardImages(this.currentItem() as KnowledgeCard).length > 0) {
+          Scroll() {
+            Row({ space: 8 }) {
+              ForEach(getCardImages(this.currentItem() as KnowledgeCard), (img: string) => {
+                Image(img)
+                  .width('86%')
+                  .constraintSize({ maxHeight: 220 })
+                  .borderRadius(RADIUS_CONTROL)
+                  .objectFit(ImageFit.Contain)
+              }, (img: string) => img)
+            }
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
+          .margin({ bottom: 4 })
         }
         Text((this.currentItem() as KnowledgeCard).title)
           .fontSize(24)
@@ -561,16 +589,41 @@ export struct ReviewPage {
   }
 
   // ── 空态（当天无到期内容且无新词）──
+  // ★ 0.202.0 铁律 5：库空 → 直接给「去建卡」引导（不允许停在空完成页——用户拍板）
   @Builder
   emptyArea() {
     Column({ space: 0 }) {
-      Text('今天没有到期的复习内容')
-        .fontSize(16)
-        .fontColor(TEXT_SECONDARY)
-      Text('新词加入后会自动进入当天的复习队列')
-        .fontSize(13)
-        .fontColor(TEXT_TERTIARY)
-        .margin({ top: 8 })
+      if (this.hasFutureContent()) {
+        Text('今天没有到期的复习内容')
+          .fontSize(16)
+          .fontColor(TEXT_SECONDARY)
+        Text('新词加入后会自动进入当天的复习队列')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 8 })
+      } else {
+        Text(this.mode === 'word' ? '单词库还是空的' : '知识库还是空的')
+          .fontSize(16)
+          .fontColor(TEXT_SECONDARY)
+        Text('先添加内容，复习从这里开始')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 8 })
+        Button(this.mode === 'word' ? '去单词库添加' : '去知识库建卡')
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(BRAND_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .padding({ left: 28, right: 28, top: 10, bottom: 10 })
+          .margin({ top: 20 })
+          .onClick(() => {
+            if (this.mode === 'word') {
+              this.pathStack.pushPath({ name: 'WordBankPage' });
+            } else {
+              this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+            }
+          })
+      }
     }
     .alignItems(HorizontalAlign.Center)
   }
@@ -581,22 +634,13 @@ export struct ReviewPage {
     Column() {
       Blank()
       Column() {
-        Text('把这张卡片导入气泡去问 AI？')
-          .fontSize(15)
-          .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
-        Text((this.currentItem() as KnowledgeCard).title)
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 4 })
+        // ★ 0.201.4（用户拍板）：删标题与卡片名——从「问AI?」进来意图已明确（同知识库入口）
         Button('导入气泡对话')
           .fontSize(14)
           .fontColor(TEXT_PRIMARY)
           .backgroundColor(BRAND_PRIMARY)
           .borderRadius(RADIUS_CONTROL)
-          .width('100%')
+          .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：平板固定 280 居中（手机 100% 不变），同知识库入口
           .margin({ top: 16 })
           .onClick(() => {
             this.startCardImport('import');
@@ -611,7 +655,7 @@ export struct ReviewPage {
           .backgroundColor(Color.Transparent)
           .borderRadius(RADIUS_CONTROL)
           .border({ width: 1, color: BRAND_SECONDARY })
-          .width('100%')
+          .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
           .onClick(() => {
             this.startCardImport('branch');
@@ -624,14 +668,14 @@ export struct ReviewPage {
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .backgroundColor(Color.Transparent)
-          .width('100%')
+          .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
           .onClick(() => {
             this.askSheetVisible = false;
           })
       }
-      .width('100%')
-      .borderRadius({ topLeft: RADIUS_NAV, topRight: RADIUS_NAV })
+      .width(this.isTablet ? 460 : '100%') // ★ 0.201.2：平板固定 460 居中（手机 100% 贴底不变），同知识库入口
+      .borderRadius(RADIUS_NAV) // ★ 0.201.2：四角圆角（宽屏居中浮岛感；手机贴底时下圆角贴屏不可见）
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
       .padding({ left: 20, right: 20, top: 20, bottom: 28 })
@@ -642,6 +686,226 @@ export struct ReviewPage {
     .backgroundColor(OVERLAY)
     .onClick(() => {
       this.askSheetVisible = false;
+    })
+  }
+
+  // ── ★ 0.202.0：每日复习量设置弹窗（右上角 ⚙；卡片化样式同单词库 ⚙ 先例——即时生效+完成关闭）──
+  @Local csWordCustom: boolean = false;
+  @Local csKnowledgeCustom: boolean = false;
+  @Local csWordInput: string = '';
+  @Local csKnowledgeInput: string = '';
+
+  openCountSettings(): void {
+    // 按当前值初始化分段模式（10/20 之外的值 = 自定义态）
+    this.csWordCustom = this.dailyCount.wordCount !== 10 && this.dailyCount.wordCount !== 20;
+    this.csKnowledgeCustom = this.dailyCount.knowledgeCount !== 10 && this.dailyCount.knowledgeCount !== 20;
+    this.csWordInput = this.csWordCustom ? `${this.dailyCount.wordCount}` : '';
+    this.csKnowledgeInput = this.csKnowledgeCustom ? `${this.dailyCount.knowledgeCount}` : '';
+    this.countSettingsVisible = true;
+  }
+
+  applyWordCount(mode: string): void {
+    if (mode === '10') {
+      this.dailyCount.wordCount = 10;
+      this.csWordCustom = false;
+    } else if (mode === '20') {
+      this.dailyCount.wordCount = 20;
+      this.csWordCustom = false;
+    } else {
+      this.csWordCustom = true;
+    }
+  }
+
+  applyKnowledgeCount(mode: string): void {
+    if (mode === '10') {
+      this.dailyCount.knowledgeCount = 10;
+      this.csKnowledgeCustom = false;
+    } else if (mode === '20') {
+      this.dailyCount.knowledgeCount = 20;
+      this.csKnowledgeCustom = false;
+    } else {
+      this.csKnowledgeCustom = true;
+    }
+  }
+
+  commitCustomInput(): void {
+    // 自定义输入确定（1~500 钳制；非法输入忽略）
+    const w = parseInt(this.csWordInput, 10);
+    if (this.csWordCustom && !Number.isNaN(w) && w >= 1 && w <= 500) {
+      this.dailyCount.wordCount = w;
+    }
+    const k = parseInt(this.csKnowledgeInput, 10);
+    if (this.csKnowledgeCustom && !Number.isNaN(k) && k >= 1 && k <= 500) {
+      this.dailyCount.knowledgeCount = k;
+    }
+  }
+
+  @Builder
+  countSegment(label: string, isCustom: boolean, count: number, onPick: (mode: string) => void): void {
+    Row({ space: 6 }) {
+      Text('10')
+        .fontSize(12)
+        .fontWeight(!isCustom && count === 10 ? 600 : 400)
+        .fontColor(!isCustom && count === 10 ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(!isCustom && count === 10 ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          onPick('10');
+        })
+      Text('20')
+        .fontSize(12)
+        .fontWeight(!isCustom && count === 20 ? 600 : 400)
+        .fontColor(!isCustom && count === 20 ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(!isCustom && count === 20 ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          onPick('20');
+        })
+      Text('自定义')
+        .fontSize(12)
+        .fontWeight(isCustom ? 600 : 400)
+        .fontColor(isCustom ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(isCustom ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          onPick('custom');
+        })
+    }
+    .padding(3)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(SURFACE_SOFT)
+  }
+
+  @Builder
+  countSettingsDialog() {
+    Column() {
+      Column() {
+        Text('每日复习量')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text('进入复习页时，当日队列最多取多少条（到期+新卡）')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+        // ── 单词库卡片区 ──
+        Column() {
+          Text('单词库')
+            .fontSize(14)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+            .alignSelf(ItemAlign.Start)
+          this.countSegment('word', this.csWordCustom, this.dailyCount.wordCount, (mode: string): void => {
+            this.applyWordCount(mode);
+          })
+          if (this.csWordCustom) {
+            Row({ space: 8 }) {
+              TextInput({ text: this.csWordInput, placeholder: '1 ~ 500' })
+                .fontSize(14)
+                .layoutWeight(1)
+                .height(36)
+                .padding({ left: 12, right: 12 })
+                .borderRadius(RADIUS_CONTROL)
+                .backgroundColor(SURFACE_SOFT)
+                .type(InputType.Number)
+                .onChange((value: string) => {
+                  this.csWordInput = value;
+                })
+              Button('确定')
+                .fontSize(13)
+                .height(36)
+                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(BRAND_PRIMARY)
+                .borderRadius(RADIUS_CONTROL)
+                .padding({ left: 14, right: 14 })
+                .onClick(() => {
+                  this.commitCustomInput();
+                })
+            }
+            .width('100%')
+            .margin({ top: 10 })
+          }
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .margin({ top: 16 })
+        // ── 知识库卡片区 ──
+        Column() {
+          Text('知识库')
+            .fontSize(14)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+            .alignSelf(ItemAlign.Start)
+          this.countSegment('knowledge', this.csKnowledgeCustom, this.dailyCount.knowledgeCount, (mode: string): void => {
+            this.applyKnowledgeCount(mode);
+          })
+          if (this.csKnowledgeCustom) {
+            Row({ space: 8 }) {
+              TextInput({ text: this.csKnowledgeInput, placeholder: '1 ~ 500' })
+                .fontSize(14)
+                .layoutWeight(1)
+                .height(36)
+                .padding({ left: 12, right: 12 })
+                .borderRadius(RADIUS_CONTROL)
+                .backgroundColor(SURFACE_SOFT)
+                .type(InputType.Number)
+                .onChange((value: string) => {
+                  this.csKnowledgeInput = value;
+                })
+              Button('确定')
+                .fontSize(13)
+                .height(36)
+                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(BRAND_PRIMARY)
+                .borderRadius(RADIUS_CONTROL)
+                .padding({ left: 14, right: 14 })
+                .onClick(() => {
+                  this.commitCustomInput();
+                })
+            }
+            .width('100%')
+            .margin({ top: 10 })
+          }
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .margin({ top: 12 })
+        Button('完成')
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(BRAND_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .width('100%')
+          .margin({ top: 16 })
+          .onClick(() => {
+            this.commitCustomInput();
+            this.countSettingsVisible = false;
+            this.buildQueue(); // 新量即时生效重建队列
+          })
+      }
+      .width(this.isTablet ? 460 : '86%')
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+      .padding(20)
+      .onClick(() => {}) // 消费面板点击防冒泡到遮罩
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(OVERLAY)
+    .onClick(() => {
+      this.countSettingsVisible = false;
     })
   }
 
@@ -687,11 +951,19 @@ export struct ReviewPage {
       if (this.askSheetVisible) {
         this.askAiSheet()
       }
+      // ★ 0.202.0：每日复习量设置弹窗（最顶层）
+      if (this.countSettingsVisible) {
+        this.countSettingsDialog()
+      }
       }
     }
     .hideTitleBar(true)
     // ★ 0.200.0：面板打开时返回键先关面板
     .onBackPressed(() => {
+      if (this.countSettingsVisible) {
+        this.countSettingsVisible = false;
+        return true;
+      }
       if (this.askSheetVisible) {
         this.askSheetVisible = false;
         return true;

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // ChatPage.ets — 对话页面（气泡内聊天界面）
 // ============================================================
 // 本文件是用户与 AI 对话的主界面，功能包括：
@@ -31,7 +31,7 @@ import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（
  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, ENCOURAGE_LIGHT_PROMPT, ENCOURAGE_HEAVY_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）+鼓励三档
 import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
-import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费
+import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
@@ -47,7 +47,7 @@ import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云�
 import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
+import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -523,11 +523,14 @@ export struct ChatPage {
   // ★ 0.146：知识库卡片编辑弹窗状态（AI 生成草稿 → 用户编辑确认 → 入库；AI 不直接入库）
   @Local knowledgeEditVisible: boolean = false;  // 编辑弹窗可见
   @Local knowledgeCardTitle: string = '';        // 标题输入框内容（AI 草稿自动填充，可自由编辑）
+  @Local knowledgeSuggestedTags: string[] = [];  // ★ 0.202.1：AI 建议标签（弹窗勾选采纳）
+  @Local knowledgeSelectedTags: string = '';     // ★ 0.202.1：已勾选标签（逗号分隔，随卡保存）
   @Local knowledgeCardDefinition: string = '';   // 定义输入框内容（AI 草稿自动填充，可自由编辑）
   @Local knowledgeImageUri: string = '';         // 卡片配图（base64 data URI；'' = 无图片，图片区不渲染）
   @Local knowledgeEditLoading: boolean = false;  // AI 提炼进行中
   @Local knowledgeEditError: string = '';        // AI 提炼错误信息（输入框仍可手动填写）
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // ★ 0.146：知识库（独立 PersistenceV2 key，与气泡树/单词库隔离）
+  attention: AttentionStore = connectAttention(); // ★ 0.202.0：注意力标签热度（发消息时提取——艾宾浩斯 2.0）
   private knowledgeQueryController: StreamController | null = null; // 进行中的提炼请求（弹窗关闭时取消）
   private knowledgeReviewCache: Map<string, KnowledgeReviewCacheEntry> = new Map(); // 复习区知识卡片缓存
   // ★ 0.153：提炼弹窗秒表——发起请求从 0 计数每秒 +1，弹窗标题展示「AI提炼中：XX秒」；
@@ -944,6 +947,8 @@ export struct ChatPage {
     }
     const isPodcast = this.sendMode === 'podcast'; // ★ 0.133：本次发送模式
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
+    // ★ 0.202.0：注意力提取——消息命中卡标题/标签 → 标签热度+1（纯本地毫秒级；AI 还在流式回复时复习权重已算完）
+    updateAttention(this.attention, this.knowledgeBank.cards, userMsg.content);
     recordStat(this.statStore, 'userMsg', 0, 0); // ★ 0.192.0：统计埋点——用户消息 +1（只增不减，删除不影响）
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
@@ -1676,6 +1681,7 @@ export struct ChatPage {
     for (let i = 0; i < items.length; i++) {
       applyPassiveReview(items[i], now);
     }
+    recordStat(this.statStore, 'siyi', items.length, 0); // ★ 0.202.3：司忆量埋点
     this.reviewCache.set(messageId, new ReviewCacheEntry(0, items));
     return items;
   }
@@ -1697,6 +1703,8 @@ export struct ChatPage {
     for (let i = 0; i < this.editReviewCards.length; i++) {
       applyPassiveReview(this.editReviewCards[i], now); // ★ 0.188.0：展示即复习（到期闸门防抖）
     }
+    // ★ 0.202.3：司忆量埋点（本次展示的词+卡总数）
+    recordStat(this.statStore, 'siyi', this.editReviewWords.length + this.editReviewCards.length, 0);
   }
 
   // ★ 0.187.0：点词条展开/收起 3 档评分（👆 图标勾引点击——点词即展开）
@@ -1844,6 +1852,8 @@ export struct ChatPage {
     this.knowledgeEditVisible = true;
     this.knowledgeCardTitle = '';
     this.knowledgeCardDefinition = '';
+    this.knowledgeSuggestedTags = []; // ★ 0.202.1：建议标签清空（新会话）
+    this.knowledgeSelectedTags = '';
     this.knowledgeImageUri = '';
     this.knowledgeEditLoading = true;
     this.knowledgeEditError = '';
@@ -1857,6 +1867,7 @@ export struct ChatPage {
         this.knowledgeEditLoading = false;
         this.knowledgeCardTitle = result.title;
         this.knowledgeCardDefinition = result.definition;
+        this.knowledgeSuggestedTags = result.tags ?? []; // ★ 0.202.1：AI 建议标签（勾选采纳）
         this.stopExtractTimer(); // ★ 0.153：成功停止计时清零
       },
       (error: string) => {
@@ -1881,15 +1892,63 @@ export struct ChatPage {
     this.stopExtractTimer(); // ★ 0.153：【取消】abort 请求 + 停止计时清零
   }
 
+  // ★ 0.202.1：建议标签勾选/取消（knowledgeSelectedTags 逗号串增删）
+  isTagPicked(t: string): boolean {
+    return parseTags(this.knowledgeSelectedTags).includes(t);
+  }
+
+  toggleSuggestedTag(t: string): void {
+    const picked = parseTags(this.knowledgeSelectedTags);
+    const idx = picked.indexOf(t);
+    if (idx >= 0) {
+      picked.splice(idx, 1);
+    } else {
+      picked.push(t);
+    }
+    this.knowledgeSelectedTags = picked.join(',');
+  }
+
+  // ★ 0.202.2：标签长按修改 / 自定义添加（old='' 即新增模式）——mini 编辑弹窗
+  @Local tagEditVisible: boolean = false;
+  @Local tagEditOld: string = '';
+  @Local tagEditNew: string = '';
+
+  openTagEdit(old: string): void {
+    this.tagEditOld = old;
+    this.tagEditNew = old;
+    this.tagEditVisible = true;
+  }
+
+  commitTagEdit(): void {
+    const nv = this.tagEditNew.trim();
+    if (nv.length === 0) {
+      this.tagEditVisible = false;
+      return;
+    }
+    if (this.tagEditOld.length === 0) {
+      // 新增自定义标签：进建议列表并自动勾选
+      if (!this.knowledgeSuggestedTags.includes(nv)) {
+        this.knowledgeSuggestedTags = [...this.knowledgeSuggestedTags, nv];
+      }
+      this.toggleSuggestedTag(nv);
+    } else if (nv !== this.tagEditOld) {
+      // 改名：建议列表与已勾选串同步替换
+      this.knowledgeSuggestedTags = this.knowledgeSuggestedTags.map((t: string): string => t === this.tagEditOld ? nv : t);
+      const picked = parseTags(this.knowledgeSelectedTags).map((t: string): string => t === this.tagEditOld ? nv : t);
+      this.knowledgeSelectedTags = picked.join(',');
+    }
+    this.tagEditVisible = false;
+  }
+
   // 【保存入库】：输入框内容转 KnowledgeCard 入库（用户确认后的最终卡片）。
-  // 标题与定义全空时不入库（空卡片防御）。
+  // 标题与定义全空时不入库（空卡片防御）。★ 0.202.1：勾选的建议标签随卡保存。
   saveKnowledgeCard(): void {
     const title = this.knowledgeCardTitle.trim();
     const definition = this.knowledgeCardDefinition.trim();
     if (title.length === 0 && definition.length === 0) {
       return;
     }
-    const card = new KnowledgeCard(generateMessageId(), title, definition, this.knowledgeImageUri, Date.now());
+    const card = new KnowledgeCard(generateMessageId(), title, definition, this.knowledgeImageUri, Date.now(), 0, 0, 0, 0, this.knowledgeSelectedTags);
     addKnowledgeCard(this.knowledgeBank, card);
     this.closeKnowledgeEdit();
   }
@@ -1938,6 +1997,7 @@ export struct ChatPage {
     for (let i = 0; i < items.length; i++) {
       applyPassiveReview(items[i], now);
     }
+    recordStat(this.statStore, 'siyi', items.length, 0); // ★ 0.202.3：司忆量埋点
     this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(0, items));
     return items;
   }
@@ -2204,13 +2264,22 @@ export struct ChatPage {
     // 一次性消费（立即清空，防 onShown 重复触发）
     const title = this.cardImport.title;
     const definition = this.cardImport.definition;
-    const imageUri = this.cardImport.imageUri;
+    const imageUrisJson = this.cardImport.imageUrisJson;
     this.cardImport.action = '';
     this.cardImport.title = '';
     this.cardImport.definition = '';
-    this.cardImport.imageUri = '';
+    this.cardImport.imageUrisJson = '[]';
     const text = `📚 知识卡片｜${title}\n${definition}\n\n（我想问：）`;
-    const imgs: string[] = imageUri.length > 0 ? [imageUri] : [];
+    // ★ 0.202.2：多图全链路——卡片图组 JSON 解析（损坏回落空数组）
+    let imgs: string[] = [];
+    try {
+      const parsed = JSON.parse(imageUrisJson) as string[];
+      if (Array.isArray(parsed)) {
+        imgs = parsed;
+      }
+    } catch (e) {
+      imgs = [];
+    }
     // 渐显动画起手（L3 末拍）：0 → 1
     this.importArrived = 0;
     if (action === 'import') {
@@ -2285,6 +2354,8 @@ export struct ChatPage {
     this.knowledgeEditVisible = true;
     this.knowledgeCardTitle = '';
     this.knowledgeCardDefinition = '';
+    this.knowledgeSuggestedTags = []; // ★ 0.202.1：建议标签清空（新会话）
+    this.knowledgeSelectedTags = '';
     this.knowledgeImageUri = img; // 标注合成图直接作卡片配图
     this.knowledgeEditLoading = true;
     this.knowledgeEditError = '';
@@ -2298,6 +2369,7 @@ export struct ChatPage {
         this.knowledgeEditLoading = false;
         this.knowledgeCardTitle = result.title;
         this.knowledgeCardDefinition = result.definition;
+        this.knowledgeSuggestedTags = result.tags ?? []; // ★ 0.202.1：AI 建议标签（勾选采纳）
         this.stopExtractTimer(); // ★ 0.153：成功停止计时清零
       },
       (error: string) => {
@@ -3280,6 +3352,54 @@ export struct ChatPage {
                 .height(100)
                 .margin({ bottom: 8 })
 
+              // ── ★ 0.202.2：AI 建议标签区（点击勾选；长按修改文字；「+ 自定义」添加自己的）──
+              if (this.knowledgeSuggestedTags.length > 0 || true) {
+                Column() {
+                  Text('标签（点击勾选 · 长按修改）')
+                    .fontSize(11)
+                    .fontColor(TEXT_TERTIARY)
+                    .alignSelf(ItemAlign.Start)
+                    .margin({ bottom: 6 })
+                  Flex({ wrap: FlexWrap.Wrap }) {
+                    ForEach(this.knowledgeSuggestedTags, (t: string) => {
+                      Text(t)
+                        .fontSize(11)
+                        .height(24)
+                        .padding({ left: 10, right: 10 })
+                        .borderRadius(6)
+                        .fontColor(this.isTagPicked(t) ? Color.White : BRAND_SECONDARY)
+                        .backgroundColor(this.isTagPicked(t) ? BRAND_PRIMARY : Color.Transparent)
+                        .border({ width: 1, color: BRAND_SECONDARY })
+                        .margin({ right: 6, bottom: 6 })
+                        .onClick(() => {
+                          this.toggleSuggestedTag(t);
+                        })
+                        .gesture(
+                          LongPressGesture({ duration: 500 })
+                            .onAction(() => {
+                              this.openTagEdit(t);
+                            })
+                        )
+                    }, (t: string) => t)
+                    // ★ 0.202.2：「+ 自定义」chip——弹 mini 输入框添加自己的标签（自动勾选）
+                    Text('+ 自定义')
+                      .fontSize(11)
+                      .height(24)
+                      .padding({ left: 10, right: 10 })
+                      .borderRadius(6)
+                      .fontColor(TEXT_SECONDARY)
+                      .border({ width: 1, color: STROKE_CARD, style: BorderStyle.Dashed })
+                      .margin({ right: 6, bottom: 6 })
+                      .onClick(() => {
+                        this.openTagEdit('');
+                      })
+                  }
+                  .width('100%')
+                }
+                .width('100%')
+                .margin({ bottom: 10 })
+              }
+
               // 图片区：无图片只显示【添加图片】按钮（占位框不渲染）；有图片显示缩略图（点击全屏预览，× 移除）
               if (this.knowledgeImageUri.length === 0) {
                 Button('添加图片')
@@ -3485,6 +3605,64 @@ export struct ChatPage {
             .padding(20)
             .borderRadius(RADIUS_NAV)
             .backgroundColor(SURFACE_NODE)
+
+            // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）——挂编辑弹窗 Stack 顶层 ──
+            if (this.tagEditVisible) {
+              Stack() {
+                Column() {
+                  Blank()
+                }
+                .width('100%')
+                .height('100%')
+                .backgroundColor('rgba(0,0,0,0.45)')
+                .onClick(() => {
+                  this.tagEditVisible = false;
+                })
+                Column() {
+                  Text(this.tagEditOld.length === 0 ? '添加自定义标签' : '修改标签')
+                    .fontSize(14)
+                    .fontWeight(600)
+                    .fontColor(TEXT_PRIMARY)
+                    .margin({ bottom: 10 })
+                  TextInput({ text: this.tagEditNew, placeholder: '标签名（2~6 字最佳）' })
+                    .fontSize(14)
+                    .width('100%')
+                    .height(40)
+                    .padding({ left: 12, right: 12 })
+                    .borderRadius(RADIUS_CONTROL)
+                    .backgroundColor(SURFACE_SOFT)
+                    .onChange((v: string) => {
+                      this.tagEditNew = v;
+                    })
+                  Row({ space: 12 }) {
+                    Button('取消')
+                      .layoutWeight(1)
+                      .fontColor(TEXT_SECONDARY)
+                      .backgroundColor(Color.Transparent)
+                      .onClick(() => {
+                        this.tagEditVisible = false;
+                      })
+                    Button('确定')
+                      .layoutWeight(1)
+                      .backgroundColor(BRAND_PRIMARY)
+                      .fontColor(TEXT_PRIMARY)
+                      .onClick(() => {
+                        this.commitTagEdit();
+                      })
+                  }
+                  .width('100%')
+                  .margin({ top: 14 })
+                }
+                .width('72%')
+                .padding(18)
+                .borderRadius(RADIUS_NAV)
+                .backgroundColor(SURFACE_NODE)
+                .border({ width: 1, color: STROKE_CARD })
+              }
+              .width('100%')
+              .height('100%')
+              .alignContent(Alignment.Center)
+            }
           }
           .width('100%')
           .height('100%')

@@ -7,11 +7,12 @@
 
 import { WordItem, WordBankStore } from '../common/WordModel';
 import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
-import { ChatMessage, ApiConfig, AiPreference, StatisticsStore, StatDayEntry, connectStatistics, connectAiPreference, connectApiConfig, getStatDays, statDateKey, generateMessageId } from '../common/ChatModel';
+import { ChatMessage, ApiConfig, AiPreference, StatisticsStore, StatDayEntry, connectStatistics, connectAiPreference, connectApiConfig, getStatDays, statDateKey, generateMessageId, StatDayData } from '../common/ChatModel';
 import { buildStatEncouragePrompt } from '../common/Prompts'; // ★ 0.193.0：统计鼓励 prompt 单一真相源
 import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { streamChat } from '../utils/ApiClient';
+import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.202.3：测试数据 seed marker
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY } from '../common/DesignTokens';
 
 // 柱状图桶（一个周期一根柱）
@@ -29,6 +30,13 @@ class StatAgg {
   msgs: number = 0;
   bubbles: number = 0;
   tokens: number = 0;
+  siyi: number = 0; // ★ 0.202.3
+}
+
+// ★ 0.202.3：测试数据 seed marker（上线清零时随 seedTestData 一起删除）
+@ObservedV2
+class StatsTestSeedMarker {
+  @Trace v: number = 0;
 }
 
 @ComponentV2
@@ -44,7 +52,46 @@ export struct StatisticsPage {
   @Local aiLoading: boolean = false;
 
   aboutToAppear(): void {
+    this.seedTestData(); // ★ 0.202.3：一年测试数据（一次性注入——上线前删除本方法+marker 即清零）
     this.requestAiEncourage();
+  }
+
+  // ── ★ 0.202.3：一年测试数据（用户验收统计图表用；上线前清零=删 seedTestData 调用+marker 类）──
+  // 形态：360 天前→4 天前；增长趋势（25%→100%）+ 周末低谷（×0.4）+ 随机波动；近 3 天不造保真实
+  seedTestData(): void {
+    const marker = PersistenceV2.connect(StatsTestSeedMarker, 'stats-test-seed-v1', () => new StatsTestSeedMarker()) as StatsTestSeedMarker;
+    if (marker.v >= 1) {
+      return;
+    }
+    marker.v = 1;
+    const days = getStatDays(this.statStore);
+    const existing = new Set<string>();
+    days.forEach((d: StatDayEntry) => {
+      existing.add(d.date);
+    });
+    const out: StatDayEntry[] = [...days];
+    const n = new Date();
+    n.setHours(0, 0, 0, 0);
+    for (let back = 360; back >= 4; back--) {
+      const ts = n.getTime() - back * 86400000;
+      const key = statDateKey(ts);
+      if (existing.has(key)) {
+        continue; // 已有真实数据的日期不覆盖
+      }
+      const d = new Date(ts);
+      const dow = (d.getDay() + 6) % 7; // 周一=0
+      const growth = 0.25 + 0.75 * (1 - back / 360);
+      const weekend = dow >= 5 ? 0.4 : 1;
+      const jitter = 0.7 + Math.random() * 0.6;
+      const userM = Math.max(0, Math.round(14 * growth * weekend * jitter));
+      const aiM = Math.max(0, Math.round(16 * growth * weekend * jitter));
+      const bub = Math.random() < 0.6 ? Math.round(3 * growth * weekend * jitter) : 0;
+      const inT = Math.round((1200 + 2800 * growth) * weekend * jitter * (userM + 1) / 10);
+      const outT = Math.round(inT * (0.5 + Math.random() * 0.5));
+      const sy = Math.round((6 + 26 * growth) * weekend * jitter);
+      out.push({ date: key, userMsgs: userM, aiMsgs: aiM, bubbles: bub, inputTokens: inT, outputTokens: outT, siyi: sy });
+    }
+    this.statStore.raw = JSON.stringify({ days: out } as StatDayData);
   }
 
   // ── 区间聚合：[fromTs, toTs) 内的累计 ──
@@ -59,6 +106,7 @@ export struct StatisticsPage {
         agg.msgs += d.userMsgs + d.aiMsgs;
         agg.bubbles += d.bubbles;
         agg.tokens += d.inputTokens + d.outputTokens;
+        agg.siyi += d.siyi ?? 0;
       }
     }
     return agg;
@@ -72,6 +120,7 @@ export struct StatisticsPage {
       agg.msgs += days[i].userMsgs + days[i].aiMsgs;
       agg.bubbles += days[i].bubbles;
       agg.tokens += days[i].inputTokens + days[i].outputTokens;
+      agg.siyi += days[i].siyi ?? 0;
     }
     return agg;
   }
@@ -91,6 +140,56 @@ export struct StatisticsPage {
     return d.getTime();
   }
 
+  // ── ★ 0.202.3：图表指标切换（四大卡点击联动）──
+  // msg=对话条数 / bubble=新建气泡 / token=token 消耗 / siyi=司忆量（被司忆区展示次数）
+  @Local selectedMetric: string = 'msg';
+
+  metricOfDay(d: StatDayEntry): number {
+    if (this.selectedMetric === 'bubble') {
+      return d.bubbles;
+    }
+    if (this.selectedMetric === 'token') {
+      return d.inputTokens + d.outputTokens;
+    }
+    if (this.selectedMetric === 'siyi') {
+      return d.siyi ?? 0;
+    }
+    return d.userMsgs + d.aiMsgs;
+  }
+
+  metricOfAgg(a: StatAgg): number {
+    if (this.selectedMetric === 'bubble') {
+      return a.bubbles;
+    }
+    if (this.selectedMetric === 'token') {
+      return a.tokens;
+    }
+    if (this.selectedMetric === 'siyi') {
+      return a.siyi;
+    }
+    return a.msgs;
+  }
+
+  metricName(): string {
+    if (this.selectedMetric === 'bubble') {
+      return '新建气泡（个）';
+    }
+    if (this.selectedMetric === 'token') {
+      return 'Token 消耗';
+    }
+    if (this.selectedMetric === 'siyi') {
+      return '司忆量（次）——卡片被司忆区展示';
+    }
+    return '对话条数（条）';
+  }
+
+  fmtMetric(v: number): string {
+    if (this.selectedMetric === 'token' && v >= 10000) {
+      return `${(v / 1000).toFixed(1)}k`;
+    }
+    return `${v}`;
+  }
+
   // ── 柱状图数据（@Computed 依赖 rangeMode + statStore.raw 自动重算）──
   @Computed
   get chartBuckets(): StatBucket[] {
@@ -104,7 +203,7 @@ export struct StatisticsPage {
         let v = 0;
         for (let j = 0; j < days.length; j++) {
           if (days[j].date === key) {
-            v = days[j].userMsgs + days[j].aiMsgs;
+            v = this.metricOfDay(days[j]);
             break;
           }
         }
@@ -116,7 +215,7 @@ export struct StatisticsPage {
       for (let i = -11; i <= 0; i++) {
         const agg = this.sumRange(this.weekStart(i), this.weekStart(i + 1));
         const d = new Date(this.weekStart(i));
-        buckets.push(new StatBucket(`${d.getMonth() + 1}/${d.getDate()}`, agg.msgs));
+        buckets.push(new StatBucket(`${d.getMonth() + 1}/${d.getDate()}`, this.metricOfAgg(agg)));
       }
     } else if (this.rangeMode === 2) {
       // 月：最近 12 个月
@@ -129,7 +228,7 @@ export struct StatisticsPage {
         const e = new Date(d);
         e.setMonth(e.getMonth() + 1);
         const agg = this.sumRange(from, e.getTime());
-        buckets.push(new StatBucket(`${d.getMonth() + 1}月`, agg.msgs));
+        buckets.push(new StatBucket(`${d.getMonth() + 1}月`, this.metricOfAgg(agg)));
       }
     } else {
       // 年：所有出现过的年份
@@ -145,7 +244,7 @@ export struct StatisticsPage {
         let v = 0;
         for (let j = 0; j < days.length; j++) {
           if (days[j].date.substring(0, 4) === `${yearSet[i]}`) {
-            v += days[j].userMsgs + days[j].aiMsgs;
+            v += this.metricOfDay(days[j]);
           }
         }
         buckets.push(new StatBucket(`${yearSet[i]}`, v));
@@ -354,8 +453,13 @@ export struct StatisticsPage {
             .backgroundColor(SEGMENTED_TRACK)
             .margin({ bottom: 12 })
 
-            // ── 柱状图（对话条数）──
+            // ── 柱状图（★ 0.202.3：跟随四大卡选中指标切换）──
             Column() {
+              Text(this.metricName())
+                .fontSize(12)
+                .fontColor(TEXT_SECONDARY)
+                .alignSelf(ItemAlign.Start)
+                .margin({ bottom: 8 })
               Row({ space: 5 }) {
                 ForEach(this.chartBuckets, (b: StatBucket, i: number) => {
                   Column({ space: 3 }) {
@@ -383,7 +487,7 @@ export struct StatisticsPage {
             .backgroundColor(SURFACE_NODE)
             .margin({ bottom: 16 })
 
-            // ── 块①：对话统计 ──
+            // ── 块①：对话统计（★ 0.202.3 点击切换图表指标；选中态主��描边）──
             Column() {
               Text('对话')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -400,9 +504,13 @@ export struct StatisticsPage {
             .padding(14)
             .borderRadius(RADIUS_NAV)
             .backgroundColor(SURFACE_NODE)
+            .border({ width: this.selectedMetric === 'msg' ? 1.5 : 0, color: BRAND_PRIMARY })
             .margin({ bottom: 12 })
+            .onClick(() => {
+              this.selectedMetric = 'msg';
+            })
 
-            // ── 块②：学习资产（词库/知识库）──
+            // ── 块②：学习资产（点击→图表切「新建气泡」序列）──
             Column() {
               Text('学习资产')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -411,13 +519,18 @@ export struct StatisticsPage {
                 .margin({ bottom: 8 })
               this.StatRow('单词库', `共 ${this.wordBank.words.length} 词 · 已学 ${this.countLearned(this.wordBank.words)} · 7 天内待复习 ${this.countDueIn7Days(this.wordBank.words)}`)
               this.StatRow('知识库', `共 ${this.knowledgeBank.cards.length} 卡 · 已学 ${this.countLearned(this.knowledgeBank.cards)} · 7 天内待复习 ${this.countDueIn7Days(this.knowledgeBank.cards)}`)
+              this.StatRow('累计新建气泡', `${this.sumAll().bubbles} 个`)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
             .backgroundColor(SURFACE_NODE)
+            .border({ width: this.selectedMetric === 'bubble' ? 1.5 : 0, color: BRAND_PRIMARY })
             .margin({ bottom: 12 })
+            .onClick(() => {
+              this.selectedMetric = 'bubble';
+            })
 
             // ── 块③：token ──
             Column() {
@@ -426,14 +539,44 @@ export struct StatisticsPage {
                 .fontWeight(600)
                 .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 8 })
-              this.StatRow('累计消耗', `${this.sumAll().tokens}`)
-              this.StatRow('本周 / 上周', `${this.sumRange(this.weekStart(0), this.weekStart(1)).tokens} / ${this.sumRange(this.weekStart(-1), this.weekStart(0)).tokens}`)
+              this.StatRow('累计消耗', this.fmtMetric(this.sumAll().tokens))
+              this.StatRow('本周 / 上周', `${this.fmtMetric(this.sumRange(this.weekStart(0), this.weekStart(1)).tokens)} / ${this.fmtMetric(this.sumRange(this.weekStart(-1), this.weekStart(0)).tokens)}`)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
             .backgroundColor(SURFACE_NODE)
+            .border({ width: this.selectedMetric === 'token' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .margin({ bottom: 12 })
+            .onClick(() => {
+              this.selectedMetric = 'token';
+            })
+
+            // ── 块④：司忆量（★ 0.202.3 新增——单词/知识卡被司忆区展示的次数，产品特色指标）──
+            Column() {
+              Text('司忆量')
+                .fontSize(FONT_SIZE_CARD_TITLE_SM)
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
+                .margin({ bottom: 8 })
+              this.StatRow('累计司忆', `${this.sumAll().siyi} 次`)
+              this.StatRow('本周 / 上周', `${this.sumRange(this.weekStart(0), this.weekStart(1)).siyi} / ${this.sumRange(this.weekStart(-1), this.weekStart(0)).siyi} 次`)
+              Text('单词与知识卡被司忆区展示出来的每一次，都在悄悄加固你的记忆')
+                .fontSize(11)
+                .fontColor(TEXT_TERTIARY)
+                .margin({ top: 6 })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .padding(14)
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: this.selectedMetric === 'siyi' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .margin({ bottom: 12 })
+            .onClick(() => {
+              this.selectedMetric = 'siyi';
+            })
           }
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 24 })

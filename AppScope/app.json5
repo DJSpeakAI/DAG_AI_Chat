@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000101, // ★ 0.200.2：动画调参（弹跳2.8倍+放慢3倍+飞行卡片放大看清内容）；★ 0.200.1：keyframe动画重做;更早历史见 MEMORY.md
+    "versionCode": 1000108, // ★ 0.202.3：统计页四卡联动图表+司忆量指标+一年测试数据;更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

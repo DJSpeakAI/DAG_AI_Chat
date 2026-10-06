@@ -111,7 +111,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.200.2';
+const APP_VERSION: string = 'v0.202.3';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -993,6 +993,14 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 20 })
+
+      // ★ 0.202.2 彩蛋（用户定稿文案，位于保存/返回按钮上方）：仓颉司文，此区司忆
+      Text('昔仓颉造字以载文，今司忆守学而存忆')
+        .fontSize(10)
+        .fontColor(TEXT_TERTIARY)
+        .opacity(0.75)
+        .textAlign(TextAlign.Center)
+        .margin({ top: 8, bottom: 8 })
     }
     .width('100%')
   }
@@ -1326,7 +1334,7 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.currentTab = 1;
             })
-          Text('复习') // ★ 0.195.0：复习显示 Tab（用户拍板：从 AI 偏好挪顶层——与云同步/关于齐平，重要设置不能藏）
+          Text('司忆区') // ★ 0.202.1：改名「复习区」→「司忆区」（用户拍板——取「仓颉司文、此区司忆」之意，凸显注意力驱动记忆的独创性）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(this.currentTab === 5 ? FontWeight.Medium : FontWeight.Normal)
             .fontColor(this.currentTab === 5 ? TEXT_PRIMARY : TEXT_SECONDARY)

@@ -78,7 +78,7 @@ export struct AppSideBar {
       return '知识库';
     }
     if (kind === 'review') {
-      return '知识复习'; // ★ 0.196.2：用户拍板「复习」→「知识复习」（边栏更明确）
+      return '卡片复习'; // ★ 0.201.0：用户拍板「知识复习」→「卡片复习」（页面同改，复习页覆盖单词+知识卡两类）
     }
     if (kind === 'statistics') {
       return '统计';

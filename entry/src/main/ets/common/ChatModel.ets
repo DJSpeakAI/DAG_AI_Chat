@@ -339,6 +339,7 @@ export interface StatDayEntry {
   bubbles: number;      // 创建气泡数
   inputTokens: number;  // 输入 token 累计
   outputTokens: number; // 输出 token 累计
+  siyi?: number;        // ★ 0.202.3：司忆量（单词/知识卡被司忆区展示的次数；可选兼容旧数据——读取处 ?? 0）
 }
 
 export interface StatDayData {
@@ -389,7 +390,7 @@ export function recordStat(store: StatisticsStore, kind: string, inTok: number, 
     }
   }
   if (entry === undefined) {
-    entry = { date: key, userMsgs: 0, aiMsgs: 0, bubbles: 0, inputTokens: 0, outputTokens: 0 };
+    entry = { date: key, userMsgs: 0, aiMsgs: 0, bubbles: 0, inputTokens: 0, outputTokens: 0, siyi: 0 };
     days.push(entry);
   }
   if (kind === 'userMsg') {
@@ -398,6 +399,11 @@ export function recordStat(store: StatisticsStore, kind: string, inTok: number, 
     entry.aiMsgs += 1;
   } else if (kind === 'bubble') {
     entry.bubbles += 1;
+  } else if (kind === 'siyi') {
+    // ★ 0.202.3：司忆量埋点（inTok 复用为批量次数，默认 1）；提前 return——不落入 token 累加
+    entry.siyi = (entry.siyi ?? 0) + Math.max(1, Math.round(inTok));
+    store.raw = JSON.stringify({ days: days } as StatDayData);
+    return;
   }
   entry.inputTokens += inTok;
   entry.outputTokens += outTok;

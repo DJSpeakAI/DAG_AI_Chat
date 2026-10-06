@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // MemoryAlgorithm.ets — ★ 0.187.0 记忆算法（简化遗忘曲线 · 方案B）
 // ============================================================
 // 核心公式：R = e^(-t/S)
@@ -23,7 +23,7 @@
 // ============================================================
 
 import { WordItem, WordBankStore } from '../common/WordModel';
-import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
+import { KnowledgeCard, KnowledgeBankStore, AttentionStore, connectAttention, getTagHeat, isAttentionHot } from '../common/KnowledgeModel';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -42,6 +42,11 @@ const FIRST_EASY: number = 2;
 const MULT_HARD: number = 0.5;
 const MULT_GOOD: number = 1.6;
 const MULT_EASY: number = 2.4;
+// ★ 0.202.0 提前背惩罚（艾宾浩斯 2.0 第一批，用户拍板两层）：
+//   层1 强度增长打折——没经过遗忘考验的记忆不配全额涨强度，factor=实际间隔/应有间隔，下限 15%（"大幅下降"）
+//   层2 排期散开保底——提前背的卡下次排期 ≥ 原排期+1 天（提前背不可能让卡更早回来，"永远滚明天"数学上不可能）
+export const EARLY_GROWTH_FLOOR: number = 0.15;
+export const EARLY_MIN_PUSH_DAYS: number = 1;
 
 // 3 档评分（用户不可见的内部枚举；UI 文案：生疏/尚可/熟知）
 export type MemoryRating = 'hard' | 'good' | 'easy';
@@ -71,26 +76,59 @@ export function applyPassiveReview(w: MemoryItem, now: number): boolean {
 
 // 评分更新：首评（S=0，从未评分）用绝对间隔；复评乘系数并钳制到
 // [S_MIN, S_MAX]。下次复习 = 现在 + S（方案B）。
+// ★ 0.202.0 提前背惩罚：good/easy 增长按「实际间隔/应有间隔」打折（下限 15%）；
+//   提前背（now < 原排期）时排期保底 = 原排期+1 天。hard 全额缩短不折（真忘了就该赶紧回来）。
+//   到期背（now ≥ 原排期）行为与 0.187.0 完全一致（零回归）。
 // reviewCount 已在展示时计过，此处不重复计。
 export function applyRating(w: MemoryItem, rating: MemoryRating, now: number): void {
   if (w.strength <= 0) {
     w.strength = rating === 'hard' ? FIRST_HARD : (rating === 'good' ? FIRST_GOOD : FIRST_EASY);
   } else {
     const mult = rating === 'hard' ? MULT_HARD : (rating === 'good' ? MULT_GOOD : MULT_EASY);
-    w.strength = Math.min(Math.max(w.strength * mult, S_MIN_DAYS), S_MAX_DAYS);
+    if (rating === 'hard') {
+      w.strength = Math.min(Math.max(w.strength * mult, S_MIN_DAYS), S_MAX_DAYS);
+    } else {
+      // 层1：增长打折——记忆��过多少比例的考验，强度就涨多少
+      const elapsedDays = (now - w.lastReviewAt) / DAY_MS;
+      const factor = Math.min(Math.max(elapsedDays / w.strength, EARLY_GROWTH_FLOOR), 1);
+      w.strength = Math.min(Math.max(w.strength * (1 + (mult - 1) * factor), S_MIN_DAYS), S_MAX_DAYS);
+    }
   }
   w.lastReviewAt = now;
-  w.nextReviewAt = now + w.strength * DAY_MS;
+  let next = now + w.strength * DAY_MS;
+  // 层2：提前背的排期散开保底（仅 now < 原排期时生效——到期背零影响）
+  if (rating !== 'hard' && now < w.nextReviewAt &&
+    next < w.nextReviewAt + EARLY_MIN_PUSH_DAYS * DAY_MS) {
+    next = w.nextReviewAt + EARLY_MIN_PUSH_DAYS * DAY_MS;
+  }
+  w.nextReviewAt = next;
 }
 
 // ★ 0.196.0：评分按钮时间预览——不落盘，只算「这档评完会隔多久再复习」（天）。
 // 与 applyRating 同一套首评绝对间隔/复评系数/钳制逻辑，改参数时两处同步。
+// ★ 0.202.0：同步提前背惩罚（含层1打折+层2排期保底）——提前背时按钮显示的间隔即真实落盘间隔。
 export function previewIntervalDays(w: MemoryItem, rating: MemoryRating): number {
+  const now = Date.now();
   if (w.strength <= 0) {
     return rating === 'hard' ? FIRST_HARD : (rating === 'good' ? FIRST_GOOD : FIRST_EASY);
   }
   const mult = rating === 'hard' ? MULT_HARD : (rating === 'good' ? MULT_GOOD : MULT_EASY);
-  return Math.min(Math.max(w.strength * mult, S_MIN_DAYS), S_MAX_DAYS);
+  let s: number;
+  if (rating === 'hard') {
+    s = Math.min(Math.max(w.strength * mult, S_MIN_DAYS), S_MAX_DAYS);
+  } else {
+    const elapsedDays = (now - w.lastReviewAt) / DAY_MS;
+    const factor = Math.min(Math.max(elapsedDays / w.strength, EARLY_GROWTH_FLOOR), 1);
+    s = Math.min(Math.max(w.strength * (1 + (mult - 1) * factor), S_MIN_DAYS), S_MAX_DAYS);
+  }
+  let interval = s;
+  if (rating !== 'hard' && now < w.nextReviewAt) {
+    const floorDays = (w.nextReviewAt + EARLY_MIN_PUSH_DAYS * DAY_MS - now) / DAY_MS;
+    if (floorDays > interval) {
+      interval = floorDays;
+    }
+  }
+  return interval;
 }
 
 // ★ 0.196.0：间隔天数 → 中文短标签（评分按钮小字用；区别于 formatNextReviewLabel 的时间戳标签）。
@@ -135,7 +173,11 @@ export function pickReviewWords(store: WordBankStore, count: number, now: number
 
 // ★ 0.188.0：知识卡选词（与 pickReviewWords 同构，新卡按 createdAt 升序）——
 // 到期卡按 R 升序 → 新卡 → 未来卡，替换纯随机。
+// ★ 0.202.0：注意力提权——命中热标签且 S<30 天的卡在各自段内排最前
+//   （「注意力在哪记忆曲线就变在哪」：问"幺半群"→ 抽象代数域的卡优先浮上来；很熟的卡不打扰）。
+//   heat 内部自取（调用方零改动）；排序键 = (提权降序, 原排序键)。
 export function pickReviewCards(store: KnowledgeBankStore, count: number, now: number): KnowledgeCard[] {
+  const heat = getTagHeat(connectAttention() as AttentionStore);
   const due: KnowledgeCard[] = [];
   const fresh: KnowledgeCard[] = [];
   const future: KnowledgeCard[] = [];
@@ -149,9 +191,21 @@ export function pickReviewCards(store: KnowledgeBankStore, count: number, now: n
       future.push(c);
     }
   }
-  due.sort((a: KnowledgeCard, b: KnowledgeCard) => retention(a, now) - retention(b, now));
-  fresh.sort((a: KnowledgeCard, b: KnowledgeCard) => a.createdAt - b.createdAt);
-  future.sort((a: KnowledgeCard, b: KnowledgeCard) => a.nextReviewAt - b.nextReviewAt);
+  due.sort((a: KnowledgeCard, b: KnowledgeCard) => {
+    const ha = isAttentionHot(a, heat) ? 1 : 0;
+    const hb = isAttentionHot(b, heat) ? 1 : 0;
+    return ha !== hb ? hb - ha : retention(a, now) - retention(b, now);
+  });
+  fresh.sort((a: KnowledgeCard, b: KnowledgeCard) => {
+    const ha = isAttentionHot(a, heat) ? 1 : 0;
+    const hb = isAttentionHot(b, heat) ? 1 : 0;
+    return ha !== hb ? hb - ha : a.createdAt - b.createdAt;
+  });
+  future.sort((a: KnowledgeCard, b: KnowledgeCard) => {
+    const ha = isAttentionHot(a, heat) ? 1 : 0;
+    const hb = isAttentionHot(b, heat) ? 1 : 0;
+    return ha !== hb ? hb - ha : a.nextReviewAt - b.nextReviewAt;
+  });
   return [...due, ...fresh, ...future].slice(0, count);
 }
 

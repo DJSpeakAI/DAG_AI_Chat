@@ -612,9 +612,15 @@ function parseKnowledgeQueryResult(raw: string): KnowledgeQueryResult | null {
     if (title.length === 0 && definition.length === 0) {
       return null;
     }
+    // ★ 0.202.1：建议标签（宽松解析——旧模型/失败未返回 tags 时为空数组，不阻断主流程）
+    const tags: string[] = Array.isArray(obj['tags'])
+      ? (obj['tags'] as Array<Object>).filter((t: Object): boolean => typeof t === 'string')
+        .map((t: Object): string => t as string).filter((t: string): boolean => t.trim().length > 0)
+      : [];
     const result: KnowledgeQueryResult = {
       title: title,
-      definition: definition
+      definition: definition,
+      tags: tags
     };
     return result;
   } catch (e) {

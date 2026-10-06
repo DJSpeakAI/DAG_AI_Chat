@@ -25,7 +25,7 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（跨页 store + 回画布导航）
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, parseTags, getCardImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡；★ 0.202.0：parseTags；★ 0.202.1：getCardImages（多图兼容读取）
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
@@ -46,14 +46,49 @@ export struct KnowledgeBankPage {
   @Local askSheetVisible: boolean = false; // 「问 AI」二选一面板
   @Local askSheetTitle: string = '';       // 面板展示的卡片快照（列表入口暂存）
   @Local askSheetDefinition: string = '';
-  @Local askSheetImage: string = '';
+  @Local askSheetImages: string[] = []; // ★ 0.202.2：面板快照（多图）
 
-  /** ★ 0.200.0：写入导入 store + 回画布进入选择模式（A/B 入口共用；B 入口传编辑器当前字段值——未保存的编辑也能导入） */
-  startCardImport(action: string, title: string, definition: string, imageUri: string): void {
+  // ── ★ 0.202.2：标签 chip 交互（editorTags 逗号串存储，UI 层 chips 化）──
+  removeEditorTag(t: string): void {
+    this.editorTags = parseTags(this.editorTags).filter((x: string): boolean => x !== t).join(',');
+  }
+
+  @Local tagEditVisible: boolean = false;
+  @Local tagEditOld: string = '';
+  @Local tagEditNew: string = '';
+
+  openEditorTagEdit(old: string): void {
+    this.tagEditOld = old;
+    this.tagEditNew = old;
+    this.tagEditVisible = true;
+  }
+
+  commitEditorTagEdit(): void {
+    const nv = this.tagEditNew.trim();
+    if (nv.length === 0) {
+      this.tagEditVisible = false;
+      return;
+    }
+    if (this.tagEditOld.length === 0) {
+      // 新增
+      const picked = parseTags(this.editorTags);
+      if (!picked.includes(nv)) {
+        picked.push(nv);
+        this.editorTags = picked.join(',');
+      }
+    } else if (nv !== this.tagEditOld) {
+      // 改名
+      this.editorTags = parseTags(this.editorTags).map((t: string): string => t === this.tagEditOld ? nv : t).join(',');
+    }
+    this.tagEditVisible = false;
+  }
+
+  /** ★ 0.200.0：写入导入 store + 回画布进入选择模式（B 入口已删 0.202.2——仅列表问 AI 面板调用） */
+  startCardImport(action: string, title: string, definition: string, imageUris: string[]): void {
     this.cardImport.action = action;
     this.cardImport.title = title;
     this.cardImport.definition = definition;
-    this.cardImport.imageUri = imageUri;
+    this.cardImport.imageUrisJson = JSON.stringify(imageUris); // ★ 0.202.2：多图全链路
     this.askSheetVisible = false;
     this.editorVisible = false; // B 入口：关编辑弹窗
     navBackToCanvas(this.pathStack);
@@ -96,6 +131,8 @@ export struct KnowledgeBankPage {
   @Local editorId: string = '';
   @Local editorTitle: string = '';
   @Local editorDefinition: string = '';
+  @Local editorTags: string = ''; // ★ 0.202.0：标签输入（逗号/顿号/空格分隔）
+  @Local editorImages: string[] = []; // ★ 0.202.1：多图编辑（上限 9；替代原单图 editorImageUri 的编辑态）
   // ★ 0.160: editor image state — base64 data URI, same storage pattern as
   // ChatPage's knowledge editor; empty string = no image
   @Local editorImageUri: string = '';
@@ -182,7 +219,8 @@ export struct KnowledgeBankPage {
     this.editorId = '';
     this.editorTitle = '';
     this.editorDefinition = '';
-    this.editorImageUri = ''; // ★ 0.160: new card starts with no image
+    this.editorTags = ''; // ★ 0.202.0：标签输入
+    this.editorImages = []; // ★ 0.202.1：多图清空
     this.editorVisible = true;
   }
 
@@ -191,7 +229,8 @@ export struct KnowledgeBankPage {
     this.editorId = c.id;
     this.editorTitle = c.title;
     this.editorDefinition = c.definition;
-    this.editorImageUri = c.imageUri; // ★ 0.160: pre-fill the existing image for edit/remove
+    this.editorTags = c.tags; // ★ 0.202.0：预填已有标签
+    this.editorImages = getCardImages(c); // ★ 0.202.1：预填已有图片（两代字段兼容读取）
     this.editorVisible = true;
   }
 
@@ -202,12 +241,14 @@ export struct KnowledgeBankPage {
       return;
     }
     const definition = this.editorDefinition.trim();
+    const tags = this.editorTags.trim(); // ★ 0.202.0：标签随卡保存
+    const imagesJson = this.editorImages.length > 0 ? JSON.stringify(this.editorImages) : ''; // ★ 0.202.1：多图随卡保存
     if (this.editorIsAdd) {
       // addKnowledgeCard auto-fills id/createdAt; no duplicate check —
       // cards may legitimately share a title (0.146 spec)
-      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, this.editorImageUri, 0));
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson));
     } else {
-      updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, this.editorImageUri);
+      updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, '', tags, imagesJson);
     }
     this.editorVisible = false;
   }
@@ -215,20 +256,25 @@ export struct KnowledgeBankPage {
   // ★ 0.160: pick a photo from the gallery → base64 data URI (same flow as
   // ChatPage's knowledge editor: single select, read via fileIo, encode with
   // buffer). Failure is silent — the editor keeps its previous image state.
+  // ★ 0.202.1: multi-image — up to 9 picks per round, appended to editorImages.
   async selectEditorImage(): Promise<void> {
     try {
       const picker = new photoAccessHelper.PhotoViewPicker();
-      const result = await picker.select({ maxSelectNumber: 1 });
-      if (result.photoUris.length > 0) {
-        const uri = result.photoUris[0];
+      const result = await picker.select({ maxSelectNumber: 9 });
+      for (let i = 0; i < result.photoUris.length; i++) {
+        if (this.editorImages.length >= 9) {
+          break; // 上限 9 张（每轮追加，超出静默截断）
+        }
+        const uri = result.photoUris[i];
         const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
         const stat = fileIo.statSync(file.fd);
         const arrayBuffer = new ArrayBuffer(stat.size);
         fileIo.readSync(file.fd, arrayBuffer);
         fileIo.closeSync(file);
         const base64 = buffer.from(arrayBuffer).toString('base64');
-        this.editorImageUri = `data:image/jpeg;base64,${base64}`;
+        this.editorImages.push(`data:image/jpeg;base64,${base64}`);
       }
+      this.editorImages = [...this.editorImages]; // 触发数组状态更新
     } catch (err) {
       // 选图取消/读取失败静默忽略（防崩溃）
     }
@@ -541,25 +587,17 @@ export struct KnowledgeBankPage {
     Column() {
       Blank()
       Column() {
-        Text('把这张卡片导入气泡去问 AI？')
-          .fontSize(15)
-          .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
-        Text(this.askSheetTitle)
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 4 })
+        // ★ 0.201.4（用户拍板）：删标题「把这张卡片导入气泡去问AI?」与卡片名——用户从「问AI?」进来意图
+        //   已明确，两句是废话；直接三按钮开路
         Button('导入气泡对话')
           .fontSize(14)
           .fontColor(TEXT_PRIMARY)
           .backgroundColor(BRAND_PRIMARY)
           .borderRadius(RADIUS_CONTROL)
-          .width('100%')
+          .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：平板固定 280 居中（手机 100% 不变）
           .margin({ top: 16 })
           .onClick(() => {
-            this.startCardImport('import', this.askSheetTitle, this.askSheetDefinition, this.askSheetImage);
+            this.startCardImport('import', this.askSheetTitle, this.askSheetDefinition, this.askSheetImages);
           })
         Text('选一个气泡 → 卡片填入它的输入框，补充问题后发送')
           .fontSize(11)
@@ -571,10 +609,10 @@ export struct KnowledgeBankPage {
           .backgroundColor(Color.Transparent)
           .borderRadius(RADIUS_CONTROL)
           .border({ width: 1, color: BRAND_SECONDARY })
-          .width('100%')
+          .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
           .onClick(() => {
-            this.startCardImport('branch', this.askSheetTitle, this.askSheetDefinition, this.askSheetImage);
+            this.startCardImport('branch', this.askSheetTitle, this.askSheetDefinition, this.askSheetImages);
           })
         Text('选一个父气泡 → 新建子气泡并填入卡片')
           .fontSize(11)
@@ -584,14 +622,14 @@ export struct KnowledgeBankPage {
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .backgroundColor(Color.Transparent)
-          .width('100%')
+          .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
           .onClick(() => {
             this.askSheetVisible = false;
           })
       }
-      .width('100%')
-      .borderRadius({ topLeft: RADIUS_NAV, topRight: RADIUS_NAV })
+      .width(this.isTablet ? 460 : '100%') // ★ 0.201.2：平板固定 460 居中（手机 100% 贴底不变）——用户实测宽屏按钮拉满太长；规范入 UI_GUIDELINES「模态弹窗与操作按钮」
+      .borderRadius(RADIUS_NAV) // ★ 0.201.2：四角圆角（宽屏居中浮岛感；手机贴底时下圆角贴屏不可见无副作用）
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
       .padding({ left: 20, right: 20, top: 20, bottom: 28 })
@@ -636,38 +674,100 @@ export struct KnowledgeBankPage {
           .onChange((value: string) => {
             this.editorDefinition = value;
           })
-        // ★ 0.160: image row — with image: thumbnail (tap = fullscreen preview)
-        // + remove + replace; without image: a single add button.
-        // The URI is only committed to the store on 保存 (same draft pattern
-        // as title/definition — cancel discards the image change too).
-        Row() {
-          if (this.editorImageUri.length > 0) {
-            Image(this.editorImageUri)
-              .height(56)
-              .width(84)
-              .objectFit(ImageFit.Cover)
-              .borderRadius(RADIUS_CONTROL)
+        // ── ★ 0.202.2：标签区 chip 化（用户拍板：弃逗号输入——大小写/分隔符心智负担；同提炼页交互）──
+        Column() {
+          Text(parseTags(this.editorTags).length > 0 ? '标签（点 × 删除 · 长按修改）' : '标签')
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
+            .alignSelf(ItemAlign.Start)
+            .margin({ bottom: 6 })
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(parseTags(this.editorTags), (t: string) => {
+              Row({ space: 4 }) {
+                Text(t)
+                  .fontSize(11)
+                  .fontColor(BRAND_SECONDARY)
+                Text('×')
+                  .fontSize(12)
+                  .fontColor(TEXT_TERTIARY)
+                  .onClick(() => {
+                    this.removeEditorTag(t);
+                  })
+              }
+              .height(24)
+              .padding({ left: 10, right: 8 })
+              .borderRadius(6)
+              .border({ width: 1, color: BRAND_SECONDARY })
+              .margin({ right: 6, bottom: 6 })
+              .gesture(
+                LongPressGesture({ duration: 500 })
+                  .onAction(() => {
+                    this.openEditorTagEdit(t);
+                  })
+              )
+            }, (t: string) => t)
+            Text('+ 添加')
+              .fontSize(11)
+              .height(24)
+              .padding({ left: 10, right: 10 })
+              .borderRadius(6)
+              .fontColor(TEXT_SECONDARY)
+              .border({ width: 1, color: STROKE_CARD, style: BorderStyle.Dashed })
+              .margin({ right: 6, bottom: 6 })
               .onClick(() => {
-                this.editorImagePreviewVisible = true;
+                this.openEditorTagEdit('');
               })
-            Text('删除图片')
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .margin({ top: 10 })
+        // ★ 0.202.1: 多图编辑区——缩略图横排（每张可删）+「添加图片」常驻（上限 9）；
+        //   提交时机同 title/definition 草稿模式（保存才落库，取消丢弃）
+        Column() {
+          if (this.editorImages.length > 0) {
+            Scroll() {
+              Row({ space: 8 }) {
+                ForEach(this.editorImages, (img: string, idx: number) => {
+                  Stack({ alignContent: Alignment.TopEnd }) {
+                    Image(img)
+                      .height(56)
+                      .width(84)
+                      .objectFit(ImageFit.Cover)
+                      .borderRadius(RADIUS_CONTROL)
+                      .onClick(() => {
+                        this.editorImagePreviewVisible = true;
+                      })
+                    Text('×')
+                      .fontSize(13)
+                      .fontWeight(600)
+                      .fontColor(TEXT_PRIMARY)
+                      .backgroundColor(DANGER)
+                      .width(18)
+                      .height(18)
+                      .borderRadius(9)
+                      .textAlign(TextAlign.Center)
+                      .offset({ x: -2, y: 2 })
+                      .onClick(() => {
+                        this.editorImages.splice(idx, 1);
+                        this.editorImages = [...this.editorImages];
+                      })
+                  }
+                  .height(56)
+                  .width(84)
+                }, (img: string) => img)
+              }
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .width('100%')
+            .margin({ bottom: 8 })
+          }
+          if (this.editorImages.length < 9) {
+            Text('🖼️ 添加图片' + (this.editorImages.length > 0 ? `（${this.editorImages.length}/9）` : ''))
               .fontSize(13)
-              .fontColor(DANGER)
-              .margin({ left: 12 })
-              .onClick(() => {
-                this.editorImageUri = '';
-              })
-            Text('换一张')
-              .fontSize(13)
-              .fontColor(TEXT_SECONDARY) // ★ 0.183.0：操作文字对齐 ChatPage「添加图片」先例（TEXT_SECONDARY）
-              .margin({ left: 8 })
-              .onClick(() => {
-                this.selectEditorImage();
-              })
-          } else {
-            Text('🖼️ 添加图片')
-              .fontSize(13)
-              .fontColor(TEXT_SECONDARY) // ★ 0.183.0：对齐 ChatPage「添加图片」按钮文字色先例
+              .fontColor(TEXT_SECONDARY)
+              .alignSelf(ItemAlign.Start)
               .onClick(() => {
                 this.selectEditorImage();
               })
@@ -697,36 +797,60 @@ export struct KnowledgeBankPage {
         }
         .width('100%')
         .margin({ top: 20 })
-
-        // ── ★ 0.200.0 入口 B：导入气泡行（「保存/返回」下方；传编辑器当前字段——未保存的编辑也能导入）──
-        //   次级描边样式（描边紫+透明底），与主操作「保存」区分层级
-        Row() {
-          Button('导入气泡对话')
-            .fontSize(13)
-            .fontColor(BRAND_SECONDARY)
-            .backgroundColor(Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .border({ width: 1, color: BRAND_SECONDARY })
-            .layoutWeight(1)
-            .onClick(() => {
-              this.startCardImport('import', this.editorTitle, this.editorDefinition, this.editorImageUri);
-            })
-          Button('创建子气泡')
-            .fontSize(13)
-            .fontColor(BRAND_SECONDARY)
-            .backgroundColor(Color.Transparent)
-            .borderRadius(RADIUS_CONTROL)
-            .border({ width: 1, color: BRAND_SECONDARY })
-            .layoutWeight(1)
-            .margin({ left: 12 })
-            .onClick(() => {
-              this.startCardImport('branch', this.editorTitle, this.editorDefinition, this.editorImageUri);
-            })
+        // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）——挂弹窗 Column 尾部（后绘制在上层）──
+        if (this.tagEditVisible) {
+          Column() {
+            Blank()
+            Column() {
+              Text(this.tagEditOld.length === 0 ? '添加标签' : '修改标签')
+                .fontSize(14)
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
+                .margin({ bottom: 10 })
+              TextInput({ text: this.tagEditNew, placeholder: '标签名（2~6 字最佳）' })
+                .fontSize(14)
+                .width('100%')
+                .height(40)
+                .padding({ left: 12, right: 12 })
+                .borderRadius(RADIUS_CONTROL)
+                .backgroundColor(SURFACE_SOFT)
+                .onChange((v: string) => {
+                  this.tagEditNew = v;
+                })
+              Row({ space: 12 }) {
+                Button('取消')
+                  .layoutWeight(1)
+                  .fontColor(TEXT_SECONDARY)
+                  .backgroundColor(Color.Transparent)
+                  .onClick(() => {
+                    this.tagEditVisible = false;
+                  })
+                Button('确定')
+                  .layoutWeight(1)
+                  .backgroundColor(BRAND_PRIMARY)
+                  .fontColor(TEXT_PRIMARY)
+                  .onClick(() => {
+                    this.commitEditorTagEdit();
+                  })
+              }
+              .width('100%')
+              .margin({ top: 14 })
+            }
+            .width('86%')
+            .padding(18)
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: 1, color: STROKE_CARD })
+          }
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.45)')
+          .onClick(() => {
+            this.tagEditVisible = false;
+          })
         }
-        .width('100%')
-        .margin({ top: 12 })
       }
-      .width('86%')
+      .width(this.isTablet ? 520 : '86%') // ★ 0.201.2：平板固定 520（86% 在宽屏超宽、双按钮被拉长——用户实测）；规范入 UI_GUIDELINES「模态弹窗与操作按钮」
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
@@ -741,7 +865,7 @@ export struct KnowledgeBankPage {
   @Builder
   editorImagePreview() {
     Column() {
-      Image(this.editorImageUri)
+      Image(this.editorImages.length > 0 ? this.editorImages[0] : '')
         .objectFit(ImageFit.Contain)
         .width('100%')
         .height('100%')
@@ -965,22 +1089,79 @@ export struct KnowledgeBankPage {
                     }
                     // Entry content block: title -> definition -> image thumbnail
                     Column() {
-                      Text(c.title)
-                        .fontSize(16)
-                        .fontWeight(600)
-                        .fontColor(TEXT_PRIMARY)
+                      // ★ 0.202.0：问AI 入口改版（用户拍板：原紫渐变钮设计「像坨屎」）——移至标题行右端，
+                      //   灰色小字「问AI?」与标题平行，颜色同「未学习」标签（TEXT_TERTIARY 弱化灰）：
+                      //   不显眼但路口找得到；ArkUI 点击不冒泡：本 Text 自身消费，不触发卡片 onClick 进编辑
+                      Row() {
+                      // ★ 0.202.1：标签 chips（用户拍板：放标题旁空区，高度 20 ≤ 问AI 32，圆角偏方 4，多标签横向滑动）
+                      //   0.198.3 铁律合规：横向 Scroll 挂在受约束容器内用 layoutWeight，chip 自身 padding 自然宽
+                      Row({ space: 6 }) {
+                        Text(c.title)
+                          .fontSize(16)
+                          .fontWeight(600)
+                          .fontColor(TEXT_PRIMARY)
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                          .constraintSize({ maxWidth: '62%' })
+                        if (parseTags(c.tags).length > 0) {
+                          Scroll() {
+                            Row({ space: 6 }) {
+                              ForEach(parseTags(c.tags), (t: string) => {
+                                Text(t)
+                                  .fontSize(10)
+                                  .fontColor(BRAND_SECONDARY)
+                                  .height(20)
+                                  .padding({ left: 8, right: 8 })
+                                  .borderRadius(4)
+                                  .border({ width: 1, color: BRAND_SECONDARY })
+                              }, (t: string) => t)
+                            }
+                          }
+                          .scrollable(ScrollDirection.Horizontal)
+                          .scrollBar(BarState.Off)
+                          .height(20)
+                          .layoutWeight(1)
+                        }
+                      }
+                      .layoutWeight(1)
+                        if (!this.multiSelectMode) {
+                          // ★ 0.201.3（用户拍板：描边框比「未学习」视觉大一圈）：**高度=「未学习」标签等高
+                          //   （height 16，.height 含 border——0.196.7 教训）**，fontSize 11→10 缩一号补偿框体，
+                          //   padding 仅左右 5（上下 0，垂直居中由 height 保证）；规范入 UI_GUIDELINES
+                          Row() {
+                            Text('问AI')
+                              .fontSize(10)
+                              .fontColor(TEXT_TERTIARY)
+                            Text('?')
+                              .fontSize(10)
+                              .fontColor(TEXT_TERTIARY)
+                              .fontWeight(600)
+                          }
+                          .height(16)
+                          .padding({ left: 5, right: 5 })
+                          .borderRadius(RADIUS_CONTROL)
+                          .border({ width: 1, color: TEXT_TERTIARY })
+                          .onClick(() => {
+                            this.askSheetTitle = c.title;
+                            this.askSheetDefinition = c.definition;
+                            this.askSheetImages = getCardImages(c);
+                            this.askSheetVisible = true;
+                          })
+                        }
+                      }
+                      .width('100%')
                       Text(c.definition)
                         .fontSize(13)
                         .fontColor(TEXT_SECONDARY)
                         .margin({ top: 2 })
-                      // ★ 0.188.0：下次复习时间（未学习灰 / 已到期红 / 常规灰，复刻单词库）
+                      // ★ 0.188.0：下次复习时间（未学习灰 / 已到期红 / 常规灰，复刻单���库）
                       Text(this.nextReviewLabel(c))
                         .fontSize(11)
                         .fontColor(this.nextReviewColor(c))
                         .margin({ top: 2 })
-                      if (c.imageUri.length > 0) {
+                      if (getCardImages(c).length > 0) {
                         // Card image thumbnail — not rendered when empty
-                        Image(c.imageUri)
+                        Image(getCardImages(c)[0])
                           .height(64)
                           .width(96)
                           .objectFit(ImageFit.Cover)
@@ -995,28 +1176,7 @@ export struct KnowledgeBankPage {
                     })
 
                     if (!this.multiSelectMode) {
-                      // ★ 0.200.0 入口 A：「问 AI」——用户拍板：浏览即产生问题，问 AI 不该隔着一次点击
-                      //   与 × 同列（多选模式随 × 隐藏）；紫渐变底 + 白线条 icon（同 gitbranch 图标容器规格）
-                      Column() {
-                        Image($r('app.media.ask_ai'))
-                          .width(18)
-                          .height(18)
-                      }
-                      .width(32)
-                      .height(32)
-                      .borderRadius(9)
-                      .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
-                      .justifyContent(FlexAlign.Center)
-                      .alignItems(HorizontalAlign.Center)
-                      .margin({ right: 4 })
-                      .onClick(() => {
-                        // ArkUI 点击不冒泡：本按钮自身消费，不触发卡片 onClick 进编辑弹窗
-                        this.askSheetTitle = c.title;
-                        this.askSheetDefinition = c.definition;
-                        this.askSheetImage = c.imageUri;
-                        this.askSheetVisible = true;
-                      })
-                      // 单删按钮 —— 多选模式下隐藏
+                      // ★ 0.202.0：原紫渐变「问AI」钮已移至标题行右端灰字（上方），此处仅保留单删按钮
                       Button('×')
                         .fontSize(16)
                         .fontColor(DANGER)

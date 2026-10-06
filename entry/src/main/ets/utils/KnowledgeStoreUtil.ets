@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // KnowledgeStoreUtil.ets — Knowledge bank persistence utilities (0.146 / 0.148)
 // ============================================================
 // Persistence and manipulation helpers for the knowledge bank:
@@ -26,27 +26,28 @@ const KNOWLEDGE_BANK_KEY = 'knowledge-bank';
 // testing the bank / review features). AI-drafted sample data, same
 // nature as the 0.146 "DJ" preset. Fixed 'preset-*' ids make seeding
 // idempotent and deletion-aware.
+// ★ 0.202.2：编程主题测试数据（用户验收标签/多图用）——10 张卡、标签 0~9 个递增、部分 1~3 图（占位头像 PNG）
+const PRESET_IMG_1: string = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAUSSURBVHhe7dvZkhRFFMbxfiavvfYhxBV3BQH3DVxREdzFXRRRQXHfEJWXEPcdhmEWhmGJEC8cKfNkdmae7Do1U92dJ08ZfS7+MTeZffH7IiZiaqp732w7vwo9uqo6iHvsgtC30OMXpj1xUfUd7smLQ99DT12S9vSl1Q+4Z1aHfoS2XxZ79nLbT9BzV8Sev9L2M/TCVWkvXp30y0vXpL18bdor11W/4nasCf0Gvbo27bXrq99xO9eF/oBeX5+2a0P1J+6NG0KHoDdvrOIAil8cPw6g+CL4bgDFF8O3Ayi+HP6ht25CAyh+cfzDYQDFF8F3Ayi+GH4ygOKXxz+8+2Y3gOLL4NsBFF8O3w2g+GL4U7UBFL8o/tSeW9AAil8cPw6g+CL4bgDFF8O3Ayi+HP7U27eiARS/OP6RMIDii+BDPcWXw4fCAIpfHv/IO7e5ARRfBt8OoPhy+G4AxRfDn64NoPhF8af33o4G6DD+0l8nTafSzrSry/hxgI7h/2PBcQZzBHyqLuG7ATqED/Cc+Lgu4NsBuoDv4Uvh4yTxp9+9Aw1gwCcNHyeBfzQMYMBL42N4aXxfaXw3gAFX/FhJ/GQAxY+Vwj/63p1uAMWvVwLfDqD4zXHjuwEUf9k48WeSAZjwBwf4P+EvnTnNij/z/l39ATqIf+4559UaPNOm0T/ndIgL3w3AiI8HGBffN3h2uaj7Pup8LOLbAZjwwwBdwocoMB91vinqvo8670rxl/52ceDPfLCx6nHh+wGGxYcoMB91vinqvo8634QfBsiM7wZgwofn+bnxIeoOFXUXV7+D4Afw7QAM+LPJAJnx4z9S2uP7KDAfdb4p6r4vPdtHb8DHA+TEn/1wU38ABvxx/pNFgfmo801R933xnAFeAR/iwHcDdAwfosB81PmmqPs+d8bgtsCHOPDDALnxbTvWjITva0YbrubPMbAt8SEO/NmP7q56XPjJAAMo8hnUIfAhDnw3ABN+GIAEkMyADokPceDP1QbIiA/v7dAAkhnMEfAhDvy5j+9BA2TGhxelaASpDOSI+BAHfhyAAd9HY5TOIHYQ3w3AiN+NAQziGPgQF35tgNz4/l1NGqZEBrDD+HOf3BsH4MKXG8AAtsSvzp5tjBM/DMCJb9u5ro9SKgPbAp8Cx/1rzvg48O0AJfB9NFbuDG5mfF9u/PoAjPj+FXEaLVcGtwU+RKH7KHwoN/78p/ehAQrg+2i8cTOwjPi+nPhxgIL4tl0b+mi5MrAt8SEKHqLAB8uJ7wYQwMdfjqBBh8mgDoEPjYoP5cSvD1AY37+bT8O2yYCOiU8hL1dO/PnP7kcDCOHjL0fQyE0Z0CHxfQAPPynglcqJHwfoAD6OBscZyBHx4akm/KRw25QT3w3QMXzq/fxx8MNzfJ/5q5aCbVtOfDtA1/G5XhGncFcqN/785w+gASYIf+QBMuMfCwNMGL5/rkMhN8WB7waYUHz8YI0C93H82vH4yQCTip/72c4w+Mf2bXYDKL4Mvh1A8eXw3QCKL4a/UBtA8YviL3zxIBpA8YvjxwEUXwQf6im+HD7UU3w5/IX9D6EBFL84/vEwgOKL4LsBFF8MPxlA8cvjH//yYTeA4svg2wEUXw7fDaD4YviLtQEUvyj+4ldb0ACKXxw/DqD4IvhuAMUXw7cDKL4c/uLXj6ABFL84/okwgOKL4LsBFF8MPxlA8cvjnziw1Q2g+DL4dgDFl8N3Ayi+GP7JA1ur/wBpexfgkyeoHAAAAABJRU5ErkJggg==';
+const PRESET_IMG_2: string = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAVYSURBVHhe7dvZcxRVFMfx/E0+++yfI+6KC+64BkQkCSEJSUgIQXHfF8RdBBQQkB39G1xCaZXXe0/36T7dc2ame3LPPW3Nqa7vQ6pu5+Hzq8xDp2fi9qNTLrQFmnZbPp92dxTNuDuxYzPurmN7i+7Gvph195Duxb7c5+6rdf9Xc5Ue+Hq+0tZvFooexL7d7x4iPYx9t+geIW2Dlty275fco0XL7jHs+LJ7/PiBoiewH1bck6SnsBOr7ula208cdNtPlj1zcq3s1Jp79tShoudCP4bW3fPYT+vuhaLD7sXThx0MYPg6+DCA4evh5wMYvhb+JAxg+Gr4k6dfdROGr4c/eaYYwPA18HdkAxi+Fj4MYPh6+DvOvJYPYPgq+DthAMNXw4cBDF8Pf+dZMoDhp8d/6eyRbADD18GHAQxfD78cgMAbfjr8XTAAgTf8tPgwgOHr4e/6+fVyAMNPj/8yDmD4OvgwgOHr4ZcDGL4K/m4YwPDV8GEAw9fD333ujeoAhp8W/xU6QJfxf//7r5HrMn4xQNfwOchYdQkfBugSPgcm00Yn8HsG0MLnkaTacH+QNPH3nHuzHGAc8Wka+HvO5wNo4PNAkvHwtNT4MIDhV0uJ3zPAuONjqfCnzr9VDmD41VLgFwMYPp80Pgxg+AP6Z0MUf+oCGUAKP/0ADOQoeXw6gAT+9IW3swG6iH/rLbf1xJ2rVkP0cb+nfqanHB+TwocBJPFHHYBDw7jzWTkeibsfq58tquEXAxD4WPjlAAReGz/EgWHc+X4fO9z9GHeew8ck8GdgAAIfE38zTzU5MKz3vAfqE3c/1nOeQadJ4MMAUvijDsBh0arnPU6fuHtplfMMeD0J/Jlf3ikHiI0f/plSxWoeB4aV5zzMkLj7seIcg80lgb8XB5DA38x/sjgwLDvjURrE3Y/BGQa6XxL4MEDX8EMcGNYUP8Tdj3HIg5LALweIjI9xuE3j0NrgY9zv4YCHJYE/CwMI4Yc3FzjY0fMQMWJwh/WnTwIfBpDCjzuAh4hRDbZJAZ8OEBN/9uK75QCx8cN7Ozxm2zxEjAhq0xAfB4iNvw8HkMAPL0rxoG3yEDHKQdtE8UMS+DCAFD7GwzbJQ8TI47UtFX4+gBz+6AN4iBh5vLbV8WEAIfw5GEAQH9/V5JH75SFi5OHalhp/7uJ7bkIav90AHiJGHq5N/w64JPHnLhUDyOGHwguyPDjNY8SIAe4XheYu+pcggT+fDSCPj/HwIQ8Soxy2SRSauyh+MUJkfBggFT6+It4F/BDFrl8cfig2/vyl9/MBEuFj/0d8LCb+AgyQGB/fz9fCD1FwenHg9WLiwwAa+PTLESxq0zxI2wIiRcerDt2vmPgLl8kAGvj45QgWd1geo20BkKKHqw48rJj4+y9/kA2giU+/HMFCc3mItlHEUeCzbkbFhwG6gk+/HMGiYx6ibRQxPNWkPzfvJhQTvxyAwGvjc+/nbwYfn+Nj4cEaDzyoDB8HiIW/CAMQ+C7iS70izkNzyeEvXvEDjCN+8wFK/FBs/MUrH5YDjBM+Ptfh0TF5/CUcYBzx6YO1QfgSHzuIDwOMO37sZztt8Jeu4gCGr4K/DAMYvho+DGD4evjLVz+qDmD4afEPXCMDGH56/GIAw9fBhwEMXw8/G8Dw1fBXrn1cDmD46fFXrucDGL4OPgxg+Hr41QEMPzn+6vVP8gEMXwU/G8Dw1fBhAMPXw1+9QQYw/PT4B298mg1g+Dr4MIDh6+FnAxi+Gv5aNoDha+HDAIavh7/262f5AIavgn8IBjB8NXwYwPD18MkAhq+Bv54NYPha+DCA4evhr/921P0HgsaSxpZ3HpkAAAAASUVORK5CYII=';
+const PRESET_IMG_3: string = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAATESURBVHhe7dvZdhRVFMZxn8lrr30mJ1REBcUJBBEBhQQSSMKQRAVkcGRSngNEGZU4XJiy9j69u051f11d3Zx9drF6X/zvqnqt+n0rWaurq5554fCtgnqROhJ6SZq7Xbwc9cp81RbqaOhV6divxWtRry/U20otVr2xeKfq+J1iW9Sb1InQW9LSb8XbUduXq3ZQK6F3pJO/F+9G7TxV9R51OvS+dOZu8UHUh6v1Plqrt2v9Xq3dX1Z9TH0V2iN9fb/YG/XJ2fsFD+D4Nvg8gOPb4YcBHN8Mf58M4Pg2+DyA49vh7zsnAzi+Cf6nPIDjm+HzAI5vh18bwPHz4++XARzfBp8HcHw7/P3nowEcPz/+ZzKA49vg8wCOb4cfBnB8M/wDMoDj2+Af+KYcwPHt8KsBHN8E/yAP4Phm+DyA49vhH7zwoBrA8fPjH5IBHN8GnwdwfDv8oQEcPy/+5xejAbqM//jv/ybvn1CX8fsDdA0fgk5SDx/VJXweoEv4EHPSADqqC/hhgA7gQ8hpAtCojShL/C8uRQPMIn6cBX5/AAt8iDhtJWCbEHxcbnwewPHr5cSvD+D4/XLhH778sDeA4w+VAz8M4Pgj08bnARy/OU382gBa+EkHKEHahCCnTRP/yLe9AbqI/9yzzw+FsAcbBESfM3jMuLTweQBN/GkHQGgSQpcG4dD50uCxTWnhhwE6hk8hMAnBUwgOnS+h45vSwJ+TATTwn+SuJgKT2uJT6HwJHd+UBv7cd+UAWvh0Lx/hjgthxaXAp9A5TWngVwMo4E87AIXApDb4EjpfQsc3pYE/zwMo4T/JL1kITGqLT6HzJXR8Uxr4PEDX8NsMgIBQ6HwJHd+UBv7894+qAVLiyw/oEHlU5UXGIbRJ8CX0Oei4cWngH5UBNPDpqQUIjSovsE0IJlca+DyAFn7rAcqLaxNCyZkGfm2A1PitBigvrE0IJHca+Md+6A2ggU8PSkF0qbyoNiEMizTweQAtfMnxR+OHARTx4QDlBbUJQVj017/1AVLiL8gAWvjyjKbjY/yFH8sBtPH7A5QX1CYEod3mZjEyTfxqAEV8ih6ORdiDIRzNEHgc/QWENlXwF3mADPgSQpcQkGYIPC7Gl1Lj8wC58Cl6NLwL+BRClxA+lRp/8ac/qgFy4EtPI76UEv+4DJATX57Pt8KnEDw1Dp9Kic8DWODHL0cgIO2mxadS4tcGsMCXlyMQklaj4cfjUynxT1zpDWCJH78cgcA0GoZvh0+lxOcBuoIfvxyB0FJFdzWnxadS4ocBOoaPns9HkG2T+/gSfaudFp9Kib8kA3QZX+sR8S7g8wCziB8GwMhNpcZfuioDzBi+3NMZBG5KA3+ZB5hRfIm+2SJwSePfjuDzALOOn/reziT4y1f/rAZw/Pz4KzKA49vg8wCOb4e/cm1gAMfPi38yHsDx8+P3B3B8G3wewPHt8IcGcPy8+KeuRwM4fn78/gCOb4PPAzi+Hf7QAI6fF//0jcfVAI6fH78/gOPb4PMAjm+HXxvA8fPjn/m5N4Dj2+DzAI5vhx8GcHwz/NUyHsDxbfBXfykHcHw7/GoAxzfBX+MBHN8MnwdwfDv8tZsb1QCOnx9/XQZwfBt8HsDx7fDXb24U/wNeOakYMZ6aJwAAAABJRU5ErkJggg==';
+
 function buildPresetCards(): KnowledgeCard[] {
   const now = Date.now();
   return [
-    new KnowledgeCard('preset-dj', 'DJ', '一个天才', '', now),
-    new KnowledgeCard('preset-dag', 'DAG', '有向无环图（Directed Acyclic Graph）。由节点和有方向的边组成、不含环路的一种图结构。本应用用它组织气泡对话树：每个气泡是一个节点，回复关系是有向边。', '', now - 1000),
-    new KnowledgeCard('preset-prompt', 'Prompt Engineering', '提示词工程。设计与优化输入提示（Prompt），引导大语言模型产出期望输出的技术；清晰的指令、示例与角色设定都能显著提升回答质量。', '', now - 2000),
-    new KnowledgeCard('preset-token', 'Token', '词元。大语言模型处理文本的基本单位；一个英文单词约 1 个 token，一个汉字约 1~2 个 token。模型的上下文窗口与计费通常按 token 计数。', '', now - 3000),
-    new KnowledgeCard('preset-context', 'Context Window', '上下文窗口。模型单次对话能处理的 token 总量上限；超出后最早的内容会被截断，模型便「忘记」先前说过的话。', '', now - 4000),
-    new KnowledgeCard('preset-hallucination', 'Hallucination', '幻觉。大语言模型生成看似合理、实则错误或凭空虚构内容的现象；通过检索增强（RAG）与引用来源可缓解。', '', now - 5000),
-    new KnowledgeCard('preset-finetuning', 'Fine-tuning', '微调。在预训练模型基础上，用领域数据继续训练，使模型适配特定任务或风格的技术。', '', now - 6000),
-    new KnowledgeCard('preset-rag', 'RAG', '检索增强生成（Retrieval-Augmented Generation）。先从知识库检索相关资料，再让模型基于资料生成回答，可显著缓解幻觉、支持私有知识。', '', now - 7000),
-    new KnowledgeCard('preset-multimodal', 'Multimodal', '多模态。模型同时理解与生成文本、图像、音频等多种形式数据的能力；本应用的图片消息即为一种多模态输入。', '', now - 8000),
-    new KnowledgeCard('preset-agent', 'Agent', '智能体。能感知环境、自主规划并调用工具完成任务的 AI 系统；大语言模型常作为智能体的推理内核。', '', now - 9000)
+    new KnowledgeCard('preset-dj', '算法复杂度', '衡量算法效率的标尺：大 O 表示法描述运行时间/空间随输入规模的增长趋势。常数 O(1)、对数 O(log n)、线性 O(n) 层层递增，优化就是把复杂度阶级往下压。', '', now, 0, 0, 0, 0, ''),
+    new KnowledgeCard('preset-dag', '数据结构', '数据的组织与存储方式：数组连续随机访问快、链表插删灵活、哈希表以空间换时间、树结构分层检索。选对结构，算法问题就解决了一半。', '', now - 1000, 0, 0, 0, 0, '数据结构'),
+    new KnowledgeCard('preset-prompt', '设计模式', '可复用的面向对象设计方案：单例控全局唯一、工厂封装创建、观察者解耦通知、策略替换算���族。是前人踩坑沉淀的套路，不是死记硬背的教条。', '', now - 2000, 0, 0, 0, 0, '设计模式,面向对象', JSON.stringify([PRESET_IMG_1])),
+    new KnowledgeCard('preset-token', 'HTTP 协议', 'Web 世界的传输语言：请求/响应模型、GET 与 POST 语义、状态码 200/404/500 各自报信、无状态靠 Cookie/Token 补记忆。前端后端的一切对话都建立在它之上。', '', now - 3000, 0, 0, 0, 0, '网络,HTTP,前后端'),
+    new KnowledgeCard('preset-context', '数据库索引', '以额外存储换查询速度的数据结构：B+ 树是最常见实现，像书的目录一样让查找免于全表扫描。索引不是越多越好——写操作要维护索引，滥用反而拖慢入库。', '', now - 4000, 0, 0, 0, 0, '数据库,SQL,性能优化,后端', JSON.stringify([PRESET_IMG_1, PRESET_IMG_2])),
+    new KnowledgeCard('preset-hallucination', '正则表达式', '文本模式的描述语言：\d 匹配数字、+ 表示重复、() 捕获分组、^$ 锚定首尾。爬虫提取、表单校验、日志分析的背后都是它，写对一次处处复用。', '', now - 5000, 0, 0, 0, 0, '正则,文本处理,工具,编程基础,字符串'),
+    new KnowledgeCard('preset-finetuning', '并发编程', '多任务同时执行的协调艺术：线程/协程是执行单元，锁防止数据竞争，死锁是互相等待的僵局，原子操作与消息队列是解法。用对并发模型，吞吐量翻倍。', '', now - 6000, 0, 0, 0, 0, '并发,多线程,锁,内存模型,后端,性能优化'),
+    new KnowledgeCard('preset-rag', 'Git 版本控制', '代码的时间机器：commit 是快照、branch 是平行宇宙、merge 汇流合流、rebase 重写历史。分布式设计让每个克隆都是完整仓库，协作与回滚皆从容。', '', now - 7000, 0, 0, 0, 0, 'Git,版本控制,协作,命令行,工具,工程实践,DevOps', JSON.stringify([PRESET_IMG_1, PRESET_IMG_2, PRESET_IMG_3])),
+    new KnowledgeCard('preset-multimodal', '递归', '函数调用自身的分治智慧：基准情形终止展开、递归情形缩小问题规模，像俄罗斯套娃层层打开。栈是它的天然载体，栈溢出是它的悬崖边界。', '', now - 8000, 0, 0, 0, 0, '算法,递归,编程基础,思维模型,栈,函数,入门,计算机科学'),
+    new KnowledgeCard('preset-agent', 'SOLID 原则', '面向对象设计的五条军规：单一职责、开闭、里氏替换、接口隔离、依赖倒置。目标是高内聚低耦合——需求变化时只改一处而非牵一发动全身。', '', now - 9000, 0, 0, 0, 0, 'SOLID,设计原则,面向对象,架构,代码质量,可维护性,设计模式,工程实践,编程进阶')
   ];
 }
 
-// ★ 0.151: one-shot seed-merge marker. v1 = 0.146 "DJ" preset;
-// v2 = the 10-card test set above. Persisted under its own key so each
-// seed version merges missing presets EXACTLY ONCE — user-deleted cards
-// stay deleted afterwards.
-const KNOWLEDGE_SEED_VERSION = 2;
+const KNOWLEDGE_SEED_VERSION = 3; // ★ 0.202.2：v3 = 编程主题测试数据（更新同 id 卡内容，保留记忆字段）
 const KNOWLEDGE_SEED_KEY = 'knowledge-bank-seed';
 
 // Ids already seeded by v1 (0.146): v2 seeding must NOT resurrect this
@@ -84,13 +85,29 @@ export function connectKnowledgeBank(): KnowledgeBankStore {
 function seedPresetCards(store: KnowledgeBankStore): void {
   const marker = PersistenceV2.connect(KnowledgeSeedMarker, KNOWLEDGE_SEED_KEY, () => new KnowledgeSeedMarker()) as KnowledgeSeedMarker;
   if (marker.version >= KNOWLEDGE_SEED_VERSION) {
-    return; // v2 already merged — deleted cards stay deleted
+    return; // already merged — deleted cards stay deleted
+  }
+  const presets = buildPresetCards();
+  // ★ 0.202.2 v3：同 id 已存在的卡 → 内容更新为新测试数据（记忆字段保留——用户的复习进度不丢）
+  const presetMap = new Map<string, KnowledgeCard>();
+  presets.forEach((p: KnowledgeCard) => {
+    presetMap.set(p.id, p);
+  });
+  for (let i = 0; i < store.cards.length; i++) {
+    const fresh = presetMap.get(store.cards[i].id);
+    if (fresh !== undefined) {
+      store.cards[i].title = fresh.title;
+      store.cards[i].definition = fresh.definition;
+      store.cards[i].tags = fresh.tags;
+      store.cards[i].imageUri = fresh.imageUri;
+      store.cards[i].images = fresh.images;
+    }
   }
   const existing: Set<string> = new Set<string>();
   store.cards.forEach((c: KnowledgeCard) => {
     existing.add(c.id);
   });
-  const missing = buildPresetCards().filter((c: KnowledgeCard) =>
+  const missing = presets.filter((c: KnowledgeCard) =>
     !existing.has(c.id) && !KNOWLEDGE_SEED_V1_IDS.includes(c.id));
   if (missing.length > 0) {
     const now = Date.now();
@@ -117,6 +134,9 @@ function normalizeCardMemoryFields(store: KnowledgeBankStore): void {
     }
     if (typeof c.lastReviewAt !== 'number' || !isFinite(c.lastReviewAt)) {
       c.lastReviewAt = 0;
+    }
+    if (typeof c.tags !== 'string') {
+      c.tags = ''; // ★ 0.202.0：存量卡补 tags 兜底（PersistenceV2 旧快照新增字段缺失防 undefined）
     }
     if (typeof c.nextReviewAt !== 'number' || !isFinite(c.nextReviewAt)) {
       c.nextReviewAt = 0;
@@ -146,14 +166,17 @@ export function addKnowledgeCard(store: KnowledgeBankStore, card: KnowledgeCard)
 
 // ★ 0.148: edit a card's title/definition by id. ★ 0.160: imageUri is now
 // part of the bank-page editor (add / remove image) and is saved alongside.
+// ★ 0.202.0: tags saved alongside (attention-weighting data base).
 // Cards may share titles, so no duplicate check here either.
 export function updateKnowledgeCard(store: KnowledgeBankStore, cardId: string,
-  title: string, definition: string, imageUri: string): void {
+  title: string, definition: string, imageUri: string, tags: string = '', images: string = ''): void {
   for (let i = 0; i < store.cards.length; i++) {
     if (store.cards[i].id === cardId) {
       store.cards[i].title = title.trim();
       store.cards[i].definition = definition.trim();
       store.cards[i].imageUri = imageUri;
+      store.cards[i].tags = tags.trim();
+      store.cards[i].images = images; // ★ 0.202.1：多图（编辑保存时清空 imageUri 旧字段——getCardImages 统一读 images）
       return;
     }
   }

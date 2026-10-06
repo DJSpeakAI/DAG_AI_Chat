@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // BBTreeCanvas.ets — 气泡树画布页面
 // ============================================================
 // 本文件是 DAG 气泡树的可视化画布，功能包括：
@@ -117,7 +117,7 @@ export struct BBTreeCanvas {
     this.cardImport.action = '';
     this.cardImport.title = '';
     this.cardImport.definition = '';
-    this.cardImport.imageUri = '';
+    this.cardImport.imageUrisJson = '[]';
     animateTo({ duration: 200, curve: Curve.EaseIn, onFinish: () => {
       this.importSelecting = false;
       this.importTargetId = '';
