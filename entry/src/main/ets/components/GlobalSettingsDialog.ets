@@ -111,7 +111,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.196.11';
+const APP_VERSION: string = 'v0.196.12';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -1039,56 +1039,49 @@ export struct GlobalSettingsDialog {
       // ★ 0.194.0：非 VIP 时按钮替换为「订阅后开启」——云同步是唯一会员功能，到期只锁这里
       // ★ 0.196.8：未登录时按钮点击拦截——云同步与华为账号绑定，先登录（用户拍板）
       // ★ 0.196.10：拦截 toast 升级登录引导弹窗——「登录华为账号」直拉登录（用户拍板：
-      //   原让用户回主页/边栏登录多此一举）；弹窗 Index 根挂载，登录成功自动接云同步询问链
-      if (!this.syncOn) {
-        if (!this.account.isLoggedIn) {
-          Button('开启云同步')
-            .width('100%')
-            .height(48)
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ bottom: 16 })
-            .onClick(() => {
+      //   原让用户回主页/边栏登录多此一举）；弹窗 Index 根挂载
+      // ★ 0.196.12：未登录/VIP 两分支按钮样式完全相同——合并为一个 Button，onClick 内分流
+      //   （原两分支重复 12 行样式代码；非 VIP 分支样式不同保持独立）
+      if (!this.account.isLoggedIn || isVip(this.subscription)) {
+        Button('开启云同步')
+          .width('100%')
+          .height(48)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(TEXT_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .margin({ bottom: 16 })
+          .onClick(() => {
+            // 未登录：登录引导弹窗（Index 根挂载；登录成功直接开云同步——入口即意图 0.196.11）
+            if (!this.account.isLoggedIn) {
               connectConfirmDialog().loginPromptVisible = true;
-            })
-        } else if (isVip(this.subscription)) {
-          Button('开启云同步')
-            .width('100%')
-            .height(48)
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ bottom: 16 })
-            .onClick(() => {
-              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              if (context === undefined || context === null) {
-                this.showToastSafe('获取上下文失败，请重试');
-                return;
-              }
-              requestSyncPermission(context).then((granted: boolean) => {
-                this.permGranted = granted; // ★ 0.196.10：开关侧 enabled 已在 requestSyncPermission 内落 true——状态卡实时刷新
-                this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
-              });
-            })
-        } else {
-          Button('订阅后开启')
-            .width('100%')
-            .height(48)
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(SURFACE_HOVER)
-            .fontColor(TEXT_SECONDARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ bottom: 16 })
-            .onClick(() => {
-              this.showToastSafe('云同步为会员功能，请到边栏「账单」页订阅');
-            })
-        }
+              return;
+            }
+            // 已登录 VIP：直接弹系统授权窗（授权即开；开关侧 enabled 已在 requestSyncPermission 内落 true）
+            const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            if (context === undefined || context === null) {
+              this.showToastSafe('获取上下文失败，请重试');
+              return;
+            }
+            requestSyncPermission(context).then((granted: boolean) => {
+              this.permGranted = granted; // ★ 0.196.10：状态卡实时刷新
+              this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
+            });
+          })
+      } else {
+        Button('订阅后开启')
+          .width('100%')
+          .height(48)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(SURFACE_HOVER)
+          .fontColor(TEXT_SECONDARY)
+          .borderRadius(RADIUS_CONTROL)
+          .margin({ bottom: 16 })
+          .onClick(() => {
+            this.showToastSafe('云同步为会员功能，请到边栏「账单」页订阅');
+          })
       }
 
       // 使用条件说明

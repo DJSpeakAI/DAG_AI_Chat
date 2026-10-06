@@ -80,7 +80,9 @@ export struct BillingPage {
         return;
       }
       if (tip !== '') {
-        this.getUIContext().getPromptAction().showToast({ message: tip });
+        // ★ 0.196.12：showToast 可能抛异常（编译器警告「Function may throw exceptions」），
+        //   try-catch 静默包裹（GlobalSettingsDialog.showToastSafe 同款，本页调用统一收口）
+        this.showToastSafe(tip);
         return;
       }
       // ★ 0.195.0：首次登录弹欢迎弹窗（与首页同款 ReminderDialog）；重复登录简短 toast
@@ -89,7 +91,7 @@ export struct BillingPage {
         this.reminderMode = 0;
         this.reminderVisible = true;
       } else {
-        this.getUIContext().getPromptAction().showToast({ message: '登录成功' });
+        this.showToastSafe('登录成功');
       }
       // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与首页/边栏头像登录同款耦合流程）
       // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
@@ -99,10 +101,19 @@ export struct BillingPage {
     });
   }
 
+  // ★ 0.196.12：showToast 静默包裹（showToast 可能抛异常——编译器警告；GlobalSettingsDialog 同款）
+  showToastSafe(msg: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: msg, duration: 1500 });
+    } catch (_e) {
+      // 静默失败（toast 非关键路径）
+    }
+  }
+
   doRedeem(): void {
     // ★ 0.194.0：兑换前置登录（UI 已按登录态隐藏输入框，此处兜底防绕过）
     if (!this.account.isLoggedIn) {
-      this.getUIContext().getPromptAction().showToast({ message: '请先登录华为账号' });
+      this.showToastSafe('请先登录华为账号');
       return;
     }
     if (this.redeemInput.trim().length === 0) {
@@ -229,7 +240,7 @@ export struct BillingPage {
                 .backgroundColor(SURFACE_SOFT)
                 .border({ width: 1, color: STROKE_CARD })
                 .onClick(() => {
-                  this.getUIContext().getPromptAction().showToast({ message: '支付服务开通中，敬请期待' }); // TODO-IAP：接入华为 IAP Kit 月订阅商品
+                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit 月订阅商品
                 })
 
                 Column() {
@@ -253,7 +264,7 @@ export struct BillingPage {
                 .backgroundColor(SURFACE_SOFT)
                 .border({ width: 1, color: BRAND_SECONDARY })
                 .onClick(() => {
-                  this.getUIContext().getPromptAction().showToast({ message: '支付服务开通中，敬请期待' }); // TODO-IAP：接入华为 IAP Kit 年订阅商品
+                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit 年订阅商品
                 })
               }
               .width('100%')

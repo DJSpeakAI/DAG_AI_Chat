@@ -245,12 +245,6 @@ export async function isCloudSyncGranted(): Promise<boolean> {
   return hasSyncPermission();
 }
 
-// ★ 0.196.8：云同步是否真正开着（设置页状态显示）= 系统权限授予 && 应用级开关开
-//   ——退出账号后开关强制关，即使权限仍在也显示「未开启」（与账号登录态一致，用户拍板）
-export async function isCloudSyncOn(): Promise<boolean> {
-  return await hasSyncPermission() && connectCloudSync().enabled;
-}
-
 // 订阅云端数据变化（SUBSCRIBE_TYPE_CLOUD：云端数据下行到本地 RDB 后触发）——
 // 事件里拉取两个快照 key 通知业务层；值比较与写回池由 ChatModel 侧 handler 负责。
 // 本机 upsert 上云的「回声」由 handler 侧「值 != 池」比较天然挡住（相等不写回）
