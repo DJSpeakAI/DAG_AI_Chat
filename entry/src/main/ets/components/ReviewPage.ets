@@ -17,6 +17,8 @@ import { MemoryItem, MemoryRating, pickReviewWords, pickReviewCards, applyRating
 import { streamChat } from '../utils/ApiClient';
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
+import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
+import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
@@ -104,6 +106,9 @@ export struct ReviewPage {
 
   aboutToAppear(): void {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
+    // ★ 0.204.0：先回放桌面卡片上产生的评分到真数据（合并后 buildQueue 的队列才是正确的）
+    const ctx = this.getUIContext().getHostContext() as common.Context;
+    mergeWidgetPending(ctx, this.wordBank, this.knowledgeBank);
     this.buildQueue();
   }
 
@@ -136,6 +141,7 @@ export struct ReviewPage {
       this.finished = false;
       recordStat(this.statStore, 'siyi', this.queue.length, 0); // ★ 0.202.3：司忆量埋点（本队展示张数）
     }
+    this.rebuildWidgetState(); // 0.204.0 队列重建后刷新桌面卡片
   }
 
   // ★ 0.196.2：继续复习——把明天之后的未来内容提前背（pickReview* 的 future 段按 nextReviewAt 升序=最近的先）
@@ -161,9 +167,10 @@ export struct ReviewPage {
     this.ratedGood = 0;
     this.ratedEasy = 0;
     this.finished = false;
-    recordStat(this.statStore, 'siyi', this.queue.length, 0); // ★ 0.202.3：司忆量埋点（继续复习队列）
+    recordStat(this.statStore, 'siyi', this.queue.length, 0); // 0.202.3 司忆量埋点（继续复习队列）
     this.aiText = '';
     this.aiLoading = false;
+    this.rebuildWidgetState(); // 0.204.0 继续复习新队列也推桌面卡片
   }
 
   // 完成页「继续复习」按钮显隐：有未来排期内容才显示
@@ -192,6 +199,13 @@ export struct ReviewPage {
     return this.ratedHard + this.ratedGood + this.ratedEasy;
   }
 
+  // ★ 0.204.0：重建桌面卡片双队列快照（页面队列变化后调用；与 buildQueue 同算法独立构建，未添加卡片时静默）
+  rebuildWidgetState(): void {
+    const ctx = this.getUIContext().getHostContext() as common.Context;
+    buildWidgetState(ctx, this.mode, this.wordBank, this.knowledgeBank,
+      this.dailyCount.wordCount, this.dailyCount.knowledgeCount);
+  }
+
   onRate(rating: MemoryRating): void {
     const item = this.currentItem();
     if (item === undefined) {
@@ -206,6 +220,7 @@ export struct ReviewPage {
       this.ratedEasy += 1;
     }
     this.idx += 1;
+    this.rebuildWidgetState(); // 0.204.0 翻卡后刷新桌面卡片（完成态自动切换）
     if (this.idx >= this.queue.length) {
       this.finished = true;
       this.saveTodayDone();

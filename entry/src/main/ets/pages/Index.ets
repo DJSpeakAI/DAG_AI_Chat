@@ -35,6 +35,11 @@ import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏�
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
 import { BG_APP, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_BRAND, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.174.1：UI Token 单一来源（删 isDark 三元——v0.166.3 锁暗色后浅色分支是死代码）；★ 0.174.2：删 BRAND_SECONDARY/RADIUS_LOGO（首页 Logo 区移除后无引用）
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
+import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启动构建桌面卡片快照
+import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204.0：同上
+import { buildWidgetState } from '../utils/WidgetHostBridge'; // ★ 0.204.0：同上；★ 0.204.3：ensureWidgetFormIds formId 自愈
+import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3：卸载重装后残留卡片推送自愈
+import { connectDailyReviewCount } from '../components/ReviewPage'; // ★ 0.204.0：每日量（快照按量截断；ReviewPage 不反向 import Index，无循环）
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -218,6 +223,23 @@ struct Index {
     });
     // ★ 0.194.0-bugfix：老用户补打免费试用时间戳（升级前已登录的账号不会再触发 doLogin 回调）
     stampFreeTrialOnLogin(this.subscription);
+    // ★ 0.204.0 bugfix（bug2 根因）：启动即构建桌面卡片快照——原只在进复习页时写快照，
+    //   新添加卡片/未进过复习页时快照为空 → 卡片误显「今日复习已完成」。
+    //   延迟 800ms 等 PersistenceV2 磁盘水合完成再构建（冷启动首帧 store 可能未就绪）。
+    setTimeout(() => {
+      try {
+        const wb = connectWordBank();
+        const kb = connectKnowledgeBank();
+        const dc = connectDailyReviewCount();
+        buildWidgetState(this.getUIContext().getHostContext() as common.Context, 'knowledge',
+          wb, kb, dc.wordCount, dc.knowledgeCount);
+        // ★ 0.204.3：formId 自愈——卸载重装后 preferences 清空，桌面残留卡片收不到推送（用户实测）；
+        //   查询系统已发布卡片回写 form_ids + 补推（幂等：已有记录直接返回）
+        ensureWidgetFormIds(this.getUIContext().getHostContext() as common.Context);
+      } catch (_e) {
+        // 静默（下次进复习页会重建）
+      }
+    }, 800);
     // PersistenceV2: 持久化 JSON 字符串
     const persist = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
     // ★ 0.151：按画布模式分支恢复工作区（★ 0.151-bugfix2：互通设计——当前模式的池是权威数据源）
@@ -440,7 +462,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.202.3') // ★ 0.202.3：统计页四卡联动图表+司忆量指标+一年测试数据——更早历史见 MEMORY.md 版本表
+        Text('v0.204.4') // ★ 0.204.4：多卡片修复（formId 改文件直存——主进程不再因 preferences 缓存漏推新卡片）——更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

@@ -1,0 +1,17 @@
+{
+  "forms": [
+    {
+      "name": "ReviewWidget",
+      "displayName": "复习卡片",
+      "description": "展示今日复习内容——单词/知识卡实时进度，点我打开复习",
+      "src": "./ets/widget/ReviewWidgetCard.ets",
+      "uiSyntax": "arkts",
+      "isDefault": true,
+      "scheduledUpdateTime": "06:30",
+      "updateDuration": 1,
+      "updateEnabled": true,
+      "defaultDimension": "2*4",
+      "supportDimensions": ["2*2", "2*4", "4*4"]
+    }
+  ]
+}

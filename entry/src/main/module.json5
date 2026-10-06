@@ -57,6 +57,21 @@
             "resource": "$profile:backup_config"
           }
         ],
+      },
+      // ★ 0.203.0：桌面服务卡片（复习内容展示）——FormExtensionAbility + form_config 双规格（1×2/2×4）
+      {
+        "name": "EntryFormAbility",
+        "srcEntry": "./ets/entryformability/EntryFormAbility.ets",
+        "label": "$string:EntryFormAbility_label",
+        "description": "$string:EntryFormAbility_desc",
+        "type": "form",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
       }
     ],
     // ★ 0.164.7：删除 READ_PASTEBOARD 权限申请——代码里 pasteboard 仅 2 处 setData（写剪贴板：划词复制+长按复制），
@@ -87,6 +102,20 @@
             "EntryAbility"
           ],
           "when": "inuse"
+        }
+      },
+      // ★ 0.204.1：桌面卡片 call 交互所需——postCardAction call 后台拉起主应用评分时，
+      // form_event_adapter 要求 KEEP_BACKGROUND_RUNNING（否则 "The app does not have permission
+      // for keeping background running" 拒绝拉起——真机日志实证）。normal+system_grant 级别：
+      // 声明即生效，无需用户弹窗。
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+        "reason": "$string:keep_background_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "always"
         }
       }
     ]

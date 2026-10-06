@@ -10,6 +10,7 @@ import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatMod
 import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——Index 根挂载消费）
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
+import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
 @ComponentV2
@@ -231,6 +232,18 @@ export struct AppSideBar {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
+        // ★ 0.203.0：桌面卡片小字入口（用户拍板：账户行右边小字「桌面卡片」，点击打开卡片管理器选规格添加）
+        //   子组件 onClick 消费不冒泡——不会误触账户行的登录/退出逻辑
+        Text('桌面卡片')
+          .fontSize(10)
+          .fontFamily(FONT_INTER_SEMIBOLD)
+          .fontColor(BRAND_PRIMARY)
+          .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+          .border({ width: 0.5, color: BRAND_SECONDARY })
+          .borderRadius(8)
+          .onClick(() => {
+            requestPublishReviewWidget();
+          })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // EntryAbility.ets — 应用入口 Ability
 // ============================================================
 // 本文件是应用的 UI Ability（生命周期入口），负责：
@@ -11,9 +11,21 @@
 // ============================================================
 
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 机制（真机日志实证：进程存活时 call 走 Callee onRemoteMessageRequest 而非 onNewWant）
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
 import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
+import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
+// 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
+class EmptyParcelable implements rpc.Parcelable {
+  marshalling(_dataOut: rpc.MessageSequence): boolean {
+    return true;
+  }
+
+  unmarshalling(_dataIn: rpc.MessageSequence): boolean {
+    return true;
+  }
+}
 
 // ★ 全局主题状态（UI 运行时状态，非持久化数据模型）
 @ObservedV2
@@ -30,6 +42,73 @@ export class AppLifecycleStore {
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（冷启动路径——method/params 在 want.parameters）
+    this.registerWidgetCallee(); // ★ 0.204.1：桌面卡片 call（热路径——进程存活/解冻后走 Callee，onCreate 时注册一次）
+  }
+
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（主应用存活路径——热调用即时处理）
+  }
+
+  // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 注册（真机日志：进程存活时系统的
+  //   ByCall 走 Callee.onRemoteMessageRequest(method)，未注册则 "get func is undefined" 丢弃）。
+  //   卡片冻结进程场景系统会先 Thaw 再投递（日志实证），故 Callee 覆盖全部存活场景。
+  private registerWidgetCallee(): void {
+    try {
+      this.callee.on('widgetRate', (data: rpc.MessageSequence): rpc.Parcelable => {
+        const params = data.readString();
+        try {
+          const m = JSON.parse(params) as Record<string, string>;
+          handleWidgetRate(this.context, m['rating'] ?? 'good');
+        } catch (_e) {
+          // 参数异常静默
+        }
+        return new EmptyParcelable();
+      });
+      this.callee.on('widgetSwitch', (data: rpc.MessageSequence): rpc.Parcelable => {
+        const params = data.readString();
+        try {
+          const m = JSON.parse(params) as Record<string, string>;
+          handleWidgetSwitch(this.context, m['mode'] ?? 'knowledge');
+        } catch (_e) {
+          // 参数异常静默
+        }
+        return new EmptyParcelable();
+      });
+      // 0.204.2：卡片完成态「继续复习」——拉未来队列继续背
+      this.callee.on('widgetContinue', (_data: rpc.MessageSequence): rpc.Parcelable => {
+        handleWidgetContinue(this.context);
+        return new EmptyParcelable();
+      });
+    } catch (_e) {
+      // 注册失败静默（不影响应用启动）
+    }
+  }
+
+  // 0.204.1 parse widget call want (method/params in want.parameters),
+  //   分发到 WidgetHostBridge（真数据评分+推卡片）。非卡片调用（正常启动）parameters 无 method 静默。
+  private handleWidgetCallWant(want: Want): void {
+    try {
+      const p = want.parameters;
+      if (p === undefined || p === null) {
+        return;
+      }
+      const method = (p['method'] ?? '') as string;
+      if (method !== 'widgetRate' && method !== 'widgetSwitch' && method !== 'widgetContinue') {
+        return;
+      }
+      const params = p['params'];
+      const m = (typeof params === 'string' ? JSON.parse(params) : params) as Record<string, string>;
+      if (method === 'widgetRate') {
+        handleWidgetRate(this.context, m['rating'] ?? 'good');
+      } else if (method === 'widgetContinue') {
+        handleWidgetContinue(this.context);
+      } else {
+        handleWidgetSwitch(this.context, m['mode'] ?? 'knowledge');
+      }
+    } catch (_e) {
+      // 解析失败静默（不影响正常启动）
+    }
   }
 
   onDestroy(): void {
