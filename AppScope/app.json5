@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000082, // ★ 0.196.7：顶栏Row高度40→56(height含padding,原内容区24vp致顶栏比树页高8vp,Pad实测icons y137vs157)+适应全图=重排+适配(删树空洞填补,下面的树上移);更早历史见 MEMORY.md
+    "versionCode": 1000083, // ★ 0.196.8：云同步↔华为账号耦合(登录弹窗问开/退出强制关/未登录拦截,应用级开关CloudSyncStore);★ 0.196.7：顶栏Row 40→56+适应全图重排;更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

@@ -22,6 +22,7 @@ import { relationalStore } from '@kit.ArkData';
 import { abilityAccessCtrl, bundleManager, common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { PersistenceV2, UIContext } from '@kit.ArkUI'; // ★ 0.196.8：应用级开关持久化 + 登录后弹窗（UIContext）
 
 const DB_NAME = 'dag_chat_cloud.db'; // 库名（AGC 容器名 = dag_chat_cloud）
 const TABLE_NAME = 'cloud_data';     // 表名 = 云侧「本地表名称」字段值（数据类型名为驼峰 cloudData）
@@ -32,6 +33,22 @@ const DOMAIN = 0x0165;
 let rdbStore: relationalStore.RdbStore | null = null;
 let initPromise: Promise<boolean> | null = null;
 let cloudSyncActive: boolean = false; // ★ 0.165.1：云同步是否已激活（权限授予 + setDistributedTables 成功）
+let downlinkCallback: ((storeUri: Array<string>) => void) | null = null; // ★ 0.196.8：下行订阅回调引用（deactivateCloudSync off 用）
+
+// ★ 0.196.8：云同步应用级开关——与华为账号登录态绑定（用户拍板：两状态同时开/同时关）
+//   背景：系统权限 DISTRIBUTED_DATASYNC 授予后应用无法主动撤销，退出华为账号后权限仍在
+//   （UI 显示「已开启」）但云侧已无账号会话实际同步不了——故加应用层开关作为「用户意图」
+//   真相源：激活条件 = 权限授予 && 开关开；退出账号 → 开关强制关（UI 显示未开启，与账号一致）
+@ObservedV2
+export class CloudSyncStore {
+  @Trace enabled: boolean = false; // 登录弹窗「开启」/设置页按钮 → true；退出账号 → false
+}
+
+// 连接持久化单例（key 'cloud-sync-switch'，与 PersistData/api-config 同款模式）
+export function connectCloudSync(): CloudSyncStore {
+  return PersistenceV2.connect(CloudSyncStore, 'cloud-sync-switch',
+    () => new CloudSyncStore()) as CloudSyncStore;
+}
 
 // ★ 0.165.2：云端下行处理器（回调注入——ChatModel 已 import 本文件，本文件反向
 // import ChatModel 会循环依赖，故业务写回逻辑由 ChatModel 侧注册进来）
@@ -62,7 +79,8 @@ export function initCloudDb(context: common.UIAbilityContext): void {
       // ★ 0.165.1：DISTRIBUTED_DATASYNC（normal + user_grant）须用户弹窗授权后才能开云同步；
       // 未授权时本地 RDB 正常读写（upsertCloudData 照常落库），云同步待命——授权后 activateCloudSync 激活
       const granted = await hasSyncPermission();
-      if (granted) {
+      // ★ 0.196.8：应用级开关也须开——退出账号时开关已强制关，权限仍在也不激活（UI/行为与账号一致）
+      if (granted && connectCloudSync().enabled) {
         activateCloudSync();
       } else {
         hilog.info(DOMAIN, TAG, 'sync permission not granted yet, cloud sync standby');
@@ -93,6 +111,39 @@ function activateCloudSync(): void {
   }
 }
 
+// ★ 0.196.8：停用端云同步（退出华为账号时调用；幂等）——退订下行 + 清激活标记。
+//   系统权限无法由应用撤销（留在系统层无妨：下次登录开关重开即秒激活，无需再弹权限窗）
+function deactivateCloudSync(): void {
+  if (!cloudSyncActive) {
+    return;
+  }
+  cloudSyncActive = false;
+  if (rdbStore !== null && downlinkCallback !== null) {
+    try {
+      rdbStore.off('dataChange', relationalStore.SubscribeType.SUBSCRIBE_TYPE_CLOUD, downlinkCallback);
+    } catch (err) {
+      hilog.warn(DOMAIN, TAG, `off dataChange failed: ${JSON.stringify(err)}`);
+    }
+  }
+  hilog.info(DOMAIN, TAG, 'cloud sync deactivated (logout)');
+}
+
+// ★ 0.196.8：设置应用级开关（登录弹窗「开启」/设置页按钮/退出账号三条路径统一走这里）
+//   开=true：权限已授予则立即激活；未授予则待 requestSyncPermission 授权后激活
+//   开=false：立即停用（退出账号路径）
+export function setCloudSyncEnabled(enabled: boolean): void {
+  connectCloudSync().enabled = enabled;
+  if (enabled) {
+    hasSyncPermission().then((granted: boolean) => {
+      if (granted && connectCloudSync().enabled) {
+        activateCloudSync();
+      }
+    });
+  } else {
+    deactivateCloudSync();
+  }
+}
+
 // ★ 0.165.1：查询分布式数据同步权限是否已授予（checkAccessToken）
 async function hasSyncPermission(): Promise<boolean> {
   try {
@@ -120,6 +171,7 @@ export async function requestSyncPermission(context: common.UIAbilityContext): P
     if (result.authResults.length > 0 &&
       result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
       hilog.info(DOMAIN, TAG, 'sync permission granted by user');
+      connectCloudSync().enabled = true; // ★ 0.196.8：授权即用户意图开——开关落 true（激活由下方 activate）
       activateCloudSync();
       return true;
     }
@@ -193,6 +245,12 @@ export async function isCloudSyncGranted(): Promise<boolean> {
   return hasSyncPermission();
 }
 
+// ★ 0.196.8：云同步是否真正开着（设置页状态显示）= 系统权限授予 && 应用级开关开
+//   ——退出账号后开关强制关，即使权限仍在也显示「未开启」（与账号登录态一致，用户拍板）
+export async function isCloudSyncOn(): Promise<boolean> {
+  return await hasSyncPermission() && connectCloudSync().enabled;
+}
+
 // 订阅云端数据变化（SUBSCRIBE_TYPE_CLOUD：云端数据下行到本地 RDB 后触发）——
 // 事件里拉取两个快照 key 通知业务层；值比较与写回池由 ChatModel 侧 handler 负责。
 // 本机 upsert 上云的「回声」由 handler 侧「值 != 池」比较天然挡住（相等不写回）
@@ -201,12 +259,12 @@ function subscribeCloudDownlink(): void {
     return;
   }
   try {
-    rdbStore.on('dataChange', relationalStore.SubscribeType.SUBSCRIBE_TYPE_CLOUD,
-      (storeUri: Array<string>) => {
-        hilog.info(DOMAIN, TAG, `cloud dataChange: ${JSON.stringify(storeUri)}`);
-        pullAndNotify('flat_pool');
-        pullAndNotify('tabs_pool');
-      });
+    downlinkCallback = (storeUri: Array<string>) => { // ★ 0.196.8：回调存模块变量（deactivateCloudSync off 用）
+      hilog.info(DOMAIN, TAG, `cloud dataChange: ${JSON.stringify(storeUri)}`);
+      pullAndNotify('flat_pool');
+      pullAndNotify('tabs_pool');
+    };
+    rdbStore.on('dataChange', relationalStore.SubscribeType.SUBSCRIBE_TYPE_CLOUD, downlinkCallback);
     hilog.info(DOMAIN, TAG, 'cloud dataChange subscribed');
   } catch (err) {
     hilog.warn(DOMAIN, TAG, `subscribe dataChange failed: ${JSON.stringify(err)}`);
@@ -222,4 +280,64 @@ async function pullAndNotify(key: string): Promise<void> {
   if (value !== null) {
     downlinkHandler(key, value);
   }
+}
+
+// ============================================================
+// ★ 0.196.8：云同步 ↔ 华为账号登录态耦合（用户拍板：两状态同时开/同时关）
+// ============================================================
+
+// toast 静默包裹（同 GlobalSettingsDialog.showToastSafe——showToast 可能抛异常）
+function toastSafe(uiContext: UIContext, msg: string): void {
+  try {
+    uiContext.getPromptAction().showToast({ message: msg, duration: 1500 });
+  } catch (_e) {
+    // 静默失败（toast 非关键路径）
+  }
+}
+
+// 登录成功后弹窗：是否开启云同步？（「开启」→ 开关开；权限未授予则续弹系统授权窗）
+// isVipNow 由调用方传入（本文件不 import ChatModel——ChatModel 已 import 本文件，反向会循环依赖）；
+// 非 VIP 不弹（云同步是会员功能，设置页显示「订阅后开启」，弹了也是死路）
+export function promptEnableCloudSyncAfterLogin(uiContext: UIContext, isVipNow: boolean): void {
+  if (connectCloudSync().enabled) {
+    return; // 已开着（防御性保留——退出即关，正常流程到不了）
+  }
+  if (!isVipNow) {
+    return; // 非 VIP（到期/未订阅）：不弹窗引导
+  }
+  uiContext.showAlertDialog({
+    title: '开启云同步',
+    message: '已登录华为账号。是否开启云同步？开启后，登录同一华为账号的多台设备对话数据自动保持一致。',
+    primaryButton: {
+      value: '暂不开启',
+      action: () => {}
+    },
+    secondaryButton: {
+      value: '开启云同步',
+      action: () => {
+        const context = uiContext.getHostContext() as common.UIAbilityContext;
+        hasSyncPermission().then((granted: boolean) => {
+          if (granted) {
+            // 权限已在（如退出账号前授过）——开关一开即激活，无需再弹系统窗
+            setCloudSyncEnabled(true);
+            toastSafe(uiContext, '云同步已开启');
+          } else if (context !== undefined && context !== null) {
+            // 首次开启：弹系统授权窗（授权成功 requestSyncPermission 内部落开关+激活）
+            requestSyncPermission(context).then((ok: boolean) => {
+              toastSafe(uiContext, ok ? '云同步已开启' : '未授权，云同步保持关闭');
+            });
+          }
+        });
+      }
+    }
+  });
+}
+
+// 退出账号成功后调用：开关强制关 + toast（仅在原本开着时提示——没开过就不打扰）
+export function disableCloudSyncOnLogout(uiContext: UIContext): void {
+  if (!connectCloudSync().enabled) {
+    return;
+  }
+  setCloudSyncEnabled(false);
+  toastSafe(uiContext, '云同步已随账号退出关闭');
 }

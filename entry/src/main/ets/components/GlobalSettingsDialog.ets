@@ -28,7 +28,8 @@ import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）
-import { requestSyncPermission, isCloudSyncGranted } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）
+import { requestSyncPermission, isCloudSyncOn } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.8：isCloudSyncOn——状态=权限&&应用级开关
+import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
@@ -109,7 +110,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.196.7';
+const APP_VERSION: string = 'v0.196.8';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -181,9 +182,11 @@ export struct GlobalSettingsDialog {
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
-  // ★ 0.165.2 Tab3 云同步：分布式同步权限是否已授予（点「开启云同步」弹窗授权后刷新）
+  // ★ 0.165.2 Tab3 云同步：是否真正开着（★ 0.196.8 语义升级：系统权限授予 && 应用级开关开——
+  //   退出账号后开关强制关，权限仍在也显示未开启，与账号登录态一致）
   @Local syncGranted: boolean = false;
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.194.0：云同步 VIP 守卫
+  account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.196.8：云同步↔账号绑定——未登录拦截「开启」
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.195.0：复习显示（全局设置直达——0=关闭复习区）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.195.0：同上（知识卡）
   // ★ 0.195.0：复习显示 Tab 输入态（0/1/2 快速项 + 自由输入框——与两库 ⚙ 设置同款布局）
@@ -246,9 +249,9 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
-    // ★ 0.165.2：云同步权限状态（异步查；已授权则「云同步」Tab 直接显示已开启）
-    isCloudSyncGranted().then((granted: boolean) => {
-      this.syncGranted = granted;
+    // ★ 0.196.8：云同步状态 = 权限授予 && 应用级开关开（退出账号后开关已关 → 显示未开启）
+    isCloudSyncOn().then((on: boolean) => {
+      this.syncGranted = on;
     });
   }
 
@@ -991,9 +994,13 @@ export struct GlobalSettingsDialog {
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
             .fontColor(TEXT_PRIMARY)
-          Text(isVip(this.subscription)
-            ? (this.syncGranted ? '本设备对话数据将自动与云端保持一致' : '开启后，登录同一华为账号的多台设备共享对话数据')
-            : '云同步为会员功能——订阅后开启（其他功能永久免费）') // ★ 0.194.0：非 VIP 提示
+          Text(this.syncGranted
+            ? '本设备对话数据将自动与云端保持一致'
+            : (!this.account.isLoggedIn
+              ? '云同步与华为账号绑定——请先登录华为账号' // ★ 0.196.8：未登录优先提示（用户拍板：先登录再开同步）
+              : (isVip(this.subscription)
+                ? '开启后，登录同一华为账号的多台设备共享对话数据'
+                : '云同步为会员功能——订阅后开启（其他功能永久免费）'))) // ★ 0.194.0：非 VIP 提示
             .fontSize(11)
             .fontColor(TEXT_TERTIARY)
             .margin({ top: 2 })
@@ -1010,10 +1017,24 @@ export struct GlobalSettingsDialog {
         : (SURFACE_SOFT))
       .margin({ bottom: 16 })
 
-      // 开启按钮（已授权则不显示——授权是一次性的，重复弹窗无意义；拒绝过可再点重试）
+      // 开启按钮（已开启则不显示——重复弹窗无意义；拒绝过可再点重试）
       // ★ 0.194.0：非 VIP 时按钮替换为「订阅后开启」——云同步是唯一会员功能，到期只锁这里
+      // ★ 0.196.8：未登录时按钮点击拦截——云同步与华为账号绑定，先登录（用户拍板）
       if (!this.syncGranted) {
-        if (isVip(this.subscription)) {
+        if (!this.account.isLoggedIn) {
+          Button('开启云同步')
+            .width('100%')
+            .height(48)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(TEXT_PRIMARY)
+            .borderRadius(RADIUS_CONTROL)
+            .margin({ bottom: 16 })
+            .onClick(() => {
+              this.showToastSafe('云同步需登录华为账号，请先登录后再开启');
+            })
+        } else if (isVip(this.subscription)) {
           Button('开启云同步')
             .width('100%')
             .height(48)

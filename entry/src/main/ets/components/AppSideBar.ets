@@ -6,6 +6,8 @@
 //   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
 
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID } from '../utils/HuaweiAccountUtil';
+import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定
+import { promptEnableCloudSyncAfterLogin, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像退出确认（getHostContext 转 common.Context 调 logoutHuaweiID）
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
@@ -18,6 +20,7 @@ export struct AppSideBar {
   @Param currentRoute: string = '';
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
   account: HuaweiAccountStore = connectHuaweiAccount();
+  subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
 
   /** ★ 0.195.0：导航项高亮判定——当前路由映射（ChatPage/AnnotationPage 是气泡树子页，归气泡树） */
   isItemActive(kind: string): boolean {
@@ -236,7 +239,12 @@ export struct AppSideBar {
         // ★ 0.196.3 bugfix（用户实测「退出后再点没反应」）：未登录点头像=直接拉起登录
         if (!this.account.isLoggedIn) {
           const loginContext = this.getUIContext().getHostContext() as common.Context;
-          loginWithHuaweiID(loginContext);
+          // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（云同步与账号绑定，用户拍板流程）
+          loginWithHuaweiID(loginContext).then((tip: string) => {
+            if (tip === '') {
+              promptEnableCloudSyncAfterLogin(this.getUIContext(), isVip(this.subscription));
+            }
+          });
           return;
         }
         this.getUIContext().showAlertDialog({
@@ -250,7 +258,11 @@ export struct AppSideBar {
             value: '退出',
             action: () => {
               const context = this.getUIContext().getHostContext() as common.Context;
-              logoutHuaweiID(context);
+              // ★ 0.196.8：退出 → 云同步开关强制关（无论取消授权成败，本地登录态都已清空——
+              //   logoutHuaweiID 内部保证；云侧已无账号会话，同步必须停）
+              logoutHuaweiID(context).then((_tip: string) => {
+                disableCloudSyncOnLogout(this.getUIContext());
+              });
             }
           }
         });

@@ -6,6 +6,7 @@
 // 发票：由华为开具（用户在华为应用市场订单中心自助申请），App 内只放指路说明
 
 import { SubscriptionStore, connectSubscription, isVip, vipExpireTime, vipDaysLeft, redeemCode, stampFreeTrialOnLogin, markWelcomeShown } from '../common/ChatModel';
+import { promptEnableCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：登录后云同步弹窗（云同步↔账号耦合）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录
 import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
@@ -85,6 +86,8 @@ export struct BillingPage {
       } else {
         this.getUIContext().getPromptAction().showToast({ message: '登录成功' });
       }
+      // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与首页/边栏头像登录同款耦合流程）
+      promptEnableCloudSyncAfterLogin(this.getUIContext(), isVip(this.subscription));
     });
   }
 

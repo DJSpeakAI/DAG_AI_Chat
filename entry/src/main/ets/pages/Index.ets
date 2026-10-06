@@ -25,7 +25,8 @@ import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday } from '../common/ChatModel';
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定
+import { promptEnableCloudSyncAfterLogin, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
 import { GlobalSettingsDialog } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）
@@ -87,6 +88,10 @@ struct Index {
         this.reminderMode = 0;
         this.reminderVisible = true;
       }
+      // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与边栏头像/账单页登录同款耦合流程）
+      if (tip === '') {
+        promptEnableCloudSyncAfterLogin(this.getUIContext(), isVip(this.subscription));
+      }
     });
   }
 
@@ -103,6 +108,8 @@ struct Index {
       if (tip !== '') {
         this.loginTip = tip;
       }
+      // ★ 0.196.8：退出 → 云同步开关强制关（本地登录态无论成败都已清空，云侧已无账号会话）
+      disableCloudSyncOnLogout(this.getUIContext());
     });
   }
 
@@ -410,7 +417,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.196.7') // ★ 0.196.7：顶栏Row高度40→56+适应全图重排填补删树空洞；★ 0.196.6：导航栏高度全页统一——更早历史见 MEMORY.md 版本表
+        Text('v0.196.8') // ★ 0.196.8：云同步↔华为账号耦合（登录弹窗/退出强制关/未登录拦截）；★ 0.196.7：顶栏40→56+适应全图重排——更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
