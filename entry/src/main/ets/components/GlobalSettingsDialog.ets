@@ -111,7 +111,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.197.1';
+const APP_VERSION: string = 'v0.197.2';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -201,6 +201,10 @@ export struct GlobalSettingsDialog {
   @Local reviewWordError: string = '';
   @Local reviewCardInput: string = '';
   @Local reviewCardError: string = '';
+  // ★ 0.197.2：复习显示编辑副本——原即时生效无保存概念（用户反馈：要保存按钮，与 API/AI 偏好
+  //   Tab 交互统一）；快速项/输入确定只写副本，底部「保存」统一落 store（saveAll）
+  @Local editReviewLearn: number = 0;
+  @Local editReviewKnowledge: number = 0;
   // ★ 0.190.8：隐私政策自定义弹窗显隐（替代系统 AlertDialog 灰弹窗，按应用设计语言）
   @Local privacyVisible: boolean = false;
 
@@ -256,6 +260,9 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
+    // ★ 0.195.0：复习显示 Tab 编辑副本回显（0.197.2 保存模式——脏检查对比副本 vs store）
+    this.editReviewLearn = this.learnCountStore.learnCount;
+    this.editReviewKnowledge = this.knowledgeCountStore.knowledgeCount;
     // ★ 0.196.10：系统权限状态（开弹窗时查一次；开关侧 cloudSwitch.enabled 是 @Trace 实时）
     isCloudSyncGranted().then((granted: boolean) => {
       this.permGranted = granted;
@@ -269,7 +276,9 @@ export struct GlobalSettingsDialog {
       this.currentModelValue() !== this.apiConfig.model ||
       this.currentEndpointValue() !== this.apiConfig.endpoint ||
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
-      this.editEncourageMode !== this.aiPreference.encourageMode;   // ★ 0.191.0：鼓励三档
+      this.editEncourageMode !== this.aiPreference.encourageMode || // ★ 0.191.0：鼓励三档
+      this.editReviewLearn !== this.learnCountStore.learnCount || // ★ 0.197.2：复习显示（保存模式）
+      this.editReviewKnowledge !== this.knowledgeCountStore.knowledgeCount;
   }
 
   // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
@@ -310,6 +319,9 @@ export struct GlobalSettingsDialog {
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageMode = this.editEncourageMode;
+    // ★ 0.197.2：Tab5 复习显示写入（编辑副本→store，PersistenceV2 即时落盘，两处复习区即时生效）
+    this.learnCountStore.learnCount = this.editReviewLearn;
+    this.knowledgeCountStore.knowledgeCount = this.editReviewKnowledge;
     this.showToastSafe('已保存');
   }
 
@@ -805,7 +817,8 @@ export struct GlobalSettingsDialog {
   }
 
   // ★ 0.195.0：复习显示 Tab（用户拍板：从 AI 偏好挪到顶层——与云同步/关于齐平）。
-  //   布局与两库 ⚙ 设置完全同款：0/1/2 快速项 + 自由输入框一行（界面统一）；即时生效无保存概念。
+  //   布局与两库 ⚙ 设置完全同款：0/1/2 快速项 + 自由输入框一行（界面统一）。
+  //   ★ 0.197.2：改保存模式（用户反馈：要保存按钮）——快速项/确定写编辑副本，底部「保存」统一落 store
   @Builder
   reviewTabContent() {
     Column() {
@@ -820,33 +833,33 @@ export struct GlobalSettingsDialog {
             .fontSize(14)
             .width(44)
             .height(40)
-            .fontColor(this.learnCountStore.learnCount === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.learnCountStore.learnCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+            .fontColor(this.editReviewLearn === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editReviewLearn === 0 ? BRAND_PRIMARY : Color.Transparent)
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
-              this.learnCountStore.learnCount = 0; // PersistenceV2 即时落盘，两处复习区即时生效
+              this.editReviewLearn = 0;
             })
           Button('1')
             .fontSize(14)
             .width(44)
             .height(40)
-            .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .fontColor(this.editReviewLearn === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editReviewLearn === 1 ? BRAND_PRIMARY : Color.Transparent)
             .borderRadius(RADIUS_CONTROL)
             .margin({ left: 8 })
             .onClick(() => {
-              this.learnCountStore.learnCount = 1;
+              this.editReviewLearn = 1;
             })
           Button('2')
             .fontSize(14)
             .width(44)
             .height(40)
-            .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .fontColor(this.editReviewLearn === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editReviewLearn === 2 ? BRAND_PRIMARY : Color.Transparent)
             .borderRadius(RADIUS_CONTROL)
             .margin({ left: 8 })
             .onClick(() => {
-              this.learnCountStore.learnCount = 2;
+              this.editReviewLearn = 2;
             })
           TextInput({ text: this.reviewWordInput, placeholder: '0~20' })
             .fontSize(14)
@@ -872,7 +885,7 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               const n = parseInt(this.reviewWordInput, 10);
               if (!Number.isNaN(n) && n >= 0 && n <= 20) {
-                this.learnCountStore.learnCount = n;
+                this.editReviewLearn = n; // ★ 0.197.2：写编辑副本，保存统一落 store
               } else {
                 this.reviewWordError = '请输入 0~20 的整数';
               }
@@ -906,33 +919,33 @@ export struct GlobalSettingsDialog {
             .fontSize(14)
             .width(44)
             .height(40)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+            .fontColor(this.editReviewKnowledge === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editReviewKnowledge === 0 ? BRAND_PRIMARY : Color.Transparent)
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
-              this.knowledgeCountStore.knowledgeCount = 0;
+              this.editReviewKnowledge = 0;
             })
           Button('1')
             .fontSize(14)
             .width(44)
             .height(40)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+            .fontColor(this.editReviewKnowledge === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editReviewKnowledge === 1 ? BRAND_PRIMARY : Color.Transparent)
             .borderRadius(RADIUS_CONTROL)
             .margin({ left: 8 })
             .onClick(() => {
-              this.knowledgeCountStore.knowledgeCount = 1;
+              this.editReviewKnowledge = 1;
             })
           Button('2')
             .fontSize(14)
             .width(44)
             .height(40)
-            .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .fontColor(this.editReviewKnowledge === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editReviewKnowledge === 2 ? BRAND_PRIMARY : Color.Transparent)
             .borderRadius(RADIUS_CONTROL)
             .margin({ left: 8 })
             .onClick(() => {
-              this.knowledgeCountStore.knowledgeCount = 2;
+              this.editReviewKnowledge = 2;
             })
           TextInput({ text: this.reviewCardInput, placeholder: '0~20' })
             .fontSize(14)
@@ -958,7 +971,7 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               const n = parseInt(this.reviewCardInput, 10);
               if (!Number.isNaN(n) && n >= 0 && n <= 20) {
-                this.knowledgeCountStore.knowledgeCount = n;
+                this.editReviewKnowledge = n; // ★ 0.197.2：写编辑副本，保存统一落 store
               } else {
                 this.reviewCardError = '请输入 0~20 的整数';
               }
@@ -1328,6 +1341,9 @@ export struct GlobalSettingsDialog {
               this.reviewCardInput = this.knowledgeCountStore.knowledgeCount > 2 ? `${this.knowledgeCountStore.knowledgeCount}` : '';
               this.reviewWordError = '';
               this.reviewCardError = '';
+              // ★ 0.197.2：编辑副本回显（保存模式——每次进 Tab 重置为已保存值）
+              this.editReviewLearn = this.learnCountStore.learnCount;
+              this.editReviewKnowledge = this.knowledgeCountStore.knowledgeCount;
             })
           Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -1365,7 +1381,7 @@ export struct GlobalSettingsDialog {
           } else if (this.currentTab === 1) {
             this.prefTabContent()
           } else if (this.currentTab === 5) {
-            this.reviewTabContent() // ★ 0.195.0：复习显示 Tab（即时生效无保存概念）
+            this.reviewTabContent() // ★ 0.195.0：复习显示 Tab（★ 0.197.2：保存模式——底部有保存按钮）
           } else if (this.currentTab === 4) {
             this.aboutTabContent() // ★ 0.190.6：Tab5 关于
           } else {
@@ -1382,7 +1398,8 @@ export struct GlobalSettingsDialog {
         // ★ 0.175.0：①保存右侧加「返回」按钮（次级样式，走 requestClose——有未保存修改时二次确认）
         //   ②云同步 Tab 无保存概念，补全宽「返回」——三 Tab 底部不空、统一协调
         // ★ 0.190.6：关于 Tab（4）同云同步——无保存概念，全宽返回
-        if (this.currentTab !== 3 && this.currentTab !== 4 && this.currentTab !== 5) { // ★ 0.195.0：复习 Tab(5) 同云同步/关于——即时生效，全宽返回
+        // ★ 0.197.2：复习 Tab(5) 改保存模式（用户反馈：要保存按钮）——与 API/AI 偏好同款保存+返回
+        if (this.currentTab !== 3 && this.currentTab !== 4) {
           Row() {
             Button('保存')
               .layoutWeight(1)
