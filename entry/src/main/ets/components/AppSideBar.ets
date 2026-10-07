@@ -1,4 +1,4 @@
-// AppSideBar.ets — ★ 0.195.0：应用边栏共享组件（从 BBTreeCanvas.SideBarPanel 抽取）
+﻿// AppSideBar.ets — ★ 0.195.0：应用边栏共享组件（从 BBTreeCanvas.SideBarPanel 抽取）
 // 宿主两种形态（用户定稿「大屏边栏常驻，页面平移，体验非常棒」）：
 //   ① Index 大屏常驻——平板/PC 边栏一直存在，页面在右侧 Navigation 区域平移不遮边栏
 //   ② BBTreeCanvas 手机抽屉——translate 滑入滑出由宿主包裹层承担
@@ -11,6 +11,7 @@ import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——Index 根挂载消费）
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
+import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
 @ComponentV2
@@ -178,6 +179,8 @@ export struct AppSideBar {
     .backgroundColor(this.isItemActive(kind) ? SURFACE_HOVER : Color.Transparent)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
+ const _tp1: Record<string, string> = {}; _tp1['item'] = kind;
+      track(this.getUIContext().getHostContext() as common.Context, 'sidebar_nav', _tp1); // 0.206.0 埋点：边栏导航
       this.onNavClick(kind);
     })
   }
@@ -251,6 +254,7 @@ export struct AppSideBar {
         // ★ 0.196.2 用户拍板：点头像=华为账号退出确认弹窗（原跳统计页废弃——统计已有边栏独立入口）
         // ★ 0.196.3 bugfix（用户实测「退出后再点没反应」）：未登录点头像=直接拉起登录
         if (!this.account.isLoggedIn) {
+          track(this.getUIContext().getHostContext() as common.Context, 'login_huawei'); // 0.206.0 埋点：登录入口点击
           const loginContext = this.getUIContext().getHostContext() as common.Context;
           // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（云同步与账号绑定，用户拍板流程）
           // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
@@ -276,3 +280,4 @@ export struct AppSideBar {
     })
   }
 }
+

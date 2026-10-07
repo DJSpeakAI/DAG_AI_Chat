@@ -38,7 +38,8 @@ import {
   buildBackupPayload, writeInternalBackup, restoreFromPayload,
   getBackupSettings, setAutoBackupEnabled, setExternalUri, pickBackupFile, pickAndReadBackupFile,
   writeExternalBackup, maybeAutoBackup, BackupPayload
-} from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
+} from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
+import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
 
@@ -118,7 +119,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.205.5';
+const APP_VERSION: string = 'v0.206.2';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -176,6 +177,8 @@ export struct GlobalSettingsDialog {
   @Local bkUriReady: boolean = false;   // 已选目录（uri 只存不显示——系统 uri 串对用户无意义）
   @Local bkLastExt: number = 0;         // 上次外部备份时间戳
   @Local bkBusy: boolean = false;       // picker/写入进行中（防重复点击）
+  // ★ 0.206.0：体验改进计划开关（埋点隐私闸门，默认关——开弹窗见关于 Tab）
+  @Local trkEnabled: boolean = false;
 
   // Tab 切换（自绘按钮 + 条件渲染，不用 Tabs 组件）
   // ★ 0.167.8 用户拍板：删「画布」Tab（画布多树模式切换已由画布页顶部分段控件承担，此处重复）；
@@ -228,6 +231,8 @@ export struct GlobalSettingsDialog {
     // ★ 0.190.0：Tab1 提供商化初始化——回显持久化配置
     this.editKey = this.apiConfig.apiKey;
     this.editProvider = this.apiConfig.provider;
+    // 0.206.0：体验改进计划开关回显（默认关）
+    this.trkEnabled = isTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext);
     // provider 合法性兜底（防异常值；不合法按端点重新推断）
     let providerValid = this.editProvider === PROVIDER_CUSTOM;
     for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
@@ -1195,6 +1200,16 @@ export struct GlobalSettingsDialog {
   // ★ 0.205.0：备份 Tab——数据安全三道防线
   // ============================================================
 
+  // ★ 0.206.0：Tab 统一切换入口（埋点+原赋值；备份 Tab 进 Tab 时刷新备份快照）
+  switchTab(n: number, name: string): void {
+    this.currentTab = n;
+ const _tp1: Record<string, string> = {}; _tp1['tab'] = name;
+    track(this.getUIContext().getHostContext() as common.UIAbilityContext, 'settings_tab', _tp1); // 0.206.0 埋点
+    if (n === 6) {
+      this.refreshBackupSnapshot();
+    }
+  }
+
   // 备份状态快照刷新（preferences 非响应式，进 Tab/操作后手动同步）
   refreshBackupSnapshot(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -1216,6 +1231,8 @@ export struct GlobalSettingsDialog {
   // 每日自动备份开关（开=弹系统选择器选目录+立即备份一份；取消=回弹关闭）
   onAutoToggle(on: boolean): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+ const _tp2: Record<string, string> = {}; _tp2['on'] = on ? 'y' : 'n';
+    track(ctx, 'backup_auto_toggle', _tp2); // 0.206.0 埋点
     if (!on) {
       setAutoBackupEnabled(ctx, false);
       this.bkAutoEnabled = false;
@@ -1249,6 +1266,7 @@ export struct GlobalSettingsDialog {
   // 更改目录（新目录立即备份一份；旧目录文件不删不管——用户拍板）
   onChangeDir(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    track(ctx, 'backup_change_dir'); // 0.206.0 埋点
     this.bkBusy = true;
     pickBackupFile(ctx).then((uri: string) => {
       this.bkBusy = false;
@@ -1267,6 +1285,7 @@ export struct GlobalSettingsDialog {
   // 立即备份（手动）
   onBackupNow(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    track(ctx, 'backup_now'); // 0.206.0 埋点
     if (!this.bkUriReady) {
       this.showToastSafe('请先开启每日自动备份并选择目录');
       return;
@@ -1282,6 +1301,7 @@ export struct GlobalSettingsDialog {
   // 从备份文件导入（用户手里的 .dagbak——卸载重装/换机恢复用）
   onImportFile(): void {
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    track(ctx, 'backup_import'); // 0.206.0 埋点
     this.bkBusy = true;
     pickAndReadBackupFile(ctx).then((p: BackupPayload | undefined) => {
       this.bkBusy = false;
@@ -1447,6 +1467,36 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 16 })
 
+      // ★ 0.206.0：体验改进计划（埋点隐私开关，默认关——用户拍板）
+      Column() {
+        Text('体验改进计划')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('共享匿名使用数据')
+              .fontSize(15)
+              .fontColor(TEXT_PRIMARY)
+            Text('帮助我们了解哪些功能被使用（仅匿名功能点击次数，不含任何对话/学习内容）。可随时关闭。')
+              .fontSize(11)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.trkEnabled })
+            .selectedColor(BRAND_PRIMARY)
+            .onChange((on: boolean) => {
+              this.trkEnabled = on;
+              setTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext, on);
+            })
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 16 })
+
       // 反馈与联系
       Column() {
         Text('反馈与联系')
@@ -1574,7 +1624,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 0 ? BRAND_PRIMARY : Color.Transparent)
             .onClick(() => {
-              this.currentTab = 0;
+              this.switchTab(0, 'api');
             })
           Text('AI 偏好')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -1585,7 +1635,7 @@ export struct GlobalSettingsDialog {
             .backgroundColor(this.currentTab === 1 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
             .onClick(() => {
-              this.currentTab = 1;
+              this.switchTab(1, 'pref');
             })
           Text('司忆区') // ★ 0.202.1：改名「复习区」→「司忆区」（用户拍板——取「仓颉司文、此区司忆」之意，凸显注意力驱动记忆的独创性）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -1596,7 +1646,7 @@ export struct GlobalSettingsDialog {
             .backgroundColor(this.currentTab === 5 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
             .onClick(() => {
-              this.currentTab = 5;
+              this.switchTab(5, 'review');
               // 进 Tab 预填自定义值（>2 显示当前值，≤2 走快速项留空）
               this.reviewWordInput = this.learnCountStore.learnCount > 2 ? `${this.learnCountStore.learnCount}` : '';
               this.reviewCardInput = this.knowledgeCountStore.knowledgeCount > 2 ? `${this.knowledgeCountStore.knowledgeCount}` : '';
@@ -1615,7 +1665,7 @@ export struct GlobalSettingsDialog {
             .backgroundColor(this.currentTab === 6 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
             .onClick(() => {
-              this.currentTab = 6;
+              this.switchTab(6, 'backup');
               this.refreshBackupSnapshot(); // 进 Tab 刷新备份状态快照
             })
           Text('云同步') // ★ 0.165.2：Tab4 云同步（权限授权入口）
@@ -1627,7 +1677,7 @@ export struct GlobalSettingsDialog {
             .backgroundColor(this.currentTab === 3 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
             .onClick(() => {
-              this.currentTab = 3;
+              this.switchTab(3, 'cloud');
             })
           Text('关于') // ★ 0.190.6：Tab5 关于（版本号+反馈与联系+隐私政策）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -1638,7 +1688,7 @@ export struct GlobalSettingsDialog {
             .backgroundColor(this.currentTab === 4 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
             .onClick(() => {
-              this.currentTab = 4;
+              this.switchTab(4, 'about');
             })
           }
         }
@@ -1799,3 +1849,6 @@ export struct GlobalSettingsDialog {
     .alignContent(Alignment.Center)
   }
 }
+
+
+

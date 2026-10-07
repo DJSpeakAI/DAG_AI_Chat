@@ -18,6 +18,7 @@ import { streamChat } from '../utils/ApiClient';
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
 import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
+import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
@@ -146,6 +147,7 @@ export struct ReviewPage {
 
   // ★ 0.196.2：继续复习——把明天之后的未来内容提前背（pickReview* 的 future 段按 nextReviewAt 升序=最近的先）
   continueReview(): void {
+    track(this.getUIContext().getHostContext() as common.Context, 'review_continue'); // 0.206.0 埋点：继续复习按钮
     const now = Date.now();
     if (this.mode === 'word') {
       const all = pickReviewWords(this.wordBank, this.wordBank.words.length, now);
@@ -211,6 +213,8 @@ export struct ReviewPage {
     if (item === undefined) {
       return;
     }
+ const _tp1: Record<string, string> = {}; _tp1['rating'] = rating;
+    track(this.getUIContext().getHostContext() as common.Context, 'review_rate', _tp1); // 0.206.0 埋点：复习页评分
     applyRating(item, rating, Date.now());
     if (rating === 'hard') {
       this.ratedHard += 1;
@@ -987,3 +991,4 @@ export struct ReviewPage {
     })
   }
 }
+

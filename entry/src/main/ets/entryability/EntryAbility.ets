@@ -13,12 +13,15 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 机制（真机日志实证：进程存活时 call 走 Callee onRemoteMessageRequest 而非 onNewWant）
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
+import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
 import { buildBackupPayload, writeInternalBackup } from '../utils/BackupUtil'; // 0.205.0 三道防线：退后台自动内部备份
 import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
+import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核心（云函数通道前置）
+import { flushTrackQueue } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -47,6 +50,22 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（冷启动路径——method/params 在 want.parameters）
     this.registerWidgetCallee(); // ★ 0.204.1：桌面卡片 call（热路径——进程存活/解冻后走 Callee，onCreate 时注册一次）
+    this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
+  }
+
+  // ★ 0.206.0：初始化 AGC 核心（异步不阻塞启动；失败静默——埋点通道降级为仅 hiAppEvent 本地）
+  private initAgc(): void {
+    try {
+      this.context.resourceManager.getRawFileContent('agconnect-services.json').then((buf: Uint8Array) => {
+        const decoder = util.TextDecoder.create('utf-8');
+        const jsonStr = decoder.decodeWithStream(buf);
+        initialize(this.context, JSON.parse(jsonStr));
+      }).catch(() => {
+        // 配置缺失静默
+      });
+    } catch (_e) {
+      // 静默
+    }
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -188,6 +207,10 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.153：回前台——清除全局后台标志
     const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
     lifecycle.isBackground = false;
+    // ★ 0.206.2：回前台补发埋点队列——真机实证 onBackground 里发网络必被鸿蒙后台限制掐掉
+    //   （前台满批实测秒到，退后台 flush 全军覆没）；回前台网络已恢复，此处是可靠补发点
+    //   （失败仍有 0.206.2 队列回滚兜底 + 下次满批/onForeground 再试）
+    flushTrackQueue(this.context);
   }
 
   onBackground(): void {
@@ -203,5 +226,8 @@ export default class EntryAbility extends UIAbility {
     } catch (_e) {
       // 备份失败静默（下次启动会再备）
     }
+    // ★ 0.206.0 埋点：退后台尝试上报（★ 0.206.2 实证：多被鸿蒙后台网络限制掐掉，失败回滚队列——
+    //   真正可靠的补发点是 onForeground 回前台；此处保留碰运气，万一发了就赚）
+    flushTrackQueue(this.context);
   }
 }

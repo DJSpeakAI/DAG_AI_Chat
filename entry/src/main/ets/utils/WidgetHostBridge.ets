@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // WidgetHostBridge.ets — ★ 0.204.0 桌面卡片主应用侧桥
 // ============================================================
 // 职责（只在主应用进程调用——会 connect/操作 PersistenceV2 store 数据）：
@@ -13,6 +13,7 @@ import { pickReviewWords, pickReviewCards, applyRating, MemoryRating } from './M
 import { connectWordBank } from './WordStoreUtil';
 import { connectKnowledgeBank } from './KnowledgeStoreUtil';
 import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds } from './WidgetReviewUtil';
+import { track } from './TrackUtil'; // 0.206.0 埋点
 
 const DEF_MAX = 200; // 释义截断长度（防爆 preferences 快照）
 
@@ -103,6 +104,8 @@ export function mergeWidgetPending(context: Context,
 /** 卡片评分：真数据 applyRating + 快照 idx 推进 + 推送刷新 */
 export function handleWidgetRate(context: Context, rating: string): void {
   ensureWidgetFormIds(context); // 0.204.3：formId 自愈（卸载重装后 form_ids 空→卡片收不到推送）
+ const _tp1: Record<string, string> = {}; _tp1['rating'] = rating;
+  track(context, 'widget_rate', _tp1); // 0.206.0 埋点：桌面卡片评分
   const s = readWidgetState(context);
   const q = s.mode === 'word' ? s.word : s.knowledge;
   console.info(`[WGT] callRate mode=${s.mode} idx=${q.idx}/${q.items.length} done=${q.done} rating=${rating}`);
@@ -145,6 +148,8 @@ export function handleWidgetSwitch(context: Context, mode: string): void {
     return;
   }
   ensureWidgetFormIds(context); // 0.204.3：formId 自愈
+ const _tp2: Record<string, string> = {}; _tp2['mode'] = mode;
+  track(context, 'widget_switch', _tp2); // 0.206.0 埋点：桌面卡片切库
   const s = readWidgetState(context);
   s.mode = mode;
   writeWidgetStateForHost(context, s);
@@ -157,6 +162,7 @@ export function handleWidgetSwitch(context: Context, mode: string): void {
  */
 export function handleWidgetContinue(context: Context): void {
   ensureWidgetFormIds(context); // 0.204.3：formId 自愈
+  track(context, 'widget_continue'); // 0.206.0 埋点：桌面卡片继续复习
   const s = readWidgetState(context);
   const now = Date.now();
   const items: WidgetCardItem[] = [];
@@ -200,3 +206,4 @@ export function handleWidgetContinue(context: Context): void {
   s.noMore = 'n';
   writeWidgetStateForHost(context, s);
 }
+

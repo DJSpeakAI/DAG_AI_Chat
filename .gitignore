@@ -26,3 +26,5 @@ entry/src/main/resources/rawfile/config.json
 /scripts/redeem-hashes.txt
 
 test_out/
+
+entry/src/main/resources/rawfile/agconnect-services.json

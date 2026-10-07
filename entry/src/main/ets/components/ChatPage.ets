@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // ChatPage.ets — 对话页面（气泡内聊天界面）
 // ============================================================
 // 本文件是用户与 AI 对话的主界面，功能包括：
@@ -23,6 +23,8 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）
+import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext
+import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -934,6 +936,8 @@ export struct ChatPage {
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
+ const _tp1: Record<string, string> = {}; _tp1['mode'] = this.sendMode;
+    track(this.getUIContext().getHostContext() as common.Context, 'send_message', _tp1); // 0.206.0 埋点：发送（含模式）
     // ★ 0.190.2：纯文本模型发图拦截（用户批准方案）——预设清单已知纯文本 + 本次发送含图
     //   → 弹窗提醒切换多模态；多模态/自定义/清单外 ID 能力未知不拦截（等对方报错走关键词提示）
     if (this.pendingImages.length > 0 && isKnownTextOnlyModel(this.apiConfig.provider, this.apiConfig.model)) {
@@ -1656,6 +1660,7 @@ export struct ChatPage {
     if (this.wordPopupResult === null) {
       return;
     }
+    track(this.getUIContext().getHostContext() as common.Context, 'add_word_from_chat'); // 0.206.0 埋点：对话翻译弹窗加词
     const r = this.wordPopupResult;
     const item = new WordItem(r.word, r.fullName, r.usPhonetic, r.explain);
     const ok = addWordToBank(this.wordBank, item);
@@ -1715,6 +1720,8 @@ export struct ChatPage {
   // ★ 0.187.0：评分落库——按评分规则更新 S 与下次复习（方案B：现在+S），收起按钮
   // ★ 0.188.0：参数泛化 MemoryItem——单词/知识卡两库共用
   onReviewRate(key: string, w: MemoryItem, rating: MemoryRating): void {
+ const _tp2: Record<string, string> = {}; _tp2['rating'] = rating;
+    track(this.getUIContext().getHostContext() as common.Context, 'bubble_rate', _tp2); // 0.206.0 埋点：司忆区评分
     applyRating(w, rating, Date.now());
     const next = new Map<string, string>(this.reviewRatedMap);
     next.set(key, rating);
@@ -2257,6 +2264,7 @@ export struct ChatPage {
   // ★ 0.200.0：知识卡片导入落地（画布确认导航进来时 onShown 触发；action 空 = 普通进入直接跳过）
   // 文字格式：📚 知识卡片｜标题 + 定义 + 「（我想问：）」引导行——不自动发送，等用户补充问题（用户拍板）
   consumeCardImport(): void {
+    track(this.getUIContext().getHostContext() as common.Context, 'import_to_bubble'); // 0.206.0 埋点：知识卡片导入气泡
     const action = this.cardImport.action;
     if (action.length === 0) {
       return;
@@ -4248,6 +4256,7 @@ export struct ChatPage {
                 .onClick(() => {
                   this.sendMode = 'podcast';
                   this.modeMenuOpen = false;
+                  track(this.getUIContext().getHostContext() as common.Context, 'podcast_mode'); // 0.206.0 埋点：播客模式（伪需求验证重点）
                 })
               Text('口语化输出，适合朗读')
                 .fontSize(11)
@@ -4396,3 +4405,4 @@ export struct ChatPage {
     })
   }
 }
+
