@@ -14,7 +14,7 @@ import { preferences } from '@kit.ArkData';
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { WordItem, WordBankStore } from '../common/WordModel';
-import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
+import { KnowledgeCard, KnowledgeBankStore, KFolder } from '../common/KnowledgeModel';
 
 const SCHEMA_VERSION = 1;
 const PREF_BACKUP = 'backup_settings';
@@ -31,6 +31,7 @@ export interface BackupPayload {
   exportedAt: number;
   words: Record<string, Object>[];
   cards: Record<string, Object>[];
+  folders?: Record<string, Object>[]; // ★ 0.207.0：知识库文件夹（可选——旧备份无此字段，恢复端兼容）
 }
 
 /** 备份设置快照（UI 显示用） */
@@ -77,6 +78,17 @@ function cardToPlain(c: KnowledgeCard): Record<string, Object> {
   o['nextReviewAt'] = c.nextReviewAt;
   o['tags'] = c.tags;
   o['images'] = c.images;
+  o['folderId'] = c.folderId; // ★ 0.207.0：所属文件夹（anything 导入体系）
+  return o;
+}
+
+/** ★ 0.207.0：文件夹平铺序列化（同 cardToPlain 理由——@Trace 字段手写映射） */
+function folderToPlain(f: KFolder): Record<string, Object> {
+  const o: Record<string, Object> = {};
+  o['id'] = f.id;
+  o['name'] = f.name;
+  o['parentId'] = f.parentId;
+  o['createdAt'] = f.createdAt;
   return o;
 }
 
@@ -85,7 +97,9 @@ export function buildBackupPayload(wordBank: WordBankStore, knowledgeBank: Knowl
   wordBank.words.forEach((w: WordItem) => words.push(wordToPlain(w)));
   const cards: Record<string, Object>[] = [];
   knowledgeBank.cards.forEach((c: KnowledgeCard) => cards.push(cardToPlain(c)));
-  return { schemaVersion: SCHEMA_VERSION, exportedAt: Date.now(), words: words, cards: cards };
+  const folders: Record<string, Object>[] = [];
+  knowledgeBank.folders.forEach((f: KFolder) => folders.push(folderToPlain(f)));
+  return { schemaVersion: SCHEMA_VERSION, exportedAt: Date.now(), words: words, cards: cards, folders: folders };
 }
 
 function payloadToJson(p: BackupPayload): string {
@@ -223,7 +237,23 @@ function reviveCard(src: Record<string, Object>): KnowledgeCard {
   c.nextReviewAt = (src['nextReviewAt'] ?? 0) as number;
   c.tags = (src['tags'] ?? '') as string;
   c.images = (src['images'] ?? '') as string;
+  c.folderId = (src['folderId'] ?? '') as string; // ★ 0.207.0：旧备份无此字段 → 根目录
   return c;
+}
+
+/** ★ 0.207.0：文件夹 revive（旧备份无 folders → 不动现有目录结构） */
+function reviveFolder(src: Record<string, Object>): KFolder | undefined {
+  const id = (src['id'] ?? '') as string;
+  const name = (src['name'] ?? '') as string;
+  if (id.length === 0 || name.length === 0) {
+    return undefined;
+  }
+  const f = new KFolder();
+  f.id = id;
+  f.name = name;
+  f.parentId = (src['parentId'] ?? '') as string;
+  f.createdAt = (src['createdAt'] ?? 0) as number;
+  return f;
 }
 
 /**
@@ -267,6 +297,25 @@ export function restoreFromPayload(wordBank: WordBankStore, knowledgeBank: Knowl
     count += 1;
   });
   knowledgeBank.cards = cards;
+
+  // ★ 0.207.0：文件夹合并恢复（旧备份无 folders 字段 → 跳过不动现有目录）
+  if (Array.isArray(p.folders) && p.folders.length > 0) {
+    const folders: KFolder[] = [];
+    knowledgeBank.folders.forEach((f: KFolder) => folders.push(f));
+    p.folders.forEach((src: Record<string, Object>) => {
+      const revived = reviveFolder(src);
+      if (revived === undefined) {
+        return;
+      }
+      const idx = folders.findIndex((f: KFolder): boolean => f.id === revived.id);
+      if (idx >= 0) {
+        folders[idx] = revived;
+      } else {
+        folders.push(revived);
+      }
+    });
+    knowledgeBank.folders = folders;
+  }
   return count;
 }
 

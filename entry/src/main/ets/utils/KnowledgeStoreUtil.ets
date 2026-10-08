@@ -17,7 +17,7 @@
 // ============================================================
 
 import { PersistenceV2 } from '@kit.ArkUI';
-import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
+import { KnowledgeCard, KnowledgeBankStore, KFolder } from '../common/KnowledgeModel';
 
 // Dedicated PersistenceV2 key, isolated from bubble tree / word bank keys
 const KNOWLEDGE_BANK_KEY = 'knowledge-bank';
@@ -141,7 +141,142 @@ function normalizeCardMemoryFields(store: KnowledgeBankStore): void {
     if (typeof c.nextReviewAt !== 'number' || !isFinite(c.nextReviewAt)) {
       c.nextReviewAt = 0;
     }
+    if (typeof c.folderId !== 'string') {
+      c.folderId = ''; // ★ 0.207.0：存量卡补 folderId 兜底（旧快照缺失 → 根目录）
+    }
   }
+  if (!(store.folders instanceof Array)) {
+    store.folders = []; // ★ 0.207.0：旧快照无 folders 字段兜底
+  }
+}
+
+// ============================================================
+// ★ 0.207.0：文件夹 CRUD + 卡片移动/复制（anything 导入体系）
+// ============================================================
+
+function genFolderId(): string {
+  return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/** 新建文件夹（同名允许——id 唯一即可；返回新文件夹 id） */
+export function addFolder(store: KnowledgeBankStore, name: string, parentId: string): string {
+  const nm = name.trim();
+  if (nm.length === 0) {
+    return '';
+  }
+  const f = new KFolder(genFolderId(), nm, parentId, Date.now());
+  store.folders = [...store.folders, f];
+  return f.id;
+}
+
+/** 重命名文件夹 */
+export function renameFolder(store: KnowledgeBankStore, folderId: string, name: string): void {
+  const nm = name.trim();
+  if (nm.length === 0) {
+    return;
+  }
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].id === folderId) {
+      store.folders[i].name = nm;
+      return;
+    }
+  }
+}
+
+/**
+ * 删除文件夹——卡片与子文件夹一律**上移到被删文件夹的父级**（绝不删卡，数据安全红线）。
+ */
+export function deleteFolder(store: KnowledgeBankStore, folderId: string): void {
+  const target = store.folders.find((f: KFolder): boolean => f.id === folderId);
+  if (target === undefined) {
+    return;
+  }
+  const upParent = target.parentId;
+  for (let i = 0; i < store.cards.length; i++) {
+    if (store.cards[i].folderId === folderId) {
+      store.cards[i].folderId = upParent;
+    }
+  }
+  const newFolders: KFolder[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].id === folderId) {
+      continue;
+    }
+    if (store.folders[i].parentId === folderId) {
+      store.folders[i].parentId = upParent;
+    }
+    newFolders.push(store.folders[i]);
+  }
+  store.folders = newFolders;
+}
+
+/** 移动卡片（批量）到目标文件夹（folderId='' 即根目录） */
+export function moveCards(store: KnowledgeBankStore, cardIds: string[], folderId: string): void {
+  for (let i = 0; i < store.cards.length; i++) {
+    if (cardIds.includes(store.cards[i].id)) {
+      store.cards[i].folderId = folderId;
+    }
+  }
+}
+
+/**
+ * 复制卡片（批量）到目标文件夹——新 id / 新 createdAt，记忆字段清零（新卡从零开始，
+ * 复制的是内容不是进度）；返回新增张数。
+ */
+export function copyCards(store: KnowledgeBankStore, cardIds: string[], folderId: string): number {
+  let n = 0;
+  const now = Date.now();
+  const copies: KnowledgeCard[] = [];
+  for (let i = 0; i < store.cards.length; i++) {
+    const src = store.cards[i];
+    if (!cardIds.includes(src.id)) {
+      continue;
+    }
+    const cp = new KnowledgeCard(genCardId(), src.title, src.definition, src.imageUri, now + n,
+      0, 0, 0, 0, src.tags, src.images, folderId);
+    copies.push(cp);
+    n++;
+  }
+  if (copies.length > 0) {
+    store.cards = [...copies, ...store.cards];
+  }
+  return n;
+}
+
+/** 取文件夹名链（根→…→当前）——面包屑/导出路径用 */
+export function folderChain(store: KnowledgeBankStore, folderId: string): KFolder[] {
+  const chain: KFolder[] = [];
+  let cur = store.folders.find((f: KFolder): boolean => f.id === folderId);
+  // 深度上限 32 防环（数据异常时不死循环）
+  let guard = 0;
+  while (cur !== undefined && guard < 32) {
+    chain.unshift(cur);
+    const pid: string = cur.parentId;
+    cur = pid.length === 0 ? undefined : store.folders.find((f: KFolder): boolean => f.id === pid);
+    guard++;
+  }
+  return chain;
+}
+
+/**
+ * 逐级找/建文件夹路径（导入用）——names 形如 ['英语','词根']（Anki deck "A::B::C" 拆解后），
+ * 已有同名子文件夹则复用（幂等——重复导入不产生重复文件夹）；返回最深层 folderId。
+ */
+export function ensureFolderPath(store: KnowledgeBankStore, names: string[], parentId: string): string {
+  let pid = parentId;
+  for (let i = 0; i < names.length; i++) {
+    const nm = names[i].trim();
+    if (nm.length === 0) {
+      continue;
+    }
+    const exist = store.folders.find((f: KFolder): boolean => f.parentId === pid && f.name === nm);
+    if (exist !== undefined) {
+      pid = exist.id;
+    } else {
+      pid = addFolder(store, nm, pid);
+    }
+  }
+  return pid;
 }
 
 // ★ 0.148: unique card id generator — timestamp(base36) + random suffix

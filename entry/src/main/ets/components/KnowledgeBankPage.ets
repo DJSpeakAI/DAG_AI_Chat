@@ -30,11 +30,16 @@ import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnow
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
-import { fileIo } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64
+import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64；★ 0.207.0 picker：文档选/存（批量导入 CSV/TXT、导出 CSV）
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
+// ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
+import { KFolder } from '../common/KnowledgeModel';
+import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain } from '../utils/KnowledgeStoreUtil';
+import { ImportRow, readTextFile, parseTextToRows, cardsToCsv } from '../utils/ImportUtil';
+import { track } from '../utils/TrackUtil';
 
 @ComponentV2
 export struct KnowledgeBankPage {
@@ -147,6 +152,37 @@ export struct KnowledgeBankPage {
   // ★ 0.148: batch-delete confirm dialog state (always shown, no no-remind)
   @Local batchConfirmVisible: boolean = false;
 
+  // ── ★ 0.207.0：文件夹体系（anything 导入）状态 ──
+  @Local currentFolderId: string = '';          // '' = 根目录（面包屑跳转/文件夹点击切换）
+  @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
+  @Local folderDialogIsRename: boolean = false;
+  @Local folderDialogTargetId: string = '';
+  @Local folderDialogName: string = '';
+  @Local folderPickerVisible: boolean = false;  // 移动/复制目标选择弹窗
+  @Local moveOrCopyMode: string = 'move';       // 'move' | 'copy'（folderPicker 确认时分流）
+  @Local importPreviewVisible: boolean = false; // 批量导入预览弹窗
+  @Local importRows: ImportRow[] = [];
+  @Local importFileName: string = '';
+  @Local importFormat: string = 'txt';
+
+  /** 当前目录的子文件夹（新在前）；卡片计数用 folderCardCount() */
+  @Computed
+  get currentFolders(): KFolder[] {
+    return this.knowledgeBank.folders
+      .filter((f: KFolder): boolean => f.parentId === this.currentFolderId)
+      .sort((a: KFolder, b: KFolder) => b.createdAt - a.createdAt);
+  }
+
+  folderCardCount(folderId: string): number {
+    let n = 0;
+    for (let i = 0; i < this.knowledgeBank.cards.length; i++) {
+      if (this.knowledgeBank.cards[i].folderId === folderId) {
+        n++;
+      }
+    }
+    return n;
+  }
+
   // ★ 0.161.2: knowledge-card count settings dialog state (top-bar ⚙ button, left of "+")
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // persisted card count (default 1, range 1~20)
   @Local cardSettingsVisible: boolean = false;
@@ -160,8 +196,10 @@ export struct KnowledgeBankPage {
     const kw = this.searchKeyword.trim().toLowerCase();
     let list: KnowledgeCard[] = [];
     if (kw.length === 0) {
-      list = [...this.knowledgeBank.cards];
+      // ★ 0.207.0：目录视图——无关键字只看当前文件夹（跨库找卡走搜索）
+      list = this.knowledgeBank.cards.filter((c: KnowledgeCard) => c.folderId === this.currentFolderId);
     } else {
+      // 搜索保持全库（含所有文件夹——找卡不被目录困住）
       list = this.knowledgeBank.cards.filter((c: KnowledgeCard) => {
         return c.title.toLowerCase().includes(kw)
           || c.definition.toLowerCase().includes(kw);
@@ -438,16 +476,19 @@ export struct KnowledgeBankPage {
           this.cardSettingsVisible = true;
         })
       if (!this.multiSelectMode) {
-        // ★ 0.148: add button — top bar's right, opens the editor dialog
+        // ★ 0.207.0：+ 升级为菜单——anything 导入体系入口（新建卡片/文件夹/批量导入/导出）
         Button('+')
           .fontSize(20)
           .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
           .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
-          .onClick(() => {
-            this.openAddEditor();
-          })
+          .bindMenu([
+            { value: '新建卡片', action: () => { this.openAddEditor(); } },
+            { value: '新建文件夹', action: () => { this.openFolderCreate(); } },
+            { value: '批量导入（TXT · CSV）', action: () => { this.pickImportFile(); } },
+            { value: '导出 CSV（当前文件夹）', action: () => { this.doExportCsv(); } }
+          ])
       } else {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
@@ -983,11 +1024,404 @@ export struct KnowledgeBankPage {
     .backgroundColor(OVERLAY)
   }
 
+  // ============================================================
+  // ★ 0.207.0：文件夹 / 导入 / 导出 —— 方法集
+  // ============================================================
+
+  /** 当前目录名链（根→…→当前）——面包屑/导出命名用 */
+  @Computed
+  get currentChain(): KFolder[] {
+    return folderChain(this.knowledgeBank, this.currentFolderId);
+  }
+
+  folderParentId(): string {
+    const ch = this.currentChain;
+    return ch.length > 0 ? ch[ch.length - 1].parentId : '';
+  }
+
+  folderFullPath(f: KFolder): string {
+    return folderChain(this.knowledgeBank, f.id).map((x: KFolder): string => x.name).join(' › ');
+  }
+
+  openFolderCreate(): void {
+    this.folderDialogIsRename = false;
+    this.folderDialogTargetId = '';
+    this.folderDialogName = '';
+    this.folderDialogVisible = true;
+  }
+
+  openFolderRename(f: KFolder): void {
+    this.folderDialogIsRename = true;
+    this.folderDialogTargetId = f.id;
+    this.folderDialogName = f.name;
+    this.folderDialogVisible = true;
+  }
+
+  confirmFolderDialog(): void {
+    const nm = this.folderDialogName.trim();
+    if (nm.length === 0) {
+      this.showToast('名称不能为空');
+      return;
+    }
+    if (this.folderDialogIsRename) {
+      renameFolder(this.knowledgeBank, this.folderDialogTargetId, nm);
+    } else {
+      addFolder(this.knowledgeBank, nm, this.currentFolderId);
+      const tp: Record<string, string> = {};
+      track(this.getUIContext().getHostContext() as Context, 'folder_create', tp);
+    }
+    this.folderDialogVisible = false;
+  }
+
+  requestDeleteFolder(f: KFolder): void {
+    deleteFolder(this.knowledgeBank, f.id);
+    if (this.currentFolderId === f.id) {
+      this.currentFolderId = this.folderParentId();
+    }
+    this.showToast(`已删除「${f.name}」——卡片已移到上一级`);
+  }
+
+  /** 移动/复制确认（folderPicker 行点击） */
+  confirmFolderTarget(folderId: string): void {
+    const ids = [...this.selectedIds];
+    if (this.moveOrCopyMode === 'copy') {
+      const n = copyCards(this.knowledgeBank, ids, folderId);
+      const tp: Record<string, string> = {}; tp['count'] = `${n}`; // ArkTS 铁律：空对象+键赋值（0.206 挂点同款）
+      track(this.getUIContext().getHostContext() as Context, 'card_copy', tp);
+      this.showToast(`已复制 ${n} 张（新卡从零复习）`);
+    } else {
+      moveCards(this.knowledgeBank, ids, folderId);
+      const tp: Record<string, string> = {}; tp['count'] = `${ids.length}`;
+      track(this.getUIContext().getHostContext() as Context, 'card_move', tp);
+      this.showToast(`已移动 ${ids.length} 张`);
+    }
+    this.folderPickerVisible = false;
+    this.exitMultiSelect();
+  }
+
+  /** 批量导入第一步：选文件 → 解析 → 预览弹窗 */
+  async pickImportFile(): Promise<void> {
+    try {
+      const doc = new picker.DocumentViewPicker();
+      const selOpt = new picker.DocumentSelectOptions();
+      selOpt.fileSuffixFilters = ['.txt', '.csv'];
+      selOpt.maxSelectNumber = 1;
+      const uris: string[] = await doc.select(selOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const uri = uris[0];
+      const fmt = uri.toLowerCase().endsWith('.csv') ? 'csv' : 'txt';
+      const text = readTextFile(uri);
+      const rows = parseTextToRows(text, fmt);
+      if (rows.length === 0) {
+        this.showToast('没解析出卡片：每行需「标题 + 分隔符 + 背面」（TXT 用 Tab 或 |，CSV 用逗号）');
+        return;
+      }
+      this.importRows = rows;
+      this.importFormat = fmt;
+      this.importFileName = uri.substring(uri.lastIndexOf('/') + 1);
+      this.importPreviewVisible = true;
+    } catch (_e) {
+      this.showToast('选文件失败');
+    }
+  }
+
+  /** 预览确认 → 入库（当前文件夹） */
+  confirmImport(): void {
+    const now = Date.now();
+    let n = 0;
+    for (let i = 0; i < this.importRows.length; i++) {
+      const r = this.importRows[i];
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', r.title, r.definition, '', now + i,
+        0, 0, 0, 0, r.tags, '', this.currentFolderId));
+      n++;
+    }
+    const tp: Record<string, string> = {}; tp['format'] = this.importFormat; tp['count'] = `${n}`;
+    track(this.getUIContext().getHostContext() as Context, 'batch_import', tp);
+    this.showToast(`已导入 ${n} 张`);
+    this.importPreviewVisible = false;
+  }
+
+  /** 导出当前视图卡片为 CSV（无搜索=当前文件夹全部；搜索中=结果集——导出所见） */
+  async doExportCsv(): Promise<void> {
+    try {
+      const cards = this.filteredCards;
+      if (cards.length === 0) {
+        this.showToast('当前没有卡片可导出');
+        return;
+      }
+      const names = this.currentChain.map((x: KFolder): string => x.name).join('/');
+      const scopeName = names.length === 0 ? '知识库根目录' : names;
+      const csv = cardsToCsv(cards, scopeName);
+      // ★ 写法抄 BackupUtil 0.205.1 定稿：DocumentViewPicker.save + Options 实例（本 SDK 无 DocumentSavePicker 类）
+      const saver = new picker.DocumentViewPicker();
+      const saveOpt = new picker.DocumentSaveOptions();
+      saveOpt.newFileNames = ['DAGAI_知识库.csv'];
+      const uris: string[] = await saver.save(saveOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const f = fileIo.openSync(uris[0], fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(f.fd, csv); // 0.205.1 教训：WRITE_ONLY|CREATE|TRUNC 组合（autoCreateEmptyFile 预创建坑在 save picker 无此问题，写入字节数隐含校验）
+      fileIo.closeSync(f);
+      const tp: Record<string, string> = {}; tp['count'] = `${cards.length}`;
+      track(this.getUIContext().getHostContext() as Context, 'export_csv', tp);
+      this.showToast(`已导出 ${cards.length} 张 → CSV`);
+    } catch (_e) {
+      this.showToast('导出失败');
+    }
+  }
+
+  // ============================================================
+  // ★ 0.207.0：builders——面包屑 / 文件夹弹窗 / 目标选择 / 导入预览
+  // ============================================================
+
+  @Builder
+  folderBreadcrumb() {
+    Scroll() {
+      Row() {
+        Text('知识库')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .onClick(() => {
+            this.currentFolderId = '';
+          })
+        ForEach(this.currentChain, (f: KFolder, idx: number) => {
+          Text(' › ')
+            .fontSize(12)
+            .fontColor(TEXT_TERTIARY)
+          Text(f.name)
+            .fontSize(13)
+            .fontColor(idx === this.currentChain.length - 1 ? TEXT_PRIMARY : BRAND_SECONDARY)
+            .maxLines(1)
+            .onClick(() => {
+              this.currentFolderId = f.id;
+            })
+        }, (f: KFolder) => f.id)
+      }
+      .padding({ left: 16, right: 16, top: 2, bottom: 2 })
+    }
+    .scrollable(ScrollDirection.Horizontal) // ★ API26 Scroll 构造只收 Scroller——水平滚动用 scrollable 属性
+    .width('100%')
+    .align(Alignment.Start)
+  }
+
+  @Builder
+  folderDialog() {
+    Column() {
+      Column() {
+        Text(this.folderDialogIsRename ? '重命名文件夹' : '新建文件夹')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        TextInput({ text: this.folderDialogName, placeholder: '文件夹名称' })
+          .fontSize(14)
+          .height(40)
+          .margin({ top: 12 })
+          .padding({ left: 10, right: 10 })
+          .backgroundColor(SURFACE_SOFT)
+          .borderRadius(8)
+          .onChange((v: string) => {
+            this.folderDialogName = v;
+          })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.folderDialogVisible = false;
+            })
+          Button('确定')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmFolderDialog();
+            })
+        }
+        .margin({ top: 14 })
+      }
+      .width('86%')
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.folderDialogVisible = false;
+    })
+  }
+
+  @Builder
+  folderPickerDialog() {
+    Column() {
+      Column() {
+        Text(this.moveOrCopyMode === 'copy' ? `复制 ${this.selectedIds.length} 张到…` : `移动 ${this.selectedIds.length} 张到…`)
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Scroll() {
+          Column() {
+            Row() {
+              Text('📂 根目录')
+                .fontSize(14)
+                .fontColor(TEXT_PRIMARY)
+                .layoutWeight(1)
+              Text('选择')
+                .fontSize(12)
+                .fontColor(BRAND_SECONDARY)
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(8)
+            .backgroundColor(SURFACE_SOFT)
+            .margin({ top: 10 })
+            .onClick(() => {
+              this.confirmFolderTarget('');
+            })
+            ForEach(this.knowledgeBank.folders, (f: KFolder) => {
+              Row() {
+                Text('📁 ' + this.folderFullPath(f))
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text('选择')
+                  .fontSize(12)
+                  .fontColor(BRAND_SECONDARY)
+              }
+              .width('100%')
+              .padding(12)
+              .borderRadius(8)
+              .backgroundColor(SURFACE_SOFT)
+              .margin({ top: 6 })
+              .onClick(() => {
+                this.confirmFolderTarget(f.id);
+              })
+            }, (f: KFolder) => f.id)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 320 })
+        Text('取消')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 10 })
+          .onClick(() => {
+            this.folderPickerVisible = false;
+          })
+      }
+      .width('86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.folderPickerVisible = false;
+    })
+  }
+
+  @Builder
+  importPreviewDialog() {
+    Column() {
+      Column() {
+        Text('批量导入预览')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(`${this.importFileName} · 解析到 ${this.importRows.length} 张 · ${this.importFormat.toUpperCase()} 格式`)
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Scroll() {
+          Column() {
+            ForEach(this.importRows.slice(0, 10), (r: ImportRow, i: number) => {
+              Column() {
+                Text(`${i + 1}. ${r.title}`)
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .maxLines(1)
+                Text(r.definition)
+                  .fontSize(12)
+                  .fontColor(TEXT_TERTIARY)
+                  .maxLines(1)
+                  .margin({ top: 2 })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+              .padding(8)
+              .borderRadius(8)
+              .backgroundColor(SURFACE_SOFT)
+              .margin({ top: 6 })
+            }, (r: ImportRow, i: number) => `${i}-${r.title}`)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 300 })
+        if (this.importRows.length > 10) {
+          Text(`… 其余 ${this.importRows.length - 10} 张省略`)
+            .fontSize(12)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 4 })
+        }
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.importPreviewVisible = false;
+            })
+          Button(`导入 ${this.importRows.length} 张`)
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmImport();
+            })
+        }
+        .margin({ top: 12 })
+      }
+      .width('86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.importPreviewVisible = false;
+    })
+  }
+
   build() {
     NavDestination() {
       Stack() {
         Column() {
           this.topBar()
+
+          // ★ 0.207.0：面包屑（非根目录显示；点级名跳转，点「知识库」回根）
+          if (this.currentFolderId.length > 0) {
+            this.folderBreadcrumb()
+          }
 
           if (!this.multiSelectMode) {
             // ★ 0.148: search box + sort toggle (live filtering via @Computed)
@@ -1031,6 +1465,34 @@ export struct KnowledgeBankPage {
               Text(`已选 ${this.selectedIds.length} 项`)
                 .fontSize(13)
                 .fontColor(TEXT_TERTIARY)
+              // ★ 0.207.0：批量移动/复制到文件夹（单张=多选 1 张，交互统一）
+              Button('移动')
+                .fontSize(13)
+                .fontColor(BRAND_SECONDARY)
+                .backgroundColor(Color.Transparent)
+                .padding({ left: 6, right: 6 })
+                .margin({ left: 4 })
+                .onClick(() => {
+                  if (this.selectedIds.length === 0) {
+                    this.showToast('先选中卡片');
+                    return;
+                  }
+                  this.moveOrCopyMode = 'move';
+                  this.folderPickerVisible = true;
+                })
+              Button('复制')
+                .fontSize(13)
+                .fontColor(BRAND_SECONDARY)
+                .backgroundColor(Color.Transparent)
+                .padding({ left: 6, right: 6 })
+                .onClick(() => {
+                  if (this.selectedIds.length === 0) {
+                    this.showToast('先选中卡片');
+                    return;
+                  }
+                  this.moveOrCopyMode = 'copy';
+                  this.folderPickerVisible = true;
+                })
               Button('取消')
                 .fontSize(13)
                 .fontColor(TEXT_SECONDARY)
@@ -1045,7 +1507,7 @@ export struct KnowledgeBankPage {
             .padding({ left: 16, right: 16, top: 4, bottom: 4 })
           }
 
-          if (this.knowledgeBank.cards.length === 0) {
+          if (this.knowledgeBank.cards.length === 0 && this.knowledgeBank.folders.length === 0) {
             // Empty bank — guide the user to both entry points (0.148 adds manual add)
             Column() {
               Text('知识库为空')
@@ -1059,13 +1521,13 @@ export struct KnowledgeBankPage {
             .width('100%')
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-          } else if (this.filteredCards.length === 0) {
-            // ★ 0.148: search matched nothing — distinct from the empty bank
+          } else if (this.filteredCards.length === 0 && this.currentFolders.length === 0) {
+            // ★ 0.207.0：目录空态（搜索无结果 / 空文件夹二合一文案）
             Column() {
-              Text('无匹配结果')
+              Text(this.searchKeyword.length > 0 ? '无匹配结果' : '此文件夹为空')
                 .fontSize(16)
                 .fontColor(TEXT_TERTIARY)
-              Text('换个关键词试试')
+              Text(this.searchKeyword.length > 0 ? '换个关键词试试' : '点右上角 + 导入或新建')
                 .fontSize(12)
                 .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
@@ -1075,6 +1537,48 @@ export struct KnowledgeBankPage {
             .justifyContent(FlexAlign.Center)
           } else {
             List({ space: 8 }) {
+              // ★ 0.207.0：文件夹区（当前目录子文件夹，新在前；搜索/多选模式隐藏）
+              if (this.searchKeyword.trim().length === 0 && !this.multiSelectMode) {
+                ForEach(this.currentFolders, (f: KFolder) => {
+                  ListItem() {
+                    Row() {
+                      Text('📁')
+                        .fontSize(18)
+                        .margin({ right: 10 })
+                      Text(f.name)
+                        .fontSize(14)
+                        .fontWeight(600)
+                        .fontColor(TEXT_PRIMARY)
+                        .layoutWeight(1)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      Text(`${this.folderCardCount(f.id)} 张`)
+                        .fontSize(12)
+                        .fontColor(TEXT_TERTIARY)
+                      // ⋯ 菜单：重命名/删除（与行点击分流——行点击=进入目录）
+                      Text('⋯')
+                        .fontSize(18)
+                        .fontColor(TEXT_TERTIARY)
+                        .padding({ left: 10, right: 2 })
+                        .bindMenu([
+                          { value: '重命名', action: () => { this.openFolderRename(f); } },
+                          { value: '删除文件夹（卡片移到上一级）', action: () => { this.requestDeleteFolder(f); } }
+                        ])
+                    }
+                    .width('100%')
+                    .padding(12)
+                    .borderRadius(RADIUS_CONTROL)
+                    .backgroundColor(SURFACE_SOFT)
+                    .borderColor(STROKE_CARD)
+                    .borderWidth(1)
+                    .alignItems(VerticalAlign.Center)
+                    .onClick(() => {
+                      this.currentFolderId = f.id;
+                      this.searchKeyword = ''; // 进目录清搜索（目录视图）
+                    })
+                  }
+                }, (f: KFolder) => f.id)
+              }
               ForEach(this.filteredCards, (c: KnowledgeCard) => {
                 ListItem() {
                   Row() {
@@ -1247,6 +1751,16 @@ export struct KnowledgeBankPage {
         if (this.editorImagePreviewVisible) {
           this.editorImagePreview()
         }
+        // ★ 0.207.0：文件夹/导入/导出弹窗（最顶层）
+        if (this.folderDialogVisible) {
+          this.folderDialog()
+        }
+        if (this.folderPickerVisible) {
+          this.folderPickerDialog()
+        }
+        if (this.importPreviewVisible) {
+          this.importPreviewDialog()
+        }
       }
       .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
     }
@@ -1281,8 +1795,26 @@ export struct KnowledgeBankPage {
         this.cardSettingsVisible = false;
         return true;
       }
+      // ★ 0.207.0：新弹窗先关（导入预览 > 目标选择 > 文件夹命名）
+      if (this.importPreviewVisible) {
+        this.importPreviewVisible = false;
+        return true;
+      }
+      if (this.folderPickerVisible) {
+        this.folderPickerVisible = false;
+        return true;
+      }
+      if (this.folderDialogVisible) {
+        this.folderDialogVisible = false;
+        return true;
+      }
       if (this.multiSelectMode) {
         this.exitMultiSelect();
+        return true;
+      }
+      // ★ 0.207.0：非根目录时返回=回上一级（最后才退出页面）
+      if (this.currentFolderId.length > 0) {
+        this.currentFolderId = this.folderParentId();
         return true;
       }
       return false;

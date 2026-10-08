@@ -42,15 +42,17 @@ export class KnowledgeCard {
   @Trace nextReviewAt: number = 0; // 计划下次复习时间戳（ms）；0 = 新卡，视为已到期
   @Trace tags: string = '';        // ★ 0.202.0：标签（逗号/顿号/空格分隔原样存储；'' = 无标签）——注意力加权数据底座
   @Trace images: string = '';      // ★ 0.202.1：多图（JSON string[]；'' = 无图。imageUri 保留兼容——getCardImages 统一读取）
+  @Trace folderId: string = '';    // ★ 0.207.0：所属文件夹（'' = 根目录）——anything 导入体系（对标 Anki 牌组）
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
   // ★ 0.188.0: 4 memory fields appended at the tail — legacy 5-arg call sites unchanged.
   // ★ 0.202.0: tags appended at the tail — legacy 9-arg call sites unchanged.
   // ★ 0.202.1: images appended at the tail — legacy 10-arg call sites unchanged.
+  // ★ 0.207.0: folderId appended at the tail — legacy 11-arg call sites unchanged（Schema 铁律：只尾部追加）.
   constructor(id: string = '', title: string = '', definition: string = '', imageUri: string = '', createdAt: number = 0,
     strength: number = 0, reviewCount: number = 0, lastReviewAt: number = 0, nextReviewAt: number = 0,
-    tags: string = '', images: string = '') {
+    tags: string = '', images: string = '', folderId: string = '') {
     this.id = id;
     this.title = title;
     this.definition = definition;
@@ -62,6 +64,23 @@ export class KnowledgeCard {
     this.nextReviewAt = nextReviewAt;
     this.tags = tags;
     this.images = images;
+    this.folderId = folderId;
+  }
+}
+
+/** ★ 0.207.0：知识库文件夹（对标 Anki 牌组层级；parentId='' = 根） */
+@ObservedV2
+export class KFolder {
+  @Trace id: string = '';
+  @Trace name: string = '';
+  @Trace parentId: string = '';   // '' = 根目录
+  @Trace createdAt: number = 0;
+
+  constructor(id: string = '', name: string = '', parentId: string = '', createdAt: number = 0) {
+    this.id = id;
+    this.name = name;
+    this.parentId = parentId;
+    this.createdAt = createdAt;
   }
 }
 
@@ -92,6 +111,7 @@ export function parseTags(tags: string): string[] {
 @ObservedV2
 export class KnowledgeBankStore {
   @Type(KnowledgeCard) @Trace cards: KnowledgeCard[] = [];
+  @Type(KFolder) @Trace folders: KFolder[] = []; // ★ 0.207.0：文件夹层级（anything 导入体系）
 }
 
 // Result shape of an AI card draft (returned by ApiClient.queryKnowledge).
