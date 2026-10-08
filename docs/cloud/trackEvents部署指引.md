@@ -71,7 +71,7 @@ Pad（TrackUtil.ets 攒批/回前台补发）
 
 | # | 现象 | 真相 |
 |---|------|------|
-| 1 | 提交代码不生效、测试面板转圈 | **旧浏览器假提交**（点了不报错但没保存）——换浏览器即愈 |
+| 1 | 提交代码不生效、测试面板转圈、Cloud DB 导出失败 | **浏览器无痕模式**——提交静默不保存（不报错！）。一切 AGC 后台操作必须用**非无痕窗口** |
 | 2 | @@Start→@@End 2ms 无用户日志 | 函数跑的是空模板（#1 的后果）；另在线编辑器不内置 cloud-server 依赖 |
 | 3 | zip 传了 node_modules 仍 Cannot find module | ①PS5.1 Compress-Archive 条目用反斜杠（Linux 解压毁目录结构）②**平台本就无视函数包内 node_modules，依赖必须走层** |
 | 4 | Please create instance with path or AGC_CONFIG | SDK 需项目级凭证：Server SDK 页签下载 + `cloud.createInstance()` |

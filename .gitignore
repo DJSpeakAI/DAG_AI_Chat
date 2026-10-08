@@ -28,3 +28,5 @@ entry/src/main/resources/rawfile/config.json
 test_out/
 
 entry/src/main/resources/rawfile/agconnect-services.json
+
+default_events*.json
