@@ -27,6 +27,11 @@
 import { WordItem, WordBankStore } from '../common/WordModel';
 import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
 import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）
+// ★ 0.208.0：单词库 DagPack 导入导出（只走 DagPack——用户拍板不做 Anki/表格）
+import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord } from '../utils/PackUtil';
+import { readTextFile } from '../utils/ImportUtil';
+import { fileIo, picker } from '@kit.CoreFileKit';
+import { track } from '../utils/TrackUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：下次复习时间标签（记忆算法）
 import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.1：发音语音包管理（listVoices 状态查询 + downloadVoice 应用内下载）
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
@@ -245,6 +250,74 @@ export struct WordBankPage {
 
   // ---- editor dialog (add & edit share it) ----
 
+  // ============================================================
+  // ★ 0.208.0：单词库 DagPack 导入导出
+  // ============================================================
+
+  /** 导出整库单词为 DagPack（wordbank 类，全量平铺） */
+  async doExportWordPack(): Promise<void> {
+    try {
+      if (this.wordBank.words.length === 0) {
+        this.showToast('单词库为空，无可导出');
+        return;
+      }
+      const json = packToJson(buildWordPack(this.wordBank));
+      const saver = new picker.DocumentViewPicker();
+      const saveOpt = new picker.DocumentSaveOptions();
+      saveOpt.newFileNames = ['DAGAI_单词库.dagpack'];
+      const uris: string[] = await saver.save(saveOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const f = fileIo.openSync(uris[0], fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(f.fd, json);
+      fileIo.closeSync(f);
+      const tp: Record<string, string> = {}; tp['kind'] = 'wordbank'; tp['count'] = `${this.wordBank.words.length}`;
+      track(this.getUIContext().getHostContext() as Context, 'export_dagpack', tp);
+      this.showToast(`已导出 ${this.wordBank.words.length} 个单词 → DagPack`);
+    } catch (_e) {
+      this.showToast('导出失败');
+    }
+  }
+
+  /** 导入单词包：word 重词自动跳过（addWordToBank 自带幂等拒绝） */
+  async pickWordPackFile(): Promise<void> {
+    try {
+      const doc = new picker.DocumentViewPicker();
+      const selOpt = new picker.DocumentSelectOptions();
+      selOpt.fileSuffixFilters = ['.dagpack', '.json'];
+      selOpt.maxSelectNumber = 1;
+      const uris: string[] = await doc.select(selOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const p = parseDagPack(readTextFile(uris[0]));
+      if (p === undefined || p.kind !== 'wordbank' || p.words === undefined) {
+        this.showToast('不是有效的 DagPack 单词包（wordbank v1）');
+        return;
+      }
+      let added = 0;
+      let skipped = 0;
+      for (let i = 0; i < p.words.length; i++) {
+        const pw: PackWord = p.words[i];
+        if (pw.word.trim().length === 0) {
+          continue;
+        }
+        const item = new WordItem(pw.word.trim(), pw.fullName, pw.usPhonetic, pw.explain, '', 0, 0, 0, 0, 0);
+        if (addWordToBank(this.wordBank, item)) {
+          added++;
+        } else {
+          skipped++; // 已存在同词——保留原词（含复习进度），幂等
+        }
+      }
+      const tp: Record<string, string> = {}; tp['format'] = 'dagpack'; tp['count'] = `${added}`;
+      track(this.getUIContext().getHostContext() as Context, 'batch_import', tp);
+      this.showToast(`导入 ${added} 词${skipped > 0 ? `，跳过重复 ${skipped}` : ''}`);
+    } catch (_e) {
+      this.showToast('选文件失败');
+    }
+  }
+
   openAddEditor(): void {
     this.editorIsAdd = true;
     this.editorId = '';
@@ -460,16 +533,18 @@ export struct WordBankPage {
           this.refreshVoicePackStatus(); // ★ 0.189.1：打开 ⚙ 即查美式语音包状态
         })
       if (!this.multiSelectMode) {
-        // ★ 0.148: add button — top bar's right, opens the editor dialog
+        // ★ 0.208.0：+ 升级菜单（新建单词/单词库 DagPack 导入导出——用户拍板单词库只走 DagPack）
         Button('+')
           .fontSize(20)
           .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
           .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
-          .onClick(() => {
-            this.openAddEditor();
-          })
+          .bindMenu([
+            { value: '新建单词', action: () => { this.openAddEditor(); } },
+            { value: '导入 DagPack（单词包）', action: () => { this.pickWordPackFile(); } },
+            { value: '导出 DagPack（整库单词）', action: () => { this.doExportWordPack(); } }
+          ])
       } else {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)

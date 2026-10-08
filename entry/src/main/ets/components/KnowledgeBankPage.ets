@@ -41,6 +41,9 @@ import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChai
 import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
 import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, packChildFolders, packCardCount, packSubtreeRefs, packFolderPath } from '../utils/PackUtil';
+// ★ 0.208.0 Anki：apkg 导入（知识库专用——单词库不���，用户拍板）
+import { ApkgCard, ApkgParseResult, parseApkg } from '../utils/ApkgUtil';
+import { ensureFolderPath } from '../utils/KnowledgeStoreUtil';
 import { track } from '../utils/TrackUtil';
 
 @ComponentV2
@@ -173,6 +176,13 @@ export struct KnowledgeBankPage {
   @Local packSel: string[] = [];        // 勾选的顶层 refId（各含其子树）
   @Local packRootCardsSel: boolean = true; // 根级散卡是否随包导入
   @Local packFileName: string = '';
+
+  // ── ★ 0.208.0：Anki apkg 导入状态 ──
+  @Local apkgPreviewVisible: boolean = false;
+  @Local apkgCards: ApkgCard[] = [];
+  @Local apkgDeckCounts: Record<string, number> = {};
+  @Local apkgMediaCount: number = 0;
+  @Local apkgFileName: string = '';
 
   /** 当前目录的子文件夹（新在前）；卡片计数用 folderCardCount() */
   @Computed
@@ -496,6 +506,7 @@ export struct KnowledgeBankPage {
             { value: '新建卡片', action: () => { this.openAddEditor(); } },
             { value: '新建文件夹', action: () => { this.openFolderCreate(); } },
             { value: '批量导入（TXT · CSV · XLSX）', action: () => { this.pickImportFile(); } },
+            { value: '导入 Anki 包（.apkg）', action: () => { this.pickApkgFile(); } },
             { value: '导入 DagPack（知识库包）', action: () => { this.pickPackFile(); } },
             { value: '导出 CSV（当前文件夹）', action: () => { this.doExportCsv(); } },
             { value: '导出 DagPack（当前文件夹）', action: () => { this.exportDagPack(this.currentFolderId); } }
@@ -1555,6 +1566,68 @@ export struct KnowledgeBankPage {
     })
   }
 
+  // ============================================================
+  // ★ 0.208.0：Anki apkg 导入
+  // ============================================================
+
+  /** 选 apkg → 解析（解压+SQLite 读+媒体提取）→ 牌组统计预览 */
+  async pickApkgFile(): Promise<void> {
+    try {
+      const doc = new picker.DocumentViewPicker();
+      const selOpt = new picker.DocumentSelectOptions();
+      selOpt.fileSuffixFilters = ['.apkg', '.colpkg'];
+      selOpt.maxSelectNumber = 1;
+      const uris: string[] = await doc.select(selOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      this.showToast('Anki 包解析中…（大包可能几十秒）');
+      try {
+        const r: ApkgParseResult = await parseApkg(this.getUIContext().getHostContext() as Context, uris[0]);
+        this.apkgCards = r.cards;
+        this.apkgDeckCounts = r.deckCounts;
+        this.apkgMediaCount = r.mediaCount;
+        this.apkgFileName = uris[0].substring(uris[0].lastIndexOf('/') + 1);
+        this.apkgPreviewVisible = true;
+      } catch (e) {
+        this.showToast(`解析失败：${e instanceof Error ? e.message : '格式不识别'}`);
+      }
+    } catch (_e) {
+      this.showToast('选文件失败');
+    }
+  }
+
+  /** 牌组名列表（预览渲染） */
+  apkgDeckNames(): string[] {
+    return Object.keys(this.apkgDeckCounts);
+  }
+
+  /** 确认导入：deck「A::B::C」→ ensureFolderPath 幂等建链（重复导入复用同文件夹）→ 卡片入库 */
+  confirmApkgImport(): void {
+    const folderIdCache: Map<string, string> = new Map<string, string>();
+    const now = Date.now();
+    let n = 0;
+    for (let i = 0; i < this.apkgCards.length; i++) {
+      const ac = this.apkgCards[i];
+      const deckKey = ac.deckPath.length > 0 ? ac.deckPath : 'Anki';
+      let fid = folderIdCache.get(deckKey);
+      if (fid === undefined) {
+        // 「::」层级拆链（空段滤除）；'（重复导入幂等——同 deck 复用已有文件夹链）
+        const segs = deckKey.split('::').map((s: string): string => s.trim()).filter((s: string): boolean => s.length > 0);
+        fid = segs.length === 0 ? this.currentFolderId : ensureFolderPath(this.knowledgeBank, segs, this.currentFolderId);
+        folderIdCache.set(deckKey, fid);
+      }
+      const imgs = ac.images.length > 0 ? JSON.stringify(ac.images) : '';
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', ac.title, ac.definition, '', now + n,
+        0, 0, 0, 0, ac.tags, imgs, fid ?? ''));
+      n++;
+    }
+    const tp: Record<string, string> = {}; tp['format'] = 'apkg'; tp['count'] = `${n}`;
+    track(this.getUIContext().getHostContext() as Context, 'batch_import', tp);
+    this.showToast(`已导入 ${n} 张（牌组已映射为文件夹链）`);
+    this.apkgPreviewVisible = false;
+  }
+
   /** ★ 0.207.1：DagPack 勾选树弹窗——顶层文件夹全路径行（勾=导其子树）+ 根级散卡行 */
   @Builder
   packPreviewDialog() {
@@ -1662,6 +1735,82 @@ export struct KnowledgeBankPage {
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.packPreviewVisible = false;
+    })
+  }
+
+  /** ★ 0.208.0：Anki 导入预览弹窗——牌组→文件夹映射统计 + 确认 */
+  @Builder
+  apkgPreviewDialog() {
+    Column() {
+      Column() {
+        Text('Anki 包导入预览')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(`${this.apkgFileName} · ${this.apkgCards.length} 张卡 · ${this.apkgMediaCount} 张图片 · 牌组自动映射为文件夹链`)
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Text('Anki 复习进度不迁移（DAGAI 从新卡开始，用自己的算法）；音频不迁移（App 自带语音）')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 2 })
+        Scroll() {
+          Column() {
+            ForEach(this.apkgDeckNames(), (deck: string) => {
+              Row() {
+                Text('🗂 ' + deck)
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(`${this.apkgDeckCounts[deck]} 张`)
+                  .fontSize(12)
+                  .fontColor(TEXT_TERTIARY)
+              }
+              .width('100%')
+              .padding(10)
+              .borderRadius(8)
+              .backgroundColor(SURFACE_SOFT)
+              .margin({ top: 6 })
+            }, (deck: string) => deck)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 300 })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.apkgPreviewVisible = false;
+            })
+          Button(`导入 ${this.apkgCards.length} 张`)
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmApkgImport();
+            })
+        }
+        .margin({ top: 12 })
+      }
+      .width('86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.apkgPreviewVisible = false;
     })
   }
 
@@ -2019,6 +2168,10 @@ export struct KnowledgeBankPage {
         if (this.packPreviewVisible) {
           this.packPreviewDialog()
         }
+        // ★ 0.208.0：Anki 导入预览
+        if (this.apkgPreviewVisible) {
+          this.apkgPreviewDialog()
+        }
       }
       .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
     }
@@ -2061,6 +2214,11 @@ export struct KnowledgeBankPage {
       // ★ 0.207.1：DagPack 弹窗
       if (this.packPreviewVisible) {
         this.packPreviewVisible = false;
+        return true;
+      }
+      // ★ 0.208.0：Anki 弹窗
+      if (this.apkgPreviewVisible) {
+        this.apkgPreviewVisible = false;
         return true;
       }
       if (this.folderPickerVisible) {

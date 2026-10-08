@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000124, // ★ 0.207.1：xlsx 导入 + DagPack 知识库包（模块化导出/勾选式导入）；更早历史见 MEMORY.md
+    "versionCode": 1000125, // ★ 0.208.0：Anki apkg 导入（牌组→文件夹链+图片迁移）+单词库 DagPack；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
