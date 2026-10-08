@@ -38,7 +38,9 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder } from '../common/KnowledgeModel';
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain } from '../utils/KnowledgeStoreUtil';
-import { ImportRow, readTextFile, parseTextToRows, cardsToCsv } from '../utils/ImportUtil';
+import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
+// ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
+import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, packChildFolders, packCardCount, packSubtreeRefs, packFolderPath } from '../utils/PackUtil';
 import { track } from '../utils/TrackUtil';
 
 @ComponentV2
@@ -164,6 +166,13 @@ export struct KnowledgeBankPage {
   @Local importRows: ImportRow[] = [];
   @Local importFileName: string = '';
   @Local importFormat: string = 'txt';
+
+  // ── ★ 0.207.1：DagPack 导入（勾选树）状态 ──
+  @Local packPreviewVisible: boolean = false;
+  @Local packData: DagPack = { format: '', version: 0, kind: '', exportedAt: 0, origin: '', folders: [], cards: [] };
+  @Local packSel: string[] = [];        // 勾选的顶层 refId（各含其子树）
+  @Local packRootCardsSel: boolean = true; // 根级散卡是否随包导入
+  @Local packFileName: string = '';
 
   /** 当前目录的子文件夹（新在前）；卡片计数用 folderCardCount() */
   @Computed
@@ -486,8 +495,10 @@ export struct KnowledgeBankPage {
           .bindMenu([
             { value: '新建卡片', action: () => { this.openAddEditor(); } },
             { value: '新建文件夹', action: () => { this.openFolderCreate(); } },
-            { value: '批量导入（TXT · CSV）', action: () => { this.pickImportFile(); } },
-            { value: '导出 CSV（当前文件夹）', action: () => { this.doExportCsv(); } }
+            { value: '批量导入（TXT · CSV · XLSX）', action: () => { this.pickImportFile(); } },
+            { value: '导入 DagPack（知识库包）', action: () => { this.pickPackFile(); } },
+            { value: '导出 CSV（当前文件夹）', action: () => { this.doExportCsv(); } },
+            { value: '导出 DagPack（当前文件夹）', action: () => { this.exportDagPack(this.currentFolderId); } }
           ])
       } else {
         // ★ 0.148: multi-select replaces the add button with batch delete
@@ -1099,23 +1110,29 @@ export struct KnowledgeBankPage {
     this.exitMultiSelect();
   }
 
-  /** 批量导入第一步：选文件 → 解析 → 预览弹窗 */
+  /** 批量导入第一步：选文件 → 解析 → 预览弹窗（★ 0.207.1 加 xlsx 分流） */
   async pickImportFile(): Promise<void> {
     try {
       const doc = new picker.DocumentViewPicker();
       const selOpt = new picker.DocumentSelectOptions();
-      selOpt.fileSuffixFilters = ['.txt', '.csv'];
+      selOpt.fileSuffixFilters = ['.txt', '.csv', '.xlsx'];
       selOpt.maxSelectNumber = 1;
       const uris: string[] = await doc.select(selOpt);
       if (uris.length === 0) {
         return;
       }
       const uri = uris[0];
-      const fmt = uri.toLowerCase().endsWith('.csv') ? 'csv' : 'txt';
-      const text = readTextFile(uri);
-      const rows = parseTextToRows(text, fmt);
+      let rows: ImportRow[] = [];
+      let fmt = 'txt';
+      if (uri.toLowerCase().endsWith('.xlsx')) {
+        fmt = 'xlsx';
+        rows = await readXlsxRows(uri);
+      } else {
+        fmt = uri.toLowerCase().endsWith('.csv') ? 'csv' : 'txt';
+        rows = parseTextToRows(readTextFile(uri), fmt);
+      }
       if (rows.length === 0) {
-        this.showToast('没解析出卡片：每行需「标题 + 分隔符 + 背面」（TXT 用 Tab 或 |，CSV 用逗号）');
+        this.showToast('没解析出卡片：每行需「标题 + 分隔符 + 背面」（xlsx 取 A/B/C 三列）');
         return;
       }
       this.importRows = rows;
@@ -1125,6 +1142,132 @@ export struct KnowledgeBankPage {
     } catch (_e) {
       this.showToast('选文件失败');
     }
+  }
+
+  // ============================================================
+  // ★ 0.207.1：DagPack 导出 / 导入
+  // ============================================================
+
+  /** 导出 DagPack：rootFolderId=文件夹 id（该子树）或 ''（整库）；文件名取文件夹名 */
+  async exportDagPack(rootFolderId: string): Promise<void> {
+    try {
+      const p = buildKnowledgePack(this.knowledgeBank, rootFolderId);
+      const json = packToJson(p);
+      const chain = folderChain(this.knowledgeBank, rootFolderId);
+      const baseName = chain.length === 0 ? '知识库' : chain[chain.length - 1].name;
+      const saver = new picker.DocumentViewPicker();
+      const saveOpt = new picker.DocumentSaveOptions();
+      saveOpt.newFileNames = [`DAGAI_${baseName}.dagpack`];
+      const uris: string[] = await saver.save(saveOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const f = fileIo.openSync(uris[0], fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(f.fd, json);
+      fileIo.closeSync(f);
+      const tp: Record<string, string> = {}; tp['folders'] = `${p.folders.length}`; tp['cards'] = `${p.cards.length}`;
+      track(this.getUIContext().getHostContext() as Context, 'export_dagpack', tp);
+      this.showToast(`已导出 ${p.folders.length} 个文件夹 / ${p.cards.length} 张卡 → DagPack`);
+    } catch (_e) {
+      this.showToast('导出失败');
+    }
+  }
+
+  /** DagPack 导入第一步：选文件 → 解析 → 勾选树弹窗（默认全选） */
+  async pickPackFile(): Promise<void> {
+    try {
+      const doc = new picker.DocumentViewPicker();
+      const selOpt = new picker.DocumentSelectOptions();
+      selOpt.fileSuffixFilters = ['.dagpack', '.json'];
+      selOpt.maxSelectNumber = 1;
+      const uris: string[] = await doc.select(selOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const p = parseDagPack(readTextFile(uris[0]));
+      if (p === undefined) {
+        this.showToast('不是有效的 DagPack 知识库包（v1）');
+        return;
+      }
+      this.packData = p;
+      this.packSel = packChildFolders(p, '').map((f: PackFolder): string => f.refId); // 默认全选
+      this.packRootCardsSel = true;
+      this.packFileName = uris[0].substring(uris[0].lastIndexOf('/') + 1);
+      this.packPreviewVisible = true;
+    } catch (_e) {
+      this.showToast('选文件失败');
+    }
+  }
+
+  togglePackSel(refId: string): void {
+    if (this.packSel.includes(refId)) {
+      this.packSel = this.packSel.filter((x: string): boolean => x !== refId);
+    } else {
+      this.packSel = [...this.packSel, refId];
+    }
+  }
+
+  /** ★ 0.207.1：弹窗辅助——包内路径名 / 子树卡数 / 根级散卡数 */
+  packFolderPathName(refId: string): string {
+    return packFolderPath(this.packData, refId);
+  }
+
+  packSubtreeCardCount(refId: string): number {
+    return packCardCount(this.packData, refId);
+  }
+
+  packRootCardCount(): number {
+    return packCardCount(this.packData, '');
+  }
+
+  /** 勾选确认 → 入库：新子树挂当前文件夹（绝不合并现有目录——同名并存，用户可自移） */
+  confirmPackImport(): void {
+    const p = this.packData;
+    // 纳入 refs = 各勾选顶层 ref 的子树并集
+    const inRefs: Set<string> = new Set<string>();
+    for (let i = 0; i < this.packSel.length; i++) {
+      const sub = packSubtreeRefs(p, this.packSel[i]);
+      for (let j = 0; j < sub.length; j++) {
+        inRefs.add(sub[j]);
+      }
+    }
+    // refId → 新库 folderId 映射（包根 '' → 当前文件夹；parentRef 已映射才建——固定点循环防乱序）
+    const idMap: Map<string, string> = new Map<string, string>();
+    idMap.set('', this.currentFolderId);
+    let guard = 0;
+    while (idMap.size < inRefs.size + 1 && guard < 64) {
+      guard++;
+      for (let i = 0; i < p.folders.length; i++) {
+        const pf = p.folders[i];
+        if (!inRefs.has(pf.refId) || idMap.has(pf.refId)) {
+          continue;
+        }
+        if (idMap.has(pf.parentRef)) {
+          idMap.set(pf.refId, addFolder(this.knowledgeBank, pf.name, idMap.get(pf.parentRef) ?? ''));
+        }
+      }
+    }
+    // 卡片入库（记忆字段清零=新卡；images base64 直接延续）
+    const now = Date.now();
+    let n = 0;
+    for (let i = 0; i < p.cards.length; i++) {
+      const pc = p.cards[i];
+      const target = idMap.get(pc.folderRef);
+      if (target === undefined) {
+        continue; // 所在文件夹未勾选 → 跳过
+      }
+      if (pc.folderRef === '' && !this.packRootCardsSel) {
+        continue; // 根级散卡未勾
+      }
+      const imgs = pc.images.length > 0 ? JSON.stringify(pc.images) : '';
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', pc.title, pc.definition, '', now + n,
+        0, 0, 0, 0, pc.tags, imgs, target));
+      n++;
+    }
+    const tp: Record<string, string> = {}; tp['format'] = 'dagpack'; tp['count'] = `${n}`;
+    track(this.getUIContext().getHostContext() as Context, 'batch_import', tp);
+    this.showToast(`已导入 ${n} 张卡（新子树挂当前文件夹）`);
+    this.packPreviewVisible = false;
   }
 
   /** 预览确认 → 入库（当前文件夹） */
@@ -1412,6 +1555,116 @@ export struct KnowledgeBankPage {
     })
   }
 
+  /** ★ 0.207.1：DagPack 勾选树弹窗——顶层文件夹全路径行（勾=导其子树）+ 根级散卡行 */
+  @Builder
+  packPreviewDialog() {
+    Column() {
+      Column() {
+        Text('导入 DagPack · 选择要接收的内容')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(`${this.packFileName} · ${this.packData.folders.length} 个文件夹 · ${this.packData.cards.length} 张卡 · 新子树挂当前文件夹`)
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Scroll() {
+          Column() {
+            ForEach(this.packData.folders, (f: PackFolder) => {
+              if (f.parentRef === '') {
+                Row() {
+                  Text(this.packSel.includes(f.refId) ? '☑' : '☐')
+                    .fontSize(20)
+                    .fontColor(this.packSel.includes(f.refId) ? BRAND_PRIMARY : TEXT_TERTIARY)
+                    .margin({ right: 10 })
+                    .onClick(() => {
+                      this.togglePackSel(f.refId);
+                    })
+                  Text('📁 ' + this.packFolderPathName(f.refId))
+                    .fontSize(13)
+                    .fontColor(TEXT_PRIMARY)
+                    .layoutWeight(1)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(`${this.packSubtreeCardCount(f.refId)} 张`)
+                    .fontSize(12)
+                    .fontColor(TEXT_TERTIARY)
+                }
+                .width('100%')
+                .padding(10)
+                .borderRadius(8)
+                .backgroundColor(SURFACE_SOFT)
+                .margin({ top: 6 })
+                .onClick(() => {
+                  this.togglePackSel(f.refId);
+                })
+              }
+            }, (f: PackFolder) => f.refId)
+            if (this.packRootCardCount() > 0) {
+              Row() {
+                Text(this.packRootCardsSel ? '☑' : '☐')
+                  .fontSize(20)
+                  .fontColor(this.packRootCardsSel ? BRAND_PRIMARY : TEXT_TERTIARY)
+                  .margin({ right: 10 })
+                  .onClick(() => {
+                    this.packRootCardsSel = !this.packRootCardsSel;
+                  })
+                Text('📄 根级散卡（不属于任何文件夹）')
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                Text(`${this.packRootCardCount()} 张`)
+                  .fontSize(12)
+                  .fontColor(TEXT_TERTIARY)
+              }
+              .width('100%')
+              .padding(10)
+              .borderRadius(8)
+              .backgroundColor(SURFACE_SOFT)
+              .margin({ top: 6 })
+              .onClick(() => {
+                this.packRootCardsSel = !this.packRootCardsSel;
+              })
+            }
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 300 })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.packPreviewVisible = false;
+            })
+          Button('导入所选')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmPackImport();
+            })
+        }
+        .margin({ top: 12 })
+      }
+      .width('86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.packPreviewVisible = false;
+    })
+  }
+
   build() {
     NavDestination() {
       Stack() {
@@ -1562,7 +1815,8 @@ export struct KnowledgeBankPage {
                         .padding({ left: 10, right: 2 })
                         .bindMenu([
                           { value: '重命名', action: () => { this.openFolderRename(f); } },
-                          { value: '删除文件夹（卡片移到上一级）', action: () => { this.requestDeleteFolder(f); } }
+                          { value: '删除文件夹（卡片移到上一级）', action: () => { this.requestDeleteFolder(f); } },
+                          { value: '★ 导出此文件夹包（DagPack）', action: () => { this.exportDagPack(f.id); } }
                         ])
                     }
                     .width('100%')
@@ -1761,6 +2015,10 @@ export struct KnowledgeBankPage {
         if (this.importPreviewVisible) {
           this.importPreviewDialog()
         }
+        // ★ 0.207.1：DagPack 勾选树弹窗
+        if (this.packPreviewVisible) {
+          this.packPreviewDialog()
+        }
       }
       .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
     }
@@ -1798,6 +2056,11 @@ export struct KnowledgeBankPage {
       // ★ 0.207.0：新弹窗先关（导入预览 > 目标选择 > 文件夹命名）
       if (this.importPreviewVisible) {
         this.importPreviewVisible = false;
+        return true;
+      }
+      // ★ 0.207.1：DagPack 弹窗
+      if (this.packPreviewVisible) {
+        this.packPreviewVisible = false;
         return true;
       }
       if (this.folderPickerVisible) {

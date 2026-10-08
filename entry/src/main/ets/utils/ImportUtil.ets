@@ -13,6 +13,7 @@
 import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { KnowledgeCard, getCardImages } from '../common/KnowledgeModel';
+import ExcelJS from '@archermind/exceljs'; // ★ 0.207.1：xlsx 读取（ExcelJS 4.4 适配版）
 
 /** 导入草稿行（解析产物——未入库的纯数据） */
 export interface ImportRow {
@@ -145,7 +146,7 @@ export function previewRows(rows: ImportRow[], n: number): ImportRow[] {
   return rows.slice(0, n);
 }
 
-/** 草稿行卡片数（顺带把 getCardImages 引用留住——导出场景外部用） */
+/** 草稿行卡片数（顺带把 getCardImages 引用留��——导出场景外部用） */
 export function countWithImages(cards: KnowledgeCard[]): number {
   let n = 0;
   for (let i = 0; i < cards.length; i++) {
@@ -154,4 +155,45 @@ export function countWithImages(cards: KnowledgeCard[]): number {
     }
   }
   return n;
+}
+
+/**
+ * ★ 0.207.1：读 xlsx 首个工作表 → 卡片草稿行。
+ * 列约定同 CSV：A=标题 B=背面 C=标签(可选)；空行/单列跳过；首行表头启发式丢弃。
+ * ExcelJS 适配版 row.values 为 1-based 数组——取前 3 列。
+ */
+export async function readXlsxRows(uri: string): Promise<ImportRow[]> {
+  const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+  try {
+    const stat = fileIo.statSync(file.fd);
+    const buf = new ArrayBuffer(stat.size);
+    fileIo.readSync(file.fd, buf);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    if (wb.worksheets.length === 0) {
+      return [];
+    }
+    const sheet = wb.worksheets[0];
+    const rows: ImportRow[] = [];
+    for (let r = 1; r <= sheet.rowCount; r++) {
+      const vals = sheet.getRow(r).values as string[];
+      const c0 = `${vals[1] ?? ''}`.trim();
+      const c1 = `${vals[2] ?? ''}`.trim();
+      const c2 = `${vals[3] ?? ''}`.trim();
+      if (c0.length === 0 || c1.length === 0) {
+        continue;
+      }
+      if (r === 1) {
+        const h = c1.toLowerCase();
+        if (h === '背面' || h === 'back' || h === 'definition' || h === '答案' || h === 'answer') {
+          continue;
+        }
+      }
+      const row: ImportRow = { title: c0, definition: c1, tags: c2 };
+      rows.push(row);
+    }
+    return rows;
+  } finally {
+    fileIo.closeSync(file);
+  }
 }
