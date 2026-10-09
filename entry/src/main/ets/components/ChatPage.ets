@@ -49,6 +49,7 @@ import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云�
 import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
+import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.214.2：缩放持久化（chat-font-scale-v1）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
 
 // ★ 新增：Markdown 解析段（0.121）
@@ -164,6 +165,16 @@ class MarkedToken {
     this.kind = kind;
     this.marked = marked;
   }
+}
+
+// ★ 0.214.2：对话页缩放持久化（PersistenceV2 全新 key——跨页面/重启记住）
+@ObservedV2
+export class ChatFontScaleStore {
+  @Trace value: number = 1.0;
+}
+
+export function connectChatFontScale(): ChatFontScaleStore {
+  return PersistenceV2.connect(ChatFontScaleStore, 'chat-font-scale-v1', () => new ChatFontScaleStore()) as ChatFontScaleStore;
 }
 
 // ★ 新增：代码块组件，支持自动换行/横向滚动切换（0.122）
@@ -884,10 +895,48 @@ export struct ChatPage {
   // ── ★ 0.214.0：对话页缩放（Pad 双指捏合 / Matebook 触摸板双指捏合；边栏不参与——只缩消息正文） ──
   @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
+  // ★ 0.214.2：缩放持久化（全新 PersistenceV2 key——跨页面/重启记住，用户拍板"不用来回攻"）
+  fontScaleStore: ChatFontScaleStore = connectChatFontScale();
 
   /** ★ 0.214.0：正文字号换算（一位小数平滑；只用于消息正文——边栏/顶栏/输入区不缩） */
   fs(base: number): number {
     return Math.round(base * this.fontScale * 10) / 10;
+  }
+
+  /** ★ 0.214.2：草稿写回当前气泡（文字+图片实时进 BubbleNode 内存；退出时 saveTree 持久化） */
+  saveDraft(): void {
+    const b = this.currentBubble;
+    if (!b) {
+      return;
+    }
+    b.draftText = this.inputText;
+    b.draftImages = this.pendingImages.length > 0 ? JSON.stringify(this.pendingImages) : '';
+  }
+
+  aboutToAppear(): void {
+    // ★ 0.214.2：恢复缩放（持久化值优先；钳制防脏数据）
+    this.fontScale = Math.min(1.6, Math.max(0.75, this.fontScaleStore.value));
+    // ★ 0.214.2：恢复本气泡草稿（文字+图片——退出再回来继续编）
+    const b = this.currentBubble;
+    if (b) {
+      this.inputText = b.draftText;
+      if (b.draftImages.length > 0) {
+        try {
+          const arr = JSON.parse(b.draftImages) as string[];
+          if (Array.isArray(arr)) {
+            this.pendingImages = arr;
+          }
+        } catch (e) {
+          // 损坏草稿按无图处理
+        }
+      }
+    }
+  }
+
+  aboutToDisappear(): void {
+    // ★ 0.214.2：退出页面草稿落盘（saveDraft 写内存 + saveTree 持久化一次）
+    this.saveDraft();
+    this.saveTree();
   }
 
   @Builder
@@ -969,6 +1018,12 @@ export struct ChatPage {
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.inputText = '';
     this.pendingImages = [];
+    // ★ 0.214.2：发送即清本气泡草稿（内容已入消息流，草稿使命完成）
+    const sb = this.currentBubble;
+    if (sb) {
+      sb.draftText = '';
+      sb.draftImages = '';
+    }
     this.getUIContext().getFocusController().clearFocus(); // ★ 0.131：替代 TextAreaController.stopEditing（API 12+ 全设备兼容），发送后收起键盘
     this.isLoading = true;
     this.streamPhase = 1; // ★ 0.191.0：阶段 1——请求即将发出，等待服务器响应
@@ -1431,6 +1486,7 @@ export struct ChatPage {
         fileIo.closeSync(file);
         const base64 = buffer.from(arrayBuffer).toString('base64');
           this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
+      this.saveDraft(); // 0.214.2 图片变化实时写回草稿
       }
     } catch (err) {
       // 选图取消/读取失败静默忽略（防崩溃）
@@ -1446,6 +1502,7 @@ export struct ChatPage {
       }
     }
     this.pendingImages = newList;
+    this.saveDraft(); // 0.214.2 删图实时写回草稿
   }
 
   // ★ 0.150：删除入口——首次点 × 弹确认防误触；本次会话内勾选过「不再提示」则直接删
@@ -2303,11 +2360,13 @@ export struct ChatPage {
     if (action === 'import') {
       // ① 导入对话：文字填输入框（已有草稿换行追加，圈注 import 同规则）+ 图挂输入区
       this.pendingImages = [...this.pendingImages, ...imgs];
+      this.saveDraft(); // 0.214.2 图片变化实时写回草稿
       this.inputText = this.inputText.length > 0 ? `${this.inputText}\n${text}` : text;
     } else {
       // ② 创建子气泡：复用圈注 branch 全套（isLoading 降级 + carryText/carryImages 随 140ms 回调带入）
       if (this.isLoading) {
         this.pendingImages = [...this.pendingImages, ...imgs];
+      this.saveDraft(); // 0.214.2 图片变化实时写回草稿
         this.inputText = this.inputText.length > 0 ? `${this.inputText}\n${text}` : text;
         this.showToastSafe('AI 正在回复，卡片已导入当前对话，回复完成后可再创建子气泡');
       } else {
@@ -2337,6 +2396,7 @@ export struct ChatPage {
       // ① 当前对话导入：图片挂到输入区（可追加文字后点发送，走现有 sendMessage 链路）；
       //    ★ 0.184.0：补充要求填入输入框（输入框已有草稿时换行追加，不覆盖）
       this.pendingImages = [...this.pendingImages, img];
+      this.saveDraft(); // 0.214.2 图片变化实时写回草稿
       if (note.length > 0) {
         this.inputText = this.inputText.length > 0 ? `${this.inputText}\n${note}` : note;
       }
@@ -2348,6 +2408,7 @@ export struct ChatPage {
         // 流式回复中禁止切气泡（addBubble 现有防御：切换会导致流式回调写错气泡）——
         // 降级为导入当前对话并提示，图片与补充要求都不丢
         this.pendingImages = [...this.pendingImages, img];
+      this.saveDraft(); // 0.214.2 图片变化实时写回草稿
         if (note.length > 0) {
           this.inputText = this.inputText.length > 0 ? `${this.inputText}\n${note}` : note;
         }
@@ -3190,9 +3251,10 @@ export struct ChatPage {
                   if (!this.windowMode.isTablet) {
                     return; // ★ 0.214.1：手机端不响应捏合缩放
                   }
-                 const s = this.pinchStartFontScale * event.scale;
-                 this.fontScale = Math.min(1.6, Math.max(0.75, Math.round(s * 100) / 100));
-               })
+                  const s = this.pinchStartFontScale * event.scale;
+                  this.fontScale = Math.min(1.6, Math.max(0.75, Math.round(s * 100) / 100));
+                  this.fontScaleStore.value = this.fontScale; // ★ 0.214.2：持久化缩放（退出/重启记住）
+                })
            )
          }
 
@@ -3267,6 +3329,10 @@ export struct ChatPage {
           })
 
           TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
+            .onChange((value: string) => {
+              this.inputText = value;
+              this.saveDraft(); // ★ 0.214.2：输入实时写回本气泡草稿（退出再回来继续编）
+            })
             .layoutWeight(1)
             // ★ 0.195.0：高度改自适应（标注页补充要求框同款，用户指认「他的体验就很好」）——
             //   TextArea 随内容自撑、一行一行长高，136vp（5 行）封顶后内部滚动；

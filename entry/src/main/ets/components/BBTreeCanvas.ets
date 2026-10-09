@@ -1182,7 +1182,7 @@ export struct BBTreeCanvas {
         .onScrollFrameBegin((offset: number, state: ScrollState) => {
           // 上滚（offset<0）=放大 / 下滚=缩小（与常规滚轮缩放语义一致）；锚点=鼠标悬停处
           // ★ 0.214.1：降速 60%（用户反馈太快——每档 1.1/0.9 → 1.04/0.96）
-          this.wheelZoomAt(offset < 0 ? 1.04 : 0.96);
+          this.wheelZoomAt(offset < 0 ? 1.02 : 0.98); // 0.214.2 再减半（1.04/0.96→1.02/0.98）
           return { offsetRemain: 0 }; // 全额吞掉——传感器永不真滚
         })
           }
