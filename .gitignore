@@ -38,3 +38,7 @@ pc*.json
 find_ctl.py
 findctl.sh
 parse_layout.py
+m[0-9]*.json
+v[0-9]*.jpeg
+v[0-9]*.json
+w[0-9]*.json
