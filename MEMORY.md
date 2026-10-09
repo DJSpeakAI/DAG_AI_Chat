@@ -151,9 +151,10 @@
 |0.208.0|**Anki apkg 导入 + 单词库 DagPack（2026-10-08，anything 导入体系收官）**：①**apkg→知识库**（用户拍板映射：正面=title/背=definition/图全提/[sound:]丢弃/App 自带语音/复习进度丢弃新卡开始）——解析链 ApkgUtil：uri→拷沙箱→**zlib.unzipFile**（系统 zip 解压）→**relationalStore.getRdbStore({name:'collection.anki2', rootDir:解压目录})**（★ API18+ rootDir 只读开任意路径 SQLite——破局关键，本地 d.ts 实查）→col.decks JSON（did→牌组名）+cards（nid→首卡 did 同 note 多卡只导一）+notes（flds \x1f 分段+tags 空格转逗号）；HTML 清洗（br/div→换行剥标签解码实体）；media JSON 真名→编号文件→base64；**deck「A::B::C」→ensureFolderPath 幂等文件夹链**（重复导入复用）②**单词库 DagPack**（kind:'wordbank'，全量平铺；导入重词幂等跳过保留原进度——addWordToBank 自带拒绝）③坑实录：CompressLevel 枚举实名 COMPRESS_LEVEL_NO_COMPRESSION（前缀全称）④用户拍板：单词库**不做** Anki/表格导入（单词库格式私有场景；Anki 单词走知识库导入后手动重建）|
 |0.209.0|复习卡「单面/正反两面」卡面模式（用户重要需求，评分三按钮逻辑零改动）：FaceModeStore（**全新 PersistenceV2 key 'review-face-mode-v1'**——数据安全铁律）+单词卡正面单词音标/知识卡正面标题、翻面出答案可翻回+⚙设置弹窗顶部卡面模式区（单词库/知识库独立选）+默认单面；双面未翻时隐藏答案显示「点击卡片查看答案」|
 |0.209.1|**修复卡面模式/每日复习量设置「后台能切前台不动」**（用户报 bug）：双根因——①带参 @Builder 按值传参不刷新（**0.190.1 铁律复发**：faceSegment/countSegment 高亮点击后不动）②faceMode/dailyCount 是普通成员未挂 @Local（@Computed isDoubleFace 依赖链真机不可靠）。修复=两 Builder 无参化拆四个直读状态+connect 的 store 挂组件必须 @Local；**教训：新 @Builder 一律无参化内部直读状态，@ObservedV2 connect 实例挂 @ComponentV2 必须 @Local 接管**|
+|0.209.2|**修复双面模式「点反面误跳卡」**（用户报 bug：翻面后再点反面直接跳下一张，"默认选了哪一档？"）：根因=评分区动态 if 插入挤占 Blank 弹性空间→**翻面瞬间卡片整体上移、评分按钮窜到用户刚点过正面区域的位置**→第二次点击误触评分按钮。修复=评分区改**固定高度占位**（88vp 容器 justifyContent End，翻面前就预留按钮空间，卡片纹丝不动，按钮永远在页面底部远离卡片）；Pad uitest 全链路自动化验证通过（翻面卡片位移仅 7vp/点反面 1/4 不变/评分按钮位置固定）；**教训：动态出现的操作区必须固定占位，否则布局重排会让按钮"窜"进用户操作惯性区**|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.209.1（versionCode 1000127）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.209.2（versionCode 1000128）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
 - 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
 - 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，装机测试用）+ 畅享 90 Pro Max（手机，192.168.2.9，用户日常自用勿占用）；★ 实测教训：两台 IP 勿搞反（搞反白折腾一轮），`param get const.product.model` 可验身份
