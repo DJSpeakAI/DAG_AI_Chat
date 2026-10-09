@@ -31,6 +31,7 @@ import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64；★ 0.207.0 picker：文档选/存（批量导入 CSV/TXT、导出 CSV）
+import { image } from '@kit.ImageKit'; // ★ 0.211.1：选图压缩（9 张原图 base64 直接持久化=手机保存崩溃根因）
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
@@ -149,6 +150,7 @@ export struct KnowledgeBankPage {
   @Local editorImageUri: string = '';
   // ★ 0.160: fullscreen preview of the editor image (tap thumbnail to open)
   @Local editorImagePreviewVisible: boolean = false;
+  @Local editorPreviewUri: string = ''; // ★ 0.211.1：预览当前点击的那张（原固定 [0]，标题图缩略点击无预览——用户报）
 
   // ★ 0.148: single-delete confirm dialog state
   @Local deleteConfirmVisible: boolean = false;
@@ -319,6 +321,37 @@ export struct KnowledgeBankPage {
     this.editorVisible = false;
   }
 
+  // ★ 0.211.1 修复手机端「9 张点保存崩溃」：原图 base64（单张可达 5-10MB，×1.37 膨胀）9 张
+  //   直接塞卡 → 保存时全库 JSON 序列化+PersistenceV2 写盘，内存峰值打爆手机（PC 内存大不崩）。
+  //   根治=选图时压缩：解码→最长边缩到 1280→JPEG 质量 80（单张落盘 ~200-400KB，9 张 ~3MB）。
+  //   data:image/jpeg;base64 前缀格式保持不变（备份/DagPack/apkg 全链兼容）
+  async compressEditorImage(uri: string): Promise<string> {
+    const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+    try {
+      const imageSource = image.createImageSource(file.fd);
+      const info = await imageSource.getImageInfo();
+      const maxEdge = 1280;
+      const longest = Math.max(info.size.width, info.size.height);
+      const ratio = longest > maxEdge ? maxEdge / longest : 1;
+      const decodingOpts: image.DecodingOptions = {
+        desiredSize: {
+          width: Math.max(1, Math.round(info.size.width * ratio)),
+          height: Math.max(1, Math.round(info.size.height * ratio))
+        }
+      };
+      const pixelMap = await imageSource.createPixelMap(decodingOpts);
+      const packer = image.createImagePacker();
+      const packed = await packer.packToData(pixelMap, { format: 'image/jpeg', quality: 80 });
+      const dataUri = `data:image/jpeg;base64,${buffer.from(packed).toString('base64')}`;
+      pixelMap.release();
+      packer.release();
+      imageSource.release();
+      return dataUri;
+    } finally {
+      fileIo.closeSync(file);
+    }
+  }
+
   // ★ 0.210.0：标题图选图（复刻 selectEditorImage 流程——目标数组独立 editorTitleImages；上限同 9）
   // ★ 0.211.0 修复手机端超限崩溃：maxSelectNumber 写死 9 → 已有 8 张仍可选 9 张全量读取（手机
   //   内存峰值被打爆直接闪退，PC 内存大仅静默截断）。改动态额度=9-已有张数（至少 1），选图器
@@ -332,14 +365,8 @@ export struct KnowledgeBankPage {
         if (this.editorTitleImages.length >= 9) {
           break; // 上限 9 张（每轮追加，超出静默截断）
         }
-        const uri = result.photoUris[i];
-        const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
-        const stat = fileIo.statSync(file.fd);
-        const arrayBuffer = new ArrayBuffer(stat.size);
-        fileIo.readSync(file.fd, arrayBuffer);
-        fileIo.closeSync(file);
-        const base64 = buffer.from(arrayBuffer).toString('base64');
-        this.editorTitleImages.push(`data:image/jpeg;base64,${base64}`);
+        const dataUri = await this.compressEditorImage(result.photoUris[i]); // ★ 0.211.1：压缩后再入库
+        this.editorTitleImages.push(dataUri);
       }
       this.editorTitleImages = [...this.editorTitleImages]; // 触发数组状态更新
     } catch (err) {
@@ -360,14 +387,8 @@ export struct KnowledgeBankPage {
         if (this.editorImages.length >= 9) {
           break; // 上限 9 张（每轮追加，超出静默截断）
         }
-        const uri = result.photoUris[i];
-        const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
-        const stat = fileIo.statSync(file.fd);
-        const arrayBuffer = new ArrayBuffer(stat.size);
-        fileIo.readSync(file.fd, arrayBuffer);
-        fileIo.closeSync(file);
-        const base64 = buffer.from(arrayBuffer).toString('base64');
-        this.editorImages.push(`data:image/jpeg;base64,${base64}`);
+        const dataUri = await this.compressEditorImage(result.photoUris[i]); // ★ 0.211.1：压缩后再入库
+        this.editorImages.push(dataUri);
       }
       this.editorImages = [...this.editorImages]; // 触发数组状态更新
     } catch (err) {
@@ -786,6 +807,11 @@ export struct KnowledgeBankPage {
                       .width(72)
                       .objectFit(ImageFit.Cover)
                       .borderRadius(RADIUS_CONTROL)
+                      .onClick(() => {
+                        // ★ 0.211.1 用户报：编辑弹窗标题图点击没放大——补齐同内容图的预览
+                        this.editorPreviewUri = img;
+                        this.editorImagePreviewVisible = true;
+                      })
                     Text('×')
                       .fontSize(13)
                       .fontWeight(600)
@@ -903,6 +929,7 @@ export struct KnowledgeBankPage {
                       .objectFit(ImageFit.Cover)
                       .borderRadius(RADIUS_CONTROL)
                       .onClick(() => {
+                        this.editorPreviewUri = img; // ★ 0.211.1：预览当前点击的那张（原固定 [0]）
                         this.editorImagePreviewVisible = true;
                       })
                     Text('×')
@@ -1100,10 +1127,11 @@ export struct KnowledgeBankPage {
   }
 
   // ★ 0.160: fullscreen preview of the editor image — tap anywhere to close
+  // ★ 0.211.1：显示当前点击的那张（editorPreviewUri），标题图/内容图缩略点击均可放大
   @Builder
   editorImagePreview() {
     Column() {
-      Image(this.editorImages.length > 0 ? this.editorImages[0] : '')
+      Image(this.editorPreviewUri)
         .objectFit(ImageFit.Contain)
         .width('100%')
         .height('100%')
@@ -2248,14 +2276,10 @@ export struct KnowledgeBankPage {
                                 .objectFit(ImageFit.Cover)
                                 .borderRadius(RADIUS_CONTROL)
                                 .onClick(() => {
-                                  this.lastTapTime = Date.now(); // 单击拦截：不进编辑（双击由手势接管）
+                                  // ★ 0.211.1 用户报：点击图片要放大（原双击+拦截不预览）——单击即预览，
+                                  //   onClick 自消费不冒泡（0.200.0 教训）不会误进编辑
+                                  this.openImagePreview(getTitleImages(c), ti);
                                 })
-                                .gesture(
-                                  TapGesture({ count: 2 })
-                                    .onAction(() => {
-                                      this.openImagePreview(getTitleImages(c), ti);
-                                    })
-                                )
                             }, (img: string) => img)
                           }
                         }
@@ -2273,24 +2297,27 @@ export struct KnowledgeBankPage {
                         .fontSize(11)
                         .fontColor(this.nextReviewColor(c))
                         .margin({ top: 2 })
+                      // ★ 0.211.1 用户报：内容图 9 张也要全部展示（原仅首图 96×64 缩略）——对齐标题图条，
+                      //   单击预览全屏查看器
                       if (getCardImages(c).length > 0) {
-                        // Card image thumbnail — not rendered when empty
-                        // ★ 0.211.0：双击同样进全屏查看器（与标题图一致）
-                        Image(getCardImages(c)[0])
-                          .height(64)
-                          .width(96)
-                          .objectFit(ImageFit.Cover)
-                          .borderRadius(RADIUS_CONTROL)
-                          .margin({ top: 6 })
-                          .onClick(() => {
-                            this.lastTapTime = Date.now();
-                          })
-                          .gesture(
-                            TapGesture({ count: 2 })
-                              .onAction(() => {
-                                this.openImagePreview(getCardImages(c), 0);
-                              })
-                          )
+                        Scroll() {
+                          Row({ space: 6 }) {
+                            ForEach(getCardImages(c), (img: string, ci: number) => {
+                              Image(img)
+                                .height(72)
+                                .width(108)
+                                .objectFit(ImageFit.Cover)
+                                .borderRadius(RADIUS_CONTROL)
+                                .onClick(() => {
+                                  this.openImagePreview(getCardImages(c), ci);
+                                })
+                            }, (img: string) => img)
+                          }
+                        }
+                        .scrollable(ScrollDirection.Horizontal)
+                        .scrollBar(BarState.Off)
+                        .width('100%')
+                        .margin({ top: 6 })
                       }
                     }
                     .alignItems(HorizontalAlign.Start)
