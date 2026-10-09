@@ -898,6 +898,7 @@ export struct ChatPage {
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
   ctrlAxisAt: number = 0; // ★ 0.215.10：最近 Ctrl+滚轮时刻（300ms 窗内 List 滚动被吞=只缩放不滚动）
   shiftEnterAt: number = 0; // ★ 0.215.11：最近 Shift+回车时刻（300ms 窗内 onSubmit 跳过发送=只换行）
+  shiftHeld: boolean = false; // ★ 0.215.15：Shift 键按住状态（onKeyPreIme 追踪 Down/Up，判定兜底）
 
   /** ★ 0.215.14 设备三档判定（方案二落地）：deviceType 按系统 API（d.ts 实锤 phone/tablet/2in1/default），
    * 防御写法=明确移动设备（phone/tablet/tv/car/wearable）之外全算 PC 档——Matebook 无论返 2in1 还是
@@ -3388,22 +3389,35 @@ export struct ChatPage {
               }
               this.sendMessage();
             })
-            .onKeyEvent((e: KeyEvent) => {
-              console.info(`DAGAI-KEY code=${e.keyCode} type=${e.type}`);
-              // ★ 0.215.12：KeyDown（type=0）才判（0.215.11 无 type 过滤，KeyUp（type=1）也触发导致 onSubmit 重复）
-              if (e.type === KeyType.Down && e.keyCode === 2040) { // KeyType.Down 枚举（大写 D）；KEY_ENTER=2040
+            // ★ 0.215.15 Shift+回车真解（DeepSeek 思路·本地 d.ts 实锤）：onKeyPreIme——按键链最早回调
+            //   （输入法之前，common.d.ts 18687 行 Callback<KeyEvent, boolean>），return true 拦截输入法+onSubmit；
+            //   此前 onKeyEvent 零触发=链路最末端被 TextArea 吞，onKeyPreIme 在输入法之前不受吞。
+            //   键码实锤（keyCode.d.ts）：KEY_ENTER=2054（2040 是错值）、SHIFT_LEFT/RIGHT=2047/2048；
+            //   Shift 判定双保险=即时查 getModifierKeyState + Shift 键 Down/Up 状态追踪兜底。
+            .onKeyPreIme((event: KeyEvent): boolean => {
+              console.info(`DAGAI-KEY preIme code=${event.keyCode} type=${event.type}`);
+              if (event.keyCode === 2047 || event.keyCode === 2048) { // Shift 键本身：维护状态不消费
+                this.shiftHeld = event.type === KeyType.Down;
+                return false;
+              }
+              if (event.keyCode === 2054 && event.type === KeyType.Down) { // KEY_ENTER=2054 实锤
                 let shift = false;
                 try {
-                  shift = e.getModifierKeyState ? e.getModifierKeyState(['shift']) : false;
+                  shift = event.getModifierKeyState ? event.getModifierKeyState(['shift']) : false;
                 } catch (err) {
                   shift = false;
                 }
-                if (shift) {
-                  this.shiftEnterAt = Date.now();
-                  this.inputText += '\n'; // 末尾插入换行（光标在末尾的主场景；$$ 双向绑定刷新显示）
+                if (shift || this.shiftHeld) {
+                  this.shiftEnterAt = Date.now(); // onSubmit 时间窗双保险（防个别场景漏拦）
+                  this.inputText += '\n'; // 末尾插入换行（$$ 双向绑定刷新显示）
                   this.saveDraft(); // 草稿同步
+                  return true; // 消费——输入法与 onSubmit 全拦截，只换行不发送
                 }
               }
+              return false; // 普通回车放行 → onSubmit 发送
+            })
+            .onKeyEvent((e: KeyEvent) => {
+              console.info(`DAGAI-KEY legacy code=${e.keyCode} type=${e.type}`);
             })
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 
