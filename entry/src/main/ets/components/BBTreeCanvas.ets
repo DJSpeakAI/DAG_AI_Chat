@@ -600,9 +600,10 @@ export struct BBTreeCanvas {
     this.redrawEdges(); // ★ 0.167.2：缩放控件 → 连线重绘
   }
 
-  // ★ 0.215.1：滚轮缩放（第八轮回归；锚点=画布中心——lastHover 已随 0.215.0 清理不复活，简化）
-  wheelZoomAt(factor: number): void {
-    console.info(`DAGAI-ZOOM wheelZoomAt factor=${factor}`);
+  // ★ 0.215.4：滚轮缩放（第十一轮·轴事件版；锚点=光标位置——AxisEvent 自带 x/y 坐标，
+  //   无记录时回落画布中心；限幅/公式同 zoomBy）
+  wheelZoomAt(factor: number, ax: number = -1, ay: number = -1): void {
+    console.info(`DAGAI-ZOOM wheelZoomAt factor=${factor} ax=${ax} ay=${ay}`);
     const newScale = this.canvasScale * factor;
     if (factor > 1.0 && newScale > 2.0) {
       return; // 放大：只拦上限（方向感知，同 zoomBy）
@@ -610,11 +611,11 @@ export struct BBTreeCanvas {
     if (factor < 1.0 && newScale < 0.05) {
       return; // 缩小：只拦绝对下限
     }
-    const ax = this.viewW / 2;
-    const ay = this.viewH / 2;
+    const px = ax > 0 ? ax : this.viewW / 2;
+    const py = ay > 0 ? ay : this.viewH / 2;
     const ratio = newScale / this.canvasScale;
-    this.canvasOffsetX = ax - (ax - this.canvasOffsetX) * ratio;
-    this.canvasOffsetY = ay - (ay - this.canvasOffsetY) * ratio;
+    this.canvasOffsetX = px - (px - this.canvasOffsetX) * ratio;
+    this.canvasOffsetY = py - (py - this.canvasOffsetY) * ratio;
     this.canvasScale = newScale;
     this.redrawEdges(); // 连线随缩放重绘（Canvas 无状态绑定）
   }
@@ -1193,37 +1194,22 @@ export struct BBTreeCanvas {
           }
         }
 
-        // ── ★ 0.215.3：滚轮传感器（兄弟形态回归，第十轮）──
-        // 唯一被 hilog 实证收到滚轮的形态（0.214.7 日志：willScroll src=3）；死穴"内建手势截胡触摸"
-        // 由画布 Pan 改 parallelGesture 并行识别破解（Pan 与本传感器手势并行激活、互不抢占）；
-        // 触摸系来源（DRAG/FLING/EDGE_EFFECT/滚动条）一律放行不缩放；内容等高永不真滚。
-        Scroll() {
-          Column().width('100%').height('100%')
-        }
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.None)
-        .width('100%')
-        .height('100%')
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
-          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} x=${xOffset} y=${yOffset}`);
-          if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
-            || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
-            || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
-            return; // 触摸系：不缩放（画布 Pan 并行手势负责平移）
-          }
-          const delta = yOffset !== 0 ? yOffset : (xOffset !== 0 ? xOffset : 0);
-          if (delta === 0) {
-            return;
-          }
-          this.wheelZoomAt(delta < 0 ? 1.02 : 0.98); // 滚轮：负=放大正=缩小；速度=用户定稿
-        })
-
           }
           .width('100%')
           .height('100%')
           .clip(true) // ★ 0.126：裁剪画布溢出内容（连线/气泡不越出画布容器圆角）
+          // ★ 0.215.4 滚轮第十一轮（DeepSeek 思路·轴事件直连）：组件级 onAxisEvent 专用通道
+          //   （API 17+，d.ts 实锤 AxisEvent 带 scrollStep/x/y）——滚轮事件直达此回调转缩放，
+          //   完全绕开 Scroll 桥接（等高零触发死结）与手势竞技（传感器抢 Pan 死结）；
+          //   轮10 悬案同破：PanGesture 本就会被滚轮轴事件触发，parallelGesture 放行了它
+          //   →滚轮变平移；本版 Pan 已改回普通 .gesture（滚轮不再触发 Pan）。
+          .onAxisEvent((event: AxisEvent) => {
+            console.info(`DAGAI-ZOOM axis action=${event.action} step=${event.scrollStep} x=${event.x} y=${event.y}`);
+            const step = event.scrollStep ?? 0;
+            if (step !== 0) {
+              this.wheelZoomAt(step > 0 ? 1.02 : 0.98, event.x, event.y); // 方向按真机日志校准
+            }
+          })
 
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
           .onAreaChange((oldVal: Area, newVal: Area) => {
@@ -1240,7 +1226,9 @@ export struct BBTreeCanvas {
             this.redrawEdges(); // ★ 0.167.2：组件尺寸变化 Canvas 缓冲区跟随 → 重绘
           })
           // ── 画布平移手势 ──
-          .parallelGesture(
+          // ★ 0.215.4：parallelGesture 已弃（轮10 悬案元凶——parallel 模式放行滚轮轴事件触发
+          //   Pan=滚轮变平移画布）；改回普通 .gesture，滚轮专走 onAxisEvent 通道互不相扰
+          .gesture(
             PanGesture({ distance: 5 })
               .onActionStart(() => {
                 this.canvasPanStartX = this.canvasOffsetX;
