@@ -397,8 +397,27 @@ export struct KnowledgeBankPage {
     }
   }
 
-  // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）
-  openImagePreview(images: string[], index: number): void {
+  // ★ 0.212.0：卡片滑动露出的回收站删除面板（左滑右滑同款；华为风格=警示红底+白色回收站 svg，
+  //   弃红 ×；点击走 requestDeleteCard 原确认弹窗链路不直接删）。swipeAction 场景内容静态，
+  //   带参 @Builder 无刷新风险（0.190.1 铁律针对需随状态变化的渲染）
+  @Builder
+  swipeDeletePanel(c: KnowledgeCard) {
+    Row() {
+      Image($r('app.media.trash'))
+        .width(24)
+        .height(24)
+    }
+    .justifyContent(FlexAlign.Center)
+    .width(76)
+    .height('100%')
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(DANGER)
+    .onClick(() => {
+      this.requestDeleteCard(c);
+    })
+  }
+
+  // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）  openImagePreview(images: string[], index: number): void {
     this.previewImages = images;
     this.previewIndex = index;
     this.previewScale = 1;
@@ -1174,9 +1193,10 @@ export struct KnowledgeBankPage {
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
         Row() {
-          Text(this.deleteConfirmNoRemind ? '☑' : '☐')
-            .fontSize(18)
-            .fontColor(this.deleteConfirmNoRemind ? BRAND_PRIMARY : TEXT_TERTIARY)
+          Image(this.deleteConfirmNoRemind ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.212.0：☑/☐ 换 svg
+            .width(20)
+            .height(20)
+
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
             })
@@ -1870,9 +1890,9 @@ export struct KnowledgeBankPage {
             ForEach(this.packData.folders, (f: PackFolder) => {
               if (f.parentRef === '') {
                 Row() {
-                  Text(this.packSel.includes(f.refId) ? '☑' : '☐')
-                    .fontSize(20)
-                    .fontColor(this.packSel.includes(f.refId) ? BRAND_PRIMARY : TEXT_TERTIARY)
+                  Image(this.packSel.includes(f.refId) ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.212.0：☑/☐ 换 svg
+                    .width(20)
+                    .height(20)
                     .margin({ right: 10 })
                     .onClick(() => {
                       this.togglePackSel(f.refId);
@@ -1899,9 +1919,9 @@ export struct KnowledgeBankPage {
             }, (f: PackFolder) => f.refId)
             if (this.packRootCardCount() > 0) {
               Row() {
-                Text(this.packRootCardsSel ? '☑' : '☐')
-                  .fontSize(20)
-                  .fontColor(this.packRootCardsSel ? BRAND_PRIMARY : TEXT_TERTIARY)
+                Image(this.packRootCardsSel ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.212.0：☑/☐ 换 svg
+                  .width(20)
+                  .height(20)
                   .margin({ right: 10 })
                   .onClick(() => {
                     this.packRootCardsSel = !this.packRootCardsSel;
@@ -2213,9 +2233,10 @@ export struct KnowledgeBankPage {
                       // ★ 0.148: multi-select check indicator — an icon Text,
                       // NOT a Checkbox: the whole row handles tap-toggle and a
                       // real Checkbox would fire a second onChange
-                      Text(this.selectedIds.includes(c.id) ? '☑' : '☐')
-                        .fontSize(20)
-                        .fontColor(this.selectedIds.includes(c.id) ? BRAND_PRIMARY : TEXT_TERTIARY)
+                      // ★ 0.212.0 用户拍板：☑/☐ 字符勾选框太丑——换华为风格 checkbox svg（选中=品牌紫底白勾）
+                      Image(this.selectedIds.includes(c.id) ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off'))
+                        .width(20)
+                        .height(20)
                         .margin({ right: 8 })
                     }
                     // Entry content block: title -> definition -> image thumbnail
@@ -2346,15 +2367,8 @@ export struct KnowledgeBankPage {
                     })
 
                     if (!this.multiSelectMode) {
-                      // ★ 0.202.0：原紫渐变「问AI」钮已移至标题行右端灰字（上方），此处仅保留单删按钮
-                      Button('×')
-                        .fontSize(16)
-                        .fontColor(DANGER)
-                        .backgroundColor(Color.Transparent)
-                        .padding({ left: 8, right: 8 })
-                        .onClick(() => {
-                          this.requestDeleteCard(c);
-                        })
+                      // ★ 0.212.0：常驻红 × 删除按钮已撤（用户批"太难看特别是红色"）——删除入口改为
+                      //   卡片左右滑露出的回收站面板（见 ListItem.swipeAction），点击走原确认弹窗链路
                     }
                   }
                   .width('100%')
@@ -2373,6 +2387,12 @@ export struct KnowledgeBankPage {
                         }
                       })
                   )
+                  .swipeAction({
+                    // ★ 0.212.0 用户拍板：左右滑露回收站面板（常驻红 × 已撤）；点击走原确认弹窗链路；
+                    //   多选模式下不挂（多选有整行点选+批量删除栏，避免手势打架）
+                    end: this.multiSelectMode ? undefined : this.swipeDeletePanel(c),
+                    start: this.multiSelectMode ? undefined : this.swipeDeletePanel(c)
+                  })
                 }
               }, (c: KnowledgeCard) => c.id)
             }
