@@ -80,11 +80,12 @@ export struct ReviewPage {
   cardImport: CardImportStore = connectCardImport();
   @Local askSheetVisible: boolean = false;
   // ── ★ 0.202.0：每日复习量（右上角 ⚙）──
-  dailyCount: DailyReviewCountStore = connectDailyReviewCount();
+  // ★ 0.209.1 修复：普通成员→@Local（@ObservedV2 实例必须挂组件状态，@Computed 依赖才在真机上可靠响应）
+  @Local dailyCount: DailyReviewCountStore = connectDailyReviewCount();
   @Local countSettingsVisible: boolean = false; // ⚙ 弹窗开关
   statStore: StatisticsStore = connectStatistics(); // ★ 0.202.3：司忆量埋点
   // ── ★ 0.209.0：卡面模式 + 翻面状态 ──
-  faceMode: FaceModeStore = connectFaceMode();
+  @Local faceMode: FaceModeStore = connectFaceMode();
   @Local cardFlipped: boolean = false; // 当前卡是否已翻到反面（每换一张卡重置为 false）
 
   @Computed get isDoubleFace(): boolean {
@@ -807,41 +808,84 @@ export struct ReviewPage {
     }
   }
 
+  // ★ 0.209.1 修复：countSegment 带参 @Builder 按值传参不刷新（同 faceSegment）——无参化拆分，内部直读状态
   @Builder
-  countSegment(label: string, isCustom: boolean, count: number, onPick: (mode: string) => void): void {
+  wordCountSegment(): void {
     Row({ space: 6 }) {
       Text('10')
         .fontSize(12)
-        .fontWeight(!isCustom && count === 10 ? 600 : 400)
-        .fontColor(!isCustom && count === 10 ? Color.White : TEXT_SECONDARY)
+        .fontWeight(!this.csWordCustom && this.dailyCount.wordCount === 10 ? 600 : 400)
+        .fontColor(!this.csWordCustom && this.dailyCount.wordCount === 10 ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!isCustom && count === 10 ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(!this.csWordCustom && this.dailyCount.wordCount === 10 ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          onPick('10');
+          this.applyWordCount('10');
         })
       Text('20')
         .fontSize(12)
-        .fontWeight(!isCustom && count === 20 ? 600 : 400)
-        .fontColor(!isCustom && count === 20 ? Color.White : TEXT_SECONDARY)
+        .fontWeight(!this.csWordCustom && this.dailyCount.wordCount === 20 ? 600 : 400)
+        .fontColor(!this.csWordCustom && this.dailyCount.wordCount === 20 ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!isCustom && count === 20 ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(!this.csWordCustom && this.dailyCount.wordCount === 20 ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          onPick('20');
+          this.applyWordCount('20');
         })
       Text('自定义')
         .fontSize(12)
-        .fontWeight(isCustom ? 600 : 400)
-        .fontColor(isCustom ? Color.White : TEXT_SECONDARY)
+        .fontWeight(this.csWordCustom ? 600 : 400)
+        .fontColor(this.csWordCustom ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(isCustom ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.csWordCustom ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          onPick('custom');
+          this.applyWordCount('custom');
+        })
+    }
+    .padding(3)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(SURFACE_SOFT)
+  }
+
+  @Builder
+  knowledgeCountSegment(): void {
+    Row({ space: 6 }) {
+      Text('10')
+        .fontSize(12)
+        .fontWeight(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? 600 : 400)
+        .fontColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.applyKnowledgeCount('10');
+        })
+      Text('20')
+        .fontSize(12)
+        .fontWeight(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? 600 : 400)
+        .fontColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.applyKnowledgeCount('20');
+        })
+      Text('自定义')
+        .fontSize(12)
+        .fontWeight(this.csKnowledgeCustom ? 600 : 400)
+        .fontColor(this.csKnowledgeCustom ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(this.csKnowledgeCustom ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.applyKnowledgeCount('custom');
         })
     }
     .padding(3)
@@ -850,30 +894,62 @@ export struct ReviewPage {
   }
 
   // ★ 0.209.0：卡面模式分段控件（单面 | 正反两面——样式同 countSegment 分段）
+  // ★ 0.209.1 修复：带参 @Builder 按值传参不刷新（0.190.1 铁律复发）——无参化拆分，内部直读状态
   @Builder
-  faceSegment(isDouble: boolean, onPick: (mode: string) => void): void {
+  wordFaceSegment(): void {
     Row({ space: 6 }) {
       Text('单面')
         .fontSize(12)
-        .fontWeight(!isDouble ? 600 : 400)
-        .fontColor(!isDouble ? Color.White : TEXT_SECONDARY)
+        .fontWeight(this.faceMode.wordFace !== 'double' ? 600 : 400)
+        .fontColor(this.faceMode.wordFace !== 'double' ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!isDouble ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.faceMode.wordFace !== 'double' ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          onPick('single');
+          this.applyWordFace('single');
         })
       Text('正反两面')
         .fontSize(12)
-        .fontWeight(isDouble ? 600 : 400)
-        .fontColor(isDouble ? Color.White : TEXT_SECONDARY)
+        .fontWeight(this.faceMode.wordFace === 'double' ? 600 : 400)
+        .fontColor(this.faceMode.wordFace === 'double' ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(isDouble ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.faceMode.wordFace === 'double' ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          onPick('double');
+          this.applyWordFace('double');
+        })
+    }
+    .padding(3)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(SURFACE_SOFT)
+  }
+
+  @Builder
+  knowledgeFaceSegment(): void {
+    Row({ space: 6 }) {
+      Text('单面')
+        .fontSize(12)
+        .fontWeight(this.faceMode.knowledgeFace !== 'double' ? 600 : 400)
+        .fontColor(this.faceMode.knowledgeFace !== 'double' ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(this.faceMode.knowledgeFace !== 'double' ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.applyKnowledgeFace('single');
+        })
+      Text('正反两面')
+        .fontSize(12)
+        .fontWeight(this.faceMode.knowledgeFace === 'double' ? 600 : 400)
+        .fontColor(this.faceMode.knowledgeFace === 'double' ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(this.faceMode.knowledgeFace === 'double' ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          this.applyKnowledgeFace('double');
         })
     }
     .padding(3)
@@ -911,9 +987,7 @@ export struct ReviewPage {
             .fontWeight(600)
             .fontColor(TEXT_PRIMARY)
             .alignSelf(ItemAlign.Start)
-          this.faceSegment(this.faceMode.wordFace === 'double', (mode: string): void => {
-            this.applyWordFace(mode);
-          })
+          this.wordFaceSegment()
         }
         .width('100%')
         .padding(12)
@@ -926,9 +1000,7 @@ export struct ReviewPage {
             .fontWeight(600)
             .fontColor(TEXT_PRIMARY)
             .alignSelf(ItemAlign.Start)
-          this.faceSegment(this.faceMode.knowledgeFace === 'double', (mode: string): void => {
-            this.applyKnowledgeFace(mode);
-          })
+          this.knowledgeFaceSegment()
         }
         .width('100%')
         .padding(12)
@@ -952,9 +1024,7 @@ export struct ReviewPage {
             .fontWeight(600)
             .fontColor(TEXT_PRIMARY)
             .alignSelf(ItemAlign.Start)
-          this.countSegment('word', this.csWordCustom, this.dailyCount.wordCount, (mode: string): void => {
-            this.applyWordCount(mode);
-          })
+          this.wordCountSegment()
           if (this.csWordCustom) {
             Row({ space: 8 }) {
               TextInput({ text: this.csWordInput, placeholder: '1 ~ 500' })
@@ -995,9 +1065,7 @@ export struct ReviewPage {
             .fontWeight(600)
             .fontColor(TEXT_PRIMARY)
             .alignSelf(ItemAlign.Start)
-          this.countSegment('knowledge', this.csKnowledgeCustom, this.dailyCount.knowledgeCount, (mode: string): void => {
-            this.applyKnowledgeCount(mode);
-          })
+          this.knowledgeCountSegment()
           if (this.csKnowledgeCustom) {
             Row({ space: 8 }) {
               TextInput({ text: this.csKnowledgeInput, placeholder: '1 ~ 500' })
