@@ -501,11 +501,12 @@ export struct ReviewPage {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
       .alignItems(HorizontalAlign.Center)
-      // ★ 0.209.0：双面模式点击卡片翻面（再点翻回正面——正反循环；单面模式点击无动作）
+      // ★ 0.209.0：双面模式点击卡片翻面；★ 0.209.3 用户拍板：翻面后点反面无动作（反面=终态，
+      // 「标题+内容组合」已完整展示，没有任何理由翻回——评分三按钮是唯一跳卡出口）
       // 喇叭/问AI 等子组件点击不冒泡（0.200.0 教训）互不干扰
       .onClick(() => {
-        if (this.isDoubleFace) {
-          this.cardFlipped = !this.cardFlipped;
+        if (this.isDoubleFace && !this.cardFlipped) {
+          this.cardFlipped = true;
         }
       })
       // ★ 0.200.0 入口 C：右上角「问 AI」——仅知识卡显示（单词走遗忘曲线无导入需求）；
@@ -1155,19 +1156,20 @@ export struct ReviewPage {
           Column() {
             Blank().layoutWeight(1)
             this.cardArea()
-            Blank().layoutWeight(1)
-            // ★ 0.209.2 修复「点反面误跳卡」：评分区改固定高度占位——翻面前就预留按钮空间，
-            //   翻面瞬间卡片位置纹丝不动（原 0.209.0 动态 if：评分区弹出挤占 Blank → 卡片上移 →
-            //   评分按钮窜到用户刚点过正面区域的位置 → 第二次点击误触评分按钮直接跳卡）。
-            //   if 在固定占位容器内初次渲染即 Visible，符合 0.160.x 铁律；评分逻辑零改动
+            // ★ 0.209.3 用户拍板两连改：①占位区挪到卡片正下方（原 0.209.2 贴屏幕底——按钮与卡片
+            //   之间被 Blank 弹性隔出大片空白，用户骂"上面的空格太多非常难看"；现在按钮紧跟卡片
+            //   成组居中）②占位高度恒定 → 翻面瞬间卡片纹丝不动（0.209.2 跳卡修复不回归）；
+            //   评分逻辑零改动
             Column() {
               if (this.faceReady) {
                 this.ratingArea()
               }
             }
             .width('100%')
-            .height(88) // 评分按钮高度（三行文字+padding 12×2≈78）+余量；justifyContent End 让按钮贴底、余隙成为按钮与卡片间的天然间距
-            .justifyContent(FlexAlign.End)
+            .height(92) // 评分按钮高（三行文字+padding 12×2≈78）+顶部间距 12+余量
+            .padding({ top: 12 }) // 按钮与卡片底边的固定间距
+            .justifyContent(FlexAlign.Start)
+            Blank().layoutWeight(1)
           }
           .width('100%')
           .layoutWeight(1)

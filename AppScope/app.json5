@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000128, // ★ 0.209.2：修复双面模式点反面误跳卡（评分区改固定占位，翻面瞬间卡片不再位移）
+    "versionCode": 1000129, // ★ 0.209.3：评分按钮紧贴卡片下方成组居中+翻面后点反面不再翻回（用户拍板）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
