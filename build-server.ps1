@@ -122,7 +122,10 @@ function Do-Install($target) {
             $report += "$id => 自动启动: $(($s -join ' '))"
         }
     }
-    return @{ ok = $true; hap = $b.hap; devices = $report -join "`n" }
+    $joined = $report -join "`n"
+    $good = $joined -match "successfully"
+    $bad = $joined -match "failed|error:"
+    return @{ ok = ($good -and -not $bad); hap = $b.hap; devices = $joined }
 }
 
 $listener = New-Object System.Net.HttpListener
