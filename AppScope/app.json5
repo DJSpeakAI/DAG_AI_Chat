@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000136, // ★ 0.211.2：四场景图片预览统一查看器（单击关/双击缓动/滚轮缩放/侧滑拦截防退页）
+    "versionCode": 1000137, // ★ 0.211.3：修 0.211.2 编译错误（scrollDelta 不存在+方法名不匹配），旧版曾因 hvigor 缓存假成功装机
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

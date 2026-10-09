@@ -1121,12 +1121,7 @@ export struct KnowledgeBankPage {
               .width('100%')
               .height('100%')
               .scale({ x: this.previewScale, y: this.previewScale })
-              .onMouse((event: MouseEvent) => {
-                // ★ 0.211.2：PC 鼠标滚轮缩放（手机无鼠标不受影响）
-                if (event.action === MouseAction.Move && Math.abs(event.scrollDelta.y) > 0.01) {
-                  this.applyPreviewScale(this.previewScale - event.scrollDelta.y * 0.0015);
-                }
-              })
+              // ★ 0.211.3：UI 层 MouseEvent 无 scrollDelta 属性（编译实锤）——滚轮缩放暂缓，PC 用双击缩放
               .gesture(
                 PinchGesture({ fingers: 2 })
                   .onActionUpdate((event: GestureEvent) => {
@@ -1141,7 +1136,7 @@ export struct KnowledgeBankPage {
               .gesture(
                 TapGesture({ count: 1 })
                   .onAction(() => {
-                    this.handlePreviewTap();
+                    this.previewTapHandled();
                   })
               )
           }, (url: string) => url)
