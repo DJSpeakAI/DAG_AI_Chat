@@ -478,7 +478,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.209.1') // ★ 0.209.1：修复卡面模式设置点击后前台不刷新；更早历史见 MEMORY.md
+        Text('v0.209.2') // ★ 0.209.2：修复双面模式点反面误跳卡；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

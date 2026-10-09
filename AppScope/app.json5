@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000127, // ★ 0.209.1：修复卡面模式/复习量设置点击后 UI 不刷新（带参@Builder按值传参+状态未挂@Local）
+    "versionCode": 1000128, // ★ 0.209.2：修复双面模式点反面误跳卡（评分区改固定占位，翻面瞬间卡片不再位移）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

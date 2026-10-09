@@ -1155,15 +1155,23 @@ export struct ReviewPage {
           Column() {
             Blank().layoutWeight(1)
             this.cardArea()
-            // ★ 0.209.0：双面模式须翻面后才显示评分区（单面恒显=现状不变；评分逻辑本身完全不动）
-            if (this.faceReady) {
-              this.ratingArea()
-            }
             Blank().layoutWeight(1)
+            // ★ 0.209.2 修复「点反面误跳卡」：评分区改固定高度占位——翻面前就预留按钮空间，
+            //   翻面瞬间卡片位置纹丝不动（原 0.209.0 动态 if：评分区弹出挤占 Blank → 卡片上移 →
+            //   评分按钮窜到用户刚点过正面区域的位置 → 第二次点击误触评分按钮直接跳卡）。
+            //   if 在固定占位容器内初次渲染即 Visible，符合 0.160.x 铁律；评分逻辑零改动
+            Column() {
+              if (this.faceReady) {
+                this.ratingArea()
+              }
+            }
+            .width('100%')
+            .height(88) // 评分按钮高度（三行文字+padding 12×2≈78）+余量；justifyContent End 让按钮贴底、余隙成为按钮与卡片间的天然间距
+            .justifyContent(FlexAlign.End)
           }
           .width('100%')
           .layoutWeight(1)
-          .padding({ bottom: 32 }) // ★ 0.197.0 用户拍板：评分按钮不顶格——底部留白 32vp（上边距由 Blank 弹性天然保证）
+          .padding({ bottom: 32 }) // ★ 0.197.0 用户拍板：评分按钮不顶格——底部留白 32vp
         }
       }
       .width('100%')
