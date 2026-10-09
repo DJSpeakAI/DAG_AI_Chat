@@ -3231,8 +3231,28 @@ export struct ChatPage {
            // ★ 0.191.0 重做：滚动中实时记录高度——aboutToDisappear 在 pop 转场中可能读不到偏移（实测记录丢失→回来跳底部），
            //   改由滚动事件持续写入模块级 Map，退出钩子仅作兜底
            .onScroll(() => {
-             this.recordReadingPosition();
-           })
+              this.recordReadingPosition();
+            })
+            // ★ 0.215.9 对话页 Ctrl+滚轮缩放（用户核心诉求翻案成功）：
+            // BaseEvent.getModifierKeyState(['ctrl'])（API12+，d.ts 实锤支持 Ctrl/Alt/Shift）——
+            // 此前"Ctrl 判死"基于 MouseEvent 无按键状态，AxisEvent 继承 BaseEvent 有此方法；
+            // Ctrl 按住+滚轮 → 正文/表格/代码块/司忆区字号缩放（fs 体系+持久化全复用）；
+            // 未按 Ctrl → 零干预（消息列表正常滚动翻页）；仅宽屏启用（手机端无缩放=既定设计）
+            .onAxisEvent((event: AxisEvent) => {
+              let ctrl = false;
+              try {
+                ctrl = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+              } catch (e) {
+                ctrl = false;
+              }
+              const v = event.getVerticalAxisValue();
+              console.info(`DAGAI-ZOOM chatAxis v=${v} ctrl=${ctrl}`);
+              if (ctrl && v !== 0 && this.windowMode.isTablet) {
+                const s = this.fontScale * (v < 0 ? 1.04 : 0.96);
+                this.fontScale = Math.min(1.6, Math.max(0.75, Math.round(s * 100) / 100));
+                this.fontScaleStore.value = this.fontScale;
+              }
+            })
             // ★ 0.214.0：双指捏合缩放正文（Pad 双指 / Matebook 触摸板双指；单指滚动不受影响；边栏/顶栏/输入区不缩）
             // ★ 0.214.1：仅宽屏启用——手机端捏合体验差（误触），手机字号保持系统默认（用户拍板）
             .gesture(
