@@ -3367,7 +3367,7 @@ export struct ChatPage {
             // ★ 0.215.11 回车=发送（用户要求标准 IM 交互；NEW_LINE 时代回车纯换行已废弃）；
             //   Shift+回车=换行：物理键盘经 onKeyEvent 判 Shift（组件层 KeyEvent.getModifierKeyState，
             //   滚轮翻案同源 API）插 \n 并标记时间窗，onSubmit 窗内跳过发送；软键盘无物理键直发。
-            .enterKeyType(EnterKeyType.SEND)
+            .enterKeyType(EnterKeyType.Send)
             .onSubmit(() => {
               if (Date.now() - this.shiftEnterAt < 300) {
                 return; // Shift+回车帧：已插换行，跳过发送
@@ -3375,7 +3375,7 @@ export struct ChatPage {
               this.sendMessage();
             })
             .onKeyEvent((e: KeyEvent) => {
-              if (e.keycode === 2016) { // KeyCode.KEY_ENTER（@ohos.multimodalInput.keyCode，数值直写免 import 查重）
+              if (e.keyCode === 2016) { // KeyCode.KEY_ENTER（@ohos.multimodalInput.keyCode，数值直写免 import 查重）
                 let shift = false;
                 try {
                   shift = e.getModifierKeyState ? e.getModifierKeyState(['shift']) : false;
