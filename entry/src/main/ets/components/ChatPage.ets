@@ -1042,6 +1042,8 @@ export struct ChatPage {
 
     // ★ 0.216.0 三级降级·第一分叉：API Key 未配 → 端侧大模型（免费离线，DataAugmentationKit）；
     //   已配 → 云端 streamChat（下方原链路不变）。端侧不支持图片——无 Key 且带图时提前友好报错
+    // ★ 0.216.1：降级判定诊断日志（Key 长度+provider+model，抓"Key 清了还走云端"的真实现场）
+    console.info(`DAGAI-LLM route keyLen=${this.apiConfig.apiKey.trim().length} provider=${this.apiConfig.provider} model=${this.apiConfig.model}`);
     if (this.apiConfig.apiKey.trim().length === 0) {
       if (this.pendingImages.length > 0) {
         this.isLoading = false;
@@ -1188,6 +1190,49 @@ export struct ChatPage {
     // 播客模式：沿用该消息原发起模式，重新追加播客 prompt
     if (msg.isPodcastMode) {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
+    }
+    // ★ 0.216.1：regenerateMessage 同样降级——Key 空→端侧（与 sendMessage 同款判定，两处调用点全覆盖）
+    console.info(`DAGAI-LLM route(regen) keyLen=${this.apiConfig.apiKey.trim().length}`);
+    if (this.apiConfig.apiKey.trim().length === 0) {
+      this.streamController = localStreamChat(
+        messagesToSend,
+        (chunk: string) => {
+          if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
+            msg.content = '';
+          }
+          msg.content += chunk;
+          this.scroller.scrollEdge(Edge.Bottom);
+          const cb1 = this.currentBubble;
+          if (cb1) {
+            cb1.messages = [...cb1.messages];
+          }
+        },
+        (inputTokens: number, outputTokens: number) => {
+          this.isLoading = false;
+          this.streamPhase = 0;
+          this.streamController = null;
+          const cb2 = this.currentBubble;
+          if (cb2) {
+            cb2.messages = [...cb2.messages];
+          }
+          this.scroller.scrollEdge(Edge.Bottom);
+          this.saveTree();
+          recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens);
+        },
+        (error: string) => {
+          this.isLoading = false;
+          this.streamPhase = 0;
+          this.streamController = null;
+          msg.content = classifyStreamError(error);
+          const cb3 = this.currentBubble;
+          if (cb3) {
+            cb3.messages = [...cb3.messages];
+          }
+          this.scroller.scrollEdge(Edge.Bottom);
+          this.saveTree();
+        }
+      ) as StreamController;
+      return;
     }
     this.streamController = streamChat(
       messagesToSend,
