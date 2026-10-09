@@ -478,7 +478,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.214.5') // ★ 0.214.5：单指拖画布零干扰（传感器鼠标在场才上岗）；更早历史见 MEMORY.md
+        Text('v0.214.6') // ★ 0.214.6：滚轮失效根治（onHover 驱动）；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000150, // ★ 0.214.5：单指拖画布抢手势根治（传感器仅鼠标在场时上岗）；更早历史见 MEMORY.md
+    "versionCode": 1000151, // ★ 0.214.6：滚轮失效根治（onHover 双态驱动传感器）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

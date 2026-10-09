@@ -1222,14 +1222,17 @@ export struct BBTreeCanvas {
           .height('100%')
           .clip(true) // ★ 0.126：裁剪画布溢出内容（连线/气泡不越出画布容器圆角）
           // ★ 0.214.0：记录鼠标悬停位置（滚轮缩放锚点；Move/Hover 两态都更新）
-          // ★ 0.214.5：同时驱动鼠标在场标记——滚轮传感器随鼠标 hover 上岗、离场消失
-          //   （触摸场景传感器 visibility None=不参与命中与手势竞技，单指拖画布零干扰）
           .onMouse((event: MouseEvent) => {
             if (event.action === MouseAction.Move || event.action === MouseAction.Hover) {
               this.lastHoverX = event.x;
               this.lastHoverY = event.y;
-              this.mouseOnCanvas = true; // 只置真不回假：鼠标设备上传感器常开（滚轮常需）；触摸设备鼠标从未来过=永 false=零干扰（MouseAction 无 Exit 枚举，编译实锤 0.214.5）
             }
+          })
+          // ★ 0.214.6：鼠标在场标记改由 onHover 驱动（0.214.5 教训：onMouse 的 Move/Hover 在鼠标
+          //   静止悬停时不触发，传感器常黑=滚轮失效；onHover 是标准进出双态事件——滚轮时鼠标
+          //   必在画布上悬停=true 传感器必在场，离开=false 传感器消失；触摸设备永 false 零干扰）
+          .onHover((isHover: boolean) => {
+            this.mouseOnCanvas = isHover;
           })
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
           .onAreaChange((oldVal: Area, newVal: Area) => {
