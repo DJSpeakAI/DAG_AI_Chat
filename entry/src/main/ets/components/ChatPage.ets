@@ -25,6 +25,7 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）
 import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
+import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -113,6 +114,7 @@ export struct WaitingDots { // ★ 0.196.2：export——ReviewPage 完成页「
   private timerId: number = -1;
 
   aboutToAppear(): void {
+    console.info(`DAGAI-DEV deviceType=${deviceInfo.deviceType}`); // ★ 0.215.14：三档判定实锤日志（装机后拉 hilog 验证 Matebook 实际值）
     this.timerId = setInterval(() => {
       this.phase = (this.phase + 1) % 3;
     }, 400);
@@ -896,6 +898,14 @@ export struct ChatPage {
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
   ctrlAxisAt: number = 0; // ★ 0.215.10：最近 Ctrl+滚轮时刻（300ms 窗内 List 滚动被吞=只缩放不滚动）
   shiftEnterAt: number = 0; // ★ 0.215.11：最近 Shift+回车时刻（300ms 窗内 onSubmit 跳过发送=只换行）
+
+  /** ★ 0.215.14 设备三档判定（方案二落地）：deviceType 按系统 API（d.ts 实锤 phone/tablet/2in1/default），
+   * 防御写法=明确移动设备（phone/tablet/tv/car/wearable）之外全算 PC 档——Matebook 无论返 2in1 还是
+   * default 都不回退；Pad 横屏再宽也是 tablet 档永不串 PC（0.215.13 isTablet 宽度分治的 Pad 误判根治） */
+  isPcDevice(): boolean {
+    const t = deviceInfo.deviceType;
+    return t !== 'phone' && t !== 'tablet' && t !== 'tv' && t !== 'car' && t !== 'wearable';
+  }
   // ★ 0.214.2：缩放持久化（全新 PersistenceV2 key——跨页面/重启记住，用户拍板"不用来回攻"）
   fontScaleStore: ChatFontScaleStore = connectChatFontScale();
 
@@ -3371,7 +3381,7 @@ export struct ChatPage {
             //   窄屏（手机）右下角=换行（用户要求恢复——手机发送走按钮，回车键留给换行更顺手）。
             //   PC Shift+回车换行受平台限制（TextArea 吞物理回车、onKeyEvent 零触发已实锤三面碰壁），
             //   PC 端换行过渡方案=输入框内手动换行；待华为新 API 或 DevEco 本地深挖。
-            .enterKeyType(this.windowMode.isTablet ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
+            .enterKeyType(this.isPcDevice() ? EnterKeyType.Send : EnterKeyType.NEW_LINE) // ★ 0.215.14 三档定型：PC=Send（回车发送）、手机+Pad=NEW_LINE（右下角换行，发送走按钮——Pad 横屏不再被宽度断点误判成 PC）
             .onSubmit(() => {
               if (Date.now() - this.shiftEnterAt < 300) {
                 return; // Shift+回车帧：已插换行，跳过发送
