@@ -25,6 +25,7 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）
 import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.214.1：窗口宽度模式（捏合缩放仅宽屏启用——手机端禁用）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -884,6 +885,7 @@ export struct ChatPage {
   // ── ★ 0.214.0：对话页缩放（Pad 双指捏合 / Matebook 触摸板双指捏合；边栏不参与——只缩消息正文） ──
   @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
+  windowMode: WindowMode = connectWindowMode(); // ★ 0.214.1：捏合仅宽屏启用（手机端禁用——用户拍板体验差）
 
   /** ★ 0.214.0：正文字号换算（一位小数平滑；只用于消息正文——边栏/顶栏/输入区不缩） */
   fs(base: number): number {
@@ -2898,14 +2900,14 @@ export struct ChatPage {
                                       // key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
                                       // ★ 0.188.0：👆→▼/▲ 紫色三角（UI_GUIDELINES 辅助紫=提示语义；展开态转▲）；点词/点箭头展开 3 档评分
                                       Text(this.reviewExpandKey === `${msg.messageId}|${w.id}` ? '▲' : '▼')
-                                        .fontSize(10)
+                                        .fontSize(this.fs(10))
                                         .fontColor(BRAND_SECONDARY)
                                         .margin({ right: 4 })
                                         .onClick(() => {
                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                         })
                                       Text(w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
-                                        .fontSize(13)
+                                        .fontSize(this.fs(13))
                                         .fontWeight(600)
                                         .fontColor(TEXT_SECONDARY)
                                         .maxLines(1)
@@ -2927,7 +2929,7 @@ export struct ChatPage {
                                       if (w.usPhonetic.length > 0) {
                                         // Phonetic right beside the word — same line, never ellipsized (user rule)
                                         Text(w.usPhonetic)
-                                          .fontSize(12)
+                                          .fontSize(this.fs(12))
                                           .fontColor(TEXT_TERTIARY)
                                           .maxLines(1)
                                           .margin({ left: 6 })
@@ -2948,7 +2950,7 @@ export struct ChatPage {
                                     if (w.fullName.length > 0) {
                                       // ★ 0.169.1：全称行划词（缩略词全称/中译英答案）
                                       Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
-                                        .fontSize(12)
+                                        .fontSize(this.fs(12))
                                         .fontColor(BRAND_SECONDARY)
                                         .maxLines(1)
                                         .margin({ top: 1 })
@@ -2967,7 +2969,7 @@ export struct ChatPage {
                                     }
                                     // ★ 0.169.1：释义行划词
                                     Text(w.explain, { controller: this.getOrCreateTextController(`${msg.messageId}|rwe${idx}`) })
-                                      .fontSize(12)
+                                      .fontSize(this.fs(12))
                                       .fontColor(TEXT_SECONDARY)
                                       .maxLines(1)
                                       .margin({ top: 2 })
@@ -3021,14 +3023,14 @@ export struct ChatPage {
                                        // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
                                        // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
                                        Text(this.reviewExpandKey === `${msg.messageId}|${card.id}` ? '▲' : '▼')
-                                         .fontSize(10)
+                                         .fontSize(this.fs(10))
                                          .fontColor(BRAND_SECONDARY)
                                          .margin({ right: 4 })
                                          .onClick(() => {
                                            this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                          })
                                        Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
-                                         .fontSize(13)
+                                         .fontSize(this.fs(13))
                                          .fontWeight(600)
                                          .fontColor(TEXT_SECONDARY)
                                          .maxLines(1)
@@ -3068,7 +3070,7 @@ export struct ChatPage {
                                     }
                                     // ★ 0.169.1：定义行划词
                                     Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
-                                      .fontSize(12)
+                                      .fontSize(this.fs(12))
                                       .fontColor(TEXT_SECONDARY)
                                       .maxLines(1)
                                       .margin({ top: 2 })
@@ -3179,13 +3181,17 @@ export struct ChatPage {
            .onScroll(() => {
              this.recordReadingPosition();
            })
-           // ★ 0.214.0：双指捏合缩放正文（Pad 双指 / Matebook 触摸板双指；单指滚动不受影响；边栏/顶栏/输入区不缩）
-           .gesture(
-             PinchGesture({ fingers: 2 })
-               .onActionStart(() => {
-                 this.pinchStartFontScale = this.fontScale;
-               })
-               .onActionUpdate((event: GestureEvent) => {
+            // ★ 0.214.0：双指捏合缩放正文（Pad 双指 / Matebook 触摸板双指；单指滚动不受影响；边栏/顶栏/输入区不缩）
+            // ★ 0.214.1：仅宽屏启用——手机端捏合体验差（误触），手机字号保持系统默认（用户拍板）
+            .gesture(
+              PinchGesture({ fingers: 2 })
+                .onActionStart(() => {
+                  this.pinchStartFontScale = this.fontScale;
+                })
+                .onActionUpdate((event: GestureEvent) => {
+                  if (!this.windowMode.isTablet) {
+                    return; // ★ 0.214.1：手机端不响应捏合缩放
+                  }
                  const s = this.pinchStartFontScale * event.scale;
                  this.fontScale = Math.min(1.6, Math.max(0.75, Math.round(s * 100) / 100));
                })

@@ -1181,7 +1181,8 @@ export struct BBTreeCanvas {
         .hitTestBehavior(HitTestMode.Transparent)
         .onScrollFrameBegin((offset: number, state: ScrollState) => {
           // 上滚（offset<0）=放大 / 下滚=缩小（与常规滚轮缩放语义一致）；锚点=鼠标悬停处
-          this.wheelZoomAt(offset < 0 ? 1.1 : 0.9);
+          // ★ 0.214.1：降速 60%（用户反馈太快——每档 1.1/0.9 → 1.04/0.96）
+          this.wheelZoomAt(offset < 0 ? 1.04 : 0.96);
           return { offsetRemain: 0 }; // 全额吞掉——传感器永不真滚
         })
           }
