@@ -735,9 +735,11 @@ export struct KnowledgeBankPage {
   }
 
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss
+  // ★ 0.210.2：根改 Stack（原 Column+Center 布局流里，mini 遮罩 100% 尺寸解析受兄弟元素影响
+  //   不铺满——dump 实锤 [520,1049] 起；Stack 子项百分比铺满语义可靠，双弹窗层互不干扰）
   @Builder
   editorDialog() {
-    Column() {
+    Stack({ alignContent: Alignment.Center }) {
       Column() {
         Text(this.editorIsAdd ? '新增知识卡' : '编辑知识卡')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
@@ -1015,7 +1017,7 @@ export struct KnowledgeBankPage {
     }
     .width('100%')
     .height('100%')
-    .justifyContent(FlexAlign.Center)
+
     .backgroundColor(OVERLAY)
   }
 

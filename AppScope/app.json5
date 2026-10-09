@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000132, // ★ 0.210.2：标签mini弹窗上移全屏遮罩层真居中（0.210.1 挂自适应父内无参照仍贴底）
+    "versionCode": 1000133, // ★ 0.210.3：编辑弹窗根改Stack（Column布局流下mini遮罩百分比铺满不可靠）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
