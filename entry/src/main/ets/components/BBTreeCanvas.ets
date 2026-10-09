@@ -1228,9 +1228,7 @@ export struct BBTreeCanvas {
             if (event.action === MouseAction.Move || event.action === MouseAction.Hover) {
               this.lastHoverX = event.x;
               this.lastHoverY = event.y;
-              this.mouseOnCanvas = true;
-            } else if (event.action === MouseAction.Exit) {
-              this.mouseOnCanvas = false;
+              this.mouseOnCanvas = true; // 只置真不回假：鼠标设备上传感器常开（滚轮常需）；触摸设备鼠标从未来过=永 false=零干扰（MouseAction 无 Exit 枚举，编译实锤 0.214.5）
             }
           })
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
