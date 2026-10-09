@@ -951,65 +951,67 @@ export struct KnowledgeBankPage {
         }
         .width('100%')
         .margin({ top: 20 })
-        // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）——挂弹窗 Column 尾部（后绘制在上层）──
-        // ★ 0.210.1 修复「下面的方框一直往下」：原 Blank() 把弹窗推到遮罩最底部（键盘一弹避让
-        //   反复触发，弹窗跟着一路下沉）；改标准居中（同 AppConfirmDialog 先例），键盘弹出也稳定
-        if (this.tagEditVisible) {
-          Column() {
-            Column() {
-              Text(this.tagEditOld.length === 0 ? '添加标签' : '修改标签')
-                .fontSize(14)
-                .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
-                .margin({ bottom: 10 })
-              TextInput({ text: this.tagEditNew, placeholder: '标签名（2~6 字最佳）' })
-                .fontSize(14)
-                .width('100%')
-                .height(40)
-                .padding({ left: 12, right: 12 })
-                .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(SURFACE_SOFT)
-                .onChange((v: string) => {
-                  this.tagEditNew = v;
-                })
-              Row({ space: 12 }) {
-                Button('取消')
-                  .layoutWeight(1)
-                  .fontColor(TEXT_SECONDARY)
-                  .backgroundColor(Color.Transparent)
-                  .onClick(() => {
-                    this.tagEditVisible = false;
-                  })
-                Button('确定')
-                  .layoutWeight(1)
-                  .backgroundColor(BRAND_PRIMARY)
-                  .fontColor(TEXT_PRIMARY)
-                  .onClick(() => {
-                    this.commitEditorTagEdit();
-                  })
-              }
-              .width('100%')
-              .margin({ top: 14 })
-            }
-            .width('86%')
-            .padding(18)
-            .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: 1, color: STROKE_CARD })
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
-          .backgroundColor('rgba(0,0,0,0.45)')
-          .onClick(() => {
-            this.tagEditVisible = false;
-          })
-        }
       }
       .width(this.isTablet ? 520 : '86%') // ★ 0.201.2：平板固定 520（86% 在宽屏超宽、双按钮被拉长——用户实测）；规范入 UI_GUIDELINES「模态弹窗与操作按钮」
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
+      // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）──
+      // ★ 0.210.1 修复「下面的方框一直往下」两连：①原 Blank() 把弹窗推到遮罩最底部（键盘避让
+      //   反复触发一路下沉）②挂编辑弹窗内部时 height('100%') 参照自适应高度父——无参照、永不安居
+      //   （真机 dump 实锤：标题 y=1640 贴屏底）。上移到全屏遮罩层与编辑弹窗同级：height('100%')
+      //   有全屏参照 → justifyContent Center 标准居中；后绘制保持在上层，遮罩点击关闭不变
+      if (this.tagEditVisible) {
+        Column() {
+          Column() {
+            Text(this.tagEditOld.length === 0 ? '添加标签' : '修改标签')
+              .fontSize(14)
+              .fontWeight(600)
+              .fontColor(TEXT_PRIMARY)
+              .margin({ bottom: 10 })
+            TextInput({ text: this.tagEditNew, placeholder: '标签名（2~6 字最佳）' })
+              .fontSize(14)
+              .width('100%')
+              .height(40)
+              .padding({ left: 12, right: 12 })
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(SURFACE_SOFT)
+              .onChange((v: string) => {
+                this.tagEditNew = v;
+              })
+            Row({ space: 12 }) {
+              Button('取消')
+                .layoutWeight(1)
+                .fontColor(TEXT_SECONDARY)
+                .backgroundColor(Color.Transparent)
+                .onClick(() => {
+                  this.tagEditVisible = false;
+                })
+              Button('确定')
+                .layoutWeight(1)
+                .backgroundColor(BRAND_PRIMARY)
+                .fontColor(TEXT_PRIMARY)
+                .onClick(() => {
+                  this.commitEditorTagEdit();
+                })
+            }
+            .width('100%')
+            .margin({ top: 14 })
+          }
+          .width('86%')
+          .padding(18)
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(SURFACE_NODE)
+          .border({ width: 1, color: STROKE_CARD })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.tagEditVisible = false;
+        })
+      }
     }
     .width('100%')
     .height('100%')
