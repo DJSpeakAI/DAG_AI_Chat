@@ -37,7 +37,7 @@ if (-not $Hvigorw) {
     if ($found) { $Hvigorw = $found.FullName }
 }
 if ($Hvigorw) { Write-Host "hvigorw: $Hvigorw" -ForegroundColor Green }
-else { Write-Host "WARN: hvigorw.bat not found by auto-detect; it will retry per request. If build fails, open build-server.ps1 and add your DevEco path to `$HvigorCandidates`" -ForegroundColor Yellow }
+else { Write-Host 'WARN: hvigorw.bat not found by auto-detect; it will retry per request. If build fails, edit the $HvigorCandidates list in build-server.ps1' -ForegroundColor Yellow }
 
 # --- locate hdc (DevEco sdk toolchains) ---
 $Hdc = $null
@@ -66,7 +66,7 @@ function Sync-Repo {
 }
 
 function Do-Build {
-    if (-not $Hvigorw) { return @{ ok = $false; err = "hvigorw.bat not found; edit `$HvigorCandidates` in build-server.ps1" } }
+    if (-not $Hvigorw) { return @{ ok = $false; err = 'hvigorw.bat not found; edit the $HvigorCandidates list in build-server.ps1' } }
     Sync-Repo
     Push-Location $RepoDir
     & $Hvigorw assembleHap --mode module -p product=default -p debuggable=true --no-daemon 2>&1 | Tee-Object -Variable buildLog | Out-Null
