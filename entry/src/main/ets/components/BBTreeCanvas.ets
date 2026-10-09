@@ -37,6 +37,7 @@ export struct BBTreeCanvas {
   @Local canvasPanStartY: number = 0;
   @Local canvasScale: number = 1.0;
   @Local pinchStartScale: number = 1.0;
+  lastAxisAt: number = 0; // ★ 0.215.5：最近轴事件时刻（滚轮伴生 Pan 抑制窗 250ms；触摸/鼠标拖无轴事件零影响）
   // ★ 0.130 画布可视区真实宽高（onAreaChange 获取，替代整屏尺寸 + 写死标题栏高度估算）
   @Local viewW: number = 0;
   @Local viewH: number = 0;
@@ -1204,10 +1205,11 @@ export struct BBTreeCanvas {
           //   轮10 悬案同破：PanGesture 本就会被滚轮轴事件触发，parallelGesture 放行了它
           //   →滚轮变平移；本版 Pan 已改回普通 .gesture（滚轮不再触发 Pan）。
           .onAxisEvent((event: AxisEvent) => {
-            console.info(`DAGAI-ZOOM axis action=${event.action} step=${event.scrollStep} x=${event.x} y=${event.y}`);
-            const step = event.scrollStep ?? 0;
-            if (step !== 0) {
-              this.wheelZoomAt(step > 0 ? 1.02 : 0.98, event.x, event.y); // 方向按真机日志校准
+            const v = event.getVerticalAxisValue(); // ★ 0.215.5：方向真载体（AxisEvent 方法，d.ts 9892 行实锤；scrollStep 恒正 3 无方向，224 条日志实证）
+            console.info(`DAGAI-ZOOM axis action=${event.action} step=${event.scrollStep} v=${v} x=${event.x} y=${event.y}`);
+            this.lastAxisAt = Date.now(); // ★ 0.215.5：时间窗联动——滚轮伴生的 Pan（上下平移）在 250ms 窗内被抑制
+            if (v !== 0) {
+              this.wheelZoomAt(v > 0 ? 1.02 : 0.98, event.x, event.y); // 方向符号按本轮日志校准
             }
           })
 
@@ -1231,10 +1233,19 @@ export struct BBTreeCanvas {
           .gesture(
             PanGesture({ distance: 5 })
               .onActionStart(() => {
+                // ★ 0.215.5：滚轮轴事件伴生 Pan 抑制（PanGesture 会被滚轮触发——官方行为，轮10 实证）：
+                // 轴事件后 250ms 窗内的 Pan 动作一律跳过（滚轮帧间隔≈100ms 持续刷新=持续抑制）；
+                // 触摸拖拽/鼠标拖拽无轴事件，永远不进此分支，零影响
+                if (Date.now() - this.lastAxisAt < 250) {
+                  return;
+                }
                 this.canvasPanStartX = this.canvasOffsetX;
                 this.canvasPanStartY = this.canvasOffsetY;
               })
               .onActionUpdate((event: GestureEvent) => {
+                if (Date.now() - this.lastAxisAt < 250) {
+                  return; // ★ 0.215.5：同上——滚轮伴生帧抑制
+                }
                 this.canvasOffsetX = this.canvasPanStartX + event.offsetX;
                 this.canvasOffsetY = this.canvasPanStartY + event.offsetY;
                 this.redrawEdges(); // ★ 0.167.2：平移 → 连线跟随重绘
