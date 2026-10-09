@@ -413,7 +413,9 @@ export struct KnowledgeBankPage {
     .borderRadius(RADIUS_CONTROL)
     .backgroundColor(DANGER)
     .onClick(() => {
-      this.requestDeleteCard(c);
+      if (!this.multiSelectMode) {
+        this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
+      }
     })
   }
 
@@ -2389,9 +2391,13 @@ export struct KnowledgeBankPage {
                   )
                   .swipeAction({
                     // ★ 0.212.0 用户拍板：左右滑露回收站面板（常驻红 × 已撤）；点击走原确认弹窗链路；
-                    //   多选模式下不挂（多选有整行点选+批量删除栏，避免手势打架）
-                    end: this.multiSelectMode ? undefined : this.swipeDeletePanel(c),
-                    start: this.multiSelectMode ? undefined : this.swipeDeletePanel(c)
+                    //   箭头函数包 @Builder 调用（CustomBuilder 规范写法，直调 @Builder 会破坏解析）
+                    end: (): void => {
+                      this.swipeDeletePanel(c)
+                    },
+                    start: (): void => {
+                      this.swipeDeletePanel(c)
+                    }
                   })
                 }
               }, (c: KnowledgeCard) => c.id)
