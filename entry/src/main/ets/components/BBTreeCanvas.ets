@@ -23,6 +23,7 @@ import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件�
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
 import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.200.0：知识卡片导入气泡（跨页 store：知识库/复习页写入 → 画布选择模式消费）
+import { inputDevice } from '@kit.InputKit'; // ★ 0.214.7：设备类型判定（有鼠标/触摸板=滚轮传感器常开）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -238,6 +239,36 @@ export struct BBTreeCanvas {
     // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange
     //   按窗口实宽写入；分屏/悬浮窗实时切换手机/平板布局）
+    // ★ 0.214.7：设备类型判定驱动滚轮传感器显隐（终极方案——onMouse/onHover 事件链在真机
+    //   均不可靠（0.214.5/0.214.6 两轮实证），改查系统输入设备清单：有鼠标/触摸板（PC）=
+    //   传感器常开，滚轮随时候命；纯触摸设备（Pad/手机）=传感器永不渲染=单指拖零干扰）
+    inputDevice.getDeviceList().then((ids: number[]) => {
+      let found = false;
+      let pending = ids.length;
+      if (pending === 0) {
+        this.mouseOnCanvas = false;
+        return;
+      }
+      ids.forEach((id: number) => {
+        inputDevice.getDeviceInfo(id).then((data: inputDevice.InputDeviceData) => {
+          if (data.sources.indexOf('mouse') >= 0 || data.sources.indexOf('touchpad') >= 0) {
+            found = true;
+          }
+          pending -= 1;
+          if (pending === 0) {
+            this.mouseOnCanvas = found;
+            console.info(`DAGAI-ZOOM device-probe mouse=${found}`);
+          }
+        }).catch(() => {
+          pending -= 1;
+          if (pending === 0) {
+            this.mouseOnCanvas = found;
+          }
+        });
+      });
+    }).catch(() => {
+      this.mouseOnCanvas = false;
+    });
   }
 
   // ★ 0.167.2：连线层 Canvas 命令式绘制（弃 Path——Path 无 viewport 属性，未设时 ArkUI 自动把
@@ -602,6 +633,7 @@ export struct BBTreeCanvas {
 
   // ★ 0.214.0：滚轮缩放（PC）——锚点=鼠标悬停位置（无记录回落画布中心）；限幅/公式同 zoomBy
   wheelZoomAt(factor: number): void {
+    console.info(`DAGAI-ZOOM wheelZoomAt factor=${factor}`);
     const newScale = this.canvasScale * factor;
     if (factor > 1.0 && newScale > 2.0) {
       return; // 放大：只拦上限（方向感知，同 zoomBy）
@@ -1208,6 +1240,7 @@ export struct BBTreeCanvas {
         .visibility(this.mouseOnCanvas ? Visibility.Visible : Visibility.None)
         .hitTestBehavior(HitTestMode.Transparent)
         .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
+          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} y=${yOffset} visible=${this.mouseOnCanvas}`);
           if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
             || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
             || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
@@ -1228,11 +1261,10 @@ export struct BBTreeCanvas {
               this.lastHoverY = event.y;
             }
           })
-          // ★ 0.214.6：鼠标在场标记改由 onHover 驱动（0.214.5 教训：onMouse 的 Move/Hover 在鼠标
-          //   静止悬停时不触发，传感器常黑=滚轮失效；onHover 是标准进出双态事件——滚轮时鼠标
-          //   必在画布上悬停=true 传感器必在场，离开=false 传感器消失；触摸设备永 false 零干扰）
+          // ★ 0.214.7：onHover 已退役（真机不可靠，两轮实证）——mouseOnCanvas 改由 aboutToAppear
+          //   的设备类型探测一次性判定（有鼠标/触摸板=常开；诊断日志 DAGAI-ZOOM 供 hilog 定位）
           .onHover((isHover: boolean) => {
-            this.mouseOnCanvas = isHover;
+            console.info(`DAGAI-ZOOM onHover=${isHover}`);
           })
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
           .onAreaChange((oldVal: Area, newVal: Area) => {
