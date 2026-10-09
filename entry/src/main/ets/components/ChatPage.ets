@@ -912,31 +912,6 @@ export struct ChatPage {
     b.draftImages = this.pendingImages.length > 0 ? JSON.stringify(this.pendingImages) : '';
   }
 
-  aboutToAppear(): void {
-    // ★ 0.214.2：恢复缩放（持久化值优先；钳制防脏数据）
-    this.fontScale = Math.min(1.6, Math.max(0.75, this.fontScaleStore.value));
-    // ★ 0.214.2：恢复本气泡草稿（文字+图片——退出再回来继续编）
-    const b = this.currentBubble;
-    if (b) {
-      this.inputText = b.draftText;
-      if (b.draftImages.length > 0) {
-        try {
-          const arr = JSON.parse(b.draftImages) as string[];
-          if (Array.isArray(arr)) {
-            this.pendingImages = arr;
-          }
-        } catch (e) {
-          // 损坏草稿按无图处理
-        }
-      }
-    }
-  }
-
-  aboutToDisappear(): void {
-    // ★ 0.214.2：退出页面草稿落盘（saveDraft 写内存 + saveTree 持久化一次）
-    this.saveDraft();
-    this.saveTree();
-  }
 
   @Builder
   waitingView() { // ★ 0.191.0 清理：单行化后不再区分 LOADING/THINKING 文案，死参数 content 移除
@@ -1455,6 +1430,23 @@ export struct ChatPage {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
     this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
     this.bookmarkCache = this.getBookmarkEntry(); // ★ 0.191.0：首帧渲染前载入书签（标记线即时显示）
+    // ★ 0.214.2：恢复缩放（持久化值优先；钳制防脏数据）
+    this.fontScale = Math.min(1.6, Math.max(0.75, this.fontScaleStore.value));
+    // ★ 0.214.2：恢复本气泡草稿（文字+图片——退出再回来继续编）
+    const draftBubble = this.currentBubble;
+    if (draftBubble) {
+      this.inputText = draftBubble.draftText;
+      if (draftBubble.draftImages.length > 0) {
+        try {
+          const draftArr = JSON.parse(draftBubble.draftImages) as string[];
+          if (Array.isArray(draftArr)) {
+            this.pendingImages = draftArr;
+          }
+        } catch (e) {
+          // 损坏草稿按无图处理
+        }
+      }
+    }
     setTimeout(() => {
       this.restoreReadingPosition(); // ★ 0.191.0：阅读位置恢复（A 高度记忆 → B 书签 → 底部），替代原固定滚底
     }, 100);
@@ -1462,6 +1454,8 @@ export struct ChatPage {
 
   // 页面退出：终止正在进行的 SSE 请求，防止内存泄漏
   aboutToDisappear() {
+    this.saveDraft(); // ★ 0.214.2：草稿写回当前气泡内存
+    this.saveTree(); // ★ 0.214.2：草稿随树落盘（一次）
     this.recordReadingPosition(); // ★ 0.191.0：离开前记录阅读高度（方案 A）
     if (this.streamController) {
       this.streamController.cancel();
