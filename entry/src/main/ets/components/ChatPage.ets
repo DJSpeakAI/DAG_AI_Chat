@@ -3375,7 +3375,9 @@ export struct ChatPage {
               this.sendMessage();
             })
             .onKeyEvent((e: KeyEvent) => {
-              if (e.keyCode === 2016) { // KeyCode.KEY_ENTER（@ohos.multimodalInput.keyCode，数值直写免 import 查重）
+              console.info(`DAGAI-KEY action=${e.action} code=${e.keyCode} type=${e.type}`);
+              // ★ 0.215.12：KeyDown（type=0）才判（0.215.11 无 type 过滤，KeyUp（type=1）也触发导致 onSubmit 重复）
+              if (e.type === KeyType.Down && e.keyCode === 2040) { // KeyType.Down 枚举（大写 D）；KEY_ENTER=2040
                 let shift = false;
                 try {
                   shift = e.getModifierKeyState ? e.getModifierKeyState(['shift']) : false;
