@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000162, // ★ 0.215.6：滚轮方向翻转+速度翻倍+画布下沉收底隙；更早历史见 MEMORY.md
+    "versionCode": 1000163, // ★ 0.215.7：画布底边贴底（底边距/圆角归零，深色底边带消失）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

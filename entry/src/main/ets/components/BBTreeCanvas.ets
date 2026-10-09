@@ -1801,11 +1801,11 @@ export struct BBTreeCanvas {
         // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / BG_CANVAS）
         .width('100%')
         .layoutWeight(1) // ★ 0.215.3：父 Scroll 已拆（等高内容滚轮零触发三轮判死）——恢复 0.213 原结构
-        // ★ 0.195.0：顶格修复——顶边距 24→0（用户多次报「信息条上方空一行」：Pad 实测 88→147px
-        //   共 59px BG_APP 色带露在 BG_CANVAS 信息条上方，即本 margin 顶边；左右/底 24 保留）
-        .margin({ left: 24, right: 24, top: 0, bottom: 24 })
-        // ★ 0.195.0：顶部圆角随顶格归零（面板贴顶不露角缺口），底部圆角保留
-        .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
+        // ★ 0.215.7：底边距归零贴底——用户多轮报「底部空隙/下面一条边」，深色 BG_APP 露底即此边距
+        //   （0.195.0 时代顶格只归了顶边，底边 24 保留至今；现紫底直铺屏幕底，深色边带消失）
+        .margin({ left: 24, right: 24, top: 0, bottom: 0 })
+        // ★ 0.215.7：底部圆角随贴底归零（贴底平铺无角缺口，同 0.195.0 顶格逻辑）
+        .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 })
         .backgroundColor(BG_CANVAS)
 
       }
