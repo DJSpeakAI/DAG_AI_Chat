@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000143, // ★ 0.213.1：宽屏标题恒居中同轴（标签列恒渲染38%占位）+手机排版复原+问AI图标透明度对齐
+    "versionCode": 1000144, // ★ 0.213.2：宽屏标题改 Stack 叠层恒卡片正中（50%轴）+标题内容行距 2→4
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

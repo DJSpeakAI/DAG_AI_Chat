@@ -2293,8 +2293,39 @@ export struct KnowledgeBankPage {
                         //   修复=组件级 if 平台分治：宽屏两列定式（右列恒渲染 38% 占位，无标签=空列，
                         //   标题列恒 62% → 全部卡片标题同一轴线）；标签列内容左对齐（用户点名）。
                         //   手机恢复 0.212.3 前好评原样（左对齐 62% + 标签弹性），并修 width(undefined) 雷
+                        // ★ 0.213.2 用户拍板（0.213.1 仍不齐实锤）：0.213.1"标题列弹性居中"的轴线在列
+                        //   中心（31% 处）且整列位置跟着布局走——用户要的是**卡片几何正中**（50% 轴）+
+                        //   标签在标题右边往右排。终式=**Stack 叠层**：标题层 alignContent Center=恒定
+                        //   卡片正中（与任何列无关，上下永远一条线），标签层贴右 38% 定宽列内容左对齐；
+                        //   标题 maxWidth 60% 保证与标签区（62% 起）零重叠
                         if (this.isTablet) {
-                          Row({ space: 6 }) {
+                          Stack({ alignContent: Alignment.Center }) {
+                            Row() {
+                              Blank()
+                              Column() {
+                                if (parseTags(c.tags).length > 0) {
+                                  Scroll() {
+                                    Row({ space: 6 }) {
+                                      ForEach(parseTags(c.tags), (t: string) => {
+                                        Text(t)
+                                          .fontSize(10)
+                                          .fontColor(BRAND_SECONDARY)
+                                          .height(20)
+                                          .padding({ left: 8, right: 8 })
+                                          .borderRadius(4)
+                                          .border({ width: 1, color: BRAND_SECONDARY })
+                                      }, (t: string) => t)
+                                    }
+                                  }
+                                }
+                                .scrollable(ScrollDirection.Horizontal)
+                                .scrollBar(BarState.Off)
+                                .height(20)
+                              }
+                              .width('38%')
+                              .alignItems(HorizontalAlign.Start) // 标签左对齐（用户点名）
+                            }
+                            .width('100%')
                             Text(c.title)
                               .fontSize(16)
                               .fontWeight(600)
@@ -2302,29 +2333,7 @@ export struct KnowledgeBankPage {
                               .maxLines(1)
                               .textOverflow({ overflow: TextOverflow.Ellipsis })
                               .textAlign(TextAlign.Center)
-                              .layoutWeight(1)
-                            Column() {
-                              if (parseTags(c.tags).length > 0) {
-                                Scroll() {
-                                  Row({ space: 6 }) {
-                                    ForEach(parseTags(c.tags), (t: string) => {
-                                      Text(t)
-                                        .fontSize(10)
-                                        .fontColor(BRAND_SECONDARY)
-                                        .height(20)
-                                        .padding({ left: 8, right: 8 })
-                                        .borderRadius(4)
-                                        .border({ width: 1, color: BRAND_SECONDARY })
-                                    }, (t: string) => t)
-                                  }
-                                }
-                                .scrollable(ScrollDirection.Horizontal)
-                                .scrollBar(BarState.Off)
-                                .height(20)
-                              }
-                            }
-                            .width('38%')
-                            .alignItems(HorizontalAlign.Start) // 标签列内容左对齐（贴标题右侧起排，用户点名）
+                              .constraintSize({ maxWidth: '60%' })
                           }
                           .width('100%')
                         } else {
@@ -2394,7 +2403,7 @@ export struct KnowledgeBankPage {
                       Text(c.definition)
                         .fontSize(13)
                         .fontColor(TEXT_SECONDARY)
-                        .margin({ top: 2 })
+                        .margin({ top: 4 }) // ★ 0.213.2 用户拍板：标题与内容太挤——行距 2→4（"大一两个像素"）
                       // ★ 0.188.0：下次复习时间（未学习灰 / 已到期红 / 常规灰，复刻单���库）
                       Text(this.nextReviewLabel(c))
                         .fontSize(11)
