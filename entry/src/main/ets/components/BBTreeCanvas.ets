@@ -1775,7 +1775,7 @@ export struct BBTreeCanvas {
         }
         // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / BG_CANVAS）
         .width('100%')
-        .height('100%') // ★ 0.215.1：layoutWeight 在父 Scroll 内失效→显式 100% 等高（不可滚=滚轮只进 frameBegin、布局不塌陷）
+        .height('100.1%') // ★ 0.215.2：0.215.1 实测 frameBegin 零触发——内容 100% 等高=Scroll 判不可滚→滚轮被忽略（frameBegin 只在将滚时回调）；垫 0.1%（≈2vp，Scroll 裁剪无视觉影响）造一丝可滚余量→滚轮进 frameBegin 被吞转缩放；layoutWeight 失效修复同存
         // ★ 0.195.0：顶格修复——顶边距 24→0（用户多次报「信息条上方空一行」：Pad 实测 88→147px
         //   共 59px BG_APP 色带露在 BG_CANVAS 信息条上方，即本 margin 顶边；左右/底 24 保留）
         .margin({ left: 24, right: 24, top: 0, bottom: 24 })
