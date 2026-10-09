@@ -74,10 +74,12 @@ export function localStreamChat(
     }
     questionSeq = (questionSeq + 1) % 65536;
     const content = flattenMessages(messages);
+    const qInfo: localChatModel.QuestionInfo = { questionId: questionSeq, content: content };
+    const qConfig: localChatModel.Config = { isStream: true };
     console.info(`DAGAI-LLM chat start qid=${questionSeq} len=${content.length}`);
     localChatModel.chat(
-      { questionId: questionSeq, content: content },
-      { isStream: true },
+      qInfo,
+      qConfig,
       (err: Error, answer: localChatModel.Answer) => {
         if (cancelled) {
           return;

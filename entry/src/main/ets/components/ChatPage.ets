@@ -1046,8 +1046,11 @@ export struct ChatPage {
       if (this.pendingImages.length > 0) {
         this.isLoading = false;
         this.streamPhase = 0;
-        this.currentBubble.messages = this.currentBubble.messages.slice(0, this.currentBubble.messages.length - 2); // 撤回刚压入的用户+AI 占位
-        this.currentBubble.messages = [...this.currentBubble.messages];
+        const cb0 = this.currentBubble; // ★ ArkTS 严格空检查
+        if (cb0) {
+          cb0.messages = cb0.messages.slice(0, cb0.messages.length - 2); // 撤回刚压入的用户+AI 占位
+          cb0.messages = [...cb0.messages];
+        }
         this.saveTree();
         this.getUIContext().getPromptAction().showToast({ message: '端侧大模型暂不支持图片，请配置 API Key 使用多模态云端模型', duration: 3500 });
         return;
@@ -1059,14 +1062,21 @@ export struct ChatPage {
             aiMsg.content = '';
           }
           aiMsg.content += chunk;
-          this.currentBubble.messages = [...this.currentBubble.messages];
-          this.currentBubble.historySummaryCount = this.currentBubble.messages.length;
+          this.scroller.scrollEdge(Edge.Bottom); // ★ 0.216.0：端侧流式同样自动滚底（对齐云端链路）
+          const cb1 = this.currentBubble; // ★ ArkTS 严格空检查：getter 返回可空须判
+          if (cb1) {
+            cb1.messages = [...cb1.messages];
+            cb1.historySummaryCount = cb1.messages.length;
+          }
         },
         (inputTokens: number, outputTokens: number) => {
           this.isLoading = false;
           this.streamPhase = 0;
           this.streamController = null;
-          this.currentBubble.messages = [...this.currentBubble.messages];
+          const cb2 = this.currentBubble;
+          if (cb2) {
+            cb2.messages = [...cb2.messages];
+          }
           this.saveTree();
           this.requestEncourage();
           recordStat(this.statStore, 'aiMsg', 0, 0);
@@ -1075,8 +1085,11 @@ export struct ChatPage {
           this.isLoading = false;
           this.streamPhase = 0;
           this.streamController = null;
-          this.currentBubble.messages = this.currentBubble.messages.slice(0, this.currentBubble.messages.length - 1); // 撤回占位
-          this.currentBubble.messages = [...this.currentBubble.messages];
+          const cb3 = this.currentBubble;
+          if (cb3) {
+            cb3.messages = cb3.messages.slice(0, cb3.messages.length - 1); // 撤回占位
+            cb3.messages = [...cb3.messages];
+          }
           this.saveTree();
           this.getUIContext().getPromptAction().showToast({ message: error, duration: 4000 });
         }
