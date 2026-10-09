@@ -445,22 +445,7 @@ export struct KnowledgeBankPage {
     .width(120)
     .height('100%')
   }
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-      .width(44)
-      .height(44)
-      .borderRadius(22)
-      .backgroundColor(BRAND_PRIMARY)
-      .onClick(() => {
-        if (!this.multiSelectMode) {
-          this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
-        }
-      })
-    }
-    .justifyContent(FlexAlign.Center)
-    .width(72)
-    .height('100%')
-  }
+
 
   // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）
   openImagePreview(images: string[], index: number): void {
