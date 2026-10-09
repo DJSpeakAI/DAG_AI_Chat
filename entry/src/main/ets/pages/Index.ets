@@ -478,7 +478,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.214.9') // ★ 0.214.9：滚轮传感器父容器包裹；更早历史见 MEMORY.md
+        Text('v0.214.10') // ★ 0.214.10：滚轮真拦截+布局修复；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

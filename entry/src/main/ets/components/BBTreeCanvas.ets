@@ -1790,24 +1790,24 @@ export struct BBTreeCanvas {
         .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
         .backgroundColor(BG_CANVAS)
         }
-        // ★ 0.214.9：父 Scroll 传感器属性（原兄弟传感器逻辑迁入）
+        // ★ 0.214.10：父 Scroll 传感器属性终态——
+        // ①补显式尺寸 100%+clip（0.214.9 漏设致画布布局偏移/露底隙）
+        // ②真拦截换 onScrollFrameBegin（0.214.9 实测 onWillScroll 的 return 拦不住实际滚动——
+        //   滚轮把画布真滚走了；frameBegin 返回 offsetRemain 0 才是真拦截，0.214.0 时代已验证）
+        // ③frameBegin 到达的只可能是滚轮/惯性源（触摸拖动走画布 Pan 子手势优先，0.214.9 用户实测
+        //   单指正常=触摸根本进不了父 Scroll），全当滚轮转缩放安全；触摸板增量在 frameBegin 走 y 轴 offset
+        .width('100%')
+        .height('100%')
+        .clip(true)
         .scrollable(ScrollDirection.Vertical)
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.None)
-        .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
-          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} x=${xOffset} y=${yOffset}`);
-          if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
-            || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
-            || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
-            return; // 触摸/滚动条系来源：不缩放（单指拖=画布 Pan 平移，子组件手势优先不至此）
+        .onScrollFrameBegin((offset: number, state: ScrollState) => {
+          console.info(`DAGAI-ZOOM frameBegin offset=${offset}`);
+          if (offset !== 0) {
+            this.wheelZoomAt(offset < 0 ? 1.02 : 0.98); // 上滚放大/下滚缩小；锚点=鼠标悬停处
           }
-          // ★ 0.214.8：真机日志实锤 Matebook 触摸板滚轮增量走 xOffset（y 恒 0）——两轴合并判定
-          const delta = yOffset !== 0 ? yOffset : (xOffset !== 0 ? xOffset : 0);
-          if (delta === 0) {
-            return;
-          }
-          this.wheelZoomAt(delta < 0 ? 1.02 : 0.98); // 锚点=鼠标悬停处；速度=0.214.2 终态
-          return { xOffset: 0, yOffset: 0 }; // 全额吞掉——传感器永不真滚
+          return { offsetRemain: 0 }; // 全额吞掉——Scroll 永不真滚（画布绝不被滚走）
         })
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
