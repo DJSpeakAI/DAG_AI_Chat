@@ -49,7 +49,6 @@ import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云�
 import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.214.2：缩放持久化（chat-font-scale-v1）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
 
 // ★ 新增：Markdown 解析段（0.121）
