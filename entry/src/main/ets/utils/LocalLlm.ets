@@ -60,7 +60,7 @@ export function localStreamChat(
 ): LocalStreamHandle {
   let cancelled = false;
   const handle: LocalStreamHandle = {
-    cancel(): void => {
+    cancel: (): void => {
       cancelled = true;
     }
   };
