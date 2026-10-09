@@ -32,8 +32,6 @@ export struct BBTreeCanvas {
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   @Local canvasOffsetX: number = 0;
-  @Local lastHoverX: number = -1; // ★ 0.214.0：鼠标悬停位置（滚轮缩放锚点；-1=未记录回落画布中心）
-  @Local lastHoverY: number = -1;
   @Local canvasOffsetY: number = 0;
   @Local canvasPanStartX: number = 0;
   @Local canvasPanStartY: number = 0;
@@ -602,25 +600,6 @@ export struct BBTreeCanvas {
     this.redrawEdges(); // ★ 0.167.2：缩放控件 → 连线重绘
   }
 
-  // ★ 0.214.0：滚轮缩放（PC）——锚点=鼠标悬停位置（无记录回落画布中心）；限幅/公式同 zoomBy
-  wheelZoomAt(factor: number): void {
-    console.info(`DAGAI-ZOOM wheelZoomAt factor=${factor}`);
-    const newScale = this.canvasScale * factor;
-    if (factor > 1.0 && newScale > 2.0) {
-      return; // 放大：只拦上限（方向感知，同 zoomBy）
-    }
-    if (factor < 1.0 && newScale < 0.05) {
-      return; // 缩小：只拦绝对下限
-    }
-    const ax = this.lastHoverX > 0 ? this.lastHoverX : this.viewW / 2;
-    const ay = this.lastHoverY > 0 ? this.lastHoverY : this.viewH / 2;
-    const ratio = newScale / this.canvasScale;
-    this.canvasOffsetX = ax - (ax - this.canvasOffsetX) * ratio;
-    this.canvasOffsetY = ay - (ay - this.canvasOffsetY) * ratio;
-    this.canvasScale = newScale;
-    this.redrawEdges(); // 连线随缩放重绘（Canvas 无状态绑定）
-  }
-
   // ★ 0.167：信息条统计——全树对话总条数
   getTotalMsgCount(): number {
     let count = 0;
@@ -993,10 +972,9 @@ export struct BBTreeCanvas {
       Stack({ alignContent: Alignment.TopStart }) {
       // ★ 0.167：全屏 BG_APP 底 + 画布容器（margin 24 / 圆角 24 / BG_CANVAS，UI_GUIDELINES 五-平板）
       Column() {
-        // ★ 0.214.9：滚轮传感器=父容器包裹（结构化根治，替代 0.214.0~0.214.8 兄弟叠层三连败补丁）——
-        //   画布 Stack 作 Scroll 子节点：触摸拖动=子组件 Pan 手势天然优先（画布平移绝不被抢）；
-        //   鼠标滚轮无触摸手势竞争、直达父 Scroll 的 onWillScroll 转缩放；无显隐/设备判定补丁
-        Scroll() {
+        // ★ 0.215.0：滚轮传感器全线撤除（0.214.0~0.214.10 七轮鏖战止损——兄弟叠层抢触摸手势、
+        //   父容器包裹致 layoutWeight 失效布局塌陷+滚轮真滚走画布，平台 API 组合全灭）；
+        //   画布缩放回归稳定交互=双指捏合 / +−按钮 / 双击；对话页捏合缩放独立保留无恙
         Stack() {
           Stack({ alignContent: Alignment.TopStart }) {
         // ── 连线层（★ 0.167：贝塞尔 + 箭头，UI_GUIDELINES 六-7；普通=主紫 85%，高亮分支=辅助紫） ──
@@ -1199,13 +1177,6 @@ export struct BBTreeCanvas {
           .width('100%')
           .height('100%')
           .clip(true) // ★ 0.126：裁剪画布溢出内容（连线/气泡不越出画布容器圆角）
-          // ★ 0.214.0：记录鼠标悬停位置（滚轮缩放锚点；Move/Hover 两态都更新）
-          .onMouse((event: MouseEvent) => {
-            if (event.action === MouseAction.Move || event.action === MouseAction.Hover) {
-              this.lastHoverX = event.x;
-              this.lastHoverY = event.y;
-            }
-          })
 
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
           .onAreaChange((oldVal: Area, newVal: Area) => {
@@ -1789,26 +1760,7 @@ export struct BBTreeCanvas {
         // ★ 0.195.0：顶部圆角随顶格归零（面板贴顶不露角缺口），底部圆角保留
         .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
         .backgroundColor(BG_CANVAS)
-        }
-        // ★ 0.214.10：父 Scroll 传感器属性终态——
-        // ①补显式尺寸 100%+clip（0.214.9 漏设致画布布局偏移/露底隙）
-        // ②真拦截换 onScrollFrameBegin（0.214.9 实测 onWillScroll 的 return 拦不住实际滚动——
-        //   滚轮把画布真滚走了；frameBegin 返回 offsetRemain 0 才是真拦截，0.214.0 时代已验证）
-        // ③frameBegin 到达的只可能是滚轮/惯性源（触摸拖动走画布 Pan 子手势优先，0.214.9 用户实测
-        //   单指正常=触摸根本进不了父 Scroll），全当滚轮转缩放安全；触摸板增量在 frameBegin 走 y 轴 offset
-        .width('100%')
-        .height('100%')
-        .clip(true)
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.None)
-        .onScrollFrameBegin((offset: number, state: ScrollState) => {
-          console.info(`DAGAI-ZOOM frameBegin offset=${offset}`);
-          if (offset !== 0) {
-            this.wheelZoomAt(offset < 0 ? 1.02 : 0.98); // 上滚放大/下滚缩小；锚点=鼠标悬停处
-          }
-          return { offsetRemain: 0 }; // 全额吞掉——Scroll 永不真滚（画布绝不被滚走）
-        })
+
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
       // ★ 0.168.3：Column 改 width/height 100%——layoutWeight 仅 Row/Column/Flex 子节点有效，
