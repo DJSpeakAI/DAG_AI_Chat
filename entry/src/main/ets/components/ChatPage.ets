@@ -1012,7 +1012,15 @@ export struct ChatPage {
       sb.draftText = '';
       sb.draftImages = '';
     }
-    this.getUIContext().getFocusController().clearFocus(); // ★ 0.131：替代 TextAreaController.stopEditing（API 12+ 全设备兼容），发送后收起键盘
+    // ★ 0.216.2 PC 发送后光标留在输入框（用户拍板"仅限 PC"）：连续打字+回车发+继续打，
+    //   免去每次鼠标点回输入框；手机/Pad 保持原行为（发送后收键盘）
+    if (this.isPcDevice()) {
+      setTimeout(() => {
+        this.getUIContext().getFocusController().requestFocus('chatInputField'); // 延迟一帧重新聚焦（系统 submit 自动 blur 先生效再拉回）
+      }, 50);
+    } else {
+      this.getUIContext().getFocusController().clearFocus(); // ★ 0.131：发送后收起键盘（原行为）
+    }
     this.isLoading = true;
     this.streamPhase = 1; // ★ 0.191.0：阶段 1——请求即将发出，等待服务器响应
 
@@ -3468,6 +3476,7 @@ export struct ChatPage {
           })
 
           TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
+            .key('chatInputField') // ★ 0.216.2：PC 发送后 requestFocus('chatInputField') 重聚焦（连续打字免鼠标回点）
             .onChange((value: string) => {
               this.inputText = value;
               this.saveDraft(); // ★ 0.214.2：输入实时写回本气泡草稿（退出再回来继续编）
