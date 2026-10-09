@@ -25,7 +25,6 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）
 import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
-import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.214.1：窗口宽度模式（捏合缩放仅宽屏启用——手机端禁用）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
@@ -885,7 +884,6 @@ export struct ChatPage {
   // ── ★ 0.214.0：对话页缩放（Pad 双指捏合 / Matebook 触摸板双指捏合；边栏不参与——只缩消息正文） ──
   @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
-  windowMode: WindowMode = connectWindowMode(); // ★ 0.214.1：捏合仅宽屏启用（手机端禁用——用户拍板体验差）
 
   /** ★ 0.214.0：正文字号换算（一位小数平滑；只用于消息正文——边栏/顶栏/输入区不缩） */
   fs(base: number): number {

@@ -68,12 +68,20 @@ function Sync-Repo {
 function Do-Build {
     if (-not $Hvigorw) { return @{ ok = $false; err = 'hvigorw.bat not found; edit the $HvigorCandidates list in build-server.ps1' } }
     Sync-Repo
+    # 0.214.1r fake-success fix #1: delete stale signed hap BEFORE compiling, so a failed build can never ship an old hap
+    $outDir = Join-Path $RepoDir "entry\build\default\outputs\default"
+    if (Test-Path $outDir) { Remove-Item "$outDir\*-signed.hap" -Force -ErrorAction SilentlyContinue }
     Push-Location $RepoDir
     & $Hvigorw assembleHap --mode module -p product=default -p debuggable=true --no-daemon 2>&1 | Tee-Object -Variable buildLog | Out-Null
+    $hvigorExit = $LASTEXITCODE
     Pop-Location
-    $hap = Get-ChildItem -Path (Join-Path $RepoDir "entry\build\default\outputs\default") -Filter "*-signed.hap" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # 0.214.1r fake-success fix #2: hvigor non-zero exit = compile failed, report error with log
+    if ($hvigorExit -ne 0) {
+        return @{ ok = $false; err = "COMPILE FAILED (hvigorw exit $hvigorExit)"; log = ($buildLog | Select-Object -Last 45) -join "`n" }
+    }
+    $hap = Get-ChildItem -Path $outDir -Filter "*-signed.hap" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($hap) { return @{ ok = $true; hap = $hap.FullName; log = ($buildLog | Select-Object -Last 30) -join "`n" } }
-    return @{ ok = $false; err = "build failed"; log = ($buildLog | Select-Object -Last 40) -join "`n" }
+    return @{ ok = $false; err = "build failed (no signed hap produced)"; log = ($buildLog | Select-Object -Last 40) -join "`n" }
 }
 
 function Get-KnownDevices {
