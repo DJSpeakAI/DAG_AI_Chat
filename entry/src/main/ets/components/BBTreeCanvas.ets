@@ -32,6 +32,8 @@ export struct BBTreeCanvas {
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   @Local canvasOffsetX: number = 0;
+  @Local lastHoverX: number = -1; // ★ 0.214.0：鼠标悬停位置（滚轮缩放锚点；-1=未记录回落画布中心）
+  @Local lastHoverY: number = -1;
   @Local canvasOffsetY: number = 0;
   @Local canvasPanStartX: number = 0;
   @Local canvasPanStartY: number = 0;
@@ -595,6 +597,24 @@ export struct BBTreeCanvas {
     this.redrawEdges(); // ★ 0.167.2：缩放控件 → 连线重绘
   }
 
+  // ★ 0.214.0：滚轮缩放（PC）——锚点=鼠标悬停位置（无记录回落画布中心）；限幅/公式同 zoomBy
+  wheelZoomAt(factor: number): void {
+    const newScale = this.canvasScale * factor;
+    if (factor > 1.0 && newScale > 2.0) {
+      return; // 放大：只拦上限（方向感知，同 zoomBy）
+    }
+    if (factor < 1.0 && newScale < 0.05) {
+      return; // 缩小：只拦绝对下限
+    }
+    const ax = this.lastHoverX > 0 ? this.lastHoverX : this.viewW / 2;
+    const ay = this.lastHoverY > 0 ? this.lastHoverY : this.viewH / 2;
+    const ratio = newScale / this.canvasScale;
+    this.canvasOffsetX = ax - (ax - this.canvasOffsetX) * ratio;
+    this.canvasOffsetY = ay - (ay - this.canvasOffsetY) * ratio;
+    this.canvasScale = newScale;
+    this.redrawEdges(); // 连线随缩放重绘（Canvas 无状态绑定）
+  }
+
   // ★ 0.167：信息条统计——全树对话总条数
   getTotalMsgCount(): number {
     let count = 0;
@@ -1145,10 +1165,36 @@ export struct BBTreeCanvas {
             .hitTestBehavior(HitTestMode.None)
           }
         }
+
+        // ── ★ 0.214.0：滚轮缩放传感器（透明 Scroll 寄生）──
+        // ArkUI MouseEvent 无滚轮 delta（0.211.3 编译实锤）——借空内容 Scroll 的
+        // onScrollFrameBegin 逐帧取滚轮偏移并全额吞掉实际滚动；Transparent 透传保证
+        // 触摸拖拽/捏合/点击全部落画布手势层不受影响（滚轮为唯一被截获的输入）。
+        Scroll() {
+          Column().width('100%').height('100%')
+        }
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.None)
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+        .onScrollFrameBegin((offset: number, state: ScrollState) => {
+          // 上滚（offset<0）=放大 / 下滚=缩小（与常规滚轮缩放语义一致）；锚点=鼠标悬停处
+          this.wheelZoomAt(offset < 0 ? 1.1 : 0.9);
+          return { offsetRemain: 0 }; // 全额吞掉——传感器永不真滚
+        })
           }
           .width('100%')
           .height('100%')
           .clip(true) // ★ 0.126：裁剪画布溢出内容（连线/气泡不越出画布容器圆角）
+          // ★ 0.214.0：记录鼠标悬停位置（滚轮缩放锚点；Move/Hover 两态都更新）
+          .onMouse((event: MouseEvent) => {
+            if (event.action === MouseAction.Move || event.action === MouseAction.Hover) {
+              this.lastHoverX = event.x;
+              this.lastHoverY = event.y;
+            }
+          })
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
           .onAreaChange((oldVal: Area, newVal: Area) => {
             this.viewW = newVal.width as number;

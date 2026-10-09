@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000144, // ★ 0.213.2：宽屏标题改 Stack 叠层恒卡片正中（50%轴）+标题内容行距 2→4
+    "versionCode": 1000145, // ★ 0.214.0：画布滚轮缩放+对话页捏合缩放正文；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

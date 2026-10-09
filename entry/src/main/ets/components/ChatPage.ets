@@ -171,6 +171,7 @@ class MarkedToken {
 struct CodeBlockView {
   @Param content: string = '';   // 代码内容
   @Param lang: string = '';      // ★ 0.149：语言标识（parseMarkdown 已提取；空 = plaintext 不高亮）
+  @Param fontScale: number = 1.0; // ★ 0.214.0：字号缩放透传（父组件捏合；工具栏/标签等辅助元素不缩）
   @Local wrap: boolean = true;    // 默认开启自动换行
   @Event onZoom: (content: string, lang: string) => void =
     (content: string, lang: string) => {}; // ★ 0.153：放大回调（父组件打开全屏代码弹窗）；★ 0.149 加传 lang
@@ -273,7 +274,7 @@ struct CodeBlockView {
   codeToolbar() {
     Row() {
       Text('翻译')
-        .fontSize(14)
+        .fontSize(Math.round(14 * this.fontScale * 10) / 10)
         .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
@@ -284,7 +285,7 @@ struct CodeBlockView {
         .height(16)
         .color(STROKE_CARD)
       Text('入知识库')
-        .fontSize(14)
+        .fontSize(Math.round(14 * this.fontScale * 10) / 10)
         .fontColor(BRAND_SECONDARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
@@ -296,7 +297,7 @@ struct CodeBlockView {
         .color(STROKE_CARD)
       // ★ 0.191.0：标记/取消标记（与主工具栏同位——复制左边；文案由父组件按划选首字符判定）
       Text(this.bookmarkBtnLabel)
-        .fontSize(14)
+        .fontSize(Math.round(14 * this.fontScale * 10) / 10)
         .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
@@ -307,7 +308,7 @@ struct CodeBlockView {
         .height(16)
         .color(STROKE_CARD)
       Text('复制')
-        .fontSize(14)
+        .fontSize(Math.round(14 * this.fontScale * 10) / 10)
         .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
@@ -318,7 +319,7 @@ struct CodeBlockView {
         .height(16)
         .color(STROKE_CARD)
       Text('全选')
-        .fontSize(14)
+        .fontSize(Math.round(14 * this.fontScale * 10) / 10)
         .fontColor(TEXT_PRIMARY)
         .padding({ left: 14, right: 14, top: 8, bottom: 8 })
         .onClick(() => {
@@ -880,6 +881,15 @@ export struct ChatPage {
 
   // ★ 0.190.5：等待态视图——三点动画 + 阶段反馈 + 回复模式
   // ★ 0.191.0 定稿（用户指示）：全部信息浓缩一行；文案两态——已提交请求 / 等待服务器返回；无省略号（三点动画已表达进行中）
+  // ── ★ 0.214.0：对话页缩放（Pad 双指捏合 / Matebook 触摸板双指捏合；边栏不参与——只缩消息正文） ──
+  @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
+  pinchStartFontScale: number = 1.0;     // 捏合起点快照
+
+  /** ★ 0.214.0：正文字号换算（一位小数平滑；只用于消息正文——边栏/顶栏/输入区不缩） */
+  fs(base: number): number {
+    return Math.round(base * this.fontScale * 10) / 10;
+  }
+
   @Builder
   waitingView() { // ★ 0.191.0 清理：单行化后不再区分 LOADING/THINKING 文案，死参数 content 移除
     Row() {
@@ -2616,8 +2626,8 @@ export struct ChatPage {
                         // 用户消息：纯文本渲染（保持原有逻辑）
                         // ★ 0.145：划词翻译——controller 供关闭菜单；长按进入系统选择模式并弹自研悬浮操作栏（替代原「选择文本/删除」弹窗，禁用小艺原生菜单）
                         Text(msg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|u`) })
-                          .fontSize(16)
-                          .lineHeight(24)
+                          .fontSize(this.fs(16))
+                          .lineHeight(this.fs(24))
                           .fontColor(TEXT_PRIMARY)
                           .padding(10)
                           .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
@@ -2676,8 +2686,8 @@ export struct ChatPage {
                                   Span(seg.content)
                                 }
                               }
-                                .fontSize(16)
-                                .lineHeight(24)
+                                .fontSize(this.fs(16))
+                                .lineHeight(this.fs(24))
                                 .fontColor(TEXT_PRIMARY)
                                 .copyOption(CopyOptions.LocalDevice)
                                 // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
@@ -2708,6 +2718,7 @@ export struct ChatPage {
                               CodeBlockView({
                                 content: seg.content,
                                 lang: seg.lang, // ★ 0.149：语言标识（parseMarkdown 已提取，语法高亮+顶部标签）
+                                fontScale: this.fontScale, // ★ 0.214.0：缩放透传
                                 onZoom: (content: string, lang: string) => { this.openCodeZoom(content, lang); }, // ★ 0.153：左上角「放大」按钮回调；★ 0.149 加传 lang
                                 textKey: `${msg.messageId}|c${idx}`,
                                 selController: this.getOrCreateTextController(`${msg.messageId}|c${idx}`),
@@ -2775,7 +2786,7 @@ export struct ChatPage {
                                             Span(cell)
                                           }
                                         }
-                                          .fontSize(14)
+                                          .fontSize(this.fs(14))
                                           .fontColor(TEXT_PRIMARY)
                                           .padding(8)
                                           .border({ width: 0.5, color: STROKE_CARD })
@@ -2820,7 +2831,7 @@ export struct ChatPage {
                                               Span(cell)
                                             }
                                           }
-                                            .fontSize(14)
+                                            .fontSize(this.fs(14))
                                             .fontColor(TEXT_SECONDARY)
                                             .padding(8)
                                             .border({ width: 0.5, color: STROKE_CARD })
@@ -3163,12 +3174,23 @@ export struct ChatPage {
           .width('100%')
           .padding({ left: 16, right: 16, top: 12 })
           .opacity(this.msgAreaOpacity) // ★ 0.162：分支切换过渡动画挂点（消息列表分支）
-          // ★ 0.191.0 重做：滚动中实时记录高度——aboutToDisappear 在 pop 转场中可能读不到偏移（实测记录丢失→回来跳底部），
-          //   改由滚动事件持续写入模块级 Map，退出钩子仅作兜底
-          .onScroll(() => {
-            this.recordReadingPosition();
-          })
-        }
+           // ★ 0.191.0 重做：滚动中实时记录高度——aboutToDisappear 在 pop 转场中可能读不到偏移（实测记录丢失→回来跳底部），
+           //   改由滚动事件持续写入模块级 Map，退出钩子仅作兜底
+           .onScroll(() => {
+             this.recordReadingPosition();
+           })
+           // ★ 0.214.0：双指捏合缩放正文（Pad 双指 / Matebook 触摸板双指；单指滚动不受影响；边栏/顶栏/输入区不缩）
+           .gesture(
+             PinchGesture({ fingers: 2 })
+               .onActionStart(() => {
+                 this.pinchStartFontScale = this.fontScale;
+               })
+               .onActionUpdate((event: GestureEvent) => {
+                 const s = this.pinchStartFontScale * event.scale;
+                 this.fontScale = Math.min(1.6, Math.max(0.75, Math.round(s * 100) / 100));
+               })
+           )
+         }
 
         // 图片预览区域
         if (this.pendingImages.length > 0) {
