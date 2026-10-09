@@ -574,7 +574,8 @@ export struct BBTreeCanvas {
     //   居中要求 (treeCenterX + NODE_W/2) * scale + offsetX = viewW/2
     // ★ 0.167.6：垂直居中区从 topSafe 起（信息条底板下方），树顶不再钻进底板被盖
     this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - NODE_W / 2 * this.canvasScale;
-    this.canvasOffsetY = topSafe + (this.viewH - topSafe) / 2 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
+    // ★ 0.215.6：垂直居中改偏下——用户反馈底部空行太大（树偏上观感），中心点从剩余区正中下移 6%（内容往下沉、底部空行收窄）
+    this.canvasOffsetY = topSafe + (this.viewH - topSafe) / 2 + (this.viewH - topSafe) * 0.06 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
     this.redrawEdges(); // ★ 0.167.2：视口变化 → 连线重绘
   }
 
@@ -1209,7 +1210,7 @@ export struct BBTreeCanvas {
             console.info(`DAGAI-ZOOM axis action=${event.action} step=${event.scrollStep} v=${v} x=${event.x} y=${event.y}`);
             this.lastAxisAt = Date.now(); // ★ 0.215.5：时间窗联动——滚轮伴生的 Pan（上下平移）在 250ms 窗内被抑制
             if (v !== 0) {
-              this.wheelZoomAt(v > 0 ? 1.02 : 0.98, event.x, event.y); // 方向符号按本轮日志校准
+              this.wheelZoomAt(v < 0 ? 1.04 : 0.96, event.x, event.y); // ★ 0.215.6：方向按真机实测翻转（上滚 v<0=放大）+速度翻倍 1.02/0.98→1.04/0.96（用户：太慢滚起来累）
             }
           })
 
