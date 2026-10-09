@@ -43,15 +43,10 @@ export struct BBTreeCanvas {
   @Local viewW: number = 0;
   @Local viewH: number = 0;
   // ★ 0.147：长按气泡操作菜单状态（修改标题 / 删除气泡）
+  // ★ 0.214.3：长按菜单增「增加子气泡」入口 + 菜单限宽（PC 上 62% 太宽）——宽屏断点复用
+  //   下方已有 windowMode/isTablet（同族重复标识符雷：插新代码块前必须先查已有标识符）
   @Local menuVisible: boolean = false;
   @Local menuNodeId: string = '';
-  // ★ 0.214.3：长按菜单增「增加子气泡」入口 + 菜单限宽（PC 上 62% 太宽，用户截图反馈）——
-  //   宽屏断点读 WindowMode 共享真相源（同 KnowledgeBankPage isTablet 定式）
-  windowMode: WindowMode = connectWindowMode();
-  @Computed
-  get isTablet(): boolean {
-    return this.windowMode.isTablet;
-  }
   // ★ 0.147：标题编辑弹窗状态
   @Local titleEditVisible: boolean = false;
   @Local titleEditNodeId: string = '';
