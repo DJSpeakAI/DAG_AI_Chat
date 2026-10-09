@@ -5,7 +5,7 @@
 // 平台实锤（d.ts）：init(): Promise<boolean>；chat(QuestionInfo{questionId,content}, Config{isStream},
 //   callback: Answer{questionId,content,isFinished})——单轮 content、无 messages/system/JSON mode，
 //   多轮上下文由本模块拼接；流式=isStream true（Answer.content 为增量分片）。
-import { localChatModel } from '@kit.DataAugmentationKit';
+import localChatModel from '@hms.data.localChatModel'; // ★ 0.216.0：原始 d.ts 源（namespace default export）——经 @kit re-export 时 namespace 内 interface 类型解析失败（编译实证），故不走 @kit.DataAugmentationKit
 import { ChatMessage } from '../common/ChatModel';
 
 let onDeviceReady: boolean | false | undefined = undefined; // undefined=未探测 false=不可用 true=可用（模块级缓存）
