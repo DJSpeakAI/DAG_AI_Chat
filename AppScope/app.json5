@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000156, // ★ 0.215.0：滚轮传感器全线撤除（七轮鏖战止损，回归稳定缩放交互）；更早历史见 MEMORY.md
+    "versionCode": 1000157, // ★ 0.215.1：滚轮第八轮（画布 Stack 显式 height 修塌陷+frameBegin 拦截）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

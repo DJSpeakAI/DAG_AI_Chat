@@ -600,6 +600,25 @@ export struct BBTreeCanvas {
     this.redrawEdges(); // ★ 0.167.2：缩放控件 → 连线重绘
   }
 
+  // ★ 0.215.1：滚轮缩放（第八轮回归；锚点=画布中心——lastHover 已随 0.215.0 清理不复活，简化）
+  wheelZoomAt(factor: number): void {
+    console.info(`DAGAI-ZOOM wheelZoomAt factor=${factor}`);
+    const newScale = this.canvasScale * factor;
+    if (factor > 1.0 && newScale > 2.0) {
+      return; // 放大：只拦上限（方向感知，同 zoomBy）
+    }
+    if (factor < 1.0 && newScale < 0.05) {
+      return; // 缩小：只拦绝对下限
+    }
+    const ax = this.viewW / 2;
+    const ay = this.viewH / 2;
+    const ratio = newScale / this.canvasScale;
+    this.canvasOffsetX = ax - (ax - this.canvasOffsetX) * ratio;
+    this.canvasOffsetY = ay - (ay - this.canvasOffsetY) * ratio;
+    this.canvasScale = newScale;
+    this.redrawEdges(); // 连线随缩放重绘（Canvas 无状态绑定）
+  }
+
   // ★ 0.167：信息条统计——全树对话总条数
   getTotalMsgCount(): number {
     let count = 0;
@@ -972,9 +991,12 @@ export struct BBTreeCanvas {
       Stack({ alignContent: Alignment.TopStart }) {
       // ★ 0.167：全屏 BG_APP 底 + 画布容器（margin 24 / 圆角 24 / BG_CANVAS，UI_GUIDELINES 五-平板）
       Column() {
-        // ★ 0.215.0：滚轮传感器全线撤除（0.214.0~0.214.10 七轮鏖战止损——兄弟叠层抢触摸手势、
-        //   父容器包裹致 layoutWeight 失效布局塌陷+滚轮真滚走画布，平台 API 组合全灭）；
-        //   画布缩放回归稳定交互=双指捏合 / +−按钮 / 双击；对话页捏合缩放独立保留无恙
+        // ★ 0.215.1 滚轮第八轮（关键修复=画布 Stack 显式 height 100%）：
+        //   0.214.9/10 父 Scroll 方案真凶实锤=Stack 的 layoutWeight 在 Scroll 内失效→高度塌陷→
+        //   可滚区域出现（滚轮滚走画布+布局空隙两症同源）。改 height('100%') 后内容与视口等高
+        //   =不可滚→onScrollFrameBegin 回到 0.214.0 实测行为（等高 Scroll 照样收滚轮且可吞掉）；
+        //   单指拖=画布 Pan 子手势天然优先（0.214.9 用户实测顺滑）零干扰。
+        Scroll() {
         Stack() {
           Stack({ alignContent: Alignment.TopStart }) {
         // ── 连线层（★ 0.167：贝塞尔 + 箭头，UI_GUIDELINES 六-7；普通=主紫 85%，高亮分支=辅助紫） ──
@@ -1753,13 +1775,25 @@ export struct BBTreeCanvas {
         }
         // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / BG_CANVAS）
         .width('100%')
-        .layoutWeight(1)
+        .height('100%') // ★ 0.215.1：layoutWeight 在父 Scroll 内失效→显式 100% 等高（不可滚=滚轮只进 frameBegin、布局不塌陷）
         // ★ 0.195.0：顶格修复——顶边距 24→0（用户多次报「信息条上方空一行」：Pad 实测 88→147px
         //   共 59px BG_APP 色带露在 BG_CANVAS 信息条上方，即本 margin 顶边；左右/底 24 保留）
         .margin({ left: 24, right: 24, top: 0, bottom: 24 })
         // ★ 0.195.0：顶部圆角随顶格归零（面板贴顶不露角缺口），底部圆角保留
         .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
         .backgroundColor(BG_CANVAS)
+        }
+        // ★ 0.215.1：父 Scroll 传感器（内容等高不可滚——滚轮事件进 frameBegin 转缩放并全额吞掉）
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.None)
+        .onScrollFrameBegin((offset: number, state: ScrollState) => {
+          console.info(`DAGAI-ZOOM frameBegin offset=${offset}`);
+          if (offset !== 0) {
+            this.wheelZoomAt(offset < 0 ? 1.02 : 0.98); // 上滚放大/下滚缩小；速度=用户定稿 1.02/0.98
+          }
+          return { offsetRemain: 0 }; // 全额吞掉——画布永不被滚走
+        })
 
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
