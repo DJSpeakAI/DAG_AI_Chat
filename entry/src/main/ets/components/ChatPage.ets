@@ -895,6 +895,7 @@ export struct ChatPage {
   @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
   ctrlAxisAt: number = 0; // ★ 0.215.10：最近 Ctrl+滚轮时刻（300ms 窗内 List 滚动被吞=只缩放不滚动）
+  shiftEnterAt: number = 0; // ★ 0.215.11：最近 Shift+回车时刻（300ms 窗内 onSubmit 跳过发送=只换行）
   // ★ 0.214.2：缩放持久化（全新 PersistenceV2 key——跨页面/重启记住，用户拍板"不用来回攻"）
   fontScaleStore: ChatFontScaleStore = connectChatFontScale();
 
@@ -3363,7 +3364,31 @@ export struct ChatPage {
             //   原 0.118 手动行数计算 + 0.195.0 measureTextSize 软换行版在真机密度单位翻车
             //   （1 字跳 3 行，用户实测截图实锤）——整条手动计算链废弃（getter/字段/onAreaChange/measure 全删）
             .constraintSize({ minHeight: 40, maxHeight: 136 })
-            .enterKeyType(EnterKeyType.NEW_LINE)
+            // ★ 0.215.11 回车=发送（用户要求标准 IM 交互；NEW_LINE 时代回车纯换行已废弃）；
+            //   Shift+回车=换行：物理键盘经 onKeyEvent 判 Shift（组件层 KeyEvent.getModifierKeyState，
+            //   滚轮翻案同源 API）插 \n 并标记时间窗，onSubmit 窗内跳过发送；软键盘无物理键直发。
+            .enterKeyType(EnterKeyType.SEND)
+            .onSubmit(() => {
+              if (Date.now() - this.shiftEnterAt < 300) {
+                return; // Shift+回车帧：已插换行，跳过发送
+              }
+              this.sendMessage();
+            })
+            .onKeyEvent((e: KeyEvent) => {
+              if (e.keycode === 2016) { // KeyCode.KEY_ENTER（@ohos.multimodalInput.keyCode，数值直写免 import 查重）
+                let shift = false;
+                try {
+                  shift = e.getModifierKeyState ? e.getModifierKeyState(['shift']) : false;
+                } catch (err) {
+                  shift = false;
+                }
+                if (shift) {
+                  this.shiftEnterAt = Date.now();
+                  this.inputText += '\n'; // 末尾插入换行（光标在末尾的主场景；$$ 双向绑定刷新显示）
+                  this.saveDraft(); // 草稿同步
+                }
+              }
+            })
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 
           // ★ 0.152：画画Icon（屏幕圈选标注，核心新增亮点）——点击截取当前屏幕画面进入涂鸦标注页；
