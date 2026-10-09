@@ -118,7 +118,7 @@ function Do-Install($target) {
         $report += "$id => $(($r -join ' '))"
         if (($r -join ' ') -match "successfully") {
             Start-Sleep -Milliseconds 800
-            $s = & $Hdc -t $id shell aa start -b com.example.dag_ai_chat 2>&1
+            $s = & $Hdc -t $id shell aa start -a EntryAbility -b com.example.dag_ai_chat 2>&1
             $report += "$id => 自动启动: $(($s -join ' '))"
         }
     }
