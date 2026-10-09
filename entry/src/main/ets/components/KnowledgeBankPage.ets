@@ -184,6 +184,11 @@ export struct KnowledgeBankPage {
   @Local apkgDeckCounts: Record<string, number> = {};
   @Local apkgMediaCount: number = 0;
   @Local apkgFileName: string = '';
+  // ── ★ 0.211.0：列表图片全屏查看器（双击卡片图放大缩小——用户需求）──
+  @Local previewImages: string[] = [];
+  @Local previewIndex: number = 0;
+  @Local previewVisible: boolean = false;
+  @Local previewScale: number = 1;
 
   /** 当前目录的子文件夹（新在前）；卡片计数用 folderCardCount() */
   @Computed
@@ -315,10 +320,14 @@ export struct KnowledgeBankPage {
   }
 
   // ★ 0.210.0：标题图选图（复刻 selectEditorImage 流程——目标数组独立 editorTitleImages；上限同 9）
+  // ★ 0.211.0 修复手机端超限崩溃：maxSelectNumber 写死 9 → 已有 8 张仍可选 9 张全量读取（手机
+  //   内存峰值被打爆直接闪退，PC 内存大仅静默截断）。改动态额度=9-已有张数（至少 1），选图器
+  //   源头限制+循环兜底截断双保险——用户拍板"自动计算只能添加一张"
   async selectEditorTitleImage(): Promise<void> {
     try {
       const picker = new photoAccessHelper.PhotoViewPicker();
-      const result = await picker.select({ maxSelectNumber: 9 });
+      const quota = Math.max(1, 9 - this.editorTitleImages.length);
+      const result = await picker.select({ maxSelectNumber: quota });
       for (let i = 0; i < result.photoUris.length; i++) {
         if (this.editorTitleImages.length >= 9) {
           break; // 上限 9 张（每轮追加，超出静默截断）
@@ -345,7 +354,8 @@ export struct KnowledgeBankPage {
   async selectEditorImage(): Promise<void> {
     try {
       const picker = new photoAccessHelper.PhotoViewPicker();
-      const result = await picker.select({ maxSelectNumber: 9 });
+      const quota = Math.max(1, 9 - this.editorImages.length); // ★ 0.211.0：动态额度同标题图（防手机超限崩溃）
+      const result = await picker.select({ maxSelectNumber: quota });
       for (let i = 0; i < result.photoUris.length; i++) {
         if (this.editorImages.length >= 9) {
           break; // 上限 9 张（每轮追加，超出静默截断）
@@ -363,6 +373,14 @@ export struct KnowledgeBankPage {
     } catch (err) {
       // 选图取消/读取失败静默忽略（防崩溃）
     }
+  }
+
+  // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）
+  openImagePreview(images: string[], index: number): void {
+    this.previewImages = images;
+    this.previewIndex = index;
+    this.previewScale = 1;
+    this.previewVisible = true;
   }
 
   // ---- single delete (session-level no-remind) ----
@@ -801,8 +819,8 @@ export struct KnowledgeBankPage {
                 .height(14)
                 .objectFit(ImageFit.Contain)
               Text('标题图片' + (this.editorTitleImages.length > 0 ? `（${this.editorTitleImages.length}/9）` : ''))
-                .fontSize(12)
-                .fontColor(BRAND_SECONDARY)
+                .fontSize(13) // ★ 0.211.0 用户拍板：与「添加图片」颜色字号全对齐（原紫 12 不一致）
+                .fontColor(TEXT_SECONDARY)
             }
             .alignSelf(ItemAlign.Start)
             .onClick(() => {
@@ -1019,6 +1037,66 @@ export struct KnowledgeBankPage {
     .height('100%')
 
     .backgroundColor(OVERLAY)
+  }
+
+  // ★ 0.211.0：列表图片全屏查看器（结构同 ChatPage imageViewer：Swiper 多图+×+右滑关闭；
+  //   新增双击 1×↔2.5× 与捏合 1~4× 缩放——用户需求"双击图片放大然后缩小"）
+  @Builder
+  imagePreviewViewer() {
+    if (this.previewVisible) {
+      Stack() {
+        Swiper() {
+          ForEach(this.previewImages, (url: string) => {
+            Image(url)
+              .objectFit(ImageFit.Contain)
+              .width('100%')
+              .height('100%')
+              .scale({ x: this.previewScale, y: this.previewScale })
+              .gesture(
+                PinchGesture({ fingers: 2 })
+                  .onActionUpdate((event: GestureEvent) => {
+                    this.previewScale = Math.min(4, Math.max(1, this.previewScale * event.scale));
+                  })
+                  .onActionEnd(() => {
+                    if (this.previewScale < 1) {
+                      this.previewScale = 1;
+                    }
+                  })
+              )
+              .gesture(
+                TapGesture({ count: 2 })
+                  .onAction(() => {
+                    this.previewScale = this.previewScale > 1 ? 1 : 2.5;
+                  })
+              )
+          }, (url: string) => url)
+        }
+        .index(this.previewIndex)
+        .indicator(true)
+        .backgroundColor(Color.Black)
+
+        Button('×')
+          .fontSize(24)
+          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(Color.Transparent)
+          .position({ x: 20, y: 20 })
+          .onClick(() => {
+            this.previewVisible = false;
+          })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Color.Black)
+      // 右滑关闭挂 Stack 层（不与 Image 缩放手势抢）——单击关闭删除（与双击缩放冲突，关闭走 ×/右滑）
+      .gesture(
+        PanGesture({ direction: PanDirection.Horizontal })
+          .onActionEnd((event: PanGestureEvent) => {
+            if (this.previewScale <= 1 && event.offsetX > 60) {
+              this.previewVisible = false;
+            }
+          })
+      )
+    }
   }
 
   // ★ 0.160: fullscreen preview of the editor image — tap anywhere to close
@@ -2102,14 +2180,7 @@ export struct KnowledgeBankPage {
                       // ★ 0.202.1：标签 chips（用户拍板：放标题旁空区，高度 20 ≤ 问AI 32，圆角偏方 4，多标签横向滑动）
                       //   0.198.3 铁律合规：横向 Scroll 挂在受约束容器内用 layoutWeight，chip 自身 padding 自然宽
                       Row({ space: 6 }) {
-                        // ★ 0.210.0：标题首图缩略（32×32 圆角——视觉锚点小，不破坏行内布局；Anki 图对图）
-                        if (getTitleImages(c).length > 0) {
-                          Image(getTitleImages(c)[0])
-                            .width(32)
-                            .height(32)
-                            .borderRadius(6)
-                            .objectFit(ImageFit.Cover)
-                        }
+
                         Text(c.title)
                           .fontSize(16)
                           .fontWeight(600)
@@ -2164,6 +2235,35 @@ export struct KnowledgeBankPage {
                         }
                       }
                       .width('100%')
+                      // ★ 0.211.0 用户拍板：排版=第一行标题文字→第二行标题图，且**全部展示**（原仅首图
+                      //   32×32 缩略）；横滑条 0.198.3 铁律合规（受约束容器内 Scroll+子项自然宽）；
+                      //   双击图片=全屏查看器放大缩小；单击拦截不冒泡（0.200.0 教训）防误进编辑
+                      if (getTitleImages(c).length > 0) {
+                        Scroll() {
+                          Row({ space: 6 }) {
+                            ForEach(getTitleImages(c), (img: string, ti: number) => {
+                              Image(img)
+                                .height(72)
+                                .width(108)
+                                .objectFit(ImageFit.Cover)
+                                .borderRadius(RADIUS_CONTROL)
+                                .onClick(() => {
+                                  this.lastTapTime = Date.now(); // 单击拦截：不进编辑（双击由手势接管）
+                                })
+                                .gesture(
+                                  TapGesture({ count: 2 })
+                                    .onAction(() => {
+                                      this.openImagePreview(getTitleImages(c), ti);
+                                    })
+                                )
+                            }, (img: string) => img)
+                          }
+                        }
+                        .scrollable(ScrollDirection.Horizontal)
+                        .scrollBar(BarState.Off)
+                        .width('100%')
+                        .margin({ top: 6 })
+                      }
                       Text(c.definition)
                         .fontSize(13)
                         .fontColor(TEXT_SECONDARY)
@@ -2175,12 +2275,22 @@ export struct KnowledgeBankPage {
                         .margin({ top: 2 })
                       if (getCardImages(c).length > 0) {
                         // Card image thumbnail — not rendered when empty
+                        // ★ 0.211.0：双击同样进全屏查看器（与标题图一致）
                         Image(getCardImages(c)[0])
                           .height(64)
                           .width(96)
                           .objectFit(ImageFit.Cover)
                           .borderRadius(RADIUS_CONTROL)
                           .margin({ top: 6 })
+                          .onClick(() => {
+                            this.lastTapTime = Date.now();
+                          })
+                          .gesture(
+                            TapGesture({ count: 2 })
+                              .onAction(() => {
+                                this.openImagePreview(getCardImages(c), 0);
+                              })
+                          )
                       }
                     }
                     .alignItems(HorizontalAlign.Start)
@@ -2256,6 +2366,10 @@ export struct KnowledgeBankPage {
         // ★ 0.161.2: card-count settings dialog
         if (this.cardSettingsVisible) {
           this.cardSettingsDialog()
+        }
+        // ★ 0.211.0：列表图片全屏查看器（最顶层——双击卡片里的图片触发）
+        if (this.previewVisible) {
+          this.imagePreviewViewer()
         }
         // ★ 0.160: editor image fullscreen preview — topmost layer
         if (this.editorImagePreviewVisible) {

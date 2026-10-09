@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000133, // ★ 0.210.3：编辑弹窗根改Stack（Column布局流下mini遮罩百分比铺满不可靠）
+    "versionCode": 1000134, // ★ 0.211.0：修复手机标题图超限崩溃（动态额度）+列表标题图全展示+双击图片放大+按钮颜色统一
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
