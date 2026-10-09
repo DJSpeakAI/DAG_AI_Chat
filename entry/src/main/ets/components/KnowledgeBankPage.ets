@@ -2263,13 +2263,18 @@ export struct KnowledgeBankPage {
                       //   0.198.3 铁律合规：横向 Scroll 挂在受约束容器内用 layoutWeight，chip 自身 padding 自然宽
                       Row({ space: 6 }) {
 
+                        // ★ 0.212.3 用户拍板：宽屏（平板/PC）标题文字在行内**居中**显示（"瞄左上角难受，
+                        //   标题居中更舒服"），标签往后排自然宽（上限 38% 防溢出）、问AI 贴右 margin12；
+                        //   手机维持左对齐+标签弹性（体验已获好评不动）。属性三元写法避 if 链属性雷
                         Text(c.title)
                           .fontSize(16)
                           .fontWeight(600)
                           .fontColor(TEXT_PRIMARY)
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
-                          .constraintSize({ maxWidth: '62%' })
+                          .textAlign(this.isTablet ? TextAlign.Center : TextAlign.Start)
+                          .layoutWeight(this.isTablet ? 1 : 0)
+                          .constraintSize({ maxWidth: this.isTablet ? '100%' : '62%' })
                         if (parseTags(c.tags).length > 0) {
                           Scroll() {
                             Row({ space: 6 }) {
@@ -2287,7 +2292,8 @@ export struct KnowledgeBankPage {
                           .scrollable(ScrollDirection.Horizontal)
                           .scrollBar(BarState.Off)
                           .height(20)
-                          .layoutWeight(1)
+                          .layoutWeight(this.isTablet ? 0 : 1)
+                          .constraintSize({ maxWidth: this.isTablet ? '38%' : '100%' })
                         }
                       }
                       .layoutWeight(1)
@@ -2308,6 +2314,7 @@ export struct KnowledgeBankPage {
                           .padding({ left: 5, right: 5 })
                           .borderRadius(RADIUS_CONTROL)
                           .border({ width: 1, color: TEXT_TERTIARY })
+                          .margin({ left: 12 }) // ★ 0.212.3 用户拍板：标签与「问AI?」贴边不行——右侧间距加大到 12，与左侧标题间距对称呼吸
                           .onClick(() => {
                             this.askSheetTitle = c.title;
                             this.askSheetDefinition = c.definition;
