@@ -116,6 +116,11 @@ function Do-Install($target) {
         if ([string]::IsNullOrWhiteSpace($id)) { continue }
         $r = & $Hdc -t $id install -r $b.hap 2>&1
         $report += "$id => $(($r -join ' '))"
+        if (($r -join ' ') -match "successfully") {
+            Start-Sleep -Milliseconds 800
+            $s = & $Hdc -t $id shell aa start -b com.example.dag_ai_chat 2>&1
+            $report += "$id => 自动启动: $(($s -join ' '))"
+        }
     }
     return @{ ok = $true; hap = $b.hap; devices = $report -join "`n" }
 }
@@ -144,25 +149,40 @@ input[type=text]{width:100%;box-sizing:border-box;background:#221539;border:1px 
 <h1>📚 DAG AI Chat · 一键装机</h1>
 <div class="sub">老机器 DevEco 编译（约 1 分钟）→ 自动安装到设备</div>
 <div id="devs"><div class="sub">探测设备中…</div></div>
-<input type="text" id="manual" placeholder="手动地址（手机IP变了填这里，如 192.168.2.16:38611）">
+<div class="card" id="spare-pad"><div class="ico">📟</div><div style="flex:1"><div class="nm">pad 备用（IP 变了改这里）</div><input type="text" class="sparein" data-key="pad" placeholder="192.168.2.x:xxxxx"></div></div>
+<div class="card" id="spare-pc"><div class="ico">💻</div><div style="flex:1"><div class="nm">pc 备用（IP 变了改这里）</div><input type="text" class="sparein" data-key="pc" placeholder="192.168.2.x:xxxxx"></div></div>
+<input type="text" id="manual" placeholder="手动地址（一次性使用，如 192.168.2.16:38611）">
 <button class="go" id="go">🚀 编译并安装</button>
 <div id="res"></div>
-<div class="hint">提示：手动地址优先于选中设备；都不选 = 安装到全部在线设备 · 服务 http://192.168.2.15:8765</div>
+<div class="hint">选中设备卡片后点安装；都不选 = 全部在线设备 · 装完自动打开 app · 服务 http://192.168.2.15:8765</div>
 <script>
 var sel=null;
-var NAMEm={'SLG-W10':'平板 MatePad 11.5s','CHZ-AL00':'手机 畅享 90 Pro'};
+function nameOf(m){m=(m||'').trim();
+ if(m.indexOf('SLG')>=0)return '平板 MatePad 11.5s';
+ if(m.indexOf('CHZ')>=0)return '手机 畅享 90 Pro';
+ return 'Matebook 14'}
+function icoOf(m){m=(m||'').trim();
+ if(m.indexOf('SLG')>=0)return '📟';
+ if(m.indexOf('CHZ')>=0)return '📱';
+ return '💻'}
 function refresh(){
  fetch('/devices').then(function(r){return r.json()}).then(function(ds){
   var box=document.getElementById('devs');box.innerHTML='';
-  if(!ds||!ds.length){box.innerHTML='<div class="sub">没有在线设备——设备的「无线调试」开了吗？可在下方手动填地址</div>';return}
+  if(!ds||!ds.length){box.innerHTML='<div class="sub">没有在线设备——设备的「无线调试」开了吗？可用下方备用卡片填地址</div>';return}
   ds.forEach(function(d){
    var c=document.createElement('div');c.className='card';c.dataset.addr=d.addr;
-   var ico=d.model.indexOf('SLG')>=0?'📟':'📱';
-   var nm=NAMEm[d.model.trim()]||d.model;
-   c.innerHTML='<div class="ico">'+ico+'</div><div><div class="nm">'+nm+'</div><div class="ad">'+d.addr+'</div></div>';
+   c.innerHTML='<div class="ico">'+icoOf(d.model)+'</div><div><div class="nm">'+nameOf(d.model)+'</div><div class="ad">'+d.addr+'</div></div>';
    c.onclick=function(){sel=(sel===d.addr)?null:d.addr;renderSel()};box.appendChild(c)})})
  .catch(function(){document.getElementById('devs').innerHTML='<div class="sub">连不上编译服务（老机器开机了吗？）</div>'})}
-function renderSel(){document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('sel',c.dataset.addr===sel)})}
+function renderSel(){document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('sel',c.dataset.addr===sel && c.dataset.addr)})}
+function bindSpare(key){
+ var c=document.getElementById('spare-'+key);if(!c)return;
+ var inp=c.querySelector('input');
+ inp.value=localStorage.getItem('spare-'+key)||'';
+ inp.onchange=function(){var v=inp.value.trim();localStorage.setItem('spare-'+key,v);c.dataset.addr=v;if(c.classList.contains('sel'))sel=v};
+ inp.onclick=function(e){e.stopPropagation()};
+ c.onclick=function(){var v=inp.value.trim();if(!v){inp.focus();return}c.dataset.addr=v;sel=(sel===v)?null:v;renderSel()}}
+bindSpare('pad');bindSpare('pc');
 function doInstall(){
  var btn=document.getElementById('go'),res=document.getElementById('res');
  var manual=document.getElementById('manual').value.trim();
@@ -170,10 +190,9 @@ function doInstall(){
  btn.disabled=true;btn.textContent='⏳ 编译安装中…（约1分钟）';
  res.style.display='block';res.className='';res.textContent='进行中…';
  fetch('/install',{method:'POST',body:t?JSON.stringify({target:t}):''}).then(function(r){return r.json()}).then(function(j){
-  res.textContent=(j.ok?'✅ 安装完成\n':'❌ 失败\n')+(j.devices||j.err||'')+(j.hap?'\n包: '+j.hap:'');
+  res.textContent=(j.ok?'✅ 完成\n':'❌ 失败\n')+(j.devices||j.err||'')+(j.hap?'\n包: '+j.hap:'');
   res.className=j.ok?'ok':'bad'})
- .catch(function(e){res.textContent='请求失败：'+e;res.className='bad'})
- .finally?0:0;
+ .catch(function(e){res.textContent='请求失败：'+e;res.className='bad'});
  btn.disabled=false;btn.textContent='🚀 编译并安装'}
 document.getElementById('go').onclick=doInstall;
 refresh();
