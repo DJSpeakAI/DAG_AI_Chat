@@ -1240,14 +1240,19 @@ export struct BBTreeCanvas {
         .visibility(this.mouseOnCanvas ? Visibility.Visible : Visibility.None)
         .hitTestBehavior(HitTestMode.Transparent)
         .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
-          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} y=${yOffset} visible=${this.mouseOnCanvas}`);
+          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} x=${xOffset} y=${yOffset} visible=${this.mouseOnCanvas}`);
           if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
             || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
             || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
             return; // 触摸/滚动条系来源：不缩放（单指拖=画布平移，绝不误触缩放）
           }
-          // 上滚（yOffset<0）=放大 / 下滚=缩小；锚点=鼠标悬停处；速度=0.214.2 终态（1.02/0.98）
-          this.wheelZoomAt(yOffset < 0 ? 1.02 : 0.98);
+          // ★ 0.214.8：真机日志实锤 Matebook 触摸板滚轮增量走 xOffset（y 恒 0）——方向判定合并两轴，
+          //   y 优先、y=0 时看 x；负=放大正=缩小，零增量忽略
+          const delta = yOffset !== 0 ? yOffset : (xOffset !== 0 ? xOffset : 0);
+          if (delta === 0) {
+            return;
+          }
+          this.wheelZoomAt(delta < 0 ? 1.02 : 0.98); // 锚点=鼠标悬停处；速度=0.214.2 终态
           return { xOffset: 0, yOffset: 0 }; // 全额吞掉——传感器永不真滚
         })
           }
