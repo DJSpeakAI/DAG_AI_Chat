@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000141, // ★ 0.212.3：宽屏卡片标题居中+标签往后排+问AI间距12（用户拍板，手机排版不动）
+    "versionCode": 1000142, // ★ 0.213.0：滑出面板扩容双圆钮（问AI+删除）+宽屏标题行两列定式（标签定宽左对齐同轴标题）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

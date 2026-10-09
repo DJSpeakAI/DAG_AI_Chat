@@ -397,20 +397,54 @@ export struct KnowledgeBankPage {
     }
   }
 
-  // ★ 0.212.0：卡片滑动露出的回收站删除面板（左滑右滑同款；点击走 requestDeleteCard 原确认弹窗
-  //   链路不直接删）。swipeAction 场景内容静态，带参 @Builder 无刷新风险（0.190.1 铁律针对需随
-  //   状态变化的渲染）
-  // ★ 0.212.1 用户拍板：不要红色 → 品牌紫 BRAND_PRIMARY
-  // ★ 0.212.2 用户拍板（PC 截图实锤）：满高色块太高太难看 → 改**小巧圆形按钮**（44×44 圆钮垂直
-  //   居中，回收站符号本身已表意）；规格已入 UI_GUIDELINES「列表滑动删除」
+  // ★ 0.212.0：卡片滑动露出的操作面板（左滑右滑同款）
+  // ★ 0.213.0 用户拍板：扩容为双圆钮——左「问AI」（ask_ai.svg 白图标，功能=知识卡重新带入对话框
+  //   问AI，承接原列表标题行「问AI?」入口）+右「删除」（trash 白图标）——用户点名"问AI 放删除左边，
+  //   滑块工具凸显问AI 概念，设计一个鸿蒙风格 logo"；同款 44×44 品牌紫圆钮（用户认可删除钮亮度设计）。
+  //   多选中点击均 guard 无动作；规格入 UI_GUIDELINES 六-11
   @Builder
-  swipeDeletePanel(c: KnowledgeCard) {
-    Row() {
+  swipeActionsPanel(c: KnowledgeCard) {
+    Row({ space: 12 }) {
+      Column() {
+        Image($r('app.media.ask_ai'))
+          .width(20)
+          .height(20)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
+      .backgroundColor(BRAND_PRIMARY)
+      .onClick(() => {
+        if (!this.multiSelectMode) {
+          this.askSheetTitle = c.title;
+          this.askSheetDefinition = c.definition;
+          this.askSheetImages = [...getTitleImages(c), ...getCardImages(c)]; // 标题图在前+内容图合并带入问AI面板
+          this.askSheetVisible = true;
+        }
+      })
       Column() {
         Image($r('app.media.trash'))
           .width(20)
           .height(20)
       }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
+      .backgroundColor(BRAND_PRIMARY)
+      .onClick(() => {
+        if (!this.multiSelectMode) {
+          this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
+        }
+      })
+    }
+    .justifyContent(FlexAlign.Center)
+    .width(120)
+    .height('100%')
+  }
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
       .width(44)
@@ -2263,9 +2297,11 @@ export struct KnowledgeBankPage {
                       //   0.198.3 铁律合规：横向 Scroll 挂在受约束容器内用 layoutWeight，chip 自身 padding 自然宽
                       Row({ space: 6 }) {
 
-                        // ★ 0.212.3 用户拍板：宽屏（平板/PC）标题文字在行内**居中**显示（"瞄左上角难受，
-                        //   标题居中更舒服"），标签往后排自然宽（上限 38% 防溢出）、问AI 贴右 margin12；
-                        //   手机维持左对齐+标签弹性（体验已获好评不动）。属性三元写法避 if 链属性雷
+                        // ★ 0.212.3：宽屏标题行内居中、标签后置；手机左对齐+标签弹性（平台分治）
+                        // ★ 0.213.0 用户拍板两连精化：①标题居中跟着标签宽度漂移（"上下不整齐"）→宽屏
+                        //   标签列改**定宽** width 38%（内容左对齐——用户"标签不要右对齐要左对齐"），
+                        //   标题列=剩余全部弹性 → 所有卡片标题同一垂直轴线居中；②"问AI?"文字按钮撤除
+                        //   （功能不变）→挪进滑出面板（见 swipeActionsPanel），宽屏手机两端一致
                         Text(c.title)
                           .fontSize(16)
                           .fontWeight(600)
@@ -2293,37 +2329,16 @@ export struct KnowledgeBankPage {
                           .scrollBar(BarState.Off)
                           .height(20)
                           .layoutWeight(this.isTablet ? 0 : 1)
+                          .width(this.isTablet ? '38%' : undefined)
                           .constraintSize({ maxWidth: this.isTablet ? '38%' : '100%' })
                         }
                       }
                       .layoutWeight(1)
-                        if (!this.multiSelectMode) {
-                          // ★ 0.201.3（用户拍板：描边框比「未学习」视觉大一圈）：**高度=「未学习」标签等高
-                          //   （height 16，.height 含 border——0.196.7 教训）**，fontSize 11→10 缩一号补偿框体，
-                          //   padding 仅左右 5（上下 0，垂直居中由 height 保证）；规范入 UI_GUIDELINES
-                          Row() {
-                            Text('问AI')
-                              .fontSize(10)
-                              .fontColor(TEXT_TERTIARY)
-                            Text('?')
-                              .fontSize(10)
-                              .fontColor(TEXT_TERTIARY)
-                              .fontWeight(600)
-                          }
-                          .height(16)
-                          .padding({ left: 5, right: 5 })
-                          .borderRadius(RADIUS_CONTROL)
-                          .border({ width: 1, color: TEXT_TERTIARY })
-                          .margin({ left: 12 }) // ★ 0.212.3 用户拍板：标签与「问AI?」贴边不行——右侧间距加大到 12，与左侧标题间距对称呼吸
-                          .onClick(() => {
-                            this.askSheetTitle = c.title;
-                            this.askSheetDefinition = c.definition;
-                            this.askSheetImages = [...getTitleImages(c), ...getCardImages(c)]; // ★ 0.210.0：标题图在前+内容图合并带入问AI面板
-                            this.askSheetVisible = true;
-                          })
-                        }
-                      }
-                      .width('100%')
+                      // ★ 0.213.0 用户拍板：标题行「问AI?」文字按钮撤除——功能不变，入口挪进滑出面板
+                      //   （swipeActionsPanel 问AI 圆钮，宽屏手机两端一致；语义=知识卡重新带入对话框问AI）
+
+                    }
+                    .width('100%')
                       // ★ 0.211.0 用户拍板：排版=第一行标题文字→第二行标题图，且**全部展示**（原仅首图
                       //   32×32 缩略）；横滑条 0.198.3 铁律合规（受约束容器内 Scroll+子项自然宽）；
                       //   双击图片=全屏查看器放大缩小；单击拦截不冒泡（0.200.0 教训）防误进编辑
@@ -2410,14 +2425,14 @@ export struct KnowledgeBankPage {
                   )
                 }
                 .swipeAction({
-                  // ★ 0.212.0 用户拍板：左右滑露回收站面板（常驻红 × 已撤）；点击走原确认弹窗链路；
-                  //   swipeAction 是 ListItem 专属属性（挂 Row 上编译器不认——0.212.0 编译实锤）；
+                  // ★ 0.212.0：左右滑露操作面板；★ 0.213.0：面板扩容双圆钮（问AI+删除）并改名
+                  //   swipeActionsPanel；swipeAction 是 ListItem 专属属性（挂 Row 上无效——编译实锤）；
                   //   箭头函数包 @Builder 调用（CustomBuilder 规范写法）
                   end: (): void => {
-                    this.swipeDeletePanel(c)
+                    this.swipeActionsPanel(c)
                   },
                   start: (): void => {
-                    this.swipeDeletePanel(c)
+                    this.swipeActionsPanel(c)
                   }
                 })
               }, (c: KnowledgeCard) => c.id)
