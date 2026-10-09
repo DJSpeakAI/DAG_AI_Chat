@@ -55,6 +55,18 @@ export function connectDailyReviewCount(): DailyReviewCountStore {
   return PersistenceV2.connect(DailyReviewCountStore, 'daily-review-count-v1', () => new DailyReviewCountStore()) as DailyReviewCountStore;
 }
 
+// ★ 0.209.0：卡面模式（用户需求：复习卡支持「正反两面」——先看题面，点击翻面后再评分）
+// 'single'=单面（现状：题面+内容全显，评分按钮直接可按）；'double'=正反两面
+@ObservedV2
+export class FaceModeStore {
+  @Trace wordFace: string = 'single';      // 单词库：正面=单词+音标，反面=释义
+  @Trace knowledgeFace: string = 'single'; // 知识库：正面=标题，反面=图片+定义
+}
+
+export function connectFaceMode(): FaceModeStore {
+  return PersistenceV2.connect(FaceModeStore, 'review-face-mode-v1', () => new FaceModeStore()) as FaceModeStore;
+}
+
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -71,6 +83,18 @@ export struct ReviewPage {
   dailyCount: DailyReviewCountStore = connectDailyReviewCount();
   @Local countSettingsVisible: boolean = false; // ⚙ 弹窗开关
   statStore: StatisticsStore = connectStatistics(); // ★ 0.202.3：司忆量埋点
+  // ── ★ 0.209.0：卡面模式 + 翻面状态 ──
+  faceMode: FaceModeStore = connectFaceMode();
+  @Local cardFlipped: boolean = false; // 当前卡是否已翻到反面（每换一张卡重置为 false）
+
+  @Computed get isDoubleFace(): boolean {
+    return this.mode === 'word' ? this.faceMode.wordFace === 'double' : this.faceMode.knowledgeFace === 'double';
+  }
+
+  // ★ 0.209.0：评分区可见条件——单面模式恒显（现状不变）；双面模式须翻面后才显示（评分逻辑本身完全不动）
+  @Computed get faceReady(): boolean {
+    return !this.isDoubleFace || this.cardFlipped;
+  }
 
   /** ★ 0.200.0：写入导入 store + 回画布进入选择模式（取当前复习中的知识卡） */
   startCardImport(action: string): void {
@@ -133,6 +157,7 @@ export struct ReviewPage {
     this.ratedHard = 0;
     this.ratedGood = 0;
     this.ratedEasy = 0;
+    this.cardFlipped = false; // ★ 0.209.0：新队列从正面开始
     this.aiText = '';
     this.aiLoading = false;
     if (this.queue.length === 0) {
@@ -168,6 +193,7 @@ export struct ReviewPage {
     this.ratedHard = 0;
     this.ratedGood = 0;
     this.ratedEasy = 0;
+    this.cardFlipped = false; // ★ 0.209.0：继续复习新队列从正面开始
     this.finished = false;
     recordStat(this.statStore, 'siyi', this.queue.length, 0); // 0.202.3 司忆量埋点（继续复习队列）
     this.aiText = '';
@@ -224,6 +250,7 @@ export struct ReviewPage {
       this.ratedEasy += 1;
     }
     this.idx += 1;
+    this.cardFlipped = false; // ★ 0.209.0：下一张卡从正面开始
     this.rebuildWidgetState(); // 0.204.0 翻卡后刷新桌面卡片（完成态自动切换）
     if (this.idx >= this.queue.length) {
       this.finished = true;
@@ -407,17 +434,21 @@ export struct ReviewPage {
               wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
             })
         }
-        Text((this.currentItem() as WordItem).explain)
-          .fontSize(15)
-          .fontColor(TEXT_SECONDARY)
-          .textAlign(TextAlign.Center)
-          .lineHeight(22)
-          .maxLines(5)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // ★ 0.209.0：双面模式下释义=反面内容（翻面后才显示；单面恒显=现状不变）
+        if (!this.isDoubleFace || this.cardFlipped) {
+          Text((this.currentItem() as WordItem).explain)
+            .fontSize(15)
+            .fontColor(TEXT_SECONDARY)
+            .textAlign(TextAlign.Center)
+            .lineHeight(22)
+            .maxLines(5)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
       } else {
         // ★ 0.196.3 用户反馈：知识卡有图要显示图（原只有标题+定义——知识库里带图的卡复习时图丢了）
         // ★ 0.202.1：多图横滑（单图无滑感）；图片兼容读取 getCardImages
-        if (getCardImages(this.currentItem() as KnowledgeCard).length > 0) {
+        // ★ 0.209.0：双面模式下图片+定义=反面内容（翻面后才显示；正面只有标题）
+        if ((!this.isDoubleFace || this.cardFlipped) && getCardImages(this.currentItem() as KnowledgeCard).length > 0) {
           Scroll() {
             Row({ space: 8 }) {
               ForEach(getCardImages(this.currentItem() as KnowledgeCard), (img: string) => {
@@ -444,13 +475,23 @@ export struct ReviewPage {
           .maxFontSize(24)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .textAlign(TextAlign.Center)
-        Text((this.currentItem() as KnowledgeCard).definition)
-          .fontSize(15)
-          .fontColor(TEXT_SECONDARY)
-          .textAlign(TextAlign.Center)
-          .lineHeight(22)
-          .maxLines(8)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // ★ 0.209.0：双面模式下定义=反面内容（翻面后才显示；单面恒显=现状不变）
+        if (!this.isDoubleFace || this.cardFlipped) {
+          Text((this.currentItem() as KnowledgeCard).definition)
+            .fontSize(15)
+            .fontColor(TEXT_SECONDARY)
+            .textAlign(TextAlign.Center)
+            .lineHeight(22)
+            .maxLines(8)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+      }
+      // ★ 0.209.0：双面模式未翻面时的操作提示（用户首次见双面卡即懂点击翻面）
+      if (this.isDoubleFace && !this.cardFlipped) {
+        Text('点击卡片查看答案')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
       }
       }
       .width('100%')
@@ -459,6 +500,13 @@ export struct ReviewPage {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
       .alignItems(HorizontalAlign.Center)
+      // ★ 0.209.0：双面模式点击卡片翻面（再点翻回正面——正反循环；单面模式点击无动作）
+      // 喇叭/问AI 等子组件点击不冒泡（0.200.0 教训）互不干扰
+      .onClick(() => {
+        if (this.isDoubleFace) {
+          this.cardFlipped = !this.cardFlipped;
+        }
+      })
       // ★ 0.200.0 入口 C：右上角「问 AI」——仅知识卡显示（单词走遗忘曲线无导入需求）；
       //   Stack TopEnd 绝对定位不占版面空间（保住一页一卡居中美学）；icon 规格同知识库列表入口
       if (this.mode === 'knowledge') {
@@ -801,14 +849,98 @@ export struct ReviewPage {
     .backgroundColor(SURFACE_SOFT)
   }
 
+  // ★ 0.209.0：卡面模式分段控件（单面 | 正反两面——样式同 countSegment 分段）
+  @Builder
+  faceSegment(isDouble: boolean, onPick: (mode: string) => void): void {
+    Row({ space: 6 }) {
+      Text('单面')
+        .fontSize(12)
+        .fontWeight(!isDouble ? 600 : 400)
+        .fontColor(!isDouble ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(!isDouble ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          onPick('single');
+        })
+      Text('正反两面')
+        .fontSize(12)
+        .fontWeight(isDouble ? 600 : 400)
+        .fontColor(isDouble ? Color.White : TEXT_SECONDARY)
+        .height(30)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(8)
+        .backgroundColor(isDouble ? BRAND_PRIMARY : Color.Transparent)
+        .onClick(() => {
+          onPick('double');
+        })
+    }
+    .padding(3)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(SURFACE_SOFT)
+  }
+
+  // ★ 0.209.0：切换卡面模式（即时生效；当前卡回到正面）
+  applyWordFace(mode: string): void {
+    this.faceMode.wordFace = mode;
+    this.cardFlipped = false;
+  }
+
+  applyKnowledgeFace(mode: string): void {
+    this.faceMode.knowledgeFace = mode;
+    this.cardFlipped = false;
+  }
+
   @Builder
   countSettingsDialog() {
     Column() {
       Column() {
+        // ── ★ 0.209.0：卡面模式（用户需求：置于每日复习量上方）──
+        Text('卡面模式')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text('正反两面：先看题面，点击卡片翻面后再评分')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+        Column() {
+          Text('单词库')
+            .fontSize(14)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+            .alignSelf(ItemAlign.Start)
+          this.faceSegment(this.faceMode.wordFace === 'double', (mode: string): void => {
+            this.applyWordFace(mode);
+          })
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .margin({ top: 16 })
+        Column() {
+          Text('知识库')
+            .fontSize(14)
+            .fontWeight(600)
+            .fontColor(TEXT_PRIMARY)
+            .alignSelf(ItemAlign.Start)
+          this.faceSegment(this.faceMode.knowledgeFace === 'double', (mode: string): void => {
+            this.applyKnowledgeFace(mode);
+          })
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .margin({ top: 12 })
+        // ── 每日复习量（原有）──
         Text('每日复习量')
           .fontSize(16)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
+          .margin({ top: 20 })
         Text('进入复习页时，当日队列最多取多少条（到期+新卡）')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
@@ -955,7 +1087,10 @@ export struct ReviewPage {
           Column() {
             Blank().layoutWeight(1)
             this.cardArea()
-            this.ratingArea()
+            // ★ 0.209.0：双面模式须翻面后才显示评分区（单面恒显=现状不变；评分逻辑本身完全不动）
+            if (this.faceReady) {
+              this.ratingArea()
+            }
             Blank().layoutWeight(1)
           }
           .width('100%')
