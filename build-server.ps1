@@ -125,13 +125,68 @@ $listener.Prefixes.Add("http://+:$Port/")
 $listener.Start()
 Write-Host "Listening on http://+:$Port  (Ctrl+C to stop)" -ForegroundColor Green
 
+$PageHtml = @'
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DAG AI Chat 一键装机</title>
+<style>
+body{background:#160D26;color:#E8E0F0;font-family:system-ui;margin:0;padding:24px;max-width:640px;margin:auto}
+h1{font-size:22px;margin:8px 0} .sub{color:#9C8AB8;font-size:13px;margin-bottom:16px}
+.card{background:#221539;border:1px solid #3A2A5C;border-radius:12px;padding:14px 16px;margin:10px 0;display:flex;align-items:center;gap:12px;cursor:pointer}
+.card.sel{border-color:#8B5CF6;background:#2A1B4A}
+.ico{font-size:26px} .nm{font-weight:600} .ad{color:#9C8AB8;font-size:12px}
+input[type=text]{width:100%;box-sizing:border-box;background:#221539;border:1px solid #3A2A5C;border-radius:10px;color:#E8E0F0;padding:12px;font-size:15px;margin-top:6px}
+.go{width:100%;background:linear-gradient(135deg,#8B5CF6,#6D28D9);color:#fff;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer}
+.go:disabled{opacity:.5}
+#res{white-space:pre-wrap;background:#1A1030;border-radius:12px;padding:14px;margin-top:14px;font-size:13px;display:none}
+.ok{color:#4ADE80}.bad{color:#F87171}
+.hint{color:#6B5B8A;font-size:11px;margin-top:14px;text-align:center}
+</style></head><body>
+<h1>📚 DAG AI Chat · 一键装机</h1>
+<div class="sub">老机器 DevEco 编译（约 1 分钟）→ 自动安装到设备</div>
+<div id="devs"><div class="sub">探测设备中…</div></div>
+<input type="text" id="manual" placeholder="手动地址（手机IP变了填这里，如 192.168.2.16:38611）">
+<button class="go" id="go">🚀 编译并安装</button>
+<div id="res"></div>
+<div class="hint">提示：手动地址优先于选中设备；都不选 = 安装到全部在线设备 · 服务 http://192.168.2.15:8765</div>
+<script>
+var sel=null;
+var NAMEm={'SLG-W10':'平板 MatePad 11.5s','CHZ-AL00':'手机 畅享 90 Pro'};
+function refresh(){
+ fetch('/devices').then(function(r){return r.json()}).then(function(ds){
+  var box=document.getElementById('devs');box.innerHTML='';
+  if(!ds||!ds.length){box.innerHTML='<div class="sub">没有在线设备——设备的「无线调试」开了吗？可在下方手动填地址</div>';return}
+  ds.forEach(function(d){
+   var c=document.createElement('div');c.className='card';c.dataset.addr=d.addr;
+   var ico=d.model.indexOf('SLG')>=0?'📟':'📱';
+   var nm=NAMEm[d.model.trim()]||d.model;
+   c.innerHTML='<div class="ico">'+ico+'</div><div><div class="nm">'+nm+'</div><div class="ad">'+d.addr+'</div></div>';
+   c.onclick=function(){sel=(sel===d.addr)?null:d.addr;renderSel()};box.appendChild(c)})})
+ .catch(function(){document.getElementById('devs').innerHTML='<div class="sub">连不上编译服务（老机器开机了吗？）</div>'})}
+function renderSel(){document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('sel',c.dataset.addr===sel)})}
+function doInstall(){
+ var btn=document.getElementById('go'),res=document.getElementById('res');
+ var manual=document.getElementById('manual').value.trim();
+ var t=manual||sel;
+ btn.disabled=true;btn.textContent='⏳ 编译安装中…（约1分钟）';
+ res.style.display='block';res.className='';res.textContent='进行中…';
+ fetch('/install',{method:'POST',body:t?JSON.stringify({target:t}):''}).then(function(r){return r.json()}).then(function(j){
+  res.textContent=(j.ok?'✅ 安装完成\n':'❌ 失败\n')+(j.devices||j.err||'')+(j.hap?'\n包: '+j.hap:'');
+  res.className=j.ok?'ok':'bad'})
+ .catch(function(e){res.textContent='请求失败：'+e;res.className='bad'})
+ .finally?0:0;
+ btn.disabled=false;btn.textContent='🚀 编译并安装'}
+document.getElementById('go').onclick=doInstall;
+refresh();
+</script></body></html>
+'@
+
 while ($listener.IsListening) {
     $ctx = $listener.GetContext()
     $req = $ctx.Request; $res = $ctx.Response
     try {
         if ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/") {
-            $bytes = [Text.Encoding]::UTF8.GetBytes(('{"status":"running","hvigorw":"' + $Hvigorw + '","hdc":"' + $Hdc + '"}'))
-            $res.ContentType = "application/json"; $res.OutputStream.Write($bytes, 0, $bytes.Length)
+            $bytes = [Text.Encoding]::UTF8.GetBytes($PageHtml)
+            $res.ContentType = "text/html; charset=utf-8"; $res.OutputStream.Write($bytes, 0, $bytes.Length)
         }
         elseif ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/devices") {
             $list = Get-DeviceList
