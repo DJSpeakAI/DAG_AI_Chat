@@ -397,21 +397,23 @@ export struct KnowledgeBankPage {
     }
   }
 
-  // ★ 0.212.0：卡片滑动露出的回收站删除面板（左滑右滑同款；华为风格=警示红底+白色回收站 svg，
-  //   弃红 ×；点击走 requestDeleteCard 原确认弹窗链路不直接删）。swipeAction 场景内容静态，
-  //   带参 @Builder 无刷新风险（0.190.1 铁律针对需随状态变化的渲染）
+  // ★ 0.212.0：卡片滑动露出的回收站删除面板（左滑右滑同款；点击走 requestDeleteCard 原确认弹窗
+  //   链路不直接删）。swipeAction 场景内容静态，带参 @Builder 无刷新风险（0.190.1 铁律针对需随
+  //   状态变化的渲染）
+  // ★ 0.212.1 用户拍板 UI 微调：不要红色（与暗紫 UI 不搭）→ 品牌紫 BRAND_PRIMARY；面板 76→56、
+  //   图标 24→20 收小一号（回收站符号本身已表意，无需大块头）
   @Builder
   swipeDeletePanel(c: KnowledgeCard) {
     Row() {
       Image($r('app.media.trash'))
-        .width(24)
-        .height(24)
+        .width(20)
+        .height(20)
     }
     .justifyContent(FlexAlign.Center)
-    .width(76)
+    .width(56)
     .height('100%')
     .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(DANGER)
+    .backgroundColor(BRAND_PRIMARY)
     .onClick(() => {
       if (!this.multiSelectMode) {
         this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
