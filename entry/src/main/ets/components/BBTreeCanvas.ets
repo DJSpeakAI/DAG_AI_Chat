@@ -45,6 +45,13 @@ export struct BBTreeCanvas {
   // ★ 0.147：长按气泡操作菜单状态（修改标题 / 删除气泡）
   @Local menuVisible: boolean = false;
   @Local menuNodeId: string = '';
+  // ★ 0.214.3：长按菜单增「增加子气泡」入口 + 菜单限宽（PC 上 62% 太宽，用户截图反馈）——
+  //   宽屏断点读 WindowMode 共享真相源（同 KnowledgeBankPage isTablet 定式）
+  windowMode: WindowMode = connectWindowMode();
+  @Computed
+  get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
   // ★ 0.147：标题编辑弹窗状态
   @Local titleEditVisible: boolean = false;
   @Local titleEditNodeId: string = '';
@@ -652,6 +659,25 @@ export struct BBTreeCanvas {
     recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——新建树（根气泡）+1
     this.autoLayout();
     this.fitViewport();
+  }
+
+  // ★ 0.214.3：长按菜单「增加子气泡」——在目标节点下新增子节点（父子关系=parentID+冗余 parentX/Y，
+  //   连线由现有绘制逻辑按 parentID 自动连接）。写法复刻 ChatPage createChildBubble 链路
+  //   （generateNodeId + 位置随机偏移 + 埋点 + saveTree + autoLayout），画布端用户无跳转诉求不切对话
+  addChildBubble(parent: BubbleNode): void {
+    const child = new BubbleNode(
+      generateNodeId(),
+      parent.nodeID,
+      [],
+      parent.x + 80 + Math.floor(Math.random() * 40),
+      parent.y + 80 + Math.floor(Math.random() * 40),
+      parent.x,
+      parent.y
+    );
+    this.store.nodeList.push(child);
+    recordStat(this.statStore, 'bubble', 0, 0); // 统计埋点——创建子气泡 +1（与 ChatPage 口径一致）
+    this.saveTree(); // 保存树（含新节点，连线/持久化全链生效）
+    this.autoLayout(); // 重排（子气泡落位父节点下方层级）
   }
 
   // ★ 0.151：模式 B 切换 Tab——先存回当前 Tab 树，再加载目标 Tab 树 + 重布局 + 适配视口
@@ -1602,6 +1628,22 @@ export struct BBTreeCanvas {
               })
             Divider()
               .color(STROKE_CARD)
+            Text('增加子气泡')
+              .fontSize(FONT_SIZE_CARD_TITLE)
+              .fontFamily(FONT_INTER)
+              .fontColor(TEXT_PRIMARY)
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 14, bottom: 14 })
+              .onClick(() => {
+                this.menuVisible = false;
+                const node = this.store.nodeList.find((n: BubbleNode) => n.nodeID === this.menuNodeId);
+                if (node !== undefined) {
+                  this.addChildBubble(node);
+                }
+              })
+            Divider()
+              .color(STROKE_CARD)
             Text('删除气泡')
               .fontSize(FONT_SIZE_CARD_TITLE)
               .fontFamily(FONT_INTER)
@@ -1617,7 +1659,7 @@ export struct BBTreeCanvas {
                 }
               })
           }
-          .width('62%')
+          .width(this.isTablet ? 280 : '62%') // ★ 0.214.3 用户拍板：菜单 PC 上 62% 太宽——宽屏固定 280（对齐确认弹窗 400 定式的窄档），手机 62% 不动
           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
           .backgroundColor(SURFACE_NODE)
           .border({ width: 1, color: STROKE_CARD })
