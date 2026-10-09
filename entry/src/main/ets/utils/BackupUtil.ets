@@ -79,6 +79,7 @@ function cardToPlain(c: KnowledgeCard): Record<string, Object> {
   o['tags'] = c.tags;
   o['images'] = c.images;
   o['folderId'] = c.folderId; // ★ 0.207.0：所属文件夹（anything 导入体系）
+  o['titleImages'] = c.titleImages; // ★ 0.210.0：标题图（Anki 图对图）
   return o;
 }
 
@@ -238,6 +239,7 @@ function reviveCard(src: Record<string, Object>): KnowledgeCard {
   c.tags = (src['tags'] ?? '') as string;
   c.images = (src['images'] ?? '') as string;
   c.folderId = (src['folderId'] ?? '') as string; // ★ 0.207.0：旧备份无此字段 → 根目录
+  c.titleImages = (src['titleImages'] ?? '') as string; // ★ 0.210.0：旧备份无此字段 → 无标题图
   return c;
 }
 

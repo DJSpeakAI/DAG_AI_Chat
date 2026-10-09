@@ -25,7 +25,7 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, parseTags, getCardImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡；★ 0.202.0：parseTags；★ 0.202.1：getCardImages（多图兼容读取）
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, parseTags, getCardImages, getTitleImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡；★ 0.202.0：parseTags；★ 0.202.1：getCardImages（多图兼容读取）
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
@@ -143,6 +143,7 @@ export struct KnowledgeBankPage {
   @Local editorDefinition: string = '';
   @Local editorTags: string = ''; // ★ 0.202.0：标签输入（逗号/顿号/空格分隔）
   @Local editorImages: string[] = []; // ★ 0.202.1：多图编辑（上限 9；替代原单图 editorImageUri 的编辑态）
+  @Local editorTitleImages: string[] = []; // ★ 0.210.0：标题图编辑（上限 9；Anki 图对图——题面插图）
   // ★ 0.160: editor image state — base64 data URI, same storage pattern as
   // ChatPage's knowledge editor; empty string = no image
   @Local editorImageUri: string = '';
@@ -278,6 +279,7 @@ export struct KnowledgeBankPage {
     this.editorDefinition = '';
     this.editorTags = ''; // ★ 0.202.0：标签输入
     this.editorImages = []; // ★ 0.202.1：多图清空
+    this.editorTitleImages = []; // ★ 0.210.0：标题图清空
     this.editorVisible = true;
   }
 
@@ -288,6 +290,7 @@ export struct KnowledgeBankPage {
     this.editorDefinition = c.definition;
     this.editorTags = c.tags; // ★ 0.202.0：预填已有标签
     this.editorImages = getCardImages(c); // ★ 0.202.1：预填已有图片（两代字段兼容读取）
+    this.editorTitleImages = getTitleImages(c); // ★ 0.210.0：预填标题图
     this.editorVisible = true;
   }
 
@@ -300,14 +303,39 @@ export struct KnowledgeBankPage {
     const definition = this.editorDefinition.trim();
     const tags = this.editorTags.trim(); // ★ 0.202.0：标签随卡保存
     const imagesJson = this.editorImages.length > 0 ? JSON.stringify(this.editorImages) : ''; // ★ 0.202.1：多图随卡保存
+    const titleImagesJson = this.editorTitleImages.length > 0 ? JSON.stringify(this.editorTitleImages) : ''; // ★ 0.210.0：标题图随卡保存
     if (this.editorIsAdd) {
       // addKnowledgeCard auto-fills id/createdAt; no duplicate check —
       // cards may legitimately share a title (0.146 spec)
-      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson));
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson, '', titleImagesJson));
     } else {
-      updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, '', tags, imagesJson);
+      updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, '', tags, imagesJson, titleImagesJson);
     }
     this.editorVisible = false;
+  }
+
+  // ★ 0.210.0：标题图选图（复刻 selectEditorImage 流程——目标数组独立 editorTitleImages；上限同 9）
+  async selectEditorTitleImage(): Promise<void> {
+    try {
+      const picker = new photoAccessHelper.PhotoViewPicker();
+      const result = await picker.select({ maxSelectNumber: 9 });
+      for (let i = 0; i < result.photoUris.length; i++) {
+        if (this.editorTitleImages.length >= 9) {
+          break; // 上限 9 张（每轮追加，超出静默截断）
+        }
+        const uri = result.photoUris[i];
+        const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+        const stat = fileIo.statSync(file.fd);
+        const arrayBuffer = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, arrayBuffer);
+        fileIo.closeSync(file);
+        const base64 = buffer.from(arrayBuffer).toString('base64');
+        this.editorTitleImages.push(`data:image/jpeg;base64,${base64}`);
+      }
+      this.editorTitleImages = [...this.editorTitleImages]; // 触发数组状态更新
+    } catch (err) {
+      // 选图取消/读取失败静默忽略（防崩溃）
+    }
   }
 
   // ★ 0.160: pick a photo from the gallery → base64 data URI (same flow as
@@ -726,6 +754,55 @@ export struct KnowledgeBankPage {
           .onChange((value: string) => {
             this.editorTitle = value;
           })
+        // ── ★ 0.210.0：标题图区（Anki 图对图——题面插图；结构同下方内容图区，紧凑一号）──
+        Column() {
+          if (this.editorTitleImages.length > 0) {
+            Scroll() {
+              Row({ space: 8 }) {
+                ForEach(this.editorTitleImages, (img: string, idx: number) => {
+                  Stack({ alignContent: Alignment.TopEnd }) {
+                    Image(img)
+                      .height(48)
+                      .width(72)
+                      .objectFit(ImageFit.Cover)
+                      .borderRadius(RADIUS_CONTROL)
+                    Text('×')
+                      .fontSize(13)
+                      .fontWeight(600)
+                      .fontColor(TEXT_PRIMARY)
+                      .backgroundColor(DANGER)
+                      .width(18)
+                      .height(18)
+                      .borderRadius(9)
+                      .textAlign(TextAlign.Center)
+                      .offset({ x: -2, y: 2 })
+                      .onClick(() => {
+                        this.editorTitleImages.splice(idx, 1);
+                        this.editorTitleImages = [...this.editorTitleImages];
+                      })
+                  }
+                  .height(48)
+                  .width(72)
+                }, (img: string) => img)
+              }
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .width('100%')
+            .margin({ bottom: 8 })
+          }
+          if (this.editorTitleImages.length < 9) {
+            Text('🖼️ 标题图片' + (this.editorTitleImages.length > 0 ? `（${this.editorTitleImages.length}/9）` : ''))
+              .fontSize(12)
+              .fontColor(BRAND_SECONDARY)
+              .alignSelf(ItemAlign.Start)
+              .onClick(() => {
+                this.selectEditorTitleImage();
+              })
+          }
+        }
+        .width('100%')
+        .margin({ top: 8 })
         TextArea({ text: this.editorDefinition, placeholder: '内容（选填）' })
           .fontSize(14)
           .width('100%')
@@ -1271,8 +1348,9 @@ export struct KnowledgeBankPage {
         continue; // 根级散卡未勾
       }
       const imgs = pc.images.length > 0 ? JSON.stringify(pc.images) : '';
+      const tImgs = pc.titleImages !== undefined && pc.titleImages.length > 0 ? JSON.stringify(pc.titleImages) : ''; // ★ 0.210.0：旧包无字段 → 无标题图
       addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', pc.title, pc.definition, '', now + n,
-        0, 0, 0, 0, pc.tags, imgs, target));
+        0, 0, 0, 0, pc.tags, imgs, target, tImgs));
       n++;
     }
     const tp: Record<string, string> = {}; tp['format'] = 'dagpack'; tp['count'] = `${n}`;
@@ -1618,8 +1696,9 @@ export struct KnowledgeBankPage {
         folderIdCache.set(deckKey, fid);
       }
       const imgs = ac.images.length > 0 ? JSON.stringify(ac.images) : '';
+      const tImgs = ac.titleImages.length > 0 ? JSON.stringify(ac.titleImages) : ''; // ★ 0.210.0：Anki 正面字段图 → 标题图（图对图）
       addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', ac.title, ac.definition, '', now + n,
-        0, 0, 0, 0, ac.tags, imgs, fid ?? ''));
+        0, 0, 0, 0, ac.tags, imgs, fid ?? '', tImgs));
       n++;
     }
     const tp: Record<string, string> = {}; tp['format'] = 'apkg'; tp['count'] = `${n}`;
@@ -2003,6 +2082,14 @@ export struct KnowledgeBankPage {
                       // ★ 0.202.1：标签 chips（用户拍板：放标题旁空区，高度 20 ≤ 问AI 32，圆角偏方 4，多标签横向滑动）
                       //   0.198.3 铁律合规：横向 Scroll 挂在受约束容器内用 layoutWeight，chip 自身 padding 自然宽
                       Row({ space: 6 }) {
+                        // ★ 0.210.0：标题首图缩略（32×32 圆角——视觉锚点小，不破坏行内布局；Anki 图对图）
+                        if (getTitleImages(c).length > 0) {
+                          Image(getTitleImages(c)[0])
+                            .width(32)
+                            .height(32)
+                            .borderRadius(6)
+                            .objectFit(ImageFit.Cover)
+                        }
                         Text(c.title)
                           .fontSize(16)
                           .fontWeight(600)
@@ -2051,7 +2138,7 @@ export struct KnowledgeBankPage {
                           .onClick(() => {
                             this.askSheetTitle = c.title;
                             this.askSheetDefinition = c.definition;
-                            this.askSheetImages = getCardImages(c);
+                            this.askSheetImages = [...getTitleImages(c), ...getCardImages(c)]; // ★ 0.210.0：标题图在前+内容图合并带入问AI面板
                             this.askSheetVisible = true;
                           })
                         }

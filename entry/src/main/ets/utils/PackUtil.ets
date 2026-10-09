@@ -9,7 +9,7 @@
 // 远景地基：卡片集市 / 碰一碰快传（kind 字段已为 bubble 类预留）
 // ============================================================
 
-import { KnowledgeBankStore, KnowledgeCard, KFolder, getCardImages } from '../common/KnowledgeModel';
+import { KnowledgeBankStore, KnowledgeCard, KFolder, getCardImages, getTitleImages } from '../common/KnowledgeModel';
 import { WordBankStore, WordItem } from '../common/WordModel';
 
 export interface PackFolder {
@@ -23,6 +23,7 @@ export interface PackCard {
   definition: string;
   tags: string;
   images: string[];  // base64 data URI 数组（v1 内联）
+  titleImages?: string[]; // ★ 0.210.0：标题图（可选——v1 旧包无此字段，导入端按 [] 处理）
   folderRef: string; // '' = 包根级散卡
 }
 
@@ -95,7 +96,8 @@ export function buildKnowledgePack(store: KnowledgeBankStore, rootFolderId: stri
     if (refMap.has(c.folderId)) {
       cards.push({
         title: c.title, definition: c.definition, tags: c.tags,
-        images: getCardImages(c), folderRef: refMap.get(c.folderId) ?? ''
+        images: getCardImages(c), folderRef: refMap.get(c.folderId) ?? '',
+        titleImages: getTitleImages(c) // ★ 0.210.0：标题图随包（可选字段——旧版接收端自动忽略）
       });
     }
   }

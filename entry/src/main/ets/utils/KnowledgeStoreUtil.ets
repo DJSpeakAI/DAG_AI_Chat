@@ -304,7 +304,7 @@ export function addKnowledgeCard(store: KnowledgeBankStore, card: KnowledgeCard)
 // ★ 0.202.0: tags saved alongside (attention-weighting data base).
 // Cards may share titles, so no duplicate check here either.
 export function updateKnowledgeCard(store: KnowledgeBankStore, cardId: string,
-  title: string, definition: string, imageUri: string, tags: string = '', images: string = ''): void {
+  title: string, definition: string, imageUri: string, tags: string = '', images: string = '', titleImages: string = ''): void {
   for (let i = 0; i < store.cards.length; i++) {
     if (store.cards[i].id === cardId) {
       store.cards[i].title = title.trim();
@@ -312,6 +312,7 @@ export function updateKnowledgeCard(store: KnowledgeBankStore, cardId: string,
       store.cards[i].imageUri = imageUri;
       store.cards[i].tags = tags.trim();
       store.cards[i].images = images; // ★ 0.202.1：多图（编辑保存时清空 imageUri 旧字段——getCardImages 统一读 images）
+      store.cards[i].titleImages = titleImages; // ★ 0.210.0：标题图（尾部默认参——旧调用点不传=清空，语义与 images 同）
       return;
     }
   }

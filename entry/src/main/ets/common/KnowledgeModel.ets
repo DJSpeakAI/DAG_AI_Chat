@@ -43,6 +43,7 @@ export class KnowledgeCard {
   @Trace tags: string = '';        // ★ 0.202.0：标签（逗号/顿号/空格分隔原样存储；'' = 无标签）——注意力加权数据底座
   @Trace images: string = '';      // ★ 0.202.1：多图（JSON string[]；'' = 无图。imageUri 保留兼容——getCardImages 统一读取）
   @Trace folderId: string = '';    // ★ 0.207.0：所属文件夹（'' = 根目录）——anything 导入体系（对标 Anki 牌组）
+  @Trace titleImages: string = ''; // ★ 0.210.0：标题图（JSON string[]；'' = 无。Anki「图对图」场景——题面插图，复习双面模式随正面显示）
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
@@ -50,9 +51,10 @@ export class KnowledgeCard {
   // ★ 0.202.0: tags appended at the tail — legacy 9-arg call sites unchanged.
   // ★ 0.202.1: images appended at the tail — legacy 10-arg call sites unchanged.
   // ★ 0.207.0: folderId appended at the tail — legacy 11-arg call sites unchanged（Schema 铁律：只尾部追加）.
+  // ★ 0.210.0: titleImages appended at the tail — legacy 12-arg call sites unchanged（Schema 铁律：只尾部追加）.
   constructor(id: string = '', title: string = '', definition: string = '', imageUri: string = '', createdAt: number = 0,
     strength: number = 0, reviewCount: number = 0, lastReviewAt: number = 0, nextReviewAt: number = 0,
-    tags: string = '', images: string = '', folderId: string = '') {
+    tags: string = '', images: string = '', folderId: string = '', titleImages: string = '') {
     this.id = id;
     this.title = title;
     this.definition = definition;
@@ -65,6 +67,7 @@ export class KnowledgeCard {
     this.tags = tags;
     this.images = images;
     this.folderId = folderId;
+    this.titleImages = titleImages;
   }
 }
 
@@ -97,6 +100,21 @@ export function getCardImages(c: KnowledgeCard): string[] {
     }
   }
   return c.imageUri.length > 0 ? [c.imageUri] : [];
+}
+
+/** ★ 0.210.0：取卡片标题图（JSON string[]；'' / 损坏 → []——标题图为全新字段无旧回落） */
+export function getTitleImages(c: KnowledgeCard): string[] {
+  if (c.titleImages.trim().length > 0) {
+    try {
+      const arr = JSON.parse(c.titleImages) as string[];
+      if (Array.isArray(arr) && arr.length > 0) {
+        return arr;
+      }
+    } catch (e) {
+      // 损坏数据按无图处理
+    }
+  }
+  return [];
 }
 
 /** ★ 0.202.0：标签字符串 → 数组（中英文逗号/顿号/空格混合分隔；空项滤除） */

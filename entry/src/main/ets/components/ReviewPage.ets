@@ -8,7 +8,7 @@
 // ⑥完成页：恭喜 + 总结卡（「总结正在生成」+三点动画，用户拍板改文案）+ 继续复习/完成两按钮
 
 import { WordItem, WordBankStore } from '../common/WordModel';
-import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, getCardImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（复习即问场景）
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, getCardImages, getTitleImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（复习即问场景）
 import { ChatMessage, ApiConfig, AiPreference, connectApiConfig, connectAiPreference, generateMessageId, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel';
 import { buildStatEncouragePrompt } from '../common/Prompts';
 import { connectWordBank } from '../utils/WordStoreUtil';
@@ -103,7 +103,7 @@ export struct ReviewPage {
     this.cardImport.action = action;
     this.cardImport.title = card.title;
     this.cardImport.definition = card.definition;
-    this.cardImport.imageUrisJson = JSON.stringify(getCardImages(card));
+    this.cardImport.imageUrisJson = JSON.stringify([...getTitleImages(card), ...getCardImages(card)]); // ★ 0.210.0：标题图在前+内容图合并导入气泡
     this.askSheetVisible = false;
     navBackToCanvas(this.pathStack);
   }
@@ -446,6 +446,24 @@ export struct ReviewPage {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
       } else {
+        // ★ 0.210.0：标题图（Anki 图对图——题面插图；恒显=正面内容，双面模式随正面出题）
+        if (getTitleImages(this.currentItem() as KnowledgeCard).length > 0) {
+          Scroll() {
+            Row({ space: 8 }) {
+              ForEach(getTitleImages(this.currentItem() as KnowledgeCard), (img: string) => {
+                Image(img)
+                  .width('86%')
+                  .constraintSize({ maxHeight: 220 })
+                  .borderRadius(RADIUS_CONTROL)
+                  .objectFit(ImageFit.Contain)
+              }, (img: string) => img)
+            }
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
+          .margin({ bottom: 4 })
+        }
         // ★ 0.196.3 用户反馈：知识卡有图要显示图（原只有标题+定义——知识库里带图的卡复习时图丢了）
         // ★ 0.202.1：多图横滑（单图无滑感）；图片兼容读取 getCardImages
         // ★ 0.209.0：双面模式下图片+定义=反面内容（翻面后才显示；正面只有标题）

@@ -21,7 +21,8 @@ export interface ApkgCard {
   title: string;
   definition: string;
   tags: string;
-  images: string[];   // base64 data URI
+  images: string[];   // base64 data URI（背面字段图）
+  titleImages: string[]; // ★ 0.210.0：标题图（正面字段图——Anki 图对图语义）
   deckPath: string;   // 「数学::群论」原始牌组名（'::' 层级）
 }
 
@@ -239,7 +240,9 @@ export async function parseApkg(context: Context, uri: string): Promise<ApkgPars
         }
       }
       // 图片：字段原始 HTML 里的 <img src>（清洗前提取——清洗会剥标签）
+      // ★ 0.210.0 图对图分流：正面字段（i=0）的图 → titleImages（题面图）；背面字段的图 → images（内容图）
       const images: string[] = [];
+      const titleImages: string[] = [];
       for (let i = 0; i < flds.length; i++) {
         const srcs = extractImgSrcs(flds[i]);
         for (let j = 0; j < srcs.length; j++) {
@@ -247,7 +250,11 @@ export async function parseApkg(context: Context, uri: string): Promise<ApkgPars
           if (numFile !== undefined) {
             const dataUri = readMediaAsDataUri(dir, numFile);
             if (dataUri.length > 0) {
-              images.push(dataUri);
+              if (i === 0) {
+                titleImages.push(dataUri);
+              } else {
+                images.push(dataUri);
+              }
               mediaCount++;
             }
           }
@@ -257,7 +264,7 @@ export async function parseApkg(context: Context, uri: string): Promise<ApkgPars
       const tags = rsNotes.getString(2).trim().split(/\s+/).filter((t: string): boolean => t.length > 0).join(',');
       const did = nidDeck.get(nid);
       const deckName = did !== undefined ? (deckNames.get(did) ?? 'Anki') : 'Anki';
-      const card: ApkgCard = { title: front, definition: backs.join('\n'), tags: tags, images: images, deckPath: deckName };
+      const card: ApkgCard = { title: front, definition: backs.join('\n'), tags: tags, images: images, titleImages: titleImages, deckPath: deckName };
       cards.push(card);
       deckCounts[deckName] = (deckCounts[deckName] ?? 0) + 1;
     }
