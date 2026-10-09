@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000168, // ★ 0.215.12：Shift+回车修复（KeyDown 过滤+Enter 键码纠正 2040）；更早历史见 MEMORY.md
+    "versionCode": 1000169, // ★ 0.215.13：软键盘分治（窄屏右下角=换行、宽屏回车=发送）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

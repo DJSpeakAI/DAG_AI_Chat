@@ -3367,7 +3367,11 @@ export struct ChatPage {
             // ★ 0.215.11 回车=发送（用户要求标准 IM 交互；NEW_LINE 时代回车纯换行已废弃）；
             //   Shift+回车=换行：物理键盘经 onKeyEvent 判 Shift（组件层 KeyEvent.getModifierKeyState，
             //   滚轮翻案同源 API）插 \n 并标记时间窗，onSubmit 窗内跳过发送；软键盘无物理键直发。
-            .enterKeyType(EnterKeyType.Send)
+            // ★ 0.215.13：软键盘行为按屏宽分治（用户拍板）——宽屏（PC 物理键盘）回车=发送；
+            //   窄屏（手机）右下角=换行（用户要求恢复——手机发送走按钮，回车键留给换行更顺手）。
+            //   PC Shift+回车换行受平台限制（TextArea 吞物理回车、onKeyEvent 零触发已实锤三面碰壁），
+            //   PC 端换行过渡方案=输入框内手动换行；待华为新 API 或 DevEco 本地深挖。
+            .enterKeyType(this.windowMode.isTablet ? EnterKeyType.Send : EnterKeyType.NEW_LINE)
             .onSubmit(() => {
               if (Date.now() - this.shiftEnterAt < 300) {
                 return; // Shift+回车帧：已插换行，跳过发送
