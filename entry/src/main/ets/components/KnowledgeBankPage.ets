@@ -2390,17 +2390,18 @@ export struct KnowledgeBankPage {
                         }
                       })
                   )
-                  .swipeAction({
-                    // ★ 0.212.0 用户拍板：左右滑露回收站面板（常驻红 × 已撤）；点击走原确认弹窗链路；
-                    //   箭头函数包 @Builder 调用（CustomBuilder 规范写法，直调 @Builder 会破坏解析）
-                    end: (): void => {
-                      this.swipeDeletePanel(c)
-                    },
-                    start: (): void => {
-                      this.swipeDeletePanel(c)
-                    }
-                  })
                 }
+                .swipeAction({
+                  // ★ 0.212.0 用户拍板：左右滑露回收站面板（常驻红 × 已撤）；点击走原确认弹窗链路；
+                  //   swipeAction 是 ListItem 专属属性（挂 Row 上编译器不认——0.212.0 编译实锤）；
+                  //   箭头函数包 @Builder 调用（CustomBuilder 规范写法）
+                  end: (): void => {
+                    this.swipeDeletePanel(c)
+                  },
+                  start: (): void => {
+                    this.swipeDeletePanel(c)
+                  }
+                })
               }, (c: KnowledgeCard) => c.id)
             }
             .width('100%')
