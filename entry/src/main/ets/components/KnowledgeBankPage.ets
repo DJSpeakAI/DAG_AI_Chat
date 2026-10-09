@@ -148,9 +148,8 @@ export struct KnowledgeBankPage {
   // ★ 0.160: editor image state — base64 data URI, same storage pattern as
   // ChatPage's knowledge editor; empty string = no image
   @Local editorImageUri: string = '';
-  // ★ 0.160: fullscreen preview of the editor image (tap thumbnail to open)
-  @Local editorImagePreviewVisible: boolean = false;
-  @Local editorPreviewUri: string = ''; // ★ 0.211.1：预览当前点击的那张（原固定 [0]，标题图缩略点击无预览——用户报）
+  // ★ 0.160: fullscreen preview of the editor image（tap thumbnail to open）
+  // ★ 0.211.2：旧单图预览状态已删——编辑弹窗预览统一走 imagePreviewViewer（四场景同一查看器）
 
   // ★ 0.148: single-delete confirm dialog state
   @Local deleteConfirmVisible: boolean = false;
@@ -191,6 +190,8 @@ export struct KnowledgeBankPage {
   @Local previewIndex: number = 0;
   @Local previewVisible: boolean = false;
   @Local previewScale: number = 1;
+  @Local previewLastTap: number = 0; // ★ 0.211.2：单击/双击判定（0.173.x 铁律）
+  private previewCloseTimerId: number = -1; // ★ 0.211.2：延迟关闭计时器（aboutToDisappear 清理）
 
   /** 当前目录的子文件夹（新在前）；卡片计数用 folderCardCount() */
   @Computed
@@ -402,6 +403,45 @@ export struct KnowledgeBankPage {
     this.previewIndex = index;
     this.previewScale = 1;
     this.previewVisible = true;
+  }
+
+  // ★ 0.211.2：缩放缓动（250ms EaseOut——用户报"放大速度太快"；捏合跟手阶段不经此，松手归位走动画）
+  private applyPreviewScale(target: number): void {
+    const clamped = Math.min(4, Math.max(1, target));
+    this.getUIContext().animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+      this.previewScale = clamped;
+    });
+  }
+
+  // ★ 0.211.2：单击/双击手动判定（0.173.x 铁律：只绑 count:1，300ms 内第二击=双击缩放；
+  //   否则延迟 320ms 关闭查看器——三重退出冗余之一"点一下图片退出"）
+  private previewTapHandled(): void {
+    const now = Date.now();
+    if (now - this.previewLastTap < 300) {
+      this.previewLastTap = 0;
+      if (this.previewCloseTimerId >= 0) {
+        clearTimeout(this.previewCloseTimerId);
+        this.previewCloseTimerId = -1;
+      }
+      this.applyPreviewScale(this.previewScale > 1 ? 1 : 2.5);
+    } else {
+      this.previewLastTap = now;
+      if (this.previewCloseTimerId >= 0) {
+        clearTimeout(this.previewCloseTimerId);
+      }
+      this.previewCloseTimerId = setTimeout(() => {
+        this.previewCloseTimerId = -1;
+        this.previewVisible = false;
+      }, 320);
+    }
+  }
+
+  aboutToDisappear(): void {
+    // ★ 0.211.2：定时器销毁纪律（项目铁律）——预览延迟关闭计时器
+    if (this.previewCloseTimerId >= 0) {
+      clearTimeout(this.previewCloseTimerId);
+      this.previewCloseTimerId = -1;
+    }
   }
 
   // ---- single delete (session-level no-remind) ----
@@ -808,9 +848,8 @@ export struct KnowledgeBankPage {
                       .objectFit(ImageFit.Cover)
                       .borderRadius(RADIUS_CONTROL)
                       .onClick(() => {
-                        // ★ 0.211.1 用户报：编辑弹窗标题图点击没放大——补齐同内容图的预览
-                        this.editorPreviewUri = img;
-                        this.editorImagePreviewVisible = true;
+                        // ★ 0.211.2：四场景统一——编辑弹窗缩略也走全屏查看器（单击放大+可缩放）
+                        this.openImagePreview([img], 0);
                       })
                     Text('×')
                       .fontSize(13)
@@ -929,8 +968,7 @@ export struct KnowledgeBankPage {
                       .objectFit(ImageFit.Cover)
                       .borderRadius(RADIUS_CONTROL)
                       .onClick(() => {
-                        this.editorPreviewUri = img; // ★ 0.211.1：预览当前点击的那张（原固定 [0]）
-                        this.editorImagePreviewVisible = true;
+                        this.openImagePreview([img], 0); // ★ 0.211.2：四场景统一走全屏查看器
                       })
                     Text('×')
                       .fontSize(13)
@@ -1066,8 +1104,12 @@ export struct KnowledgeBankPage {
     .backgroundColor(OVERLAY)
   }
 
-  // ★ 0.211.0：列表图片全屏查看器（结构同 ChatPage imageViewer：Swiper 多图+×+右滑关闭；
-  //   新增双击 1×↔2.5× 与捏合 1~4× 缩放——用户需求"双击图片放大然后缩小"）
+  // ★ 0.211.0：列表图片全屏查看器——★ 0.211.2 四场景统一载体（列表标题图/内容图+编辑弹窗标题图/内容图
+  //   全部走本查看器）：①单击图片关闭（0.173.x 铁律：count:1 手动判双击，300ms 内第二击=缩放，
+  //   否则延迟 320ms 关闭）②双击 1×↔2.5× 缓动动画（用户报"放大太快"）③PC 鼠标滚轮缩放（onMouse
+  //   scrollDelta）④捏合 1~4× 跟手 ⑤右滑退出=系统侧滑+onBackPressed 拦截（原 PanGesture 与
+  //   Swiper 翻页手势竞争恒失灵→系统返回手势透传直接退出知识库页——用户实测"直接退到气泡树"）；
+  //   × 按钮关闭保留，退出方式三重冗余
   @Builder
   imagePreviewViewer() {
     if (this.previewVisible) {
@@ -1079,6 +1121,12 @@ export struct KnowledgeBankPage {
               .width('100%')
               .height('100%')
               .scale({ x: this.previewScale, y: this.previewScale })
+              .onMouse((event: MouseEvent) => {
+                // ★ 0.211.2：PC 鼠标滚轮缩放（手机无鼠标不受影响）
+                if (event.action === MouseAction.Move && Math.abs(event.scrollDelta.y) > 0.01) {
+                  this.applyPreviewScale(this.previewScale - event.scrollDelta.y * 0.0015);
+                }
+              })
               .gesture(
                 PinchGesture({ fingers: 2 })
                   .onActionUpdate((event: GestureEvent) => {
@@ -1086,14 +1134,14 @@ export struct KnowledgeBankPage {
                   })
                   .onActionEnd(() => {
                     if (this.previewScale < 1) {
-                      this.previewScale = 1;
+                      this.applyPreviewScale(1);
                     }
                   })
               )
               .gesture(
-                TapGesture({ count: 2 })
+                TapGesture({ count: 1 })
                   .onAction(() => {
-                    this.previewScale = this.previewScale > 1 ? 1 : 2.5;
+                    this.handlePreviewTap();
                   })
               )
           }, (url: string) => url)
@@ -1114,35 +1162,11 @@ export struct KnowledgeBankPage {
       .width('100%')
       .height('100%')
       .backgroundColor(Color.Black)
-      // 右滑关闭挂 Stack 层（不与 Image 缩放手势抢）——单击关闭删除（与双击缩放冲突，关闭走 ×/右滑）
-      .gesture(
-        PanGesture({ direction: PanDirection.Horizontal })
-          .onActionEnd((event: PanGestureEvent) => {
-            if (this.previewScale <= 1 && event.offsetX > 60) {
-              this.previewVisible = false;
-            }
-          })
-      )
     }
   }
 
   // ★ 0.160: fullscreen preview of the editor image — tap anywhere to close
-  // ★ 0.211.1：显示当前点击的那张（editorPreviewUri），标题图/内容图缩略点击均可放大
-  @Builder
-  editorImagePreview() {
-    Column() {
-      Image(this.editorPreviewUri)
-        .objectFit(ImageFit.Contain)
-        .width('100%')
-        .height('100%')
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Color.Black)
-    .onClick(() => {
-      this.editorImagePreviewVisible = false;
-    })
-  }
+  // ★ 0.211.2：已废弃删除——编辑弹窗预览统一走 imagePreviewViewer（四场景同一查看器）
 
   // ★ 0.148: single-delete confirm dialog — with the session-level
   // "本次会话内不再提示" checkbox (spec 2.1.2)
@@ -2394,13 +2418,9 @@ export struct KnowledgeBankPage {
         if (this.cardSettingsVisible) {
           this.cardSettingsDialog()
         }
-        // ★ 0.211.0：列表图片全屏查看器（最顶层——双击卡片里的图片触发）
+        // ★ 0.211.0：列表图片全屏查看器（最顶层——四场景统一：列表标题图/内容图+编辑弹窗缩略全走这里）
         if (this.previewVisible) {
           this.imagePreviewViewer()
-        }
-        // ★ 0.160: editor image fullscreen preview — topmost layer
-        if (this.editorImagePreviewVisible) {
-          this.editorImagePreview()
         }
         // ★ 0.207.0：文件夹/导入/导出弹窗（最顶层）
         if (this.folderDialogVisible) {
@@ -2432,9 +2452,10 @@ export struct KnowledgeBankPage {
         this.askSheetVisible = false;
         return true;
       }
-      // ★ 0.160: image preview closes first (topmost layer)
-      if (this.editorImagePreviewVisible) {
-        this.editorImagePreviewVisible = false;
+      // ★ 0.211.2：图片全屏查看器优先关闭——用户实测右滑（系统侧滑）直接退出知识库页；
+      //   拦截后侧滑=只关查看器（三重退出冗余：单击图片/×/右滑侧滑均只关查看器不退页）
+      if (this.previewVisible) {
+        this.previewVisible = false;
         return true;
       }
       if (this.editorVisible) {

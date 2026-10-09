@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000135, // ★ 0.211.1：选图压缩根治保存崩溃+编辑弹窗标题图点击预览+列表单击放大+内容图全展示
+    "versionCode": 1000136, // ★ 0.211.2：四场景图片预览统一查看器（单击关/双击缓动/滚轮缩放/侧滑拦截防退页）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
