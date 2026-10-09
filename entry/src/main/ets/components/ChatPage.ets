@@ -37,6 +37,7 @@ import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; 
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
+import { localStreamChat } from '../utils/LocalLlm'; // ★ 0.216.0：端侧大模型（API Key 未配时的免费离线兜底）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
@@ -1037,6 +1038,50 @@ export struct ChatPage {
     // ★ 0.133：播客模式在消息末尾追加系统 prompt（只在本次请求临时追加，不持久化、不进入后续上下文）
     if (isPodcast) {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
+    }
+
+    // ★ 0.216.0 三级降级·第一分叉：API Key 未配 → 端侧大模型（免费离线，DataAugmentationKit）；
+    //   已配 → 云端 streamChat（下方原链路不变）。端侧不支持图片——无 Key 且带图时提前友好报错
+    if (this.apiConfig.apiKey.trim().length === 0) {
+      if (this.pendingImages.length > 0) {
+        this.isLoading = false;
+        this.streamPhase = 0;
+        this.currentBubble.messages = this.currentBubble.messages.slice(0, this.currentBubble.messages.length - 2); // 撤回刚压入的用户+AI 占位
+        this.currentBubble.messages = [...this.currentBubble.messages];
+        this.saveTree();
+        this.getUIContext().getPromptAction().showToast({ message: '端侧大模型暂不支持图片，请配置 API Key 使用多模态云端模型', duration: 3500 });
+        return;
+      }
+      this.streamController = localStreamChat(
+        messagesToSend,
+        (chunk: string) => {
+          if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
+            aiMsg.content = '';
+          }
+          aiMsg.content += chunk;
+          this.currentBubble.messages = [...this.currentBubble.messages];
+          this.currentBubble.historySummaryCount = this.currentBubble.messages.length;
+        },
+        (inputTokens: number, outputTokens: number) => {
+          this.isLoading = false;
+          this.streamPhase = 0;
+          this.streamController = null;
+          this.currentBubble.messages = [...this.currentBubble.messages];
+          this.saveTree();
+          this.requestEncourage();
+          recordStat(this.statStore, 'aiMsg', 0, 0);
+        },
+        (error: string) => {
+          this.isLoading = false;
+          this.streamPhase = 0;
+          this.streamController = null;
+          this.currentBubble.messages = this.currentBubble.messages.slice(0, this.currentBubble.messages.length - 1); // 撤回占位
+          this.currentBubble.messages = [...this.currentBubble.messages];
+          this.saveTree();
+          this.getUIContext().getPromptAction().showToast({ message: error, duration: 4000 });
+        }
+      ) as StreamController;
+      return;
     }
 
     this.streamController = streamChat(

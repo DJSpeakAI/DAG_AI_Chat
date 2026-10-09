@@ -119,7 +119,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.215.15';
+const APP_VERSION: string = 'v0.216.0';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -661,6 +661,12 @@ export struct GlobalSettingsDialog {
           .placeholderColor(TEXT_TERTIARY)
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
+        // ★ 0.216.0 端侧兜底说明（同自定义 Key 区，两处 Key 输入框下统一）
+        Text('未填 Key 时对话将使用本机端侧大模型（免费离线，效果较云端弱、暂不支持图片）。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -732,6 +738,13 @@ export struct GlobalSettingsDialog {
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
         Text('部分本地/免费网关无需 Key，可留空。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+        // ★ 0.216.0 端侧兜底说明（用户拍板：Key 下方一行说明，前台零配置）——未配 Key 时对话自动
+        //   使用本机免费端侧大模型（离线；能力较云端弱、不支持图片），支持机型开箱即用零门槛
+        Text('未填 Key 时对话将使用本机端侧大模型（免费离线，效果较云端弱、暂不支持图片）。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
