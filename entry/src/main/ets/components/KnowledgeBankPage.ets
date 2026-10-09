@@ -2317,10 +2317,10 @@ export struct KnowledgeBankPage {
                                       }, (t: string) => t)
                                     }
                                   }
+                                  .scrollable(ScrollDirection.Horizontal)
+                                  .scrollBar(BarState.Off)
+                                  .height(20)
                                 }
-                                .scrollable(ScrollDirection.Horizontal)
-                                .scrollBar(BarState.Off)
-                                .height(20)
                               }
                               .width('38%')
                               .alignItems(HorizontalAlign.Start) // 标签左对齐（用户点名）
