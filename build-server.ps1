@@ -21,6 +21,7 @@ Write-Host "Repo: $RepoDir"
 
 # --- locate hvigorw (edit here if auto-detect fails) ---
 $HvigorCandidates = @(
+    "E:\software\DevEco Studio\tools\hvigor\bin\hvigorw.bat",
     "$env:DEVECO_HOME\tools\hvigor\bin\hvigorw.bat",
     "$env:ProgramFiles\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat",
     "${env:ProgramFiles(x86)}\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat",
@@ -32,7 +33,7 @@ $Hvigorw = $null
 foreach ($c in $HvigorCandidates) { if (Test-Path $c) { $Hvigorw = $c; break } }
 if (-not $Hvigorw) { $cmd = Get-Command hvigorw.bat -ErrorAction SilentlyContinue; if ($cmd) { $Hvigorw = $cmd.Source } }
 if (-not $Hvigorw) {
-    $found = Get-ChildItem -Path "C:\","D:\" -Filter "hvigorw.bat" -Recurse -Depth 5 -ErrorAction SilentlyContinue | Select-Object -First 1
+    $found = Get-ChildItem -Path "C:\","D:\","E:\" -Filter "hvigorw.bat" -Recurse -Depth 5 -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($found) { $Hvigorw = $found.FullName }
 }
 if ($Hvigorw) { Write-Host "hvigorw: $Hvigorw" -ForegroundColor Green }
@@ -40,7 +41,7 @@ else { Write-Host "WARN: hvigorw.bat not found by auto-detect; it will retry per
 
 # --- locate hdc (DevEco sdk toolchains) ---
 $Hdc = $null
-$hdcSearch = @("$env:ProgramFiles\Huawei\DevEco Studio\sdk", "D:\HarmonyOS", "D:\DevEco Studio", "C:\DevEco Studio")
+$hdcSearch = @("E:\software\DevEco Studio\sdk", "$env:ProgramFiles\Huawei\DevEco Studio\sdk", "D:\HarmonyOS", "D:\DevEco Studio", "C:\DevEco Studio")
 foreach ($root in $hdcSearch) {
     if (Test-Path $root) {
         $f = Get-ChildItem -Path $root -Filter "hdc.exe" -Recurse -Depth 6 -ErrorAction SilentlyContinue | Select-Object -First 1
