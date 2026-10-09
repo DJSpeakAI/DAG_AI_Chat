@@ -894,6 +894,7 @@ export struct ChatPage {
   // ── ★ 0.214.0：对话页缩放（Pad 双指捏合 / Matebook 触摸板双指捏合；边栏不参与——只缩消息正文） ──
   @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
+  ctrlAxisAt: number = 0; // ★ 0.215.10：最近 Ctrl+滚轮时刻（300ms 窗内 List 滚动被吞=只缩放不滚动）
   // ★ 0.214.2：缩放持久化（全新 PersistenceV2 key——跨页面/重启记住，用户拍板"不用来回攻"）
   fontScaleStore: ChatFontScaleStore = connectChatFontScale();
 
@@ -3248,10 +3249,20 @@ export struct ChatPage {
               const v = event.getVerticalAxisValue();
               console.info(`DAGAI-ZOOM chatAxis v=${v} ctrl=${ctrl}`);
               if (ctrl && v !== 0 && this.windowMode.isTablet) {
+                this.ctrlAxisAt = Date.now(); // ★ 0.215.10：Ctrl+滚轮时刻窗——窗内 List 滚动被 onScrollFrameBegin 全吞（只缩放不滚动，用户拍板"一边放大一边滚动很傻"）
                 const s = this.fontScale * (v < 0 ? 1.04 : 0.96);
                 this.fontScale = Math.min(1.6, Math.max(0.75, Math.round(s * 100) / 100));
                 this.fontScaleStore.value = this.fontScale;
               }
+            })
+            // ★ 0.215.10：Ctrl+滚轮期间吞掉消息列表滚动（真拦截=frameBegin 返回 offsetRemain 0，
+            //   0.214.0 画布场景实证过的可靠吞法）；松 Ctrl 后轴事件不再刷新窗（300ms 过期）→
+            //   普通滚轮照常翻消息；触摸拖拽翻消息无轴事件不受影响
+            .onScrollFrameBegin((offset: number, state: ScrollState) => {
+              if (Date.now() - this.ctrlAxisAt < 300) {
+                return { offsetRemain: 0 }; // Ctrl+滚轮帧：全吞，只缩放
+              }
+              return { offsetRemain: offset }; // 普通滚动：原样放行
             })
             // ★ 0.214.0：双指捏合缩放正文（Pad 双指 / Matebook 触摸板双指；单指滚动不受影响；边栏/顶栏/输入区不缩）
             // ★ 0.214.1：仅宽屏启用——手机端捏合体验差（误触），手机字号保持系统默认（用户拍板）
