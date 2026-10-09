@@ -160,9 +160,10 @@
 |0.211.0|图片额度检测+列表标题图全展示（用户四点：手机超限崩溃/额度预检/列表排版/颜色统一+双击放大）：选图 picker maxSelectNumber 动态额度 9-已有（源头截断）；列表卡=标题行去缩略、标题下全部标题图横滑条；编辑弹窗两按钮颜色字号统一浅色 13；image.svg 华为透明风；全页查看器 imagePreviewViewer（Swiper+双击/捏合缩放+×+右滑关）|
 |0.211.1|**修复手机端「9 张点保存崩溃」**（用户实测：3+6=9 显示正常，点保存即闪退，仅手机端）：根因=9 张**原图** base64（单张 5-10MB×1.37 膨胀）直塞卡 → 保存全库序列化+PersistenceV2 写盘内存峰值爆（PC 内存大不崩）。根治=**选图压缩**（image API 解码→最长边 1280→JPEG q80，单张落盘 ~200-400KB）；data URI 前缀不变全链兼容。另：编辑弹窗标题图缩略点击补预览（原无响应）+预览改"点哪张看哪张"（原固定 [0]）+列表图片**单击**放大（原双击被误判为拦截）+内容图 9 张全部横滑展示（原仅首图缩略）；**教训：图片类持久化必须选图时压缩，原图 base64 直塞 @ObservedV2 全库=手机端定时炸弹**|
 |0.211.2|**四场景图片预览统一+右滑误退页修复**（用户实测四点）：①列表标题图/内容图+编辑弹窗标题图/内容图四场景全部走同一个 imagePreviewViewer（编辑弹窗旧单图预览器删除）；②**右滑直接退出知识库页根治**=查看器没挂 onBackPressed 拦截（系统侧滑透传退页）——拦截后侧滑只关查看器；失灵的 PanGesture 删除（与 Swiper 翻页手势竞争恒吃不到）；③退出三重冗余落地：单击图片关（0.173.x 铁律 count:1 手动判双击+320ms 延迟关）/×按钮/右滑侧滑；④双击缩放缓动 250ms EaseOut（用户报"放大太快"）+PC 鼠标滚轮缩放（onMouse scrollDelta）；旧预览链路死代码清除（状态/Builder/挂载点/返回分支）；**教训：全屏查看器必须挂返回键拦截，PanGesture 与 Swiper 并存恒失灵勿再试**|
+|0.211.3|**0.211.2 假装机事故根治**（用户反馈三 bug→查实 Pad 显示还是 v0.211.1）：0.211.2 代码带编译错误（UI 层 MouseEvent 无 scrollDelta 属性+handlePreviewTap/previewTapHandled 方法名不匹配），hvigor 增量缓存下 CompileArkTS up-to-date **跳过编译→旧 HAP 原样装机并报 ok:true**（装机"成功"是假象，三台全装旧包）。修复=删滚轮缩放（SDK 无 UI 层滚轮 API，PC 用双击缩放替代）+方法名修正+**清 entry/build 缓存强制全量重编**（新 HAP 时间戳 22:34+大小变化+Pad dump 实锤 v0.211.3）；**铁律入档：①装机后必须 Pad/设备 dump 验版本号（假成功防线）②hvigor"签名同名不重签"坑的扩展形态=缓存命中连编译都跳过 ③滚轮缩放无 UI 层 API 勿再试 onMouse.scrollDelta**|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.211.2（versionCode 1000136）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.211.3（versionCode 1000137）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
 - 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
 - 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，装机测试用）+ 畅享 90 Pro Max（手机，192.168.2.9，用户日常自用勿占用）；★ 实测教训：两台 IP 勿搞反（搞反白折腾一轮），`param get const.product.model` 可验身份
