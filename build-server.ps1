@@ -36,7 +36,7 @@ if (-not $Hvigorw) {
     if ($found) { $Hvigorw = $found.FullName }
 }
 if ($Hvigorw) { Write-Host "hvigorw: $Hvigorw" -ForegroundColor Green }
-else { Write-Host "WARN: hvigorw.bat not found yet, will retry per request (set `$Hvigorw`" + " manually in this script if needed)" -ForegroundColor Yellow }
+else { Write-Host "WARN: hvigorw.bat not found by auto-detect; it will retry per request. If build fails, open build-server.ps1 and add your DevEco path to `$HvigorCandidates`" -ForegroundColor Yellow }
 
 # --- locate hdc (DevEco sdk toolchains) ---
 $Hdc = $null
@@ -55,8 +55,12 @@ netsh advfirewall firewall add rule name="DagBuild8765" dir=in action=allow prot
 
 function Sync-Repo {
     Push-Location $RepoDir
-    git fetch codearts main 2>&1 | Out-Null
-    git reset --hard codearts/main 2>&1 | Out-Null
+    git fetch codearts main 2>&1 | ForEach-Object { Write-Host "  git: $_" -ForegroundColor DarkGray }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  git fetch FAILED (credential issue?) - building last synced code" -ForegroundColor Red
+    } else {
+        git reset --hard codearts/main 2>&1 | Out-Null
+    }
     Pop-Location
 }
 
