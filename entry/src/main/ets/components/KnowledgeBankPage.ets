@@ -2287,35 +2287,75 @@ export struct KnowledgeBankPage {
                         //   标签列改**定宽** width 38%（内容左对齐——用户"标签不要右对齐要左对齐"），
                         //   标题列=剩余全部弹性 → 所有卡片标题同一垂直轴线居中；②"问AI?"文字按钮撤除
                         //   （功能不变）→挪进滑出面板（见 swipeActionsPanel），宽屏手机两端一致
-                        Text(c.title)
-                          .fontSize(16)
-                          .fontWeight(600)
-                          .fontColor(TEXT_PRIMARY)
-                          .maxLines(1)
-                          .textOverflow({ overflow: TextOverflow.Ellipsis })
-                          .textAlign(this.isTablet ? TextAlign.Center : TextAlign.Start)
-                          .layoutWeight(this.isTablet ? 1 : 0)
-                          .constraintSize({ maxWidth: this.isTablet ? '100%' : '62%' })
-                        if (parseTags(c.tags).length > 0) {
-                          Scroll() {
-                            Row({ space: 6 }) {
-                              ForEach(parseTags(c.tags), (t: string) => {
-                                Text(t)
-                                  .fontSize(10)
-                                  .fontColor(BRAND_SECONDARY)
-                                  .height(20)
-                                  .padding({ left: 8, right: 8 })
-                                  .borderRadius(4)
-                                  .border({ width: 1, color: BRAND_SECONDARY })
-                              }, (t: string) => t)
+                        // ★ 0.213.1 用户拍板（截图实锤）："标题要在方框的正中间+标签在标题右侧左对齐"。
+                        //   0.213.0 不齐根因=标签列挂在 if(tags) 里——无标签卡右列不渲染→标题占满全行
+                        //   （中心 50%）vs 有标签卡标题列被压缩（中心 ~31%）→上下漂移。
+                        //   修复=组件级 if 平台分治：宽屏两列定式（右列恒渲染 38% 占位，无标签=空列，
+                        //   标题列恒 62% → 全部卡片标题同一轴线）；标签列内容左对齐（用户点名）。
+                        //   手机恢复 0.212.3 前好评原样（左对齐 62% + 标签弹性），并修 width(undefined) 雷
+                        if (this.isTablet) {
+                          Row({ space: 6 }) {
+                            Text(c.title)
+                              .fontSize(16)
+                              .fontWeight(600)
+                              .fontColor(TEXT_PRIMARY)
+                              .maxLines(1)
+                              .textOverflow({ overflow: TextOverflow.Ellipsis })
+                              .textAlign(TextAlign.Center)
+                              .layoutWeight(1)
+                            Column() {
+                              if (parseTags(c.tags).length > 0) {
+                                Scroll() {
+                                  Row({ space: 6 }) {
+                                    ForEach(parseTags(c.tags), (t: string) => {
+                                      Text(t)
+                                        .fontSize(10)
+                                        .fontColor(BRAND_SECONDARY)
+                                        .height(20)
+                                        .padding({ left: 8, right: 8 })
+                                        .borderRadius(4)
+                                        .border({ width: 1, color: BRAND_SECONDARY })
+                                    }, (t: string) => t)
+                                  }
+                                }
+                                .scrollable(ScrollDirection.Horizontal)
+                                .scrollBar(BarState.Off)
+                                .height(20)
+                              }
+                            }
+                            .width('38%')
+                            .alignItems(HorizontalAlign.Start) // 标签列内容左对齐（贴标题右侧起排，用户点名）
+                          }
+                          .width('100%')
+                        } else {
+                          Row({ space: 6 }) {
+                            Text(c.title)
+                              .fontSize(16)
+                              .fontWeight(600)
+                              .fontColor(TEXT_PRIMARY)
+                              .maxLines(1)
+                              .textOverflow({ overflow: TextOverflow.Ellipsis })
+                              .constraintSize({ maxWidth: '62%' })
+                            if (parseTags(c.tags).length > 0) {
+                              Scroll() {
+                                Row({ space: 6 }) {
+                                  ForEach(parseTags(c.tags), (t: string) => {
+                                    Text(t)
+                                      .fontSize(10)
+                                      .fontColor(BRAND_SECONDARY)
+                                      .height(20)
+                                      .padding({ left: 8, right: 8 })
+                                      .borderRadius(4)
+                                      .border({ width: 1, color: BRAND_SECONDARY })
+                                  }, (t: string) => t)
+                                }
+                              }
+                              .scrollable(ScrollDirection.Horizontal)
+                              .scrollBar(BarState.Off)
+                              .height(20)
+                              .layoutWeight(1)
                             }
                           }
-                          .scrollable(ScrollDirection.Horizontal)
-                          .scrollBar(BarState.Off)
-                          .height(20)
-                          .layoutWeight(this.isTablet ? 0 : 1)
-                          .width(this.isTablet ? '38%' : undefined)
-                          .constraintSize({ maxWidth: this.isTablet ? '38%' : '100%' })
                         }
                       }
                       .layoutWeight(1)
