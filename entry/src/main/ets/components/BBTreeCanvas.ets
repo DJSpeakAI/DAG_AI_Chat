@@ -991,12 +991,10 @@ export struct BBTreeCanvas {
       Stack({ alignContent: Alignment.TopStart }) {
       // ★ 0.167：全屏 BG_APP 底 + 画布容器（margin 24 / 圆角 24 / BG_CANVAS，UI_GUIDELINES 五-平板）
       Column() {
-        // ★ 0.215.1 滚轮第八轮（关键修复=画布 Stack 显式 height 100%）：
-        //   0.214.9/10 父 Scroll 方案真凶实锤=Stack 的 layoutWeight 在 Scroll 内失效→高度塌陷→
-        //   可滚区域出现（滚轮滚走画布+布局空隙两症同源）。改 height('100%') 后内容与视口等高
-        //   =不可滚→onScrollFrameBegin 回到 0.214.0 实测行为（等高 Scroll 照样收滚轮且可吞掉）；
-        //   单指拖=画布 Pan 子手势天然优先（0.214.9 用户实测顺滑）零干扰。
-        Scroll() {
+        // ★ 0.215.3 滚轮第十轮（父 Scroll 方案判死：内容 100%/100.1% 等高均零触发 frameBegin——
+        //   ArkUI 对"内容≈视口"的 Scroll 直接无视滚轮；0.214.9~0.215.2 三轮实证）：
+        //   回归唯一被 hilog 实证收到滚轮的兄弟传感器（0.214.7 日志铁证 willScroll src=3），
+        //   死穴"截胡触摸"用画布 Pan 改 parallelGesture 并行识别破解（Pan 与传感器内建手势并行激活）。
         Stack() {
           Stack({ alignContent: Alignment.TopStart }) {
         // ── 连线层（★ 0.167：贝塞尔 + 箭头，UI_GUIDELINES 六-7；普通=主紫 85%，高亮分支=辅助紫） ──
@@ -1192,8 +1190,35 @@ export struct BBTreeCanvas {
               centerY: '50%'
             }) // ★ 0.200.1：飞行微旋转（-6°→4°→0° 弧线质感）
             .hitTestBehavior(HitTestMode.None)
-           }
-         }
+          }
+        }
+
+        // ── ★ 0.215.3：滚轮传感器（兄弟形态回归，第十轮）──
+        // 唯一被 hilog 实证收到滚轮的形态（0.214.7 日志：willScroll src=3）；死穴"内建手势截胡触摸"
+        // 由画布 Pan 改 parallelGesture 并行识别破解（Pan 与本传感器手势并行激活、互不抢占）；
+        // 触摸系来源（DRAG/FLING/EDGE_EFFECT/滚动条）一律放行不缩放；内容等高永不真滚。
+        Scroll() {
+          Column().width('100%').height('100%')
+        }
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.None)
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+        .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
+          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} x=${xOffset} y=${yOffset}`);
+          if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
+            || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
+            || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
+            return; // 触摸系：不缩放（画布 Pan 并行手势负责平移）
+          }
+          const delta = yOffset !== 0 ? yOffset : (xOffset !== 0 ? xOffset : 0);
+          if (delta === 0) {
+            return;
+          }
+          this.wheelZoomAt(delta < 0 ? 1.02 : 0.98); // 滚轮：负=放大正=缩小；速度=用户定稿
+        })
 
           }
           .width('100%')
@@ -1215,7 +1240,7 @@ export struct BBTreeCanvas {
             this.redrawEdges(); // ★ 0.167.2：组件尺寸变化 Canvas 缓冲区跟随 → 重绘
           })
           // ── 画布平移手势 ──
-          .gesture(
+          .parallelGesture(
             PanGesture({ distance: 5 })
               .onActionStart(() => {
                 this.canvasPanStartX = this.canvasOffsetX;
@@ -1775,25 +1800,13 @@ export struct BBTreeCanvas {
         }
         // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / BG_CANVAS）
         .width('100%')
-        .height('100.1%') // ★ 0.215.2：0.215.1 实测 frameBegin 零触发——内容 100% 等高=Scroll 判不可滚→滚轮被忽略（frameBegin 只在将滚时回调）；垫 0.1%（≈2vp，Scroll 裁剪无视觉影响）造一丝可滚余量→滚轮进 frameBegin 被吞转缩放；layoutWeight 失效修复同存
+        .layoutWeight(1) // ★ 0.215.3：父 Scroll 已拆（等高内容滚轮零触发三轮判死）——恢复 0.213 原结构
         // ★ 0.195.0：顶格修复——顶边距 24→0（用户多次报「信息条上方空一行」：Pad 实测 88→147px
         //   共 59px BG_APP 色带露在 BG_CANVAS 信息条上方，即本 margin 顶边；左右/底 24 保留）
         .margin({ left: 24, right: 24, top: 0, bottom: 24 })
         // ★ 0.195.0：顶部圆角随顶格归零（面板贴顶不露角缺口），底部圆角保留
         .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
         .backgroundColor(BG_CANVAS)
-        }
-        // ★ 0.215.1：父 Scroll 传感器（内容等高不可滚——滚轮事件进 frameBegin 转缩放并全额吞掉）
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.None)
-        .onScrollFrameBegin((offset: number, state: ScrollState) => {
-          console.info(`DAGAI-ZOOM frameBegin offset=${offset}`);
-          if (offset !== 0) {
-            this.wheelZoomAt(offset < 0 ? 1.02 : 0.98); // 上滚放大/下滚缩小；速度=用户定稿 1.02/0.98
-          }
-          return { offsetRemain: 0 }; // 全额吞掉——画布永不被滚走
-        })
 
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
