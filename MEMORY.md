@@ -163,9 +163,10 @@
 |0.211.3|**0.211.2 假装机事故根治**（用户反馈三 bug→查实 Pad 显示还是 v0.211.1）：0.211.2 代码带编译错误（UI 层 MouseEvent 无 scrollDelta 属性+handlePreviewTap/previewTapHandled 方法名不匹配），hvigor 增量缓存下 CompileArkTS up-to-date **跳过编译→旧 HAP 原样装机并报 ok:true**（装机"成功"是假象，三台全装旧包）。修复=删滚轮缩放（SDK 无 UI 层滚轮 API，PC 用双击缩放替代）+方法名修正+**清 entry/build 缓存强制全量重编**（新 HAP 时间戳 22:34+大小变化+Pad dump 实锤 v0.211.3）；**铁律入档：①装机后必须 Pad/设备 dump 验版本号（假成功防线）②hvigor"签名同名不重签"坑的扩展形态=缓存命中连编译都跳过 ③滚轮缩放无 UI 层 API 勿再试 onMouse.scrollDelta**|
 |0.212.0|**知识库卡片滑出式删除+勾选框图标化**（用户拍板：常驻红 ×"太难看特别是红色"→左右滑露回收站标识，"注意 UI 不要叉叉"；多选 ☑ 打勾 logo 太丑）：①ListItem.swipeAction start+end 双向挂 swipeDeletePanel（警示红底+trash.svg 白图标 76vp，点击走 requestDeleteCard 原确认链路，多选中点击 guard 无动作）②☑/☐ 字符勾选框 4 处全换 checkbox_on/off.svg（列表多选/删除确认"不再提示"/DagPack 勾选×2，品牌紫底白勾+灰描边空框）。Pad 实测：红 × 清零+左滑露出回收站（右侧新 Image 实锤）；**踩坑三连：①swipeAction 是 ListItem 专属属性挂 Row 上编译器不认 ②@Builder 不能在 swipeAction 里直调须箭头函数包（直调破坏解析→1797 个级联误报）③edit 事故：oldString 尾换行把方法签名并进注释行致全文件解析崩坏（大括号配平≠嵌套正确，靠读缩进定位）**|
 |0.212.1|**回收站面板 UI 微调**（用户验收 0.212.0"功能逻辑非常棒"但 UI 不满："不想要红色""不用特别大"）：警示红→**品牌紫 BRAND_PRIMARY**（与暗紫 UI 同语言）+面板 76→56vp、图标 24→20（回收站符号本身已表意）。一条龙收官三台齐装+Pad 版本号实锤 v0.212.1|
+|0.212.2|**滑出删除圆钮化+确认弹窗限宽（PC 截图实锤两诉求）**：①面板"高度太高一大块色块"→改 **44×44 圆形小钮**（外容器满高 Center 露出区宽 72）②确认弹窗"PC 上太宽双按钮被拉成面条"→宽度 `isTablet ? 400 : '86%'`（比编辑弹窗 520 窄一档）。Pad 实测：圆钮 50×50px 居中露出 ✓、弹窗 900px=400vp（屏幕仅 1/3 宽）✓；**规格已入 UI_GUIDELINES 六-11/12**（滑出删除=显眼紫+小巧圆钮、确认类对话框宽高比）|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.212.1（versionCode 1000139）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.212.2（versionCode 1000140）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
 - 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
 - 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，装机测试用）+ 畅享 90 Pro Max（手机，192.168.2.9，用户日常自用勿占用）；★ 实测教训：两台 IP 勿搞反（搞反白折腾一轮），`param get const.product.model` 可验身份
