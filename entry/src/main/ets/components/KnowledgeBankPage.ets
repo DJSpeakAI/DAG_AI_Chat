@@ -2386,10 +2386,6 @@ export struct KnowledgeBankPage {
                       this.onItemTap(c);
                     })
 
-                    if (!this.multiSelectMode) {
-                      // ★ 0.212.0：常驻红 × 删除按钮已撤（用户批"太难看特别是红色"）——删除入口改为
-                      //   卡片左右滑露出的回收站面板（见 ListItem.swipeAction），点击走原确认弹窗链路
-                    }
                   }
                   .width('100%')
                   .padding(12)
