@@ -23,7 +23,6 @@ import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件�
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
 import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.200.0：知识卡片导入气泡（跨页 store：知识库/复习页写入 → 画布选择模式消费）
-import { inputDevice } from '@kit.InputKit'; // ★ 0.214.7：设备类型判定（有鼠标/触摸板=滚轮传感器常开）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -35,7 +34,6 @@ export struct BBTreeCanvas {
   @Local canvasOffsetX: number = 0;
   @Local lastHoverX: number = -1; // ★ 0.214.0：鼠标悬停位置（滚轮缩放锚点；-1=未记录回落画布中心）
   @Local lastHoverY: number = -1;
-  @Local mouseOnCanvas: boolean = false; // ★ 0.214.5：鼠标在场标记——滚轮传感器只在鼠标 hover 时上岗（触摸场景传感器不存在=零手势干扰）
   @Local canvasOffsetY: number = 0;
   @Local canvasPanStartX: number = 0;
   @Local canvasPanStartY: number = 0;
@@ -239,36 +237,9 @@ export struct BBTreeCanvas {
     // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange
     //   按窗口实宽写入；分屏/悬浮窗实时切换手机/平板布局）
-    // ★ 0.214.7：设备类型判定驱动滚轮传感器显隐（终极方案——onMouse/onHover 事件链在真机
-    //   均不可靠（0.214.5/0.214.6 两轮实证），改查系统输入设备清单：有鼠标/触摸板（PC）=
-    //   传感器常开，滚轮随时候命；纯触摸设备（Pad/手机）=传感器永不渲染=单指拖零干扰）
-    inputDevice.getDeviceList().then((ids: number[]) => {
-      let found = false;
-      let pending = ids.length;
-      if (pending === 0) {
-        this.mouseOnCanvas = false;
-        return;
-      }
-      ids.forEach((id: number) => {
-        inputDevice.getDeviceInfo(id).then((data: inputDevice.InputDeviceData) => {
-          if (data.sources.indexOf('mouse') >= 0 || data.sources.indexOf('touchpad') >= 0) {
-            found = true;
-          }
-          pending -= 1;
-          if (pending === 0) {
-            this.mouseOnCanvas = found;
-            console.info(`DAGAI-ZOOM device-probe mouse=${found}`);
-          }
-        }).catch(() => {
-          pending -= 1;
-          if (pending === 0) {
-            this.mouseOnCanvas = found;
-          }
-        });
-      });
-    }).catch(() => {
-      this.mouseOnCanvas = false;
-    });
+    // ★ 0.214.9：设备类型判定已随传感器方案废弃而删除——滚轮传感器改父容器包裹
+    //   （Scroll 套画布：子组件画布 Pan 手势天然优先=触摸拖动不被抢，鼠标滚轮直达父
+    //   Scroll 的 onWillScroll；不再需要任何显隐/设备判定补丁）
   }
 
   // ★ 0.167.2：连线层 Canvas 命令式绘制（弃 Path——Path 无 viewport 属性，未设时 ArkUI 自动把
@@ -1022,6 +993,10 @@ export struct BBTreeCanvas {
       Stack({ alignContent: Alignment.TopStart }) {
       // ★ 0.167：全屏 BG_APP 底 + 画布容器（margin 24 / 圆角 24 / BG_CANVAS，UI_GUIDELINES 五-平板）
       Column() {
+        // ★ 0.214.9：滚轮传感器=父容器包裹（结构化根治，替代 0.214.0~0.214.8 兄弟叠层三连败补丁）——
+        //   画布 Stack 作 Scroll 子节点：触摸拖动=子组件 Pan 手势天然优先（画布平移绝不被抢）；
+        //   鼠标滚轮无触摸手势竞争、直达父 Scroll 的 onWillScroll 转缩放；无显隐/设备判定补丁
+        Scroll() {
         Stack() {
           Stack({ alignContent: Alignment.TopStart }) {
         // ── 连线层（★ 0.167：贝塞尔 + 箭头，UI_GUIDELINES 六-7；普通=主紫 85%，高亮分支=辅助紫） ──
@@ -1217,44 +1192,9 @@ export struct BBTreeCanvas {
               centerY: '50%'
             }) // ★ 0.200.1：飞行微旋转（-6°→4°→0° 弧线质感）
             .hitTestBehavior(HitTestMode.None)
-          }
-        }
+           }
+         }
 
-        // ── ★ 0.214.0：滚轮缩放传感器（透明 Scroll 寄生）──
-        // ArkUI MouseEvent 无滚轮 delta（0.211.3 编译实锤）——借空内容 Scroll 截获滚轮偏移；
-        // Transparent 透传保证触摸点击/捏合全部落画布手势层不受影响。
-        // ★ 0.214.4 P0 修复（用户实测：Pad/手机单指拖画布 70% 误变缩放）：
-        //   原用 onScrollFrameBegin——该回调不区分滚轮与触摸拖拽（单指拖的偏移被当滚轮→误缩放）；
-        //   改用 onWillScroll 的第四参 scrollSource 来源过滤：触摸系（DRAG/FLING/EDGE_EFFECT）
-        //   一律放行不缩放（画布 Pan 手势照常平移），其余来源（鼠标滚轮等）才转缩放并吞掉滚动。
-        Scroll() {
-          Column().width('100%').height('100%')
-        }
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.None)
-        .width('100%')
-        .height('100%')
-        // ★ 0.214.5：传感器只在鼠标在场时上岗——鼠标离开画布/纯触摸场景下 visibility None，
-        //   不参与命中与手势竞技（单指拖画布=画布 Pan 直达，绝无抢占；鼠标 hover 时滚轮缩放照常）
-        .visibility(this.mouseOnCanvas ? Visibility.Visible : Visibility.None)
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
-          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} x=${xOffset} y=${yOffset} visible=${this.mouseOnCanvas}`);
-          if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
-            || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
-            || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
-            return; // 触摸/滚动条系来源：不缩放（单指拖=画布平移，绝不误触缩放）
-          }
-          // ★ 0.214.8：真机日志实锤 Matebook 触摸板滚轮增量走 xOffset（y 恒 0）——方向判定合并两轴，
-          //   y 优先、y=0 时看 x；负=放大正=缩小，零增量忽略
-          const delta = yOffset !== 0 ? yOffset : (xOffset !== 0 ? xOffset : 0);
-          if (delta === 0) {
-            return;
-          }
-          this.wheelZoomAt(delta < 0 ? 1.02 : 0.98); // 锚点=鼠标悬停处；速度=0.214.2 终态
-          return { xOffset: 0, yOffset: 0 }; // 全额吞掉——传感器永不真滚
-        })
           }
           .width('100%')
           .height('100%')
@@ -1266,11 +1206,7 @@ export struct BBTreeCanvas {
               this.lastHoverY = event.y;
             }
           })
-          // ★ 0.214.7：onHover 已退役（真机不可靠，两轮实证）——mouseOnCanvas 改由 aboutToAppear
-          //   的设备类型探测一次性判定（有鼠标/触摸板=常开；诊断日志 DAGAI-ZOOM 供 hilog 定位）
-          .onHover((isHover: boolean) => {
-            console.info(`DAGAI-ZOOM onHover=${isHover}`);
-          })
+
           // ★ 0.130 获取画布可视区真实宽高；首次拿到尺寸时自动适配全树视口（替代原 aboutToAppear）
           .onAreaChange((oldVal: Area, newVal: Area) => {
             this.viewW = newVal.width as number;
@@ -1853,6 +1789,26 @@ export struct BBTreeCanvas {
         // ★ 0.195.0：顶部圆角随顶格归零（面板贴顶不露角缺口），底部圆角保留
         .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: RADIUS_CANVAS, bottomRight: RADIUS_CANVAS })
         .backgroundColor(BG_CANVAS)
+        }
+        // ★ 0.214.9：父 Scroll 传感器属性（原兄弟传感器逻辑迁入）
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.None)
+        .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
+          console.info(`DAGAI-ZOOM willScroll src=${scrollSource} x=${xOffset} y=${yOffset}`);
+          if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
+            || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
+            || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
+            return; // 触摸/滚动条系来源：不缩放（单指拖=画布 Pan 平移，子组件手势优先不至此）
+          }
+          // ★ 0.214.8：真机日志实锤 Matebook 触摸板滚轮增量走 xOffset（y 恒 0）——两轴合并判定
+          const delta = yOffset !== 0 ? yOffset : (xOffset !== 0 ? xOffset : 0);
+          if (delta === 0) {
+            return;
+          }
+          this.wheelZoomAt(delta < 0 ? 1.02 : 0.98); // 锚点=鼠标悬停处；速度=0.214.2 终态
+          return { xOffset: 0, yOffset: 0 }; // 全额吞掉——传感器永不真滚
+        })
       }
       // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
       // ★ 0.168.3：Column 改 width/height 100%——layoutWeight 仅 Row/Column/Flex 子节点有效，
