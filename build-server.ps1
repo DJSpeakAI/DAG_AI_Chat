@@ -76,19 +76,46 @@ function Do-Build {
     return @{ ok = $false; err = "build failed"; log = ($buildLog | Select-Object -Last 40) -join "`n" }
 }
 
-function Do-Install {
+function Get-KnownDevices {
+    $kf = Join-Path $RepoDir ".known-devices"
+    if (Test-Path $kf) { return @(Get-Content $kf | Where-Object { $_ -match ":" }) }
+    return @()
+}
+function Add-KnownDevice($addr) {
+    $kf = Join-Path $RepoDir ".known-devices"
+    $known = Get-KnownDevices
+    if ($known -notcontains $addr) { Add-Content -Path $kf -Value $addr }
+}
+function Get-DeviceList {
+    if (-not $Hdc) { return ,@() }
+    foreach ($a in (Get-KnownDevices)) { & $Hdc tconn $a 2>&1 | Out-Null }
+    $targets = (& $Hdc list targets) | Where-Object { $_ -match ":" }
+    $list = @()
+    foreach ($t in $targets) {
+        $id = $t.Trim("[]")
+        $model = (& $Hdc -t $id shell param get const.product.model 2>$null)
+        $list += @{ addr = $id; model = "$model" }
+    }
+    return ,$list
+}
+function Do-Install($target) {
     $b = Do-Build
     if (-not $b.ok) { return $b }
     if (-not $Hdc) { return @{ ok = $false; err = "hdc.exe not found" } }
-    & $Hdc tconn 192.168.2.16:5555 2>&1 | Out-Null
-    & $Hdc tconn 192.168.2.9:5555 2>&1 | Out-Null
-    $devs = (& $Hdc list targets) | Where-Object { $_ -match "^\[?" -and $_.Trim("[]") -ne "empty" }
+    $devs = @()
+    if ($target) {
+        & $Hdc tconn $target 2>&1 | Out-Null
+        Add-KnownDevice $target
+        $devs = @($target)
+    } else {
+        foreach ($a in (Get-KnownDevices)) { & $Hdc tconn $a 2>&1 | Out-Null }
+        $devs = @((& $Hdc list targets) | Where-Object { $_ -match ":" } | ForEach-Object { $_.Trim("[]") })
+    }
     $report = @()
-    foreach ($d in $devs) {
-        $id = $d.Trim("[]")
-        if ($id -eq "empty" -or [string]::IsNullOrWhiteSpace($id)) { continue }
+    foreach ($id in $devs) {
+        if ([string]::IsNullOrWhiteSpace($id)) { continue }
         $r = & $Hdc -t $id install -r $b.hap 2>&1
-        $report += "$id => $r"
+        $report += "$id => $(($r -join ' '))"
     }
     return @{ ok = $true; hap = $b.hap; devices = $report -join "`n" }
 }
@@ -102,9 +129,14 @@ while ($listener.IsListening) {
     $ctx = $listener.GetContext()
     $req = $ctx.Request; $res = $ctx.Response
     try {
-        if ($req.HttpMethod -eq "GET") {
+        if ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/") {
             $bytes = [Text.Encoding]::UTF8.GetBytes(('{"status":"running","hvigorw":"' + $Hvigorw + '","hdc":"' + $Hdc + '"}'))
             $res.ContentType = "application/json"; $res.OutputStream.Write($bytes, 0, $bytes.Length)
+        }
+        elseif ($req.HttpMethod -eq "GET" -and $req.Url.AbsolutePath -eq "/devices") {
+            $list = Get-DeviceList
+            $bytes = [Text.Encoding]::UTF8.GetBytes(($list | ConvertTo-Json -Compress))
+            $res.ContentType = "application/json; charset=utf-8"; $res.OutputStream.Write($bytes, 0, $bytes.Length)
         }
         elseif ($req.HttpMethod -eq "POST" -and $req.Url.AbsolutePath -eq "/build") {
             Write-Host "[$(Get-Date -Format HH:mm:ss)] POST /build -> building..." -ForegroundColor Cyan
@@ -124,7 +156,12 @@ while ($listener.IsListening) {
         }
         elseif ($req.HttpMethod -eq "POST" -and $req.Url.AbsolutePath -eq "/install") {
             Write-Host "[$(Get-Date -Format HH:mm:ss)] POST /install -> building + installing..." -ForegroundColor Cyan
-            $r = Do-Install
+            $reader = New-Object IO.StreamReader($req.InputStream)
+            $bodyTxt = $reader.ReadToEnd()
+            $target = $null
+            try { $j = $bodyTxt | ConvertFrom-Json; if ($j.target) { $target = $j.target } } catch {}
+            if ($target) { Write-Host "  target: $target" -ForegroundColor Cyan }
+            $r = Do-Install $target
             $bytes = [Text.Encoding]::UTF8.GetBytes(($r | ConvertTo-Json -Depth 3))
             $res.ContentType = "application/json; charset=utf-8"
             if (-not $r.ok) { $res.StatusCode = 500 }
