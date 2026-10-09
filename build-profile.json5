@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "./signing/default_dag_ai_chat.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B800296392D45DC834694786C7719F4BE36555BAFDE6ED1216A56FE8AFF5F06BD1C4E47ED16B45C",
+          "profile": "./signing/dag_ai_chat_debugDebug.p7b", // ★ 云编译改造（2026-10-09）：相对路径指向仓库 signing/ 短名三件套（AGC 手动 Profile，app-identifier=6917618071300773117）；密文密码不动（DevEco 对称加密跨机器可解）
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "./signing/default_dag_ai_chat.p12",
+          "storePassword": "0000001BA5D3E31E9ABE48BA20251850B8AF5D76A5AC83B77036B6B0F83127153EE55943463D0A6384FA1C"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "6.1.1(24)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

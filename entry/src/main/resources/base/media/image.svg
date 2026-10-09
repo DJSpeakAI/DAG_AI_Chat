@@ -1,0 +1,6 @@
+<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="18.000000" height="18.000000" fill="none" customFrame="#000000">
+	<rect id="image" width="18.000000" height="18.000000" x="0.000000" y="0.000000" />
+	<rect id="框" x="2.25" y="3" width="13.5" height="12" rx="2" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-width="1.500000" />
+	<circle id="太阳" cx="6.4" cy="6.9" r="1.1" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-width="1.200000" />
+	<path id="山" d="M3 13.2L7.2 9.4L10.2 12L12.6 9.9L15 12.1" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+</svg>

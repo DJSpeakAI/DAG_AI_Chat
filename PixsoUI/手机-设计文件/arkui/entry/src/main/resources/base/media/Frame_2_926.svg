@@ -1,0 +1,9 @@
+<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="28.000000" height="28.000000" fill="none" clip-path="url(#clipPath_12)" customFrame="url(#clipPath_12)">
+	<defs>
+		<clipPath id="clipPath_12">
+			<rect width="28.000000" height="28.000000" x="0.000000" y="0.000000" rx="14.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<path id="三角形" d="M9.33013 5.25L0.669873 5.25L5 0L9.33013 5.25Z" fill="rgb(168,155,194)" fill-rule="evenodd" transform="matrix(-1,0,0,-1,9,10.5)" />
+	<rect id="展开折叠按钮" width="26.500000" height="26.500000" x="0.750000" y="0.750000" rx="13.250000" stroke="rgb(168,155,194)" stroke-width="1.500000" />
+</svg>

@@ -1,0 +1,14 @@
+﻿{
+  "app": {
+    "bundleName": "com.example.dag_ai_chat",
+    "vendor": "example",
+    "versionCode": 1000174, // ★ 0.216.2：PC 发送后光标留输入框（requestFocus 重聚焦）；更早历史见 MEMORY.md
+    "versionName": "1.0.0",
+    "buildVersion": "1",
+    // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
+    // debug 证书连开发环境（AGC 云侧容器/数据类型配置就绪后同步生效）
+    "cloudStructuredDataSyncEnabled": true,
+    "icon": "$media:layered_image", // ★ 0.177.0：IDE 警告「请使用分层图标」修复——icon 从普通 PNG（app_logo.png）改指 layered_image.json（background=新 logo 深紫版 + foreground 透明层）；app_logo.png 与 background.png 本就是同一张深紫版图（121489 字节一致），桌面图标视觉零变化
+    "label": "$string:app_name"
+  }
+}

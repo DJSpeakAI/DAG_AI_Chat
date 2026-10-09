@@ -1,0 +1,19 @@
+<svg viewBox="0 0 992 752" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="992.000000" height="752.000000" fill="none" customFrame="#000000">
+	<rect id="连线层" width="992.000000" height="752.000000" x="0.000000" y="0.000000" />
+	<path id="连线 / root→super" d="M240 350C275 350 275 194 310 194" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / root→super" d="M310 194L303 189.8L303 198.2L310 194Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / super→neural" d="M510 194C545 194 545 194 580 194" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / super→neural" d="M580 194L573 189.8L573 198.2L580 194Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / root→unsuper" d="M240 350C275 350 275 482 310 482" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / root→unsuper" d="M310 482L303 477.8L303 486.2L310 482Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / unsuper→cluster" d="M510 482C545 482 545 414 580 414" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / unsuper→cluster" d="M580 414L573 409.8L573 418.2L580 414Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / unsuper→feature" d="M510 482C545 482 545 564 580 564" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / unsuper→feature" d="M580 564L573 559.8L573 568.2L580 564Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / feature→f2" d="M780 564C815 564 815 466 850 466" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / feature→f2" d="M850 466L843 461.8L843 470.2L850 466Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / feature→f3" d="M780 564C815 564 815 552 850 552" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / feature→f3" d="M850 552L843 547.8L843 556.2L850 552Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+	<path id="连线 / feature→f4" d="M780 564C815 564 815 638 850 638" stroke="rgb(124,77,255)" stroke-opacity="0.850000024" stroke-width="2.000000" />
+	<path id="箭头 / feature→f4" d="M850 638L843 633.8L843 642.2L850 638Z" fill="rgb(124,77,255)" fill-rule="nonzero" />
+</svg>

@@ -1,0 +1,7 @@
+<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="18.000000" height="18.000000" fill="none" customFrame="#000000">
+	<path id="trash-lid" d="M2.25 4.5 L15.75 4.5" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="trash-handle" d="M6.75 4.5 L6.75 3 A0.75 0.75 0 0 1 7.5 2.25 L10.5 2.25 A0.75 0.75 0 0 1 11.25 3 L11.25 4.5" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="trash-body" d="M3.75 4.5 L3.75 15 A1.5 1.5 0 0 0 5.25 16.5 L12.75 16.5 A1.5 1.5 0 0 0 14.25 15 L14.25 4.5" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="trash-line-1" d="M7.5 8.25 L7.5 12.75" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="trash-line-2" d="M10.5 8.25 L10.5 12.75" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+</svg>

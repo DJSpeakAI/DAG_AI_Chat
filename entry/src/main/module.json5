@@ -1,0 +1,123 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "deviceTypes": [
+      "phone",
+      "tablet",
+      "2in1"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    // ★ 0.164：华为账号登录（Account Kit）需要配置 AGC 应用的 Client ID
+    // ★ 0.164.6 方向 B：v0.164.5 实测证伪「对齐 Profile 的 app-identifier」方案——6918742736119759756 系
+    //    DevEco 自动签名内部「调试应用」通道生成，非正常 AGC 应用、无有效 Client ID，对齐后仍报
+    //    「Invalid clientId or profile」。官方 1001502003 处理步骤=AGC 手动申请调试 Profile（绑定本应用
+    //    6917618071300773117）+ 手动签名。本版 client_id 改回本应用，配合手动申请的新 Profile 使用。
+    "metadata": [
+      {
+        "name": "client_id",
+        "value": "6917618071300773117"
+      }
+    ],
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:app_short_name",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "EntryBackupAbility",
+        "srcEntry": "./ets/entrybackupability/EntryBackupAbility.ets",
+        "type": "backup",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.backup",
+            "resource": "$profile:backup_config"
+          }
+        ],
+      },
+      // ★ 0.203.0：桌面服务卡片（复习内容展示）——FormExtensionAbility + form_config 双规格（1×2/2×4）
+      {
+        "name": "EntryFormAbility",
+        "srcEntry": "./ets/entryformability/EntryFormAbility.ets",
+        "label": "$string:EntryFormAbility_label",
+        "description": "$string:EntryFormAbility_desc",
+        "type": "form",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
+    ],
+    // ★ 0.164.7：删除 READ_PASTEBOARD 权限申请——代码里 pasteboard 仅 2 处 setData（写剪贴板：划词复制+长按复制），
+    //    无任何 getData（读剪贴板）；鸿蒙写剪贴板不需要权限、读才需要 READ_PASTEBOARD（受限权限须 Profile 的 ACL
+    //    显式授权）。该权限属早期误加，AGC 手动申请的调试 Profile（allowed-acls 为空）无法授予它 → 装机报
+    //    9568289 权限授予失败。删除后复制功能不受任何影响，且无需等 ACL 人工审批（3 个工作日）。
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET",
+        "reason": "$string:internet_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      // ★ 0.165.1：端云数据同步（setDistributedTables 云端模式）所需权限。
+      // 官方权限列表实证：normal 级别 + user_grant（用户授权）——面向所有应用开放，
+      // 非受限权限、不需要 Profile 的 ACL 授权（与 0.164.7 删除的 READ_PASTEBOARD 不同，
+      // 装机不会触发 9568289）；但须运行时弹窗 requestPermissionsFromUser 用户手动允许
+      // （CloudSyncUtil.requestSyncPermission，0.165.2 挂设置页入口触发）。
+      {
+        "name": "ohos.permission.DISTRIBUTED_DATASYNC",
+        "reason": "$string:distributed_datasync_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      // ★ 0.204.1：桌面卡片 call 交互所需——postCardAction call 后台拉起主应用评分时，
+      // form_event_adapter 要求 KEEP_BACKGROUND_RUNNING（否则 "The app does not have permission
+      // for keeping background running" 拒绝拉起——真机日志实证）。normal+system_grant 级别：
+      // 声明即生效，无需用户弹窗。
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+        "reason": "$string:keep_background_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "always"
+        }
+      }
+    ]
+  }
+}

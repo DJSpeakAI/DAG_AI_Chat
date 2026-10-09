@@ -1,0 +1,39 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "DAGAI"
+    },
+    {
+      "name": "app_short_name",
+      "value": "DAGAI"
+    },
+    {
+      "name": "keep_background_reason",
+      "value": "桌面复习卡片点击评分时需要后台处理记忆排期"
+    },
+    {
+      "name": "internet_reason",
+      "value": "用于访问网络请求AI对话"
+    },
+    {
+      "name": "distributed_datasync_reason",
+      "value": "用于在您登录同一华为账号的多台设备间同步对话数据"
+    },
+    {
+      "name": "EntryFormAbility_label",
+      "value": "复习卡片"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "展示今日复习内容，点我打开复习"
+    }
+  ]
+}
