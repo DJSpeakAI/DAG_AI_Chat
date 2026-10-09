@@ -1234,18 +1234,18 @@ export struct BBTreeCanvas {
           .gesture(
             PanGesture({ distance: 5 })
               .onActionStart(() => {
-                // ★ 0.215.5：滚轮轴事件伴生 Pan 抑制（PanGesture 会被滚轮触发——官方行为，轮10 实证）：
-                // 轴事件后 250ms 窗内的 Pan 动作一律跳过（滚轮帧间隔≈100ms 持续刷新=持续抑制）；
-                // 触摸拖拽/鼠标拖拽无轴事件，永远不进此分支，零影响
-                if (Date.now() - this.lastAxisAt < 250) {
-                  return;
-                }
                 this.canvasPanStartX = this.canvasOffsetX;
                 this.canvasPanStartY = this.canvasOffsetY;
               })
               .onActionUpdate((event: GestureEvent) => {
+                // ★ 0.215.8 跳帧根治（自校准法替代 0.215.5 丢帧法）：滚轮伴生 Pan 抑制不再直接
+                //   return（丢帧+250ms 后起点突变=用户实测"滚完一动就跳帧"），改把平移基准持续
+                //   校准到当前 offset——窗内本轮位移被完全吸收（画布不动），窗结束后的拖动从
+                //   当前位置平滑续接，零跳变；触摸/鼠标拖拽无轴事件不受影响
                 if (Date.now() - this.lastAxisAt < 250) {
-                  return; // ★ 0.215.5：同上——滚轮伴生帧抑制
+                  this.canvasPanStartX = this.canvasOffsetX - event.offsetX;
+                  this.canvasPanStartY = this.canvasOffsetY - event.offsetY;
+                  return;
                 }
                 this.canvasOffsetX = this.canvasPanStartX + event.offsetX;
                 this.canvasOffsetY = this.canvasPanStartY + event.offsetY;
