@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000130, // ★ 0.209.4：评分按钮第三行被占位容器裁剪修复（占位 92→136，按钮实测高 120）
+    "versionCode": 1000131, // ★ 0.210.1：标签mini弹窗居中修复+图片emoji全换华为透明风svg（含0.210.0漏同步的版本号）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

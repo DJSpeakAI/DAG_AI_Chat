@@ -792,13 +792,20 @@ export struct KnowledgeBankPage {
             .margin({ bottom: 8 })
           }
           if (this.editorTitleImages.length < 9) {
-            Text('🖼️ 标题图片' + (this.editorTitleImages.length > 0 ? `（${this.editorTitleImages.length}/9）` : ''))
-              .fontSize(12)
-              .fontColor(BRAND_SECONDARY)
-              .alignSelf(ItemAlign.Start)
-              .onClick(() => {
-                this.selectEditorTitleImage();
-              })
+            // ★ 0.210.1：彩色 emoji 🖼️ → 华为风格单色透明 svg（0.190.2 铁律：图标用 svg 资源不用字符；用户拍板"透明的样式非常好看"）
+            Row({ space: 5 }) {
+              Image($r('app.media.image'))
+                .width(14)
+                .height(14)
+                .objectFit(ImageFit.Contain)
+              Text('标题图片' + (this.editorTitleImages.length > 0 ? `（${this.editorTitleImages.length}/9）` : ''))
+                .fontSize(12)
+                .fontColor(BRAND_SECONDARY)
+            }
+            .alignSelf(ItemAlign.Start)
+            .onClick(() => {
+              this.selectEditorTitleImage();
+            })
           }
         }
         .width('100%')
@@ -904,13 +911,20 @@ export struct KnowledgeBankPage {
             .margin({ bottom: 8 })
           }
           if (this.editorImages.length < 9) {
-            Text('🖼️ 添加图片' + (this.editorImages.length > 0 ? `（${this.editorImages.length}/9）` : ''))
-              .fontSize(13)
-              .fontColor(TEXT_SECONDARY)
-              .alignSelf(ItemAlign.Start)
-              .onClick(() => {
-                this.selectEditorImage();
-              })
+            // ★ 0.210.1：彩色 emoji 🖼️ → 华为风格单色透明 svg（同标题图区）
+            Row({ space: 5 }) {
+              Image($r('app.media.image'))
+                .width(14)
+                .height(14)
+                .objectFit(ImageFit.Contain)
+              Text('添加图片' + (this.editorImages.length > 0 ? `（${this.editorImages.length}/9）` : ''))
+                .fontSize(13)
+                .fontColor(TEXT_SECONDARY)
+            }
+            .alignSelf(ItemAlign.Start)
+            .onClick(() => {
+              this.selectEditorImage();
+            })
           }
         }
         .width('100%')
@@ -938,9 +952,10 @@ export struct KnowledgeBankPage {
         .width('100%')
         .margin({ top: 20 })
         // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）——挂弹窗 Column 尾部（后绘制在上层）──
+        // ★ 0.210.1 修复「下面的方框一直往下」：原 Blank() 把弹窗推到遮罩最底部（键盘一弹避让
+        //   反复触发，弹窗跟着一路下沉）；改标准居中（同 AppConfirmDialog 先例），键盘弹出也稳定
         if (this.tagEditVisible) {
           Column() {
-            Blank()
             Column() {
               Text(this.tagEditOld.length === 0 ? '添加标签' : '修改标签')
                 .fontSize(14)
@@ -984,6 +999,7 @@ export struct KnowledgeBankPage {
           }
           .width('100%')
           .height('100%')
+          .justifyContent(FlexAlign.Center)
           .backgroundColor('rgba(0,0,0,0.45)')
           .onClick(() => {
             this.tagEditVisible = false;

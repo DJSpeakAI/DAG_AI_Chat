@@ -3040,10 +3040,11 @@ export struct ChatPage {
                                         // Image indicator icon — only shown when the card has an image (user rule)
                                         // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
                                         // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
-                                        Text('🖼️')
-                                          .fontSize(12)
-                                          .fontColor(TEXT_TERTIARY)
-                                          .maxLines(1)
+                                        // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
+                                        Image($r('app.media.image'))
+                                          .width(14)
+                                          .height(14)
+                                          .objectFit(ImageFit.Contain)
                                           .margin({ left: 6 })
                                           .onClick(() => {
                                             if (card.imageUri.length > 0) {
@@ -3550,18 +3551,19 @@ export struct ChatPage {
                        .onClick(() => {
                          this.onReviewWordTap(`editcard|${card.id}`);
                        })
-                    if (card.imageUri.length > 0) {
-                      Text('🖼️')
-                        .fontSize(12)
-                        .fontColor(TEXT_TERTIARY)
-                        .maxLines(1)
-                        .margin({ left: 6 })
-                        .onClick(() => {
-                          this.imageViewerImages = [card.imageUri];
-                          this.imageViewerIndex = 0;
-                          this.imageViewerVisible = true;
-                        })
-                    }
+                     if (card.imageUri.length > 0) {
+                       // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
+                       Image($r('app.media.image'))
+                         .width(14)
+                         .height(14)
+                         .objectFit(ImageFit.Contain)
+                         .margin({ left: 6 })
+                         .onClick(() => {
+                           this.imageViewerImages = [card.imageUri];
+                           this.imageViewerIndex = 0;
+                           this.imageViewerVisible = true;
+                         })
+                     }
                   }
                     Text(card.definition)
                       .fontSize(12)
@@ -4319,18 +4321,24 @@ export struct ChatPage {
               Divider()
                 .color(STROKE_CARD)
                 .margin({ top: 4, bottom: 4 })
-              // ── 第三组：图片添加（★ 0.152：原底栏 🖼️ 按钮收进下拉菜单） ──
-              Text('🖼️ 添加图片')
-                .fontSize(14)
-                .fontColor(TEXT_PRIMARY)
-                .width('100%')
-                .padding(12)
-                .textAlign(TextAlign.Start)
-                .borderRadius(RADIUS_CONTROL)
-                .onClick(() => {
-                  this.modeMenuOpen = false;
-                  this.selectImages(); // 相册多选 → base64 挂到输入区（原链路不变）
-                })
+              // ── 第三组：图片添加（★ 0.152：原底栏 🖼️ 按钮收进下拉菜单）──
+              // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
+              Row({ space: 6 }) {
+                Image($r('app.media.image'))
+                  .width(15)
+                  .height(15)
+                  .objectFit(ImageFit.Contain)
+                Text('添加图片')
+                  .fontSize(14)
+                  .fontColor(TEXT_PRIMARY)
+              }
+              .width('100%')
+              .padding(12)
+              .borderRadius(RADIUS_CONTROL)
+              .onClick(() => {
+                this.modeMenuOpen = false;
+                this.selectImages(); // 相册多选 → base64 挂到输入区（原链路不变）
+              })
             }
             .width(200)
             .borderRadius(RADIUS_NAV)
