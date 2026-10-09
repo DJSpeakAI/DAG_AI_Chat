@@ -30,3 +30,11 @@ test_out/
 entry/src/main/resources/rawfile/agconnect-services.json
 
 default_events*.json
+dag*.bundle
+dag*.hap
+l[0-9]*.json
+layout*.json
+pc*.json
+find_ctl.py
+findctl.sh
+parse_layout.py
