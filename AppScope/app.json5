@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000129, // ★ 0.209.3：评分按钮紧贴卡片下方成组居中+翻面后点反面不再翻回（用户拍板）
+    "versionCode": 1000130, // ★ 0.209.4：评分按钮第三行被占位容器裁剪修复（占位 92→136，按钮实测高 120）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

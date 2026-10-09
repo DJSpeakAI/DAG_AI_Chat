@@ -1166,7 +1166,7 @@ export struct ReviewPage {
               }
             }
             .width('100%')
-            .height(92) // 评分按钮高（三行文字+padding 12×2≈78）+顶部间距 12+余量
+            .height(136) // ★ 0.209.4：按钮实测高 120vp（Pad dump 实量：三行文字+Button 自身 padding）+顶部间距 12+余量 4——原 92 可用仅 80，第三行「X天后」被容器裁剪（用户手机截图实锤）
             .padding({ top: 12 }) // 按钮与卡片底边的固定间距
             .justifyContent(FlexAlign.Start)
             Blank().layoutWeight(1)
