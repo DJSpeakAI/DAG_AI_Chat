@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000148, // ★ 0.214.3：气泡长按菜单增「增加子气泡」+菜单限宽 280（PC 62% 太宽）
+    "versionCode": 1000149, // ★ 0.214.4：单指拖画布误缩放 P0 根治（scrollSource 来源过滤）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

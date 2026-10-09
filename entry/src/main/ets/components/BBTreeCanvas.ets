@@ -1188,9 +1188,12 @@ export struct BBTreeCanvas {
         }
 
         // ── ★ 0.214.0：滚轮缩放传感器（透明 Scroll 寄生）──
-        // ArkUI MouseEvent 无滚轮 delta（0.211.3 编译实锤）——借空内容 Scroll 的
-        // onScrollFrameBegin 逐帧取滚轮偏移并全额吞掉实际滚动；Transparent 透传保证
-        // 触摸拖拽/捏合/点击全部落画布手势层不受影响（滚轮为唯一被截获的输入）。
+        // ArkUI MouseEvent 无滚轮 delta（0.211.3 编译实锤）——借空内容 Scroll 截获滚轮偏移；
+        // Transparent 透传保证触摸点击/捏合全部落画布手势层不受影响。
+        // ★ 0.214.4 P0 修复（用户实测：Pad/手机单指拖画布 70% 误变缩放）：
+        //   原用 onScrollFrameBegin——该回调不区分滚轮与触摸拖拽（单指拖的偏移被当滚轮→误缩放）；
+        //   改用 onWillScroll 的第四参 scrollSource 来源过滤：触摸系（DRAG/FLING/EDGE_EFFECT）
+        //   一律放行不缩放（画布 Pan 手势照常平移），其余来源（鼠标滚轮等）才转缩放并吞掉滚动。
         Scroll() {
           Column().width('100%').height('100%')
         }
@@ -1200,11 +1203,15 @@ export struct BBTreeCanvas {
         .width('100%')
         .height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
-        .onScrollFrameBegin((offset: number, state: ScrollState) => {
-          // 上滚（offset<0）=放大 / 下滚=缩小（与常规滚轮缩放语义一致）；锚点=鼠标悬停处
-          // ★ 0.214.1：降速 60%（用户反馈太快——每档 1.1/0.9 → 1.04/0.96）
-          this.wheelZoomAt(offset < 0 ? 1.02 : 0.98); // 0.214.2 再减半（1.04/0.96→1.02/0.98）
-          return { offsetRemain: 0 }; // 全额吞掉——传感器永不真滚
+        .onWillScroll((xOffset: number, yOffset: number, scrollState: ScrollState, scrollSource: ScrollSource) => {
+          if (scrollSource === ScrollSource.DRAG || scrollSource === ScrollSource.FLING
+            || scrollSource === ScrollSource.EDGE_EFFECT || scrollSource === ScrollSource.SCROLL_BAR
+            || scrollSource === ScrollSource.SCROLL_BAR_FLING) {
+            return; // 触摸/滚动条系来源：不缩放（单指拖=画布平移，绝不误触缩放）
+          }
+          // 上滚（yOffset<0）=放大 / 下滚=缩小；锚点=鼠标悬停处；速度=0.214.2 终态（1.02/0.98）
+          this.wheelZoomAt(yOffset < 0 ? 1.02 : 0.98);
+          return { xOffset: 0, yOffset: 0 }; // 全额吞掉——传感器永不真滚
         })
           }
           .width('100%')
