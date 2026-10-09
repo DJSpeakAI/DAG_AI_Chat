@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.example.dag_ai_chat",
     "vendor": "example",
-    "versionCode": 1000139, // ★ 0.212.1：回收站面板 UI 微调（红改品牌紫+面板缩小一号，用户拍板）
+    "versionCode": 1000140, // ★ 0.212.2：滑出删除改小巧圆钮（弃满高色块）+确认弹窗PC限宽400+规格入UI_GUIDELINES
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

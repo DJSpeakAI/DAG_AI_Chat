@@ -400,25 +400,32 @@ export struct KnowledgeBankPage {
   // ★ 0.212.0：卡片滑动露出的回收站删除面板（左滑右滑同款；点击走 requestDeleteCard 原确认弹窗
   //   链路不直接删）。swipeAction 场景内容静态，带参 @Builder 无刷新风险（0.190.1 铁律针对需随
   //   状态变化的渲染）
-  // ★ 0.212.1 用户拍板 UI 微调：不要红色（与暗紫 UI 不搭）→ 品牌紫 BRAND_PRIMARY；面板 76→56、
-  //   图标 24→20 收小一号（回收站符号本身已表意，无需大块头）
+  // ★ 0.212.1 用户拍板：不要红色 → 品牌紫 BRAND_PRIMARY
+  // ★ 0.212.2 用户拍板（PC 截图实锤）：满高色块太高太难看 → 改**小巧圆形按钮**（44×44 圆钮垂直
+  //   居中，回收站符号本身已表意）；规格已入 UI_GUIDELINES「列表滑动删除」
   @Builder
   swipeDeletePanel(c: KnowledgeCard) {
     Row() {
-      Image($r('app.media.trash'))
-        .width(20)
-        .height(20)
+      Column() {
+        Image($r('app.media.trash'))
+          .width(20)
+          .height(20)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
+      .backgroundColor(BRAND_PRIMARY)
+      .onClick(() => {
+        if (!this.multiSelectMode) {
+          this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
+        }
+      })
     }
     .justifyContent(FlexAlign.Center)
-    .width(56)
+    .width(72)
     .height('100%')
-    .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(BRAND_PRIMARY)
-    .onClick(() => {
-      if (!this.multiSelectMode) {
-        this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
-      }
-    })
   }
 
   // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）
@@ -1238,7 +1245,9 @@ export struct KnowledgeBankPage {
         .width('100%')
         .margin({ top: 16 })
       }
-      .width('86%')
+      // ★ 0.212.2 用户拍板（PC 截图实锤）：确认类弹窗 PC 上 86% 被拉得太宽、双按钮被拉长太难看——
+      //   平板/PC 固定 400（比编辑弹窗 520 窄一档，对话框惯例），手机维持 86%；规格入 UI_GUIDELINES
+      .width(this.isTablet ? 400 : '86%')
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)

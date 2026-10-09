@@ -142,6 +142,16 @@
 - **阴影：radius 20 / offsetY 8 / 黑 35%**
 - 竖排三按钮 40×40 圆角 10：放大 plus / 缩小 minus / 适应 maximize
 
+**11. 列表滑动删除面板（★ 0.212.2 用户定稿）**
+- **禁满高色块、禁红色大面板**——视觉走「显眼紫+小巧按钮」：44×44 **圆形**（borderRadius 22）品牌紫 BRAND_PRIMARY 底 + 白 trash 图标 20，垂直居中（外容器满高 Center，露出区域宽 72）
+- 左滑右滑均滑出（swipeAction start+end 双向挂 **ListItem**，该属性挂 Row 无效）
+- 点击不直接删——走确认弹窗链路
+
+**12. 确认类对话框（删除确认等）——宽高比定稿（★ 0.212.2）**
+- 宽度：**手机 86% / 平板与 PC 固定 400**（比编辑弹窗 520 窄一档；百分比宽度在宽屏会把双按钮拉成面条——0.212.2 用户实锤）
+- 结构：标题 16/600 → 勾选行（checkbox svg 20 + 13 说明字）→ 双按钮行（取消=透明底 TEXT_SECONDARY / 确认=DANGER 底 TEXT_PRIMARY，layoutWeight 等分，间距 12）
+- 内边距 20，圆角 RADIUS_NAV，底色 SURFACE_NODE，遮罩 OVERLAY
+
 ## 七、图标资源
 
 `PixsoUI/*/arkui/entry/src/main/resources/base/media/` 下 svg 可直接拷入工程 media/（描边风格 1.5px）：
