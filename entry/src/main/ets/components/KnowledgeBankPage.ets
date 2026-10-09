@@ -419,7 +419,8 @@ export struct KnowledgeBankPage {
     })
   }
 
-  // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）  openImagePreview(images: string[], index: number): void {
+  // ★ 0.211.0：打开列表图片全屏查看器（双击卡片里的图片触发）
+  openImagePreview(images: string[], index: number): void {
     this.previewImages = images;
     this.previewIndex = index;
     this.previewScale = 1;
