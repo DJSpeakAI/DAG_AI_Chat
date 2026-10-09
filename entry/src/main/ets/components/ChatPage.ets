@@ -1077,21 +1077,21 @@ export struct ChatPage {
           if (cb2) {
             cb2.messages = [...cb2.messages];
           }
+          this.scroller.scrollEdge(Edge.Bottom);
           this.saveTree();
-          this.requestEncourage();
-          recordStat(this.statStore, 'aiMsg', 0, 0);
+          recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens);
         },
         (error: string) => {
           this.isLoading = false;
           this.streamPhase = 0;
           this.streamController = null;
+          aiMsg.content = classifyStreamError(error); // ★ 0.216.0：错误气泡对齐云端链路（含端侧引导文案分类）
           const cb3 = this.currentBubble;
           if (cb3) {
-            cb3.messages = cb3.messages.slice(0, cb3.messages.length - 1); // 撤回占位
             cb3.messages = [...cb3.messages];
           }
+          this.scroller.scrollEdge(Edge.Bottom);
           this.saveTree();
-          this.getUIContext().getPromptAction().showToast({ message: error, duration: 4000 });
         }
       ) as StreamController;
       return;

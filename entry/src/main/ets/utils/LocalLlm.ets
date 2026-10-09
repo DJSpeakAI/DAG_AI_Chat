@@ -44,8 +44,15 @@ function flattenMessages(messages: ChatMessage[]): string {
   return `${text}[助手] `;
 }
 
-export interface LocalStreamHandle {
-  cancel(): void;
+/** 取消句柄（class 形态——ArkTS 对象字面量须对应显式 interface，class 实例彻底绕开 untyped-literal 检查） */
+export class LocalStreamHandle {
+  private cancelledFlag: () => void;
+  constructor(flag: () => void) {
+    this.cancelledFlag = flag;
+  }
+  cancel(): void {
+    this.cancelledFlag();
+  }
 }
 
 /**
@@ -59,11 +66,9 @@ export function localStreamChat(
   onError: (error: string) => void
 ): LocalStreamHandle {
   let cancelled = false;
-  const handle: LocalStreamHandle = {
-    cancel: (): void => {
-      cancelled = true;
-    }
-  };
+  const handle: LocalStreamHandle = new LocalStreamHandle((): void => {
+    cancelled = true;
+  });
   ensureOnDevice().then((ready: boolean) => {
     if (cancelled) {
       return;
