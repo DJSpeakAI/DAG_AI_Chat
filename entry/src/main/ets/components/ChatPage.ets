@@ -2095,6 +2095,32 @@ export struct ChatPage {
     return items;
   }
 
+  // ★ 0.218.5：消息滑出删除面板（对齐知识库/单词库终式：44×44 品牌紫圆钮+白 trash 图标 20，
+  //   外容器满高 Center 露出区宽 72；点击走 requestDeleteMessage 原确认链路）。swipeAction
+  //   场景内容静态，带参 @Builder 无刷新风险（0.190.1 铁律）
+  @Builder
+  swipeDeleteMessagePanel(msg: ChatMessage) {
+    Row() {
+      Column() {
+        Image($r('app.media.trash'))
+          .width(20)
+          .height(20)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
+      .backgroundColor(BRAND_PRIMARY)
+      .onClick(() => {
+        this.requestDeleteMessage(msg.messageId); // 先弹确认防误触（原 × 按钮链路）
+      })
+    }
+    .justifyContent(FlexAlign.Center)
+    .width(72)
+    .height('100%')
+  }
+
   // ★ 0.145：划词悬浮操作栏（bindSelectionMenu 自定义菜单——完全替代系统小艺菜单）
   @Builder
   SelectionToolbar() {
@@ -2671,18 +2697,8 @@ export struct ChatPage {
             ForEach(this.currentMessages, (msg: ChatMessage) => {
               ListItem() {
                 Row() {
-                  // ★ 0.147：AI 消息气泡贴右（0.145），删除按钮移到气泡左侧——否则 × 被挤到屏幕最右缘
-                  if (msg.role === 'assistant') {
-                    Button('×')
-                      .fontSize(16)
-                      .fontColor(DANGER)
-                      .backgroundColor(Color.Transparent)
-                      .padding({ left: 2, right: 2 }) // ★ 0.148：压掉 Button 默认大内边距（≈32vp），给气泡留宽度
-                      .margin({ right: 4 })
-                      .onClick(() => {
-                        this.requestDeleteMessage(msg.messageId); // ★ 0.150：先弹确认防误触
-                      })
-                  }
+                  // ★ 0.218.5 用户拍板：AI 消息常驻红 × 撤除——删除入口改为左滑露回收站圆钮面板
+                  //   （ListItem.swipeAction end 侧），点击走原确认链路
                   Column() {
                     // 图片缩略图（在文字上方）
                     if (msg.imageUrl.length > 0) {
@@ -3240,23 +3256,26 @@ export struct ChatPage {
                   }
                   .alignItems(msg.role === 'user' ? HorizontalAlign.Start : HorizontalAlign.End) // ★ 0.145：AI 回复气泡贴右（用户要求右对齐）；用户消息保持靠左
 
-                  // ★ 0.147：用户消息气泡靠左，删除按钮保持气泡右侧
-                  if (msg.role === 'user') {
-                    Button('×')
-                      .fontSize(16)
-                      .fontColor(DANGER)
-                      .backgroundColor(Color.Transparent)
-                      .padding({ left: 2, right: 2 }) // ★ 0.148：与 AI 分支 × 保持一致的紧凑内边距
-                      .onClick(() => {
-                        this.requestDeleteMessage(msg.messageId); // ★ 0.150：先弹确认防误触
-                      })
-                  }
+                  // ★ 0.218.5 用户拍板：用户消息常驻红 × 撤除——删除入口改为右滑露回收站圆钮面板
+                  //   （ListItem.swipeAction start 侧），点击走原确认链路
                 }
                 .width('100%')
                 .justifyContent(msg.role === 'user' ? FlexAlign.Start : FlexAlign.End)
                 // ★ 0.145：移除整行长按手势——划词改为长按气泡文本本身（bindSelectionMenu 自研悬浮栏），
-                // 原「选择文本/删除」二级弹窗随之移除（删除仍走 × 按钮）
+                // 原「选择文本/删除」二级弹窗随之移除
               }
+              // ★ 0.218.5 用户拍板：消息删除改滑出式，且**单向滑动**——用户消息（靠左）只能**右滑**露面板、
+              //   AI 消息（靠右）只能**左滑**露面板（面板出现在消息外侧空隙，不遮挡内容）；样式对齐知识库/
+              //   单词库终式（44×44 品牌紫圆钮+白 trash 20，外容器 72 满高 Center）；点击走原确认链路；
+              //   swipeAction start/end 传 undefined=该方向禁用滑动（用户消息禁左滑、AI 禁右滑）
+              .swipeAction({
+                start: msg.role === 'user' ? (): void => {
+                  this.swipeDeleteMessagePanel(msg)
+                } : undefined,
+                end: msg.role === 'assistant' ? (): void => {
+                  this.swipeDeleteMessagePanel(msg)
+                } : undefined
+              })
             }, (msg: ChatMessage) => msg.messageId)
           }
           .layoutWeight(1)
