@@ -351,6 +351,7 @@ export struct AppSideBar {
             this.onFolderClick(item.folder.id);
           })
           .bindContextMenuByResponseType([
+            { value: '新建文件夹', action: () => { this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = item.folder.id; } },
             { value: '移动', action: () => { this.folderNav.folderAction = 'move'; this.folderNav.folderActionId = item.folder.id; } },
             { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = item.folder.id; } },
             { value: '重命名', action: () => { this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = item.folder.id; this.folderNav.folderActionName = item.folder.name; } },

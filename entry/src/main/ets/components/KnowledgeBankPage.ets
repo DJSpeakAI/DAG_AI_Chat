@@ -162,7 +162,7 @@ export struct KnowledgeBankPage {
   // ── ★ 0.207.0：文件夹体系（anything 导入）状态 ──
   // ★ 0.220.0：currentFolderId 迁 KbFolderNavStore（AppStorageV2 共享 @Trace folderId）——
   //   边栏文件夹树与页内视图同源同步（边栏点文件夹=页内视图立即切换，同一 store 实例零桥接）
-  folderNav: KbFolderNavStore = connectKbFolderNav();
+  @Local folderNav: KbFolderNavStore = connectKbFolderNav(); // ★ 0.221.4：挂 @Local（@ObservedV2 实例须挂 @Local 才可靠响应 @Trace——0.221.3 弹窗操作不生效真凶）
   @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
   @Local createMenuVisible: boolean = false; // ★ 0.220.2：PC 右键/Pad 长按创建菜单开关
   @Local folderDialogIsRename: boolean = false;
@@ -1359,6 +1359,15 @@ export struct KnowledgeBankPage {
       this.showToast('名称不能为空');
       return;
     }
+
+    // ★ 0.221.4：边栏树右键「新建文件夹」——父级=右键的文件夹（folderActionId）
+    if (this.folderNav.folderAction === 'newfolder') {
+      addFolder(this.knowledgeBank, nm, this.folderNav.folderActionId);
+      this.folderNav.folderAction = '';
+      this.folderNav.folderActionId = '';
+      this.folderDialogVisible = false;
+      return;
+    }
     if (this.folderDialogIsRename) {
       renameFolder(this.knowledgeBank, this.folderDialogTargetId, nm);
     } else {
@@ -1678,6 +1687,7 @@ export struct KnowledgeBankPage {
   // ★ 0.220.2：PC 右键/Pad 长按创建菜单（两项：新卡片/新文件夹）——无参 @Builder 直读状态（0.190.1 铁律）
   @Builder
   kbCreateMenuBuilder() {
+    if (!this.multiSelectMode) {
     Column() {
       Text('创建新卡片')
         .fontSize(14)
@@ -1704,6 +1714,7 @@ export struct KnowledgeBankPage {
     }
     .width(160)
   }
+    }
 
   @Builder
   folderDialog() {
@@ -1730,6 +1741,7 @@ export struct KnowledgeBankPage {
             .fontColor(TEXT_SECONDARY)
             .onClick(() => {
               this.folderDialogVisible = false;
+              this.cancelFolderAction();
             })
           Button('确定')
             .layoutWeight(1)
@@ -1741,10 +1753,10 @@ export struct KnowledgeBankPage {
         }
         .margin({ top: 14 })
       }
-      .width('86%')
-      .padding(18)
-      .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .width(this.isTablet ? 520 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
     }
     .width('100%')
     .height('100%')
@@ -1752,6 +1764,7 @@ export struct KnowledgeBankPage {
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.folderDialogVisible = false;
+      this.cancelFolderAction();
     })
   }
 
@@ -1779,7 +1792,7 @@ export struct KnowledgeBankPage {
             })
           Button('删除')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(DANGER)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmFolderDelete();
@@ -1787,10 +1800,10 @@ export struct KnowledgeBankPage {
         }
         .margin({ top: 16 })
       }
-      .width('86%')
-      .padding(18)
-      .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .width(this.isTablet ? 400 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
     }
     .width('100%')
     .height('100%')
@@ -1838,10 +1851,10 @@ export struct KnowledgeBankPage {
         }
         .margin({ top: 14 })
       }
-      .width('86%')
-      .padding(18)
-      .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .width(this.isTablet ? 520 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
     }
     .width('100%')
     .height('100%')
@@ -1913,11 +1926,11 @@ export struct KnowledgeBankPage {
             this.cancelFolderAction();
           })
       }
-      .width('86%')
+      .width(this.isTablet ? 520 : '86%')
       .constraintSize({ maxHeight: '80%' })
-      .padding(18)
-      .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
     }
     .width('100%')
     .height('100%')
@@ -2635,7 +2648,7 @@ export struct KnowledgeBankPage {
           this.imagePreviewViewer()
         }
         // ★ 0.207.0：文件夹/导入/导出弹窗（最顶层）
-        if (this.folderDialogVisible) {
+        if (this.folderDialogVisible || this.folderNav.folderAction === 'newfolder') {
           this.folderDialog()
         }
         if (this.folderPickerVisible || this.folderNav.folderAction === 'move' || this.folderNav.folderAction === 'copy') {
