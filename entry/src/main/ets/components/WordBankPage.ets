@@ -50,6 +50,7 @@ export struct WordBankPage {
   @Local searchKeyword: string = '';
   @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
   @Local sortMenuVisible: boolean = false; // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母），点选项只切排序**不收起**（用户可连续切换），点遮罩才收起
+  @Local gridMode: boolean = false; // ★ 0.218.6 用户拍板：宽屏视图切换（false=横条列表 / true=方块网格）；仅宽屏显示切换入口，手机永远横条（用户拍板"手机上不做，看了舒服"）
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -583,6 +584,26 @@ export struct WordBankPage {
         .onClick(() => {
           this.sortMenuVisible = !this.sortMenuVisible;
         })
+      // ★ 0.218.6 用户拍板：宽屏视图切换（四宫格图标=方块网格 / 默认横条）——仅宽屏显示入口，
+      //   手机不做（用户"手机上现在的大小看着舒服，方块太拥挤"）；PC 拖窗口大小网格自动整齐重排
+      if (this.isTablet) {
+        Row() {
+          Image($r('app.media.grid'))
+            .width(20)
+            .height(20)
+            .objectFit(ImageFit.Contain)
+        }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .height(28)
+        .width(28)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.gridMode ? SURFACE_HOVER : Color.Transparent)
+        .margin({ right: 4 })
+        .onClick(() => {
+          this.gridMode = !this.gridMode;
+        })
+      }
       // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
       // ★ 0.195.0：⚙ emoji 换 settings.svg 单色图标（UI 统一——与边栏/ChatPage 顶栏同款）
       Row() {
@@ -1001,9 +1022,9 @@ export struct WordBankPage {
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
         Row() {
-          Text(this.deleteConfirmNoRemind ? '☑' : '☐')
-            .fontSize(18)
-            .fontColor(this.deleteConfirmNoRemind ? BRAND_PRIMARY : TEXT_TERTIARY)
+          Image(this.deleteConfirmNoRemind ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.218.6：☑/☐ 换 svg（0.212.0 漏网统一）
+            .width(20)
+            .height(20)
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
             })
@@ -1187,6 +1208,81 @@ export struct WordBankPage {
             .width('100%')
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
+          } else if (this.isTablet && this.gridMode) {
+            // ★ 0.218.6：方块网格视图（仅宽屏可切入）——WaterFlow 瀑布流 5 等列，拖窗口大小自动整齐重排；
+            //   网格卡交互=单击选中/双击编辑+长按多选（同横条）；滑动删除仅横条模式（网格下拖动与滑动冲突，
+            //   删除走长按多选批量）
+            WaterFlow() {
+              ForEach(this.filteredWords, (w: WordItem) => {
+                FlowItem() {
+                  Column() {
+                    Row({ space: 6 }) {
+                      Text(w.word)
+                        .fontSize(15)
+                        .fontWeight(600)
+                        .fontColor(TEXT_PRIMARY)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                      if (this.multiSelectMode) {
+                        Image(this.selectedIds.includes(w.id) ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off'))
+                          .width(18)
+                          .height(18)
+                      }
+                    }
+                    .width('100%')
+                    if (w.fullName.length > 0) {
+                      Text(w.fullName)
+                        .fontSize(11)
+                        .fontColor(BRAND_SECONDARY)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .margin({ top: 2 })
+                    }
+                    if (w.usPhonetic.length > 0) {
+                      Text(w.usPhonetic)
+                        .fontSize(11)
+                        .fontColor(TEXT_TERTIARY)
+                        .margin({ top: 2 })
+                    }
+                    Text(w.explain)
+                      .fontSize(12)
+                      .fontColor(TEXT_SECONDARY)
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .margin({ top: 2 })
+                    Text(this.nextReviewLabel(w))
+                      .fontSize(10)
+                      .fontColor(this.nextReviewColor(w))
+                      .margin({ top: 4 })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+                  .padding(12)
+                  .borderRadius(RADIUS_CONTROL)
+                  .backgroundColor(SURFACE_NODE)
+                  .borderColor(STROKE_CARD)
+                  .borderWidth(1)
+                  .onClick(() => {
+                    this.onItemTap(w);
+                  })
+                  .gesture(
+                    LongPressGesture()
+                      .onAction(() => {
+                        if (!this.multiSelectMode) {
+                          this.enterMultiSelect(w.id);
+                        }
+                      })
+                  )
+                }
+              }, (w: WordItem) => w.id)
+            }
+            .columnsTemplate('repeat(5, 1fr)')
+            .columnsGap(12)
+            .rowsGap(12)
+            .width('100%')
+            .layoutWeight(1)
+            .padding({ left: 16, right: 16, top: 12 })
           } else {
             List({ space: 8 }) {
               ForEach(this.filteredWords, (w: WordItem) => {
@@ -1196,9 +1292,9 @@ export struct WordBankPage {
                       // ★ 0.148: multi-select check indicator — an icon Text,
                       // NOT a Checkbox: the whole row handles tap-toggle and a
                       // real Checkbox would fire a second onChange
-                      Text(this.selectedIds.includes(w.id) ? '☑' : '☐')
-                        .fontSize(20)
-                        .fontColor(this.selectedIds.includes(w.id) ? BRAND_PRIMARY : TEXT_TERTIARY)
+                      Image(this.selectedIds.includes(w.id) ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.218.6：☑/☐ 换 svg（0.212.0 漏网统一）
+                        .width(20)
+                        .height(20)
                         .margin({ right: 8 })
                     }
                     // Entry text block: word -> fullName -> usPhonetic -> explain
