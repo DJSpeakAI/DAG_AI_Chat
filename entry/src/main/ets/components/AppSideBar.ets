@@ -13,37 +13,11 @@ import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHos
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
-import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.220.0：折叠态 store
+
 import { connectKnowledgeBank, addFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据+新建
-import { KnowledgeBankStore, KFolder, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store
+import { KnowledgeBankStore, KFolder, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
 
-// ★ 0.220.0：边栏六大模块折叠态（点「知识库」自动折叠出文件夹树；点折叠条手动展开；
-//   AppStorageV2 会话级记忆——切页面/重进知识库保持用户选择，不反复自动折叠）
-@ObservedV2
-export class SidebarSectionState {
-  @Trace collapsed: boolean = false;
-}
 
-export function connectSidebarSection(): SidebarSectionState {
-  return AppStorageV2.connect(SidebarSectionState, 'sidebar-section', () => new SidebarSectionState()) as SidebarSectionState;
-}
-
-// ★ 0.220.0：知识库文件夹导航（边栏树点击 ⇄ KnowledgeBankPage 视图，跨组件共享真相源）
-@ObservedV2
-export class KbFolderNavStore {
-  @Trace folderId: string = ''; // 当前视图文件夹（'' = 根目录）
-  @Trace nonce: number = 0; // 边栏点击递增（页面可感知事件；V1 直读 folderId 即响应）
-}
-
-export function connectKbFolderNav(): KbFolderNavStore {
-  return AppStorageV2.connect(KbFolderNavStore, 'kb-folder-nav', () => new KbFolderNavStore()) as KbFolderNavStore;
-}
-
-/** ★ 0.220.0：文件夹树平铺项（DFS 顺序+缩进深度） */
-export interface KFolderTreeItem {
-  folder: KFolder;
-  depth: number;
-}
 
 @ComponentV2
 export struct AppSideBar {

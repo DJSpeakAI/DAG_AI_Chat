@@ -298,3 +298,9 @@ export class SidebarSectionState {
 export function connectSidebarSection(): SidebarSectionState {
   return AppStorageV2.connect(SidebarSectionState, 'sidebar-section', () => new SidebarSectionState()) as SidebarSectionState;
 }
+
+/** ★ 0.220.0：文件夹树平铺项（DFS 顺序+缩进深度）——AppSideBar 边栏树渲染用 */
+export interface KFolderTreeItem {
+  folder: KFolder;
+  depth: number;
+}
