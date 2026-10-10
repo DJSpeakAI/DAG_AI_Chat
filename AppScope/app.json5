@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000189, // ★ 0.219.1：边栏把手精致化重设计（16×64 大块头→8×56 极细竖胶囊，去外框阴影三角）
+    "versionCode": 1000190, // ★ 0.219.2：单词库视图模式跨页面记忆（AppStorageV2）+知识库文件夹内新建卡片归当前文件夹（bug 根治）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

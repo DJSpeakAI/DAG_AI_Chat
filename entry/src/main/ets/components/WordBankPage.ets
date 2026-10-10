@@ -31,6 +31,7 @@ import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, r
 import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord } from '../utils/PackUtil';
 import { readTextFile } from '../utils/ImportUtil';
 import { fileIo, picker } from '@kit.CoreFileKit';
+import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.219.2：视图模式 store（跨页面记忆）
 import { track } from '../utils/TrackUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：下次复习时间标签（记忆算法）
 import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.1：发音语音包管理（listVoices 状态查询 + downloadVoice 应用内下载）
@@ -41,17 +42,30 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档�
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
 
+// ★ 0.219.2：单词库视图模式（AppStorageV2 共享 @Trace grid）——gridMode 从 @Local 改挂共享 store：
+//   页面组件销毁重建（切其他页面再回来）gridMode 不再还原成横条（用户实测反馈"要有这个记忆"）；
+//   AppStorageV2 会话级共享（跨页面保持；重启恢复默认横条可接受）
+@ObservedV2
+export class WordViewModeStore {
+  @Trace grid: boolean = false;
+}
+
+export function connectWordViewMode(): WordViewModeStore {
+  return AppStorageV2.connect(WordViewModeStore, 'word-view-mode', () => new WordViewModeStore()) as WordViewModeStore;
+}
+
 @ComponentV2
 export struct WordBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   wordBank: WordBankStore = connectWordBank(); // isolated PersistenceV2 instance
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.149：TTS config for pronunciation
+  viewMode: WordViewModeStore = connectWordViewMode(); // ★ 0.219.2：视图模式跨页面记忆
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
   @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
   @Local sortMenuVisible: boolean = false; // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母），点选项只切排序**不收起**（用户可连续切换），点遮罩才收起
-  @Local gridMode: boolean = false; // ★ 0.218.6 用户拍板：宽屏视图切换（false=横条列表 / true=方块网格）；仅宽屏显示切换入口，手机永远横条（用户拍板"手机上不做，看了舒服"）
+  // ★ 0.219.2：gridMode 已迁移至 viewMode.grid（AppStorageV2 共享 store，声明在组件外）——跨页面记忆
   @Local gridCols: number = 5; // ★ 0.218.8：网格列数随容器宽连续自适应（0.218.7 floor 170vp→0.218.8 round 均衡过渡——用户拍板"不要固定死档"，格宽在进位间连续缩放）
   @Local gridGap: number = 12; // ★ 0.218.8 用户拍板"间距跟着屏幕大小来排列"——间距随格宽连续缩放（8~14 连续区间）
 
@@ -611,10 +625,10 @@ export struct WordBankPage {
         .height(28)
         .width(28)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.gridMode ? SURFACE_HOVER : Color.Transparent)
+        .backgroundColor(this.viewMode.grid ? SURFACE_HOVER : Color.Transparent)
         .margin({ right: 4 })
         .onClick(() => {
-          this.gridMode = !this.gridMode;
+          this.viewMode.grid = !this.viewMode.grid;
         })
       }
       // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
@@ -1221,7 +1235,7 @@ export struct WordBankPage {
             .width('100%')
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-          } else if (this.gridMode && (this.isTablet || this.isPcDevice())) {
+          } else if (this.viewMode.grid && (this.isTablet || this.isPcDevice())) {
             // ★ 0.218.8 用户拍板"PC 窗口缩到手机一样宽也按 PC 规矩走"：条件从 isTablet 改为
             //   gridMode && (isTablet || isPcDevice)——PC（2in1 等设备档）窗口多窄都保持网格；
             //   真机手机 gridMode 恒 false（切换按钮不渲染）永不进本分支（手机横条既定设计不变）

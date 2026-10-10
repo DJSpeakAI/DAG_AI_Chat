@@ -315,7 +315,9 @@ export struct KnowledgeBankPage {
     if (this.editorIsAdd) {
       // addKnowledgeCard auto-fills id/createdAt; no duplicate check —
       // cards may legitimately share a title (0.146 spec)
-      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson, '', titleImagesJson));
+      // ★ 0.219.2 用户实测 bug 修复：新建卡片 folderId 曾写死空串（永落根目录）——用户双击进入
+      //   文件夹后新建，卡片理应归属**当前所在文件夹**（currentFolderId；'' = 根目录视图原样）
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson, this.currentFolderId, titleImagesJson));
     } else {
       updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, '', tags, imagesJson, titleImagesJson);
     }
