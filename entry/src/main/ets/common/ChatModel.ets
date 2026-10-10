@@ -1315,11 +1315,11 @@ function unionMergeFlatPool(localJson: string, cloudJson: string): string | null
   }
   const byId = new Map<string, BubbleNode>();
   local.nodeList.forEach((n: BubbleNode): void => {
-    byId.set(String(n.id), n);
+    byId.set(n.nodeID, n);
   });
   let hasNewFromCloud = false;
   cloud.nodeList.forEach((n: BubbleNode): void => {
-    const id = String(n.id);
+    const id = n.nodeID;
     if (!byId.has(id)) {
       hasNewFromCloud = true;
     }
