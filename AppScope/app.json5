@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000175, // ★ 0.217.0：包名切换 com.dagaichat.app + 端侧大模型全线回滚；更早历史见 MEMORY.md
+    "versionCode": 1000176, // ★ 0.217.1：登录 1001502003 修复（module.json5 client_id 换新应用 DAGAI oauth_client.client_id，包名切换漏换真凶）；0.217.0：包名切换+端侧回滚；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

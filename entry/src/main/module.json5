@@ -13,14 +13,14 @@
     "installationFree": false,
     "pages": "$profile:main_pages",
     // ★ 0.164：华为账号登录（Account Kit）需要配置 AGC 应用的 Client ID
-    // ★ 0.164.6 方向 B：v0.164.5 实测证伪「对齐 Profile 的 app-identifier」方案——6918742736119759756 系
-    //    DevEco 自动签名内部「调试应用」通道生成，非正常 AGC 应用、无有效 Client ID，对齐后仍报
-    //    「Invalid clientId or profile」。官方 1001502003 处理步骤=AGC 手动申请调试 Profile（绑定本应用
-    //    6917618071300773117）+ 手动签名。本版 client_id 改回本应用，配合手动申请的新 Profile 使用。
+    // ★ 0.217.1 包名切换补刀：client_id 6917618071300773117（旧应用）→ 6917618685526149144
+    //    （新应用 DAGAI 的 oauth_client.client_id）。0.164.6 结论仍成立：client_id 须为本应用
+    //    AGC ID + 手动申请的调试 Profile 配套；换包名后 client_id 没跟着换 = 登录 1001502003
+    //    复发真凶（Invalid clientId or profile）。
     "metadata": [
       {
         "name": "client_id",
-        "value": "6917618071300773117"
+        "value": "6917618685526149144"
       }
     ],
     "abilities": [
