@@ -417,6 +417,7 @@ struct CodeBlockView {
           .backgroundColor(BG_CANVAS)
           .borderRadius(RADIUS_CONTROL)
           .copyOption(CopyOptions.LocalDevice)
+          .bindContextMenu(this.codeToolbar, ResponseType.RightClick)
           .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
             onAppear: () => {
               this.onMenuAppear(this.textKey);
@@ -452,6 +453,7 @@ struct CodeBlockView {
             .backgroundColor(BG_CANVAS)
             .borderRadius(RADIUS_CONTROL)
             .copyOption(CopyOptions.LocalDevice)
+            .bindContextMenu(this.codeToolbar, ResponseType.RightClick)
             .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
               onAppear: () => {
                 this.onMenuAppear(this.textKey);
@@ -2713,6 +2715,7 @@ export struct ChatPage {
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '90%' }) // ★ 0.190.3：气泡最大宽度 85%→90%（用户要求对话列表再加宽一点点）；0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
+                          .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                             onAppear: () => {
                               this.selKey = `${msg.messageId}|u`;
@@ -2769,6 +2772,7 @@ export struct ChatPage {
                                 .fontColor(TEXT_PRIMARY)
                                 .copyOption(CopyOptions.LocalDevice)
                                 // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
+                                .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                                 .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                                   onAppear: () => {
                                     this.selKey = `${msg.messageId}|${idx}`;
@@ -2873,6 +2877,7 @@ export struct ChatPage {
                                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                                           .textAlign(TextAlign.Center)
                                           .copyOption(CopyOptions.LocalDevice)
+                                          .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                                             onAppear: () => {
                                               this.selKey = `${msg.messageId}|t${idx}h${ci}`;
@@ -2918,6 +2923,7 @@ export struct ChatPage {
                                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                                             .textAlign(TextAlign.Center)
                                             .copyOption(CopyOptions.LocalDevice)
+                                            .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                                             .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                                               onAppear: () => {
                                                 this.selKey = `${msg.messageId}|t${idx}r${ri}c${ci}`;
@@ -2991,6 +2997,7 @@ export struct ChatPage {
                                         .onClick(() => {
                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                         })
+                                        .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rw${idx}`;
@@ -3031,6 +3038,7 @@ export struct ChatPage {
                                         .maxLines(1)
                                         .margin({ top: 1 })
                                         .copyOption(CopyOptions.LocalDevice)
+                                        .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rwf${idx}`;
@@ -3050,6 +3058,7 @@ export struct ChatPage {
                                       .maxLines(1)
                                       .margin({ top: 2 })
                                       .copyOption(CopyOptions.LocalDevice)
+                                      .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                       .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                         onAppear: () => {
                                           this.selKey = `${msg.messageId}|rwe${idx}`;
@@ -3114,6 +3123,7 @@ export struct ChatPage {
                                          .onClick(() => {
                                            this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                          })
+                                         .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                          .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rk${idx}`;
@@ -3151,6 +3161,7 @@ export struct ChatPage {
                                       .maxLines(1)
                                       .margin({ top: 2 })
                                       .copyOption(CopyOptions.LocalDevice)
+                                      .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                       .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                         onAppear: () => {
                                           this.selKey = `${msg.messageId}|rkd${idx}`;
@@ -4167,6 +4178,7 @@ export struct ChatPage {
                     .borderRadius(RADIUS_CONTROL)
                     .width('100%')
                     .copyOption(CopyOptions.LocalDevice)
+                    .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                     .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                       onAppear: () => {
                         this.selKey = 'cz|w';
@@ -4199,6 +4211,7 @@ export struct ChatPage {
                       .backgroundColor(BG_CANVAS)
                       .borderRadius(RADIUS_CONTROL)
                       .copyOption(CopyOptions.LocalDevice)
+                      .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                       .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                         onAppear: () => {
                           this.selKey = 'cz|s';
@@ -4319,6 +4332,7 @@ export struct ChatPage {
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .textAlign(TextAlign.Center)
                           .copyOption(CopyOptions.LocalDevice)
+                          .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                             onAppear: () => {
                               this.selKey = `tzh${ci}`;
@@ -4351,6 +4365,7 @@ export struct ChatPage {
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                             .textAlign(TextAlign.Center)
                             .copyOption(CopyOptions.LocalDevice)
+                            .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                             .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                               onAppear: () => {
                                 this.selKey = `tzr${ri}c${ci}`;

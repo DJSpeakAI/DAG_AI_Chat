@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000181, // ★ 0.218.3：单词库左滑右滑删除面板（对齐知识库终式）+三排序按钮合并为排序入口（弹层连续切换不收起）
+    "versionCode": 1000182, // ★ 0.218.4：单词库删除确认弹窗限宽400（对齐知识库）+气泡树/划词 PC 右键菜单
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

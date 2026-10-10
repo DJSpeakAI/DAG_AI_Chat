@@ -1148,6 +1148,14 @@ export struct BBTreeCanvas {
                 this.menuVisible = true;
               })
           )
+          // ── ★ 0.218.4：PC 右键弹同款菜单（用户拍板：PC 用户习惯右键，长按是触屏交互；
+          //    右键与长按弹同一三选项菜单，功能零差异） ──
+          .onMouse((event: MouseEvent) => {
+            if (event.action === MouseAction.Press && event.button === MouseButton.Right) {
+              this.menuNodeId = bubble.nodeID;
+              this.menuVisible = true;
+            }
+          })
         }, (bubble: BubbleNode) => bubble.nodeID)
 
         // ── ★ 0.200.0：选择模式变暗层 + L3 飞行卡片（与气泡同层 = 画布坐标系零换算）──

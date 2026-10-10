@@ -1040,7 +1040,8 @@ export struct WordBankPage {
         .width('100%')
         .margin({ top: 16 })
       }
-      .width('86%')
+      // ★ 0.218.4 用户拍板：删除确认弹窗对齐知识库（PC 上 86% 太宽）——确认类对话框 400 定式
+      .width(this.isTablet ? 400 : '86%')
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
@@ -1084,7 +1085,8 @@ export struct WordBankPage {
         .width('100%')
         .margin({ top: 20 })
       }
-      .width('86%')
+      // ★ 0.218.4：批量删除确认同属确认类对话框——400 定式（对齐 UI_GUIDELINES 六-12）
+      .width(this.isTablet ? 400 : '86%')
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
