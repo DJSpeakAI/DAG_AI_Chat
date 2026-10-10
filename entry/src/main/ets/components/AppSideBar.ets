@@ -15,7 +15,7 @@ import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
 import { connectKnowledgeBank, addFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据+新建
-import { KnowledgeBankStore, KFolder, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
+import { KnowledgeBankStore, KFolder, KFolderTreeItem, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
 
 
 
