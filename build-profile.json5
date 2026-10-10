@@ -7,11 +7,11 @@
         "material": {
           "certpath": "./signing/default_dag_ai_chat.cer",
           "keyAlias": "dagai_debug_key",
-          "keyPassword": "Dagai2026!Dagai2026!Dagai2026!Dagai2026!",
-          "profile": "./signing/dag_ai_chat_debugDebug.p7b", // ★ 包名切换（2026-10-10）：新三件套（com.dagaichat.app，app-identifier=6917618685526149144）；密码=40字符明文（hvigor 校验长度≥32，DevEco密文免了）
+          "keyPassword": "00000038E8873CEC0D8DC8B9493E4B268B6BD509B5AD1F8265054203F791B77CA898DB3961F0249AF796D7C7129D14268688BD6308B9E2A448D2C88A5CFA02BFDB246E4E8385E592",
+          "profile": "./signing/dag_ai_chat_debugDebug.p7b", // ★ 包名切换（2026-10-10）：新三件套（com.dagaichat.app，app-identifier=6917618685526149144）；密码=DecipherUtil逆向脚本生成合法密文（key派生自signing/material，AES-128-GCM）
           "signAlg": "SHA256withECDSA",
           "storeFile": "./signing/default_dag_ai_chat.p12",
-          "storePassword": "Dagai2026!Dagai2026!Dagai2026!Dagai2026!"
+          "storePassword": "000000380A8FD28F9CE27E90A1C429F1814834BBB8D2D71AEEB7BE133D180FC822D9C6E2A8A06448CFD1E856CBCF66B71705ED5393CBD4F2662DC3FF2FAC5B69E4270F5DBE3B8784"
         }
       }
     ],
