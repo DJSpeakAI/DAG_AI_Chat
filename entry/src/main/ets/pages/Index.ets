@@ -179,7 +179,12 @@ struct Index {
     if (kind === 'wordbank') {
       this.pathStack.pushPath({ name: 'WordBankPage' });
     } else if (kind === 'knowledge') {
-      this.kbSection.collapsed = true; // ★ 0.220.0 用户拍板：点「知识库」自动折叠六大模块（出文件夹树；手动展开后记忆保持，再点知识库才再折叠）
+      // ★ 0.220.1 用户拍板终版：进知识库=首次自动配置默认态（导航收起+文件夹展开）；用户手动改动后 autoConfigured=true 不再自动干预（"用户自己选择+记忆"）
+      if (!this.kbSection.autoConfigured) {
+        this.kbSection.navExpanded = false;
+        this.kbSection.folderExpanded = true;
+        this.kbSection.autoConfigured = true;
+      }
       this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
     } else if (kind === 'review') {
       this.pathStack.pushPath({ name: 'ReviewPage' }); // ★ 0.196.1：知识复习页（Anki 式单卡）
@@ -338,6 +343,7 @@ struct Index {
           Column() {
             AppSideBar({
               currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
+              wideScreen: this.isTablet, // ★ 0.220.1：宽屏形态（知识库页边栏=折叠形态）
               settingsOpen: this.globalSettingsVisible,
               onNavClick: (kind: string) => {
                 this.sideBarNav(kind);

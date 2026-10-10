@@ -29,6 +29,7 @@ export struct AppSideBar {
   //   BBTreeCanvas 手机抽屉形态固定传 'BBTreeCanvas'（抽屉只能从画布唤出，人就在画布上）
   @Param currentRoute: string = '';
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
+  @Param wideScreen: boolean = false; // ★ 0.220.1：宽屏形态（宿主传 isTablet）——宽屏知识库页边栏=折叠形态（导航+文件夹树双区块）；手机抽屉传 false=六大常显原样
   account: HuaweiAccountStore = connectHuaweiAccount();
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
   // ★ 0.220.0：知识库折叠态+文件夹树
@@ -260,47 +261,53 @@ export struct AppSideBar {
       .alignItems(VerticalAlign.Center)
       .margin({ top: 20, bottom: 24 })
 
-      // ── 导航项：气泡树（主）/ 单词库 / 知识库 / 复习 / 统计 / 账单 ──
-      // ★ 0.220.0 用户拍板：点「知识库」→ 六大模块自动折叠成「导航」窄条（下方出文件夹树）；
-      //   点折叠条手动展开；折叠态 AppStorageV2 记忆（切页面/重进知识库保持用户选择）
-      if (!this.kbSection.collapsed) {
+      // ── 导航区（★ 0.220.1 用户拍板终版：两区块独立收放——「导航」归导航、「文件夹」归文件夹）──
+      //   宽屏知识库页=折叠形态：「导航」条（点击切换六大模块展开/收起，箭头随态）+「文件夹」标题行
+      //   （点击切换树收放）——两者独立、状态 AppStorageV2 记忆（切页面/重进保持用户选择）；
+      //   非知识库页或手机抽屉=六大模块常显原样（进入知识库由 sideBarNav 首次自动配置默认态）
+      const kbFolded: boolean = this.wideScreen && this.currentRoute === 'KnowledgeBankPage';
+      if (!kbFolded || this.kbSection.navExpanded) {
         this.SideBarNavItem('canvas')
         this.SideBarNavItem('wordbank')
         this.SideBarNavItem('knowledge')
         this.SideBarNavItem('review') // ★ 0.196.1：知识复习（用户定稿：知识库下方）
         this.SideBarNavItem('statistics')
         this.SideBarNavItem('billing')
-      } else {
-        // 折叠条：「导航」+ 展开箭头——点击恢复六大模块（用户手动选择，记忆保持）
+      }
+      if (kbFolded) {
+        // 「导航」条：点击切换六大模块展开/收起（箭头随态：收起='▸'可展开 / 展开='▾'可收起）
         Row() {
           Text('导航')
             .fontSize(FONT_SIZE_NAV_LABEL)
             .fontFamily(FONT_INTER_SEMIBOLD)
             .fontColor(TEXT_PRIMARY)
           Blank()
-          Text('›')
-            .fontSize(14)
+          Text(this.kbSection.navExpanded ? '▾' : '▸')
+            .fontSize(12)
             .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
-        .height(40)
+        .height(36)
         .padding({ left: 12, right: 12 })
         .borderRadius(RADIUS_NAV)
         .backgroundColor(SURFACE_SOFT)
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
-          this.kbSection.collapsed = false;
+          this.kbSection.navExpanded = !this.kbSection.navExpanded;
         })
       }
 
-      // ── ★ 0.220.0：文件夹树区（折叠态+当前在知识库页时显示）──
-      if (this.kbSection.collapsed && this.currentRoute === 'KnowledgeBankPage') {
+      // ── ★ 0.220.1：文件夹树区（折叠形态+当前在知识库页时显示；标题行点击切换树收放——独立于导航区）──
+      if (kbFolded) {
         Row({ space: 6 }) {
           Text('文件夹')
             .fontSize(FONT_SIZE_CAPTION)
             .fontFamily(FONT_INTER_SEMIBOLD)
             .fontColor(TEXT_TERTIARY)
           Blank()
+          Text(this.kbSection.folderExpanded ? '▾' : '▸')
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
           Text('+')
             .fontSize(16)
             .fontColor(BRAND_SECONDARY)
@@ -310,7 +317,10 @@ export struct AppSideBar {
         }
         .width('100%')
         .padding({ left: 12, right: 8, top: 10, bottom: 4 })
-        if (this.folderInputVisible) {
+        .onClick(() => {
+          this.kbSection.folderExpanded = !this.kbSection.folderExpanded; // ★ 0.220.1：树独立收放（标题行点击）
+        })
+        if (this.kbSection.folderExpanded) {
           Row({ space: 6 }) {
             TextInput({ text: this.folderInputText, placeholder: '新文件夹名' })
               .fontSize(12)

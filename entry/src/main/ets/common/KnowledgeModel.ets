@@ -292,7 +292,9 @@ export function connectKbFolderNav(): KbFolderNavStore {
 //   AppStorageV2 会话级记忆——切页面/重进知识库保持用户选择，不反复自动折叠）
 @ObservedV2
 export class SidebarSectionState {
-  @Trace collapsed: boolean = false;
+  @Trace navExpanded: boolean = true;    // ★ 0.220.1：六大模块展开态（进知识库首次自动收起；用户手动展开后保持=记忆，"用户自己选择"）
+  @Trace folderExpanded: boolean = true; // ★ 0.220.1：文件夹树展开态（默认展开；点「文件夹」标题行独立收放——导航归导航文件夹归文件夹）
+  @Trace autoConfigured: boolean = false; // ★ 0.220.1：进知识库首次自动配置标记（仅首次收起六大+展开树；此后不再自动干预）
 }
 
 export function connectSidebarSection(): SidebarSectionState {

@@ -1608,41 +1608,9 @@ export struct KnowledgeBankPage {
   }
 
   // ============================================================
-  // ★ 0.207.0：builders——面包屑 / 文件夹弹窗 / 目标选择 / 导入预览
+  // ★ 0.207.0：builders——文件夹弹窗 / 目标选择 / 导入预览（面包屑 0.219.2 起被边栏文件夹树取代删除）
   // ============================================================
 
-  @Builder
-  folderBreadcrumb() {
-    Scroll() {
-      Row() {
-        Text('知识库')
-          .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
-          .onClick(() => {
-            this.folderNav.folderId = '';
-          })
-        ForEach(this.currentChain, (f: KFolder, idx: number) => {
-          Text(' › ')
-            .fontSize(12)
-            .fontColor(TEXT_TERTIARY)
-          Text(f.name)
-            .fontSize(13)
-            .fontColor(idx === this.currentChain.length - 1 ? TEXT_PRIMARY : BRAND_SECONDARY)
-            .maxLines(1)
-            .onClick(() => {
-              this.folderNav.folderId = f.id;
-            })
-        }, (f: KFolder) => f.id)
-      }
-      .padding({ left: 16, right: 16, top: 2, bottom: 2 })
-    }
-    .scrollable(ScrollDirection.Horizontal) // ★ API26 Scroll 构造只收 Scroller——水平滚动用 scrollable 属性
-    .width('100%')
-    .align(Alignment.Start)
-  }
-
-  @Builder
-  folderDialog() {
     Column() {
       Column() {
         Text(this.folderDialogIsRename ? '重命名文件夹' : '新建文件夹')
@@ -2101,12 +2069,6 @@ export struct KnowledgeBankPage {
         Column() {
           this.topBar()
 
-          // ★ 0.207.0：面包屑（非根目录显示；点级名跳转，点「知识库」回根）
-          if (this.folderNav.folderId.length > 0) {
-            this.folderBreadcrumb()
-          }
-
-          if (!this.multiSelectMode) {
             // ★ 0.148: search box + sort toggle (live filtering via @Computed)
             Row() {
               TextInput({ text: this.searchKeyword, placeholder: '搜索标题 / 内容' })
