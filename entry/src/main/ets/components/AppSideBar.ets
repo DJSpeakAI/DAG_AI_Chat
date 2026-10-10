@@ -14,7 +14,7 @@ import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
-import { connectKnowledgeBank, addFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据+新建
+import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
 import { KnowledgeBankStore, KFolder, KFolderTreeItem, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
 
 
@@ -37,8 +37,6 @@ export struct AppSideBar {
   folderNav: KbFolderNavStore = connectKbFolderNav();
   kbStore: KnowledgeBankStore = connectKnowledgeBank();
   @Local selFolderId: string = ''; // 树内选中文件夹（新建子文件夹的父级）
-  @Local folderInputVisible: boolean = false; // 新建文件夹输入行
-  @Local folderInputText: string = '';
 
   /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
   kbFolderTreeItems(): KFolderTreeItem[] {
@@ -57,14 +55,6 @@ export struct AppSideBar {
   }
 
   /** ★ 0.220.0：树内新建文件夹（父级=树内选中项；未选中=根）。空名忽略；成功后选中新文件夹 */
-  commitNewFolder(): void {
-    const newId = addFolder(this.kbStore, this.folderInputText, this.selFolderId);
-    if (newId.length > 0) {
-      this.selFolderId = newId;
-      this.folderInputText = '';
-      this.folderInputVisible = false;
-    }
-  }
 
   /** ★ 0.220.0：树内卡片计数（直算，与页内 folderCardCount 同口径） */
   kbCardCount(folderId: string): number {
@@ -266,16 +256,8 @@ export struct AppSideBar {
       //   （点击切换树收放）——两者独立、状态 AppStorageV2 记忆（切页面/重进保持用户选择）；
       //   非知识库页或手机抽屉=六大模块常显原样（进入知识库由 sideBarNav 首次自动配置默认态）
       // （kbFolded 条件内联于下方两处 if——build 内禁 const 局部声明，0.220.1 编译实锤）
-      if (!this.wideScreen || this.currentRoute !== 'KnowledgeBankPage' || this.kbSection.navExpanded) {
-        this.SideBarNavItem('canvas')
-        this.SideBarNavItem('wordbank')
-        this.SideBarNavItem('knowledge')
-        this.SideBarNavItem('review') // ★ 0.196.1：知识复习（用户定稿：知识库下方）
-        this.SideBarNavItem('statistics')
-        this.SideBarNavItem('billing')
-      }
       if (this.wideScreen && this.currentRoute === 'KnowledgeBankPage') {
-        // 「导航」条：点击切换六大模块展开/收起（箭头随态：收起='▸'可展开 / 展开='▾'可收起）
+        // 「导航」条（顶部——0.220.2 用户拍板：展开时也放在上面）：点击切换六大模块展开/收起
         Row() {
           Text('导航')
             .fontSize(FONT_SIZE_NAV_LABEL)
@@ -292,54 +274,23 @@ export struct AppSideBar {
         .borderRadius(RADIUS_NAV)
         .backgroundColor(SURFACE_SOFT)
         .alignItems(VerticalAlign.Center)
+        .margin({ bottom: 6 })
         .onClick(() => {
           this.kbSection.navExpanded = !this.kbSection.navExpanded;
         })
       }
+      if (!this.wideScreen || this.currentRoute !== 'KnowledgeBankPage' || this.kbSection.navExpanded) {
+        this.SideBarNavItem('canvas')
+        this.SideBarNavItem('wordbank')
+        this.SideBarNavItem('knowledge')
+        this.SideBarNavItem('review') // ★ 0.196.1：知识复习（用户定稿：知识库下方）
+        this.SideBarNavItem('statistics')
+        this.SideBarNavItem('billing')
+      }
 
       // ── ★ 0.220.1：文件夹树区（折叠形态+当前在知识库页时显示；标题行点击切换树收放——独立于导航区）──
       if (this.wideScreen && this.currentRoute === 'KnowledgeBankPage') {
-        Row({ space: 6 }) {
-          Text('文件夹')
-            .fontSize(FONT_SIZE_CAPTION)
-            .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_TERTIARY)
-          Blank()
-          Text(this.kbSection.folderExpanded ? '▾' : '▸')
-            .fontSize(11)
-            .fontColor(TEXT_TERTIARY)
-          Text('+')
-            .fontSize(16)
-            .fontColor(BRAND_SECONDARY)
-            .onClick(() => {
-              this.folderInputVisible = !this.folderInputVisible;
-            })
-        }
-        .width('100%')
-        .padding({ left: 12, right: 8, top: 10, bottom: 4 })
-        .onClick(() => {
-          this.kbSection.folderExpanded = !this.kbSection.folderExpanded; // ★ 0.220.1：树独立收放（标题行点击）
-        })
-        if (this.kbSection.folderExpanded) {
-          Row({ space: 6 }) {
-            TextInput({ text: this.folderInputText, placeholder: '新文件夹名' })
-              .fontSize(12)
-              .height(32)
-              .layoutWeight(1)
-              .backgroundColor(SURFACE_SOFT)
-              .onChange((v: string) => {
-                this.folderInputText = v;
-              })
-            Text('添加')
-              .fontSize(12)
-              .fontColor(BRAND_SECONDARY)
-              .onClick(() => {
-                this.commitNewFolder();
-              })
-          }
-          .width('100%')
-          .padding({ left: 8, right: 8, top: 2, bottom: 4 })
-        }
+        Column() {
         // 「全部卡片」= 根目录视图入口
         Row({ space: 8 }) {
           Text('全部卡片')

@@ -164,6 +164,7 @@ export struct KnowledgeBankPage {
   //   边栏文件夹树与页内视图同源同步（边栏点文件夹=页内视图立即切换，同一 store 实例零桥接）
   folderNav: KbFolderNavStore = connectKbFolderNav();
   @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
+  @Local createMenuVisible: boolean = false; // ★ 0.220.2：PC 右键/Pad 长按创建菜单开关
   @Local folderDialogIsRename: boolean = false;
   @Local folderDialogTargetId: string = '';
   @Local folderDialogName: string = '';
@@ -1610,6 +1611,35 @@ export struct KnowledgeBankPage {
   // ============================================================
   // ★ 0.207.0：builders——面包屑 / 文件夹弹窗 / 目标选择 / 导入预览
   // ============================================================
+  // ★ 0.220.2：PC 右键/Pad 长按创建菜单（两项：新卡片/新文件夹）——无参 @Builder 直读状态（0.190.1 铁律）
+  @Builder
+  kbCreateMenuBuilder() {
+    Column() {
+      Text('创建新卡片')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.createMenuVisible = false;
+          this.openAddEditor();
+        })
+      Divider().color(STROKE_CARD)
+      Text('创建新文件夹')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.createMenuVisible = false;
+          this.folderDialogVisible = true;
+          this.folderDialogIsRename = false;
+        })
+    }
+    .width(160)
+  }
 
   @Builder
   folderDialog() {
@@ -2500,6 +2530,26 @@ export struct KnowledgeBankPage {
         }
       }
       .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
+      // ★ 0.220.2 用户拍板：PC 右键 / Pad 长按空白 → 弹「创建新卡片 / 创建新文件夹」菜单
+      //   （bindContextMenu 跟随鼠标右键；bindPopup 供长按唤起——点选项执行、点遮罩收起；
+      //    触屏设备 RightClick 响应=长按，与 LongPressGesture 双通道等效冗余）
+      .bindContextMenu(this.kbCreateMenuBuilder, ResponseType.RightClick)
+      .bindPopup(this.createMenuVisible, {
+        builder: this.kbCreateMenuBuilder(),
+        placement: Placement.Center,
+        popupColor: SURFACE_NODE,
+        radius: 12,
+        mask: { color: 'rgba(0,0,0,0.3)' },
+        onStateChange: (e: PopupStateChangeParam) => {
+          this.createMenuVisible = e.isVisible;
+        }
+      })
+      .gesture(
+        LongPressGesture({ duration: 500 })
+          .onAction(() => {
+            this.createMenuVisible = true;
+          })
+      )
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
