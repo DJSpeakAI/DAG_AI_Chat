@@ -52,9 +52,8 @@ export struct WordBankPage {
   @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
   @Local sortMenuVisible: boolean = false; // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母），点选项只切排序**不收起**（用户可连续切换），点遮罩才收起
   @Local gridMode: boolean = false; // ★ 0.218.6 用户拍板：宽屏视图切换（false=横条列表 / true=方块网格）；仅宽屏显示切换入口，手机永远横条（用户拍板"手机上不做，看了舒服"）
-  @Local gridCols: number = 5; // ★ 0.218.8：网格列数随容器宽连续自适应（round 均衡过渡，格宽连续缩放）
+  @Local gridCols: number = 5; // ★ 0.218.8：网格列数随容器宽连续自适应（0.218.7 floor 170vp→0.218.8 round 均衡过渡——用户拍板"不要固定死档"，格宽在进位间连续缩放）
   @Local gridGap: number = 12; // ★ 0.218.8 用户拍板"间距跟着屏幕大小来排列"——间距随格宽连续缩放（8~14 连续区间）
-  @Local gridCols: number = 5; // ★ 0.218.7：网格列数随容器宽自适应（0.218.6 写死 5 列——窗口拖小时每格被挤到 ~100vp 内容全变形=用户截图"排列乱码"；改 onAreaChange 动态算列，每格保底 170vp 最窄 2 列）
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
