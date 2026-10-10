@@ -2210,6 +2210,8 @@ export struct KnowledgeBankPage {
             .justifyContent(FlexAlign.Center)
           } else {
             List({ space: 8 }) {
+              ForEach(this.filteredCards, (c: KnowledgeCard) => {
+                ListItem() {
                   Row() {
                     if (this.multiSelectMode) {
                       // ★ 0.148: multi-select check indicator — an icon Text,

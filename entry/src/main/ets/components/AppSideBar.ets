@@ -65,6 +65,7 @@ export struct AppSideBar {
       }
     }
     return n;
+  }
 
   /** ★ 0.220.2：边栏树删除文件夹（卡片移到上一级；当前视图文件夹被删则视图回退到其父级） */
   deleteTreeFolder(f: KFolder): void {
@@ -74,7 +75,6 @@ export struct AppSideBar {
       this.folderNav.folderId = parentId;
     }
     this.getUIContext().getPromptAction().showToast({ message: `已删除「${f.name}」——卡片已移到上一级`, duration: 2000 });
-  }
   }
 
   /** ★ 0.195.0：导航项高亮判定——当前路由映射（ChatPage/AnnotationPage 是气泡树子页，归气泡树） */
