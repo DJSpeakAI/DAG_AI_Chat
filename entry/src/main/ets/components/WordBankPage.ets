@@ -49,6 +49,7 @@ export struct WordBankPage {
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
   @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
+  @Local sortMenuVisible: boolean = false; // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母），点选项只切排序**不收起**（用户可连续切换），点遮罩才收起
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -365,6 +366,84 @@ export struct WordBankPage {
 
   // ---- single delete (session-level no-remind) ----
 
+  // ★ 0.218.3：「排序」按钮文字=当前模式名+方向箭头（合并三按钮后保留一眼可读性）
+  sortText(): string {
+    if (this.sortMode === 1) return '最新 ↑';
+    if (this.sortMode === 2) return '需复习 ↑';
+    if (this.sortMode === 3) return '需复习 ↓';
+    if (this.sortMode === 4) return '字母 ↑';
+    if (this.sortMode === 5) return '字母 ↓';
+    return '最新 ↓';
+  }
+
+  // ★ 0.218.3：排序选项菜单（bindPopup 自定义 builder）——无参 @Builder 内部直读 sortMode
+  //   （0.190.1 铁律）；三项=最新/需复习/字母，各带当前方向箭头，激活项品牌紫高亮；
+  //   点击只改 sortMode **不收起**（用户拍板：连续切换不退弹层，点遮罩才收）
+  @Builder
+  sortMenuBuilder() {
+    Column() {
+      Text(this.sortMode === 1 ? '最新 ↑' : '最新 ↓')
+        .fontSize(14)
+        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.sortMode = this.sortMode === 0 ? 1 : 0;
+        })
+      Divider().color(STROKE_CARD)
+      Text(this.sortMode === 3 ? '需复习 ↓' : '需复习 ↑')
+        .fontSize(14)
+        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.sortMode = this.sortMode === 2 ? 3 : 2;
+        })
+      Divider().color(STROKE_CARD)
+      Text(this.sortMode === 5 ? '字母 ↓' : '字母 ↑')
+        .fontSize(14)
+        .fontColor(this.sortMode === 4 || this.sortMode === 5 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.sortMode = this.sortMode === 4 ? 5 : 4;
+        })
+    }
+    .width(160)
+  }
+
+  // ★ 0.218.3：卡片滑动露出的回收站删除面板（左滑右滑同款，对齐知识库 0.212.2 终式：
+  //   44×44 品牌紫圆钮+白 trash 图标 20，外容器满高 Center 露出区宽 72；点击走 requestDeleteWord
+  //   原确认弹窗链路不直接删；多选中点击 guard 无动作）。swipeAction 场景内容静态，带参 @Builder
+  //   无刷新风险（0.190.1 铁律针对需随状态变化的渲染）
+  @Builder
+  swipeDeletePanel(w: WordItem) {
+    Row() {
+      Column() {
+        Image($r('app.media.trash'))
+          .width(20)
+          .height(20)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .width(44)
+      .height(44)
+      .borderRadius(22)
+      .backgroundColor(BRAND_PRIMARY)
+      .onClick(() => {
+        if (!this.multiSelectMode) {
+          this.requestDeleteWord(w);
+        }
+      })
+    }
+    .justifyContent(FlexAlign.Center)
+    .width(72)
+    .height('100%')
+  }
+
   requestDeleteWord(w: WordItem): void {
     if (this.skipDeleteConfirm) {
       removeWordFromBank(this.wordBank, w.id);
@@ -482,38 +561,27 @@ export struct WordBankPage {
         })
       Blank()
         .layoutWeight(1)
-      // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
-      //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
-      Button(this.sortMode === 1 ? '最新↑' : '最新↓')
+      // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母）；
+      //   点选项只切排序不收起（用户可连续切换，点遮罩才收）；按钮文字随当前模式实时变（含方向箭头）
+      Button(this.sortText())
         .fontSize(12)
-        .height(28) // ★ 0.195.0：排序按钮高度缩小与右侧 ⚙ 图标对齐（用户实测太高）
-        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
-        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_TERTIARY)
-        .padding({ left: 8, right: 4 })
-        .margin({ right: 2 })
-        .onClick(() => {
-          this.sortMode = this.sortMode === 0 ? 1 : 0;
-        })
-      Button(this.sortMode === 3 ? '需复习↓' : '需复习↑')
-        .fontSize(12)
-        .height(28) // ★ 0.195.0：高度对齐 ⚙
-        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? SURFACE_HOVER : Color.Transparent) // ★ 0.195.0 bugfix：>=2 → ===2||===3（字母模式 4/5 时误亮，用户实测互斥失效）
-        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_TERTIARY)
-        .padding({ left: 8, right: 4 })
+        .height(28)
+        .backgroundColor(this.sortMode !== 0 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode !== 0 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .padding({ left: 8, right: 8 })
         .margin({ right: 4 })
-        .onClick(() => {
-          this.sortMode = this.sortMode === 2 ? 3 : 2;
+        .bindPopup(this.sortMenuVisible, {
+          builder: this.sortMenuBuilder(),
+          placement: Placement.Bottom,
+          popupColor: SURFACE_NODE,
+          radius: 12,
+          mask: { color: 'rgba(0,0,0,0.3)' }, // 点遮罩自动收起
+          onStateChange: (e: PopupStateChangeParam) => {
+            this.sortMenuVisible = e.isVisible; // 遮罩关闭时同步状态，保证按钮可再次唤起
+          }
         })
-      // ★ 0.195.0：字母排序（第三维度，用户需求）——英文 A-Z、中文按拼音（intl.Collator zh 统一比较首字符）；再点切倒序
-      Button(this.sortMode === 5 ? '字母↓' : '字母↑')
-        .fontSize(12)
-        .height(28) // ★ 0.195.0：高度对齐 ⚙
-        .backgroundColor(this.sortMode === 4 || this.sortMode === 5 ? SURFACE_HOVER : Color.Transparent) // ★ 0.195.0 bugfix：>=4 → ===4||===5（显式互斥）
-        .fontColor(this.sortMode === 4 || this.sortMode === 5 ? BRAND_SECONDARY : TEXT_TERTIARY)
-        .padding({ left: 8, right: 4 })
-        .margin({ right: 4 })
         .onClick(() => {
-          this.sortMode = this.sortMode === 4 ? 5 : 4;
+          this.sortMenuVisible = !this.sortMenuVisible;
         })
       // ★ 0.161: learn-count settings button — left of "+", visible in both normal & multi-select modes
       // ★ 0.195.0：⚙ emoji 换 settings.svg 单色图标（UI 统一——与边栏/ChatPage 顶栏同款）
@@ -1179,18 +1247,8 @@ export struct WordBankPage {
                     .onClick(() => {
                       this.onItemTap(w);
                     })
-
-                    if (!this.multiSelectMode) {
-                      // Single-delete button — hidden while multi-selecting
-                      Button('×')
-                        .fontSize(16)
-                        .fontColor(DANGER)
-                        .backgroundColor(Color.Transparent)
-                        .padding({ left: 8, right: 8 })
-                        .onClick(() => {
-                          this.requestDeleteWord(w);
-                        })
-                    }
+                    // ★ 0.218.3 用户拍板：常驻删除入口撤除（功能对齐知识库 0.212.x 终式）——
+                    //   左滑/右滑露回收站圆钮面板（见 swipeDeletePanel），点击走原确认弹窗链路
                   }
                   .width('100%')
                   .padding(12)
@@ -1209,6 +1267,16 @@ export struct WordBankPage {
                       })
                   )
                 }
+                .swipeAction({
+                  // ★ 0.218.3：左右滑露删除面板（对齐知识库 0.212.2 终式）；swipeAction 专属 ListItem（挂 Row 无效雷）；
+                  //   箭头函数包 @Builder 调用（CustomBuilder 规范写法）
+                  end: (): void => {
+                    this.swipeDeletePanel(w)
+                  },
+                  start: (): void => {
+                    this.swipeDeletePanel(w)
+                  }
+                })
               }, (w: WordItem) => w.id)
             }
             .width('100%')
