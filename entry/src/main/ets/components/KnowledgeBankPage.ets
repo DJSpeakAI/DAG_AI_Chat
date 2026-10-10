@@ -1705,6 +1705,56 @@ export struct KnowledgeBankPage {
     .width(160)
   }
 
+  // ★ 0.221.1：卡片右键菜单（移动/复制/修改/删除）——带参 @Builder，bindContextMenu 箭头函数包调用（CustomBuilder 规范写法：带显式 void 返回）
+  @Builder
+  cardContextMenu(c: KnowledgeCard) {
+    Column() {
+      Text('移动')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.moveOrCopyMode = 'move';
+          this.selectedIds = [c.id];
+          this.folderPickerVisible = true;
+        })
+      Divider().color(STROKE_CARD)
+      Text('复制')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.moveOrCopyMode = 'copy';
+          this.selectedIds = [c.id];
+          this.folderPickerVisible = true;
+        })
+      Divider().color(STROKE_CARD)
+      Text('修改')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.openEditEditor(c);
+        })
+      Divider().color(STROKE_CARD)
+      Text('删除')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.requestDeleteCard(c);
+        })
+    }
+    .width(140)
+  }
   @Builder
   folderDialog() {
     Column() {
@@ -2585,12 +2635,7 @@ export struct KnowledgeBankPage {
                     this.swipeActionsPanel(c)
                   }
                 })
-                .bindMenu([
-                  { value: '移动', action: () => { this.moveOrCopyMode = 'move'; this.selectedIds = [c.id]; this.folderPickerVisible = true; } },
-                  { value: '复制', action: () => { this.moveOrCopyMode = 'copy'; this.selectedIds = [c.id]; this.folderPickerVisible = true; } },
-                  { value: '修改', action: () => { this.openEditEditor(c); } },
-                  { value: '删除', action: () => { this.requestDeleteCard(c); } }
-                ])
+                .bindContextMenu((): void => { this.cardContextMenu(c) }, ResponseType.RightClick)
               }, (c: KnowledgeCard) => c.id)
             }
             .width('100%')
