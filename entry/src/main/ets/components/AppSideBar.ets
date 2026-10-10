@@ -6,7 +6,7 @@
 //   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
 
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.9：logoutHuaweiID 删——退出确认弹窗移 Index 根挂载，确认后走 doLogout
-import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定
+import { SubscriptionStore, connectSubscription, isVip, stampFreeTrialOnLogin } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin——边栏头像入口登录漏打戳致 isVip 恒 false、云同步被守卫锁「云同步已停用」（Pad 实测破案；Index/BillingPage 均有打戳唯边栏漏）
 import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——Index 根挂载消费）
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
@@ -259,8 +259,13 @@ export struct AppSideBar {
           // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（云同步与账号绑定，用户拍板流程）
           // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
           loginWithHuaweiID(loginContext).then((tip: string) => {
-            if (tip === '' && shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
-              connectConfirmDialog().cloudSyncPromptVisible = true;
+            if (tip === '') {
+              // ★ 0.217.2：登录成功先打试用戳（30 天起点）——此前边栏入口漏打戳，isVip 恒 false，
+              // 下方询问判定随之失效（云同步询问不弹+被守卫锁「云同步已停用」）
+              stampFreeTrialOnLogin(this.subscription);
+              if (shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+                connectConfirmDialog().cloudSyncPromptVisible = true;
+              }
             }
           });
           return;
