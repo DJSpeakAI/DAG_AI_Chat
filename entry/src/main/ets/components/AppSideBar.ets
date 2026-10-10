@@ -265,8 +265,8 @@ export struct AppSideBar {
       //   宽屏知识库页=折叠形态：「导航」条（点击切换六大模块展开/收起，箭头随态）+「文件夹」标题行
       //   （点击切换树收放）——两者独立、状态 AppStorageV2 记忆（切页面/重进保持用户选择）；
       //   非知识库页或手机抽屉=六大模块常显原样（进入知识库由 sideBarNav 首次自动配置默认态）
-      const kbFolded: boolean = this.wideScreen && this.currentRoute === 'KnowledgeBankPage';
-      if (!kbFolded || this.kbSection.navExpanded) {
+      // （kbFolded 条件内联于下方两处 if——build 内禁 const 局部声明，0.220.1 编译实锤）
+      if (!this.wideScreen || this.currentRoute !== 'KnowledgeBankPage' || this.kbSection.navExpanded) {
         this.SideBarNavItem('canvas')
         this.SideBarNavItem('wordbank')
         this.SideBarNavItem('knowledge')
@@ -274,7 +274,7 @@ export struct AppSideBar {
         this.SideBarNavItem('statistics')
         this.SideBarNavItem('billing')
       }
-      if (kbFolded) {
+      if (this.wideScreen && this.currentRoute === 'KnowledgeBankPage') {
         // 「导航」条：点击切换六大模块展开/收起（箭头随态：收起='▸'可展开 / 展开='▾'可收起）
         Row() {
           Text('导航')
@@ -298,7 +298,7 @@ export struct AppSideBar {
       }
 
       // ── ★ 0.220.1：文件夹树区（折叠形态+当前在知识库页时显示；标题行点击切换树收放——独立于导航区）──
-      if (kbFolded) {
+      if (this.wideScreen && this.currentRoute === 'KnowledgeBankPage') {
         Row({ space: 6 }) {
           Text('文件夹')
             .fontSize(FONT_SIZE_CAPTION)
