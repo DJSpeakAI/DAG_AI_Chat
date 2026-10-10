@@ -162,7 +162,7 @@ export struct KnowledgeBankPage {
   // ── ★ 0.207.0：文件夹体系（anything 导入）状态 ──
   // ★ 0.220.0：currentFolderId 迁 KbFolderNavStore（AppStorageV2 共享 @Trace folderId）——
   //   边栏文件夹树与页内视图同源同步（边栏点文件夹=页内视图立即切换，同一 store 实例零桥接）
-  folderNav: KbFolderNavStore = connectKbFolderNav();
+  @Local folderNav: KbFolderNavStore = connectKbFolderNav();
   @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
   @Local folderDialogIsRename: boolean = false;
   @Local folderDialogTargetId: string = '';
