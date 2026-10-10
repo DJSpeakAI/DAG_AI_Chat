@@ -238,58 +238,7 @@ export struct AppSideBar {
   }
 
 
-  // ★ 0.221.0：文件夹右键菜单（移动/复制/重命名/删除）——带参 @Builder，bindContextMenu 箭头函数包调用；
-  //   只写共享 store 的操作请求，实际弹窗+落库由 KnowledgeBankPage 消费（文件夹树仅在知识库页显示）
-  @Builder
-  folderTreeMenu(f: KFolder) {
-    Column() {
-      Text('移动')
-        .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
-        .width('100%')
-        .textAlign(TextAlign.Start)
-        .padding({ top: 11, bottom: 11, left: 16, right: 16 })
-        .onClick(() => {
-          this.folderNav.folderAction = 'move';
-          this.folderNav.folderActionId = f.id;
-        })
-      Divider().color(STROKE_CARD)
-      Text('复制')
-        .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
-        .width('100%')
-        .textAlign(TextAlign.Start)
-        .padding({ top: 11, bottom: 11, left: 16, right: 16 })
-        .onClick(() => {
-          this.folderNav.folderAction = 'copy';
-          this.folderNav.folderActionId = f.id;
-        })
-      Divider().color(STROKE_CARD)
-      Text('重命名')
-        .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
-        .width('100%')
-        .textAlign(TextAlign.Start)
-        .padding({ top: 11, bottom: 11, left: 16, right: 16 })
-        .onClick(() => {
-          this.folderNav.folderAction = 'rename';
-          this.folderNav.folderActionName = f.name;
-          this.folderNav.folderActionId = f.id;
-        })
-      Divider().color(STROKE_CARD)
-      Text('删除')
-        .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
-        .width('100%')
-        .textAlign(TextAlign.Start)
-        .padding({ top: 11, bottom: 11, left: 16, right: 16 })
-        .onClick(() => {
-          this.folderNav.folderAction = 'delete';
-          this.folderNav.folderActionId = f.id;
-        })
-    }
-    .width(140)
-  }  build() {
+  build() {
     Column() {
       // ── 顶部 Logo 区（Logo + 应用名 + 副标题）──
       Row({ space: 10 }) {
@@ -400,7 +349,12 @@ export struct AppSideBar {
             this.folderNav.nonce++;
             this.onFolderClick(item.folder.id);
           })
-          .bindContextMenu(() => { this.folderTreeMenu(item.folder) }, ResponseType.RightClick)
+          .bindMenu([
+            { value: '移动', action: () => { this.folderNav.folderAction = 'move'; this.folderNav.folderActionId = item.folder.id; } },
+            { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = item.folder.id; } },
+            { value: '重命名', action: () => { this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = item.folder.id; this.folderNav.folderActionName = item.folder.name; } },
+            { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = item.folder.id; } }
+          ])
         }, (item: KFolderTreeItem) => item.folder.id)
       }
       }
