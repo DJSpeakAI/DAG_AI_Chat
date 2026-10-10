@@ -106,34 +106,44 @@ function Get-DeviceList {
     }
     return ,$list
 }
-function Do-Install($target) {
+function Do-Install($targets) {
     $b = Do-Build
     if (-not $b.ok) { return $b }
     if (-not $Hdc) { return @{ ok = $false; err = "hdc.exe not found" } }
     $devs = @()
-    if ($target) {
-        & $Hdc tconn $target 2>&1 | Out-Null
-        Add-KnownDevice $target
-        $devs = @($target)
+    if ($targets -and $targets.Count -gt 0) {
+        foreach ($a in $targets) { & $Hdc tconn $a 2>&1 | Out-Null; Add-KnownDevice $a }
+        $devs = @($targets)
     } else {
         foreach ($a in (Get-KnownDevices)) { & $Hdc tconn $a 2>&1 | Out-Null }
         $devs = @((& $Hdc list targets) | Where-Object { $_ -match ":" } | ForEach-Object { $_.Trim("[]") })
     }
+    # 0.218.3 多选定装：只对选中/在线设备逐台装；逐台如实报告（哪台成功/失败一目了然）；
+    # 启动命令换新包名 com.dagaichat.app（旧包名=装成功但启动失败的报错真凶）
     $report = @()
+    $okCount = 0; $failCount = 0
     foreach ($id in $devs) {
         if ([string]::IsNullOrWhiteSpace($id)) { continue }
         $r = & $Hdc -t $id install -r $b.hap 2>&1
-        $report += "$id => $(($r -join ' '))"
-        if (($r -join ' ') -match "successfully") {
+        $line = ($r -join ' ')
+        if ($line -match "successfully") {
+            $okCount++
+            $report += "[成功] $id 安装完成"
             Start-Sleep -Milliseconds 800
-            $s = & $Hdc -t $id shell aa start -a EntryAbility -b com.example.dag_ai_chat 2>&1
-            $report += "$id => 自动启动: $(($s -join ' '))"
+            $s = & $Hdc -t $id shell aa start -a EntryAbility -b com.dagaichat.app 2>&1
+            $sline = ($s -join ' ')
+            if ($sline -match "successfully") {
+                $report += "        启动成功"
+            } else {
+                $report += "        启动: $sline"
+            }
+        } else {
+            $failCount++
+            $report += "[失败] $id $line"
         }
     }
     $joined = $report -join "`n"
-    $good = $joined -match "successfully"
-    $bad = $joined -match "failed|error:"
-    return @{ ok = ($good -and -not $bad); hap = $b.hap; devices = $joined }
+    return @{ ok = ($okCount -gt 0 -and $failCount -eq 0); hap = $b.hap; devices = $joined }
 }
 
 $listener = New-Object System.Net.HttpListener
@@ -165,48 +175,55 @@ input[type=text]{width:100%;box-sizing:border-box;background:#221539;border:1px 
 <input type="text" id="manual" placeholder="手动地址（一次性使用，如 192.168.2.16:38611）">
 <button class="go" id="go">🚀 编译并安装</button>
 <div id="res"></div>
-<div class="hint">选中设备卡片后点安装；都不选 = 全部在线设备 · 装完自动打开 app · 服务 http://192.168.2.15:8765</div>
+<div class="hint">点卡片勾选目标设备（可多选）· 都不选 = 全部在线设备 · 装完自动打开 app · 服务 http://192.168.2.15:8765</div>
 <script>
-var sel=null;
-function nameOf(m){m=(m||'').trim();
- if(m.indexOf('SLG')>=0)return '平板 MatePad 11.5s';
- if(m.indexOf('CHZ')>=0)return '手机 畅享 90 Pro';
- return 'Matebook 14'}
-function icoOf(m){m=(m||'').trim();
- if(m.indexOf('SLG')>=0)return '📟';
- if(m.indexOf('CHZ')>=0)return '📱';
- return '💻'}
-function refresh(){
- fetch('/devices').then(function(r){return r.json()}).then(function(ds){
-  var box=document.getElementById('devs');box.innerHTML='';
-  if(!ds||!ds.length){box.innerHTML='<div class="sub">没有在线设备——设备的「无线调试」开了吗？可用下方备用卡片填地址</div>';return}
-  ds.forEach(function(d){
-   var c=document.createElement('div');c.className='card';c.dataset.addr=d.addr;
-   c.innerHTML='<div class="ico">'+icoOf(d.model)+'</div><div><div class="nm">'+nameOf(d.model)+'</div><div class="ad">'+d.addr+'</div></div>';
-   c.onclick=function(){sel=(sel===d.addr)?null:d.addr;renderSel()};box.appendChild(c)})})
- .catch(function(){document.getElementById('devs').innerHTML='<div class="sub">连不上编译服务（老机器开机了吗？）</div>'})}
-function renderSel(){document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('sel',c.dataset.addr===sel && c.dataset.addr)})}
-function bindSpare(key){
- var c=document.getElementById('spare-'+key);if(!c)return;
- var inp=c.querySelector('input');
- inp.value=localStorage.getItem('spare-'+key)||'';
- inp.onchange=function(){var v=inp.value.trim();localStorage.setItem('spare-'+key,v);c.dataset.addr=v;if(c.classList.contains('sel'))sel=v};
- inp.onclick=function(e){e.stopPropagation()};
- c.onclick=function(){var v=inp.value.trim();if(!v){inp.focus();return}c.dataset.addr=v;sel=(sel===v)?null:v;renderSel()}}
-bindSpare('pad');bindSpare('pc');
-function doInstall(){
- var btn=document.getElementById('go'),res=document.getElementById('res');
- var manual=document.getElementById('manual').value.trim();
- var t=manual||sel;
- btn.disabled=true;btn.textContent='⏳ 编译安装中…（约1分钟）';
- res.style.display='block';res.className='';res.textContent='进行中…';
- fetch('/install',{method:'POST',body:t?JSON.stringify({target:t}):''}).then(function(r){return r.json()}).then(function(j){
-  res.textContent=(j.ok?'✅ 完成\n':'❌ 失败\n')+(j.devices||j.err||'')+(j.hap?'\n包: '+j.hap:'');
-  res.className=j.ok?'ok':'bad'})
- .catch(function(e){res.textContent='请求失败：'+e;res.className='bad'});
- btn.disabled=false;btn.textContent='🚀 编译并安装'}
-document.getElementById('go').onclick=doInstall;
-refresh();
+ var sel=[]; // 0.218.3 多选：勾选数组（旧版单选 sel 字符串废弃）
+ function nameOf(m){m=(m||'').trim();
+  if(m.indexOf('SLG')>=0)return '平板 MatePad 11.5s';
+  if(m.indexOf('CHZ')>=0)return '手机 畅享 90 Pro';
+  return 'Matebook 14'}
+ function icoOf(m){m=(m||'').trim();
+  if(m.indexOf('SLG')>=0)return '📟';
+  if(m.indexOf('CHZ')>=0)return '📱';
+  return '💻'}
+ function toggleSel(addr){
+  var i=sel.indexOf(addr);
+  if(i>=0){sel.splice(i,1)}else{sel.push(addr)}
+  renderSel()}
+ function refresh(){
+  fetch('/devices').then(function(r){return r.json()}).then(function(ds){
+   var box=document.getElementById('devs');box.innerHTML='';
+   if(!ds||!ds.length){box.innerHTML='<div class="sub">没有在线设备——设备的「无线调试」开了吗？可用下方备用卡片填地址</div>';return}
+   ds.forEach(function(d){
+    var c=document.createElement('div');c.className='card';c.dataset.addr=d.addr;
+    c.innerHTML='<div class="ico">'+icoOf(d.model)+'</div><div><div class="nm">'+nameOf(d.model)+'</div><div class="ad">'+d.addr+'</div></div>';
+    c.onclick=function(){toggleSel(d.addr)};box.appendChild(c)})})
+  .catch(function(){document.getElementById('devs').innerHTML='<div class="sub">连不上编译服务（老机器开机了吗？）</div>'})}
+ function renderSel(){document.querySelectorAll('.card').forEach(function(c){c.classList.toggle('sel',sel.indexOf(c.dataset.addr)>=0 && !!c.dataset.addr)})}
+ function bindSpare(key){
+  var c=document.getElementById('spare-'+key);if(!c)return;
+  var inp=c.querySelector('input');
+  inp.value=localStorage.getItem('spare-'+key)||'';
+  inp.onchange=function(){var old=c.dataset.addr||'';var v=inp.value.trim();localStorage.setItem('spare-'+key,v);var i=sel.indexOf(old);if(i>=0){sel[i]=v}c.dataset.addr=v};
+  inp.onclick=function(e){e.stopPropagation()};
+  c.onclick=function(){var v=inp.value.trim();if(!v){inp.focus();return}
+   c.dataset.addr=v;toggleSel(v)}}
+ bindSpare('pad');bindSpare('pc');
+ function doInstall(){
+  var btn=document.getElementById('go'),res=document.getElementById('res');
+  var manual=document.getElementById('manual').value.trim();
+  var targets=[];
+  if(manual){targets=[manual]}else{targets=sel.slice()}
+  var body=targets.length?JSON.stringify({targets:targets}):'';
+  btn.disabled=true;btn.textContent='⏳ 编译安装中…（约1分钟）';
+  res.style.display='block';res.className='';res.textContent='进行中…';
+  fetch('/install',{method:'POST',body:body}).then(function(r){return r.json()}).then(function(j){
+   res.textContent=(j.ok?'✅ 完成\n':'❌ 有失败\n')+(j.devices||j.err||'')+(j.hap?'\n包: '+j.hap:'');
+   res.className=j.ok?'ok':'bad'})
+  .catch(function(e){res.textContent='请求失败：'+e;res.className='bad'});
+  btn.disabled=false;btn.textContent='🚀 编译并安装'}
+ document.getElementById('go').onclick=doInstall;
+ refresh();
 </script></body></html>
 '@
 
@@ -243,10 +260,14 @@ while ($listener.IsListening) {
             Write-Host "[$(Get-Date -Format HH:mm:ss)] POST /install -> building + installing..." -ForegroundColor Cyan
             $reader = New-Object IO.StreamReader($req.InputStream)
             $bodyTxt = $reader.ReadToEnd()
-            $target = $null
-            try { $j = $bodyTxt | ConvertFrom-Json; if ($j.target) { $target = $j.target } } catch {}
-            if ($target) { Write-Host "  target: $target" -ForegroundColor Cyan }
-            $r = Do-Install $target
+            $targets = @()
+            try {
+                $j = $bodyTxt | ConvertFrom-Json
+                if ($j.targets) { $targets = @($j.targets) }
+                elseif ($j.target) { $targets = @($j.target) } # 旧版单目标兼容
+            } catch {}
+            if ($targets.Count -gt 0) { Write-Host "  targets: $($targets -join ', ')" -ForegroundColor Cyan }
+            $r = Do-Install $targets
             $bytes = [Text.Encoding]::UTF8.GetBytes(($r | ConvertTo-Json -Depth 3))
             $res.ContentType = "application/json; charset=utf-8"
             if (-not $r.ok) { $res.StatusCode = 500 }
