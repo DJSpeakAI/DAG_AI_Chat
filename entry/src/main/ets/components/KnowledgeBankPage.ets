@@ -2210,51 +2210,6 @@ export struct KnowledgeBankPage {
             .justifyContent(FlexAlign.Center)
           } else {
             List({ space: 8 }) {
-              // ★ 0.207.0：文件夹区（当前目录子文件夹，新在前；搜索/多选模式隐藏）
-              if (this.searchKeyword.trim().length === 0 && !this.multiSelectMode) {
-                ForEach(this.currentFolders, (f: KFolder) => {
-                  ListItem() {
-                    Row() {
-                      Text('📁')
-                        .fontSize(18)
-                        .margin({ right: 10 })
-                      Text(f.name)
-                        .fontSize(14)
-                        .fontWeight(600)
-                        .fontColor(TEXT_PRIMARY)
-                        .layoutWeight(1)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text(`${this.folderCardCount(f.id)} 张`)
-                        .fontSize(12)
-                        .fontColor(TEXT_TERTIARY)
-                      // ⋯ 菜单：重命名/删除（与行点击分流——行点击=进入目录）
-                      Text('⋯')
-                        .fontSize(18)
-                        .fontColor(TEXT_TERTIARY)
-                        .padding({ left: 10, right: 2 })
-                        .bindMenu([
-                          { value: '重命名', action: () => { this.openFolderRename(f); } },
-                          { value: '删除文件夹（卡片移到上一级）', action: () => { this.requestDeleteFolder(f); } },
-                          { value: '★ 导出此文件夹包（DagPack）', action: () => { this.exportDagPack(f.id); } }
-                        ])
-                    }
-                    .width('100%')
-                    .padding(12)
-                    .borderRadius(RADIUS_CONTROL)
-                    .backgroundColor(SURFACE_SOFT)
-                    .borderColor(STROKE_CARD)
-                    .borderWidth(1)
-                    .alignItems(VerticalAlign.Center)
-                    .onClick(() => {
-                      this.folderNav.folderId = f.id;
-                      this.searchKeyword = ''; // 进目录清搜索（目录视图）
-                    })
-                  }
-                }, (f: KFolder) => f.id)
-              }
-              ForEach(this.filteredCards, (c: KnowledgeCard) => {
-                ListItem() {
                   Row() {
                     if (this.multiSelectMode) {
                       // ★ 0.148: multi-select check indicator — an icon Text,
