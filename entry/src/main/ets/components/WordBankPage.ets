@@ -37,6 +37,7 @@ import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
 import intl from '@ohos.intl'; // ★ 0.195.0：字母排序 Collator（zh：英文 A-Z + 中文按拼音统一比较；本 SDK 的 @kit.ArkTS 未导出 intl，走 @ohos.intl——measure 同款坑）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
+import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档（PC 窄窗保持网格的 deviceType 判定，复刻 ChatPage isPcDevice 先例）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
 
@@ -51,6 +52,8 @@ export struct WordBankPage {
   @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
   @Local sortMenuVisible: boolean = false; // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母），点选项只切排序**不收起**（用户可连续切换），点遮罩才收起
   @Local gridMode: boolean = false; // ★ 0.218.6 用户拍板：宽屏视图切换（false=横条列表 / true=方块网格）；仅宽屏显示切换入口，手机永远横条（用户拍板"手机上不做，看了舒服"）
+  @Local gridCols: number = 5; // ★ 0.218.8：网格列数随容器宽连续自适应（round 均衡过渡，格宽连续缩放）
+  @Local gridGap: number = 12; // ★ 0.218.8 用户拍板"间距跟着屏幕大小来排列"——间距随格宽连续缩放（8~14 连续区间）
   @Local gridCols: number = 5; // ★ 0.218.7：网格列数随容器宽自适应（0.218.6 写死 5 列——窗口拖小时每格被挤到 ~100vp 内容全变形=用户截图"排列乱码"；改 onAreaChange 动态算列，每格保底 170vp 最窄 2 列）
 
   // ★ 0.148: multi-select state (batch delete only)
@@ -107,6 +110,14 @@ export struct WordBankPage {
   windowMode: WindowMode = connectWindowMode();
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
+  }
+
+  /** ★ 0.218.8 设备三档判定（复刻 ChatPage isPcDevice 先例）：明确移动设备（phone/tablet/tv/car/
+   * wearable）之外全算 PC 档——**PC 窗口拖到多窄都是 PC 档**（deviceType 是设备属性与窗口无关），
+   * 用户拍板"PC 窗口缩到手机一样宽也按 PC 规矩走"（网格视图在 PC 窄窗下保持，不退化手机横条） */
+  isPcDevice(): boolean {
+    const t = deviceInfo.deviceType;
+    return t !== 'phone' && t !== 'tablet' && t !== 'tv' && t !== 'car' && t !== 'wearable';
   }
 
   // ★ 0.148: back-fill id/createTime on entries saved before 0.148.
@@ -586,8 +597,10 @@ export struct WordBankPage {
           this.sortMenuVisible = !this.sortMenuVisible;
         })
       // ★ 0.218.6 用户拍板：宽屏视图切换（四宫格图标=方块网格 / 默认横条）——仅宽屏显示入口，
-      //   手机不做（用户"手机上现在的大小看着舒服，方块太拥挤"）；PC 拖窗口大小网格自动整齐重排
-      if (this.isTablet) {
+      //   手机不做（用户"手机上现在的大小看着舒服，方块太拥挤"）
+      // ★ 0.218.8：按钮条件扩为 isTablet || isPcDevice——PC 窗口拖窄穿过 600 断点后按钮仍在
+      //   （deviceType 是设备属性与窗口无关），窄窗可随时切回横条；真机手机不渲染（既定设计）
+      if (this.isTablet || this.isPcDevice()) {
         Row() {
           Image($r('app.media.grid'))
             .width(20)
@@ -1209,7 +1222,10 @@ export struct WordBankPage {
             .width('100%')
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-          } else if (this.isTablet && this.gridMode) {
+          } else if (this.gridMode && (this.isTablet || this.isPcDevice())) {
+            // ★ 0.218.8 用户拍板"PC 窗口缩到手机一样宽也按 PC 规矩走"：条件从 isTablet 改为
+            //   gridMode && (isTablet || isPcDevice)——PC（2in1 等设备档）窗口多窄都保持网格；
+            //   真机手机 gridMode 恒 false（切换按钮不渲染）永不进本分支（手机横条既定设计不变）
             // ★ 0.218.6：方块网格视图（仅宽屏可切入）——WaterFlow 瀑布流 5 等列，拖窗口大小自动整齐重排；
             //   网格卡交互=单击选中/双击编辑+长按多选（同横条）；滑动删除仅横条模式（网格下拖动与滑动冲突，
             //   删除走长按多选批量）
@@ -1279,19 +1295,23 @@ export struct WordBankPage {
               }, (w: WordItem) => w.id)
             }
             .columnsTemplate(`repeat(${this.gridCols}, 1fr)`)
-            .columnsGap(12)
-            .rowsGap(12)
+            .columnsGap(this.gridGap)
+            .rowsGap(this.gridGap)
             .width('100%')
             .layoutWeight(1)
             .padding({ left: 16, right: 16, top: 12 })
             .onAreaChange((_o: Area, n: Area) => {
-              // ★ 0.218.7：列数随容器宽自适应——目标每格 ≥170vp（宁大勿挤），最窄保 2 列；
-              //   PC 全宽 7 列 / 半窗 4 列 / 窄窗 2 列，任何窗口尺寸都整齐不挤压
+              // ★ 0.218.8 用户拍板"不要固定，间距跟着屏幕大小来排列"——两处连续化：
+              //   ①列数 floor→**round**（列数进位点更均衡，格宽在进位间的缩放更平滑）
+              //   ②**间距随格宽连续缩放**（格宽 6% 区间 8~14vp：格子大间距大、格子小间距小）
               const availW = Number(n.width) - 32; // 减左右 padding 16×2
               if (availW > 0) {
-                const cols = Math.max(2, Math.floor(availW / 170));
-                if (cols !== this.gridCols) {
+                const cols = Math.max(2, Math.round(availW / 170));
+                const cell = availW / cols;
+                const gap = Math.min(14, Math.max(8, Math.round(cell * 0.06)));
+                if (cols !== this.gridCols || gap !== this.gridGap) {
                   this.gridCols = cols;
+                  this.gridGap = gap;
                 }
               }
             })
