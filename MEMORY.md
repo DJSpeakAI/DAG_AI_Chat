@@ -178,9 +178,10 @@
 |0.218.7|网格列数自适应初版（floor 170vp，窗口拖小挤压乱根治）；**⚠️ 一条龙装机后 bm dump 验证被用户打断未执行**——后续反馈实锤已装机（1000185），但用户对 floor 离散档位不满引出 0.218.8|
 |0.218.8|**网格排列连续化+PC 窄窗保持 PC 规矩**（用户拍板"不要固定死档难看，间距跟着屏幕大小来排列"+"PC 窗口缩到手机一样宽也按 PC 规矩走"）：①列数 floor→**round**（进位点更均衡，格宽缩放更平滑）②**间距随格宽连续缩放**（gridGap=格宽 6% 区间 8~14vp，columnsGap/rowsGap 动态绑定）③**网格分支条件 isTablet&&gridMode → gridMode&&(isTablet||isPcDevice)**——PC（2in1 等 deviceType 档，复刻 ChatPage isPcDevice 先例）窗口拖穿 600 断点也**保持网格不退化手机横条**（deviceType 是设备属性与窗口无关）；切换按钮条件同步扩（窄窗可随时切回横条）；真机手机 gridMode 恒 false 不受影响（横条既定设计不变）。⚠️ 连踩两坑：isPcDevice/deviceType 撞名（先查已有标识符铁律再犯）、gridCols 重复声明（**bash 会话抽风 grep 间歇无输出=不可信，遇此换 -a 强制文本模式或重跑**）；三台 bm dump 实锤 1000186|
 |0.218.9|**网格弃瀑布流改等高 Grid（用户截图实锤"高度不统一+有重叠"）**：WaterFlow 按内容自适应高度=行高参差+动态高度布局重叠——弃 WaterFlow 改 **Grid 等高网格**（GridItem 内卡片**固定 150vp**，全部格子完全一致；explain 已 2 行省略，下方留白=整齐的代价可接受）。**教训：需要"整齐等高"的网格一律 Grid+固定 item 高度，WaterFlow 瀑布流只用于刻意错落的场景**；三台 bm dump 实锤 1000187|
+|0.219.0|**宽屏边栏收起把手+手机抽屉图标统一**（用户两轮迭代定稿：方案一"左下角圆钮开关"推翻，改为"**边栏右缘竖把手**——点击边栏滑向左侧隐藏、把手浮左缘变右箭头、再点恢复"；收起状态**跨页面共享**——切到对话页边栏保持隐藏，点把手才恢复）：①**IndexSidebarState**（WindowMode.ets 同文件，AppStorageV2 共享 @Trace collapsed）②Index 边栏包容器宽度动画（collapsed?0:208+clip+opacity，220ms EaseInOut）+把手（16×64 右圆角竖条 SURFACE_NODE 底+描边+阴影，position 跟随 collapsed 在 200↔0 间滑动，'◀'/'▶' 几何字符指示方向）③手机左下角抽屉按钮 menu.svg（三横线）→**sidebar.svg**（带边框侧边栏图标，用户"三个横线没有这个边框来的好"）。⚠️ Index 缺 SURFACE_NODE/STROKE_CARD token import（跨页抄样式前先查目标文件 import 清单）；三台 bm dump 实锤 1000188|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.218.9（versionCode 1000187，包名 com.dagaichat.app）**；★ 版本号同步（app.json5 versionCode / GlobalSettingsDialog APP_VERSION——0.217.1 实锤 Index.ets 版本显示已不存在、同步点实况=两处）；★ 0.195.0 起装机**必须递增 versionCode**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.219.0（versionCode 1000188，包名 com.dagaichat.app）**；★ 版本号同步（app.json5 versionCode / GlobalSettingsDialog APP_VERSION——0.217.1 实锤 Index.ets 版本显示已不存在、同步点实况=两处）；★ 0.195.0 起装机**必须递增 versionCode**
 - 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
 - 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，装机测试用）+ 畅享 90 Pro Max（手机，192.168.2.9，用户日常自用勿占用）；★ 实测教训：两台 IP 勿搞反（搞反白折腾一轮），`param get const.product.model` 可验身份
