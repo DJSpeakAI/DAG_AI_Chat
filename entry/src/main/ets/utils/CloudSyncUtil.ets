@@ -122,6 +122,12 @@ function activateCloudSync(): void {
     cloudSyncActive = true;
     subscribeCloudDownlink(); // ★ 0.165.2：激活即订阅云端下行（无论启动时已有权限还是用户刚授权，都挂上）
     hilog.info(DOMAIN, TAG, 'cloud sync activated (autoSync on)');
+    // ★ 0.218.1 激活即主动拉两池：下行 dataChange 是事件驱动（云端有新变更才触发）——
+    //   新装设备/重装后云端早已有的数据永远等不到事件 → "没第一时间同步"根治。
+    //   时序安全：EntryAbility 里 setupCloudDownlink（同步注册 handler）先于本函数（微任务）执行。
+    //   仲裁兜底：云端不新于本地 mtime 会被 handler 丢弃，正常设备重复拉零副作用。
+    pullAndNotify('flat_pool');
+    pullAndNotify('tabs_pool');
   } catch (err) {
     hilog.warn(DOMAIN, TAG, `activate cloud sync failed: ${JSON.stringify(err)}`);
   }

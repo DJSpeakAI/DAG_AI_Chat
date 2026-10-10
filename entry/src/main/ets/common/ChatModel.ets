@@ -1276,10 +1276,21 @@ export function setupCloudDownlink(): void {
       const persist = PersistenceV2.connect(PersistData, 'persist-data',
         () => new PersistData()) as PersistData;
       if (persist.bubbleTreeJson !== value) {
-        arbiter.backupFlat = persist.bubbleTreeJson; // ★ 0.218.0 写回前整池备份（数据安全兜底）
-        persist.bubbleTreeJson = value; // PersistenceV2 自动落盘（绝不 upsert，防回环）
-        arbiter.mtimeFlat = updatedAt; // 写回即推进本地水位（后续更旧的下行同样被挡）
-        refreshWorkspaceFromPools();
+        // ★ 0.218.1 节点级 union 合并替代整池替换（局部视图覆盖根治）：两棵树按 nodeID 并集，
+        //   双端各自的气泡都保留；合并树写回本地并上行（成为云端最新，对端再下行时同款合并收敛）。
+        //   根治场景：新设备未拉到云端就编辑上行（局部小树合法覆盖云端，时间戳挡不住）——
+        //   union 后双端节点全量保留，永不再"擦除"。
+        const merged = unionMergeFlatPool(persist.bubbleTreeJson, value);
+        if (merged !== null && merged !== persist.bubbleTreeJson) {
+          arbiter.backupFlat = persist.bubbleTreeJson; // ★ 0.218.0 写回前整池备份（数据安全兜底）
+          persist.bubbleTreeJson = merged;
+          arbiter.mtimeFlat = updatedAt; // 写回即推进本地水位（后续更旧的下行同样被挡）
+          refreshWorkspaceFromPools();
+          // 合并结果上行：若合并树与云端下行值不同（本地有云端缺的节点），上行让对端也收敛
+          if (merged !== value) {
+            upsertCloudData('flat_pool', merged);
+          }
+        }
       }
     } else if (key === 'tabs_pool') {
       const forest = connectTabForest();
@@ -1291,6 +1302,37 @@ export function setupCloudDownlink(): void {
       }
     }
   });
+}
+
+// ★ 0.218.1：平铺池节点级 union 合并——两棵树 nodeList 按 nodeID 取并集；
+//   同 id 冲突时云端版本胜（能走到下行分支=云端行时间戳已胜出，本地旧版无理由保留）。
+//   合并产物序列化返回；任一侧解析失败返回 null（调用方放弃合并、不写回，保守保数据）。
+function unionMergeFlatPool(localJson: string, cloudJson: string): string | null {
+  const local = deserializeBubbleTree(localJson);
+  const cloud = deserializeBubbleTree(cloudJson);
+  if (local === null || cloud === null) {
+    return null;
+  }
+  const byId = new Map<string, BubbleNode>();
+  local.nodeList.forEach((n: BubbleNode): void => {
+    byId.set(String(n.id), n);
+  });
+  let hasNewFromCloud = false;
+  cloud.nodeList.forEach((n: BubbleNode): void => {
+    const id = String(n.id);
+    if (!byId.has(id)) {
+      hasNewFromCloud = true;
+    }
+    byId.set(id, n); // 云端同 id 覆盖本地（下行已过时间戳仲裁=云端胜出）
+  });
+  const mergedList: BubbleNode[] = [];
+  byId.forEach((n: BubbleNode): void => {
+    mergedList.push(n);
+  });
+  if (!hasNewFromCloud && mergedList.length === local.nodeList.length && mergedList.length === cloud.nodeList.length) {
+    return cloudJson; // 完全同集合，直接用云端串（幂等）
+  }
+  return serializeBubbleTree(new BubbleTree(mergedList));
 }
 
 // ★ 0.165.2：按当前模式的权威池重建工作区（复用 0.151 applyCanvasModeSwitch 的搬移模式）——
