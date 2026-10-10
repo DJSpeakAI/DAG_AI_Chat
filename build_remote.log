@@ -1,0 +1,747 @@
+﻿> hvigor [32mUP-TO-DATE :entry:default@PreBuild...  [39m
+> hvigor [32mFinished :entry:default@CreateModuleInfo... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@GenerateMetadata...  [39m
+> hvigor [32mFinished :entry:default@ConfigureCmake... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@MergeProfile...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CreateBuildProfile...  [39m
+> hvigor [32mFinished :entry:default@PreCheckSyscap... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@GeneratePkgContextInfo...  [39m
+> hvigor [32mFinished :entry:default@GeneratePkgSdkInfo... after 3 ms [39m
+> hvigor [32mFinished :entry:default@ProcessIntegratedHsp... after 1 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithCmake... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@MakePackInfo...  [39m
+> hvigor [32mFinished :entry:default@SyscapTransform... after 12 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessProfile...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessRouterMap...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessShareConfig...  [39m
+> hvigor [32mFinished :entry:default@ProcessStartupConfig... after 3 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithNinja... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessResource...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@GenerateLoaderJson...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessLibs...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CompileResource...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@DoNativeStrip...  [39m
+> hvigor [32mFinished :entry:default@BuildJS... after 3 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@CacheNativeLibs...  [39m
+hvigorw.bat : > hvigor [91mERROR: Failed :entry:default@CompileArkTS... [39m
+所在位置 E:\project\DAG_AI_Chat\build-server.ps1:75 字符: 5
++     & $Hvigorw assembleHap --mode module -p product=default -p debugg ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (> hvigor [91mE...eArkTS... [39m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+> hvigor [33mWARN: 
+[33m1 WARN: [33m[33mArkTS:WARN: For details about ArkTS syntax errors, see FAQs[39m[39m
+[33m2 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/common/ChatModel.ets:596:32
+ The system capacity of this api 'createMd' is not supported on all devices
+[39m[39m
+[33m3 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/WidgetReviewUtil.ets:118:22
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m4 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/AegisRandom.ts:19:36
+ The system capacity of this api 'createRandom' is not supported on all devices
+[39m[39m
+[33m5 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/AegisRandom.ts:20:31
+ The system capacity of this api 'generateRandom' is not supported on all devices
+[39m[39m
+[33m6 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/FakeSync.ts:45:25
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m7 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/FakeSync.ts:51:23
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m8 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/net/RealInterceptorChain.ts:30:41
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m9 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:22:32
+ 'bundle' has been deprecated.
+[39m[39m
+[33m10 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:22:39
+ 'getBundleInfo' has been deprecated.
+[39m[39m
+[33m11 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:22:39
+ To use this API, you need to apply for the permissions: ohos.permission.GET_BUNDLE_INFO_PRIVILEGED or ohos.permission.GET_BUNDLE_INFO
+[39m[39m
+[33m12 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:23:30
+ 'versionName' has been deprecated.
+[39m[39m
+[33m13 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:136:29
+ 'getDefaultDisplay' has been deprecated.
+[39m[39m
+[33m14 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:154:19
+ 'storage' has been deprecated.
+[39m[39m
+[33m15 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/util/SystemUtil.ts:154:27
+ 'getFreeBytes' has been deprecated.
+[39m[39m
+[33m16 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/server/Backend.ts:33:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m17 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/server/Backend.ts:35:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m18 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/server/Backend.ts:39:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m19 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/server/Backend.ts:41:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m20 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/server/Backend.ts:42:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m21 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/crypto/Unit8ArrayUtil.ts:21:17
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m22 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/crypto/Unit8ArrayUtil.ts:31:17
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m23 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:21:43
+ The system capacity of this api 'createSymKeyGenerator' is not supported on all devices
+[39m[39m
+[33m24 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:21:43
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m25 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:23:40
+ The system capacity of this api 'convertKey' is not supported on all devices
+[39m[39m
+[33m26 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:23:40
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m27 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:30:40
+ The system capacity of this api 'createCipher' is not supported on all devices
+[39m[39m
+[33m28 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:30:40
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m29 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:33:24
+ The system capacity of this api 'init' is not supported on all devices
+[39m[39m
+[33m30 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:33:24
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m31 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:33:45
+ The system capacity of this api 'CryptoMode' is not supported on all devices
+[39m[39m
+[33m32 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:33:56
+ The system capacity of this api 'ENCRYPT_MODE' is not supported on all devices
+[39m[39m
+[33m33 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:37:43
+ The system capacity of this api 'update' is not supported on all devices
+[39m[39m
+[33m34 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:37:43
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m35 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:42:42
+ The system capacity of this api 'doFinal' is not supported on all devices
+[39m[39m
+[33m36 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:42:42
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m37 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:59:43
+ The system capacity of this api 'createSymKeyGenerator' is not supported on all devices
+[39m[39m
+[33m38 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:59:43
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m39 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:61:40
+ The system capacity of this api 'convertKey' is not supported on all devices
+[39m[39m
+[33m40 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:61:40
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m41 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:68:40
+ The system capacity of this api 'createCipher' is not supported on all devices
+[39m[39m
+[33m42 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:68:40
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m43 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:71:24
+ The system capacity of this api 'init' is not supported on all devices
+[39m[39m
+[33m44 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:71:24
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m45 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:71:45
+ The system capacity of this api 'CryptoMode' is not supported on all devices
+[39m[39m
+[33m46 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:71:56
+ The system capacity of this api 'DECRYPT_MODE' is not supported on all devices
+[39m[39m
+[33m47 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:74:43
+ The system capacity of this api 'update' is not supported on all devices
+[39m[39m
+[33m48 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:74:43
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m49 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:80:42
+ The system capacity of this api 'doFinal' is not supported on all devices
+[39m[39m
+[33m50 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/FrameworkCrypto.ts:80:42
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m51 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/aegis/AegisAes.ts:4:23
+ Currently module for 'libagccrypto.so' is not verified. If you're importing napi, its verification will be enabled in later SDK version. Please make sure the corresponding .d.ts file is provided and the napis are correctly declared.
+[39m[39m
+[33m52 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/datastore/FileStorage.ts:63:20
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m53 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/crypto/Hash.ts:30:26
+ The system capacity of this api 'createMd' is not supported on all devices
+[39m[39m
+[33m54 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/crypto/Hash.ts:46:16
+ The system capacity of this api 'update' is not supported on all devices
+[39m[39m
+[33m55 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+hmcore@1.0.6/oh_modules/@hw-agconnect/hmcore/src/main/ets/base/crypto/Hash.ts:48:27
+ The system capacity of this api 'digest' is not supported on all devices
+[39m[39m
+[33m56 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:170:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m57 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:209:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m58 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:253:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m59 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:315:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m60 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:364:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m61 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:399:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m62 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:415:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m63 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/user/AuthDefaultUser.ts:432:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m64 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/auth/AuthImpl.ts:218:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m65 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/function/server/FunctionBackend.ts:44:8
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m66 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/implementation/storageReferenceImpl.ts:125:28
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m67 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/implementation/storageReferenceImpl.ts:129:26
+ The system capacity of this api 'request' is not supported on all devices
+[39m[39m
+[33m68 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/implementation/storageReferenceImpl.ts:129:34
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m69 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/server/backend/CloudStorageBackend.ts:32:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m70 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/utils/fileUtils.ts:13:28
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m71 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/utils/fileUtils.ts:15:26
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m72 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/oh_modules/.ohpm/@hw-agconnect+cloud@1.0.2/oh_modules/@hw-agconnect/cloud/src/main/ets/storage/utils/fileUtils.ts:25:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m73 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/TrackUtil.ets:31:22
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m74 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:45:22
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m75 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:142:20
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m76 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:144:22
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m77 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:145:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m78 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:151:20
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m79 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:152:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m80 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:153:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m81 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:350:11
+ This API is unavailable to phone.
+[39m[39m
+[33m82 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:393:8
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m83 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:394:8
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m84 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:400:8
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m85 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/BackupUtil.ets:401:8
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m86 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/entryability/EntryAbility.ets:61:33
+ 'decodeWithStream' has been deprecated.
+[39m[39m
+[33m87 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/BBTreeCanvas.ets:110:5
+ 'animateTo' has been deprecated.
+[39m[39m
+[33m88 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/BBTreeCanvas.ets:124:5
+ 'animateTo' has been deprecated.
+[39m[39m
+[33m89 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/ChatPage.ets:2422:7
+ 'animateTo' has been deprecated.
+[39m[39m
+[33m90 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/ChatPage.ets:3287:13
+ 'onScroll' has been deprecated.
+[39m[39m
+[33m91 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/ChatPage.ets:3409:14
+ 'key' can only be used for testing directories 
+[39m[39m
+[33m92 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:27:23
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m93 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:29:25
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m94 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:31:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m95 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:37:18
+ 'decodeWithStream' has been deprecated.
+[39m[39m
+[33m96 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:41:19
+ 'decodeWithStream' has been deprecated.
+[39m[39m
+[33m97 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:44:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m98 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:166:23
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m99 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:168:25
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m100 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:170:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m101 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ImportUtil.ets:197:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m102 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:43:22
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m103 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:45:25
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m104 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:47:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m105 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:48:24
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m106 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:50:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m107 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:52:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m108 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:55:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m109 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:130:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m110 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:131:12
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m111 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:133:10
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m112 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:139:14
+ 'unzipFile' has been deprecated.
+[39m[39m
+[33m113 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:142:25
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m114 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:143:15
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m115 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:148:39
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m116 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:157:29
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m117 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:159:15
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m118 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:160:30
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m119 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:176:11
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m120 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:181:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m121 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:182:23
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m122 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:195:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m123 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:201:31
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m124 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:203:20
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m125 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:204:27
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m126 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:206:34
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m127 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:210:13
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m128 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:218:31
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m129 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:220:20
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m130 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:221:27
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m131 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:226:28
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m132 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:264:28
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m133 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/utils/ApkgUtil.ets:272:13
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m134 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:334:25
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m135 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:349:35
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m136 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:350:56
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m137 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:356:14
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m138 WARN: [33m[33mArkTS:WARN File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/ReviewPage.ets:189:47
+ Function may throw exceptions. Special handling is required.
+[39m[39m
+[33m139 WARN: [33mDuplicate file names detected, which may cause compilation errors. Please check the following files:
+     
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\index.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\index.js?commonjs-module
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\index-light.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\index-light.js?commonjs-module
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\index-minimal.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\index-minimal.js?commonjs-exports
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\wrappers.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\wrappers.js?commonjs-exports
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\rpc.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\protobufjs@7.2.4\oh_modules\protobufjs\src\rpc.js?commonjs-exports
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\@protobufjs+base64@1.1.2\oh_modules\@protobufjs\base64\index.js?commonjs-exports
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\@protobufjs+base64@1.1.2\oh_modules\@protobufjs\base64\index.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\@protobufjs+path@1.1.2\oh_modules\@protobufjs\path\index.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\@protobufjs+path@1.1.2\oh_modules\@protobufjs\path\index.js?commonjs-exports
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\@protobufjs+utf8@1.1.0\oh_modules\@protobufjs\utf8\index.js?commonjs-proxy
+ E:\project\DAG_AI_Chat\oh_modules\.ohpm\@protobufjs+utf8@1.1.0\oh_modules\@protobufjs\utf8\index.js?commonjs-exports[39m[39m[39m
+> hvigor [91mERROR: ArkTS Compiler Error
+[31m1 ERROR: [31m10605008 ArkTS Compiler Error
+[31mError Message: Use explicit types instead of "any", "unknown" (arkts-no-any-unknown) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2503:19
+[31m[39m
+[39m
+[31m2 ERROR: [31m10605090 ArkTS Compiler Error
+[31mError Message: Function return type inference is limited (arkts-no-implicit-return-types) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2505:6
+[31m[39m
+[39m
+[31m3 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2507:11
+[31m[39m
+[39m
+[31m4 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2508:9
+[31m[39m
+[39m
+[31m5 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2513:11
+[31m[39m
+[39m
+[31m6 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2514:9
+[31m[39m
+[39m
+[31m7 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2517:11
+[31m[39m
+[39m
+[31m8 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2518:9
+[31m[39m
+[39m
+[31m9 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2521:11
+[31m[39m
+[39m
+[31m10 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2522:9
+[31m[39m
+[39m
+[31m11 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2525:11
+[31m[39m
+[39m
+[31m12 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2526:9
+[31m[39m
+[39m
+[31m13 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2530:11
+[31m[39m
+[39m
+[31m14 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2531:9
+[31m[39m
+[39m
+[31m15 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2535:11
+[31m[39m
+[39m
+[31m16 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2536:9
+[31m[39m
+[39m
+[31m17 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2540:11
+[31m[39m
+[39m
+[31m18 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2541:9
+[31m[39m
+[39m
+[31m19 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2545:11
+[31m[39m
+[39m
+[31m20 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2546:9
+[31m[39m
+[39m
+[31m21 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2549:11
+[31m[39m
+[39m
+[31m22 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2550:9
+[31m[39m
+[39m
+[31m23 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2553:11
+[31m[39m
+[39m
+[31m24 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2554:9
+[31m[39m
+[39m
+[31m25 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2557:11
+[31m[39m
+[39m
+[31m26 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2558:9
+[31m[39m
+[39m
+[31m27 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2562:11
+[31m[39m
+[39m
+[31m28 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2563:9
+[31m[39m
+[39m
+[31m29 ERROR: [31m10605093 ArkTS Compiler Error
+[31mError Message: Using "this" inside stand-alone functions is not supported (arkts-no-standalone-this) At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2563:35
+[31m[39m
+[39m
+[31m30 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: ';' expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2099:13
+[31m[39m
+[39m
+[31m31 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Unexpected token. A constructor, method, accessor, or property was expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2503:5
+[31m[39m
+[39m
+[31m32 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Identifier expected. 'true' is a reserved word that cannot be used here. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2503:19
+[31m[39m
+[39m
+[31m33 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Unexpected token. A constructor, method, accessor, or property was expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2505:5
+[31m[39m
+[39m
+[31m34 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Parameter declaration expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2505:20
+[31m[39m
+[39m
+[31m35 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: ';' expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2567:6
+[31m[39m
+[39m
+[31m36 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Declaration or statement expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2568:3
+[31m[39m
+[39m
+[31m37 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Declaration or statement expected. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2569:1
+[31m[39m
+[39m
+[31m38 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Function implementation is missing or not immediately following the declaration. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2503:6
+[31m[39m
+[39m
+[31m39 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2507:11
+[31m[39m
+[39m
+[31m40 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2508:9
+[31m[39m
+[39m
+[31m41 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2513:11
+[31m[39m
+[39m
+[31m42 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2514:9
+[31m[39m
+[39m
+[31m43 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2517:11
+[31m[39m
+[39m
+[31m44 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2518:9
+[31m[39m
+[39m
+[31m45 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2521:11
+[31m[39m
+[39m
+[31m46 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2522:9
+[31m[39m
+[39m
+[31m47 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2525:11
+[31m[39m
+[39m
+[31m48 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2526:9
+[31m[39m
+[39m
+[31m49 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2530:11
+[31m[39m
+[39m
+[31m50 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2531:9
+[31m[39m
+[39m
+[31m51 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2535:11
+[31m[39m
+[39m
+[31m52 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2536:9
+[31m[39m
+[39m
+[31m53 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2540:11
+[31m[39m
+[39m
+[31m54 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2541:9
+[31m[39m
+[39m
+[31m55 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2545:11
+[31m[39m
+[39m
+[31m56 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2546:9
+[31m[39m
+[39m
+[31m57 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2549:11
+[31m[39m
+[39m
+[31m58 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2550:9
+[31m[39m
+[39m
+[31m59 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2553:11
+[31m[39m
+[39m
+[31m60 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2554:9
+[31m[39m
+[39m
+[31m61 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2557:11
+[31m[39m
+[39m
+[31m62 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2558:9
+[31m[39m
+[39m
+[31m63 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2562:11
+[31m[39m
+[39m
+[31m64 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2563:9
+[31m[39m
+[39m
+[31m65 ERROR: [31m10505001 ArkTS Compiler Error
+[31mError Message: Object is possibly 'undefined'. At File: E:/project/DAG_AI_Chat/entry/src/main/ets/components/KnowledgeBankPage.ets:2563:35
+[31m[39m
+[39m
+[31mCOMPILE RESULT:FAIL {ERROR:66 WARN:139}[39m
+
+[31m* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --debug option to get more log output.
+[39m
+> hvigor [91mERROR: BUILD FAILED in 15 s 98 ms [39m
+[31m
+FAILURE: Build completed with 1 failure.[31m[39m
+[31m
+1: Task failed with an exception.
+-----------
+* What went wrong:
+Execution failed for task 'default@CompileArkTS'.
+  > Compilation error. See log for more details
+
+[31m* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --debug option to get more log output.
+[31m[39m
+[31m================================================================================[31m[39m
+
+25 tasks in total: 10 executed, 15 up-to-date

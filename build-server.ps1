@@ -73,6 +73,7 @@ function Do-Build {
     if (Test-Path $outDir) { Remove-Item "$outDir\*-signed.hap" -Force -ErrorAction SilentlyContinue }
     Push-Location $RepoDir
     & $Hvigorw assembleHap --mode module -p product=default -p debuggable=true --no-daemon 2>&1 | Tee-Object -Variable buildLog | Out-Null
+    $buildLog | Out-File -FilePath "E:\project\DAG_AI_Chat\build.log" -Encoding utf8 -Width 500
     $hvigorExit = $LASTEXITCODE
     Pop-Location
     # 0.214.1r fake-success fix #2: hvigor non-zero exit = compile failed, report error with log
