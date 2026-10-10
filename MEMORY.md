@@ -171,9 +171,10 @@
 |0.214.3|**气泡长按菜单增「增加子气泡」+菜单限宽**（用户长按截图反馈：菜单只有改标题/删除两项要加加子气泡+PC 上 62% 太宽）：①菜单三连=修改标题/增加子气泡/删除气泡（新增项白字居中同款，插删除之前）；addChildBubble 复刻 ChatPage createChildBubble 链路（generateNodeId+parentID+冗余 parentX/Y+随机偏移 80+0~40+埋点+saveTree+autoLayout，画布端不切对话页）②菜单限宽 `isTablet ? 280 : '62%'`（宽屏固定 280=确认弹窗 400 定式窄档）。**⚠️ 同族重复标识符雷第三踩**：插入 windowMode/isTablet 前未查 BBTreeCanvas 已有同名成员（0.214.1 入档的教训执行不到位）——Duplicate identifier 6 错，秒删复用已有成员；**三台 bm dump 全部实锤 versionCode=1000148**（最硬验证定式全线落地）|
 |0.215~0.216.x|对话页缩放/回车发送/端侧兜底等系列迭代（详见 docs/0.165+/ 与 memory 各专题条目）|
 |0.217.0|**包名迁移收官 `com.example.dag_ai_chat`→`com.dagaichat.app`**（AGC 新应用 DAGAI/app_id 6917618685526149144）：端侧大模型全线回滚（个人开发者白名单不通过）+签名三件套全换新（EC CSR→AGC 新证书/Profile→.p12/密文/agconnect 全套）；**★hvigor 签名密码密文逆向**（signing/material 派生 key+AES-128-GCM+decipher-util.js，试金石解旧密文实锤 key，明文路线彻底死）；三台 bm dump 实锤 1000175+旧包已卸；待办=AGC 云服务新 APP 下重配（云库/云函数/账号/IAP），换包名=本地数据清零靠云同步恢复|
+|0.218.3|**单词库滑出式删除+排序入口合并**（用户拍板两改，对齐知识库终式）：①列表左滑右滑露**回收站圆钮面板**（swipeActionsPanel 同款 44×44 品牌紫+trash 白 20，常驻删除入口撤除，点击走 requestDeleteWord 原确认链路，多选 guard）②三排序按钮（最新/需复习/字母，6 态）合并为**一个「排序」入口**：bindPopup 弹三选项菜单（sortMenuBuilder 无参直读 sortMode），**点选项只切排序不收起**（用户拍板"连续切换不退弹层"，点遮罩才收；onStateChange 同步 visible 防状态失联），按钮文字随当前模式实时变（如"字母 ↑"）。三台 bm dump 实锤 1000181|
 
 ## 版本号体系（2026-10-03 起）
-- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.217.0（versionCode 1000175，包名 com.dagaichat.app）**；★ 0.190.6 起版本号**多处同步**（app.json5 versionCode / Index.ets Text / GlobalSettingsDialog APP_VERSION 常量 / MEMORY.md 本行）；★ 0.195.0 起装机**必须递增 versionCode**
+- 首页显示版本号，每次改动编译装机递增末位；当前 **v0.218.3（versionCode 1000181，包名 com.dagaichat.app）**；★ 版本号同步（app.json5 versionCode / GlobalSettingsDialog APP_VERSION——0.217.1 实锤 Index.ets 版本显示已不存在、同步点实况=两处）；★ 0.195.0 起装机**必须递增 versionCode**
 - 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
 - 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备：MatePad 11.5 S 活力版（平板，192.168.2.16 无线调试，装机测试用）+ 畅享 90 Pro Max（手机，192.168.2.9，用户日常自用勿占用）；★ 实测教训：两台 IP 勿搞反（搞反白折腾一轮），`param get const.product.model` 可验身份
