@@ -507,28 +507,21 @@ struct Index {
     .mode(NavigationMode.Stack)
     .layoutWeight(1) // ★ 0.195.0：边栏常驻布局——Navigation 占边栏右侧剩余区域（页面在此平移不遮边栏）
       }
-      // ★ 0.219.0 用户拍板：宽屏边栏右缘「竖把手」——点击边栏滑向左侧隐藏（把手浮左缘变右箭头），
-      //   再点恢复（滑入滑出 220ms 动画）；收起状态 AppStorageV2 共享——切到对话页等页面边栏保持隐藏。
-      //   把手样式=16×64 圆角竖条（SURFACE_NODE 底+描边+阴影），三角字符指示方向（几何字符无居中问题）
+      // ★ 0.219.1 用户拍板（0.219.0 大块头"太难看"）：把手重设计=**极细竖胶囊**——宽 8/高 56/
+      //   圆角 4，无外框无阴影无三角字符（细条本身即表意），底色 STROKE_CARD 与边栏描边同色系克制；
+      //   展开时骑缝边栏右缘（x=206），收起时浮左缘（x=2）；交互零变化（点击 220ms 滑入滑出）
       if (this.isTablet) {
-        Column() {
-          Text(this.indexSidebarState.collapsed ? '▶' : '◀')
-            .fontSize(12)
-            .fontColor(TEXT_SECONDARY)
-        }
-        .justifyContent(FlexAlign.Center)
-        .width(16)
-        .height(64)
-        .borderRadius({ topRight: 8, bottomRight: 8, topLeft: 0, bottomLeft: 0 })
-        .backgroundColor(SURFACE_NODE)
-        .border({ width: 1, color: STROKE_CARD })
-        .shadow({ radius: 10, color: 'rgba(0,0,0,0.3)', offsetX: 2, offsetY: 0 })
-        .position({ x: this.indexSidebarState.collapsed ? 0 : 200, y: '50%' })
-        .onClick(() => {
-          this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
-            this.indexSidebarState.collapsed = !this.indexSidebarState.collapsed;
-          });
-        })
+        Column()
+          .width(8)
+          .height(56)
+          .borderRadius(4)
+          .backgroundColor(STROKE_CARD)
+          .position({ x: this.indexSidebarState.collapsed ? 2 : 206, y: '50%' })
+          .onClick(() => {
+            this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
+              this.indexSidebarState.collapsed = !this.indexSidebarState.collapsed;
+            });
+          })
       }
       // ★ 0.195.0：全局设置弹窗（常驻边栏「设置」入口；实例与画布/对话页共用 PersistenceV2 数据）
       if (this.globalSettingsVisible) {

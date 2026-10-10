@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000188, // ★ 0.219.0：宽屏边栏右缘把手（点击滑入滑出，跨页面保持收起）+手机左下角图标换 sidebar.svg
+    "versionCode": 1000189, // ★ 0.219.1：边栏把手精致化重设计（16×64 大块头→8×56 极细竖胶囊，去外框阴影三角）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
