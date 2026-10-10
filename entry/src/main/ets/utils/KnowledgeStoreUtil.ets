@@ -210,6 +210,114 @@ export function deleteFolder(store: KnowledgeBankStore, folderId: string): void 
   store.folders = newFolders;
 }
 
+/** ★ 0.221.0：同级是否已存在同名文件夹（excludeId 排除自身——重命名/移动时用） */
+export function folderNameExists(store: KnowledgeBankStore, name: string, parentId: string, excludeId: string = ''): boolean {
+  for (let i = 0; i < store.folders.length; i++) {
+    const f = store.folders[i];
+    if (f.id !== excludeId && f.parentId === parentId && f.name === name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** ★ 0.221.0：生成不重名的文件夹名（重名自动加「副本」后缀） */
+export function genUniqueFolderName(store: KnowledgeBankStore, name: string, parentId: string): string {
+  if (!folderNameExists(store, name, parentId)) {
+    return name;
+  }
+  let i = 1;
+  let candidate = `${name} 副本`;
+  while (folderNameExists(store, candidate, parentId)) {
+    i++;
+    candidate = `${name} 副本${i}`;
+  }
+  return candidate;
+}
+
+/** ★ 0.221.0：移动文件夹到目标父级（防环：目标不能是自己或自己的子孙）——返回是否成功 */
+export function moveFolder(store: KnowledgeBankStore, folderId: string, targetParentId: string): boolean {
+  // 防环：从目标沿 parentId 上溯，若命中自身则说明目标是自己的子孙
+  let cur = targetParentId;
+  let guard = 0;
+  while (cur !== '' && guard < 64) {
+    if (cur === folderId) {
+      return false;
+    }
+    const p = store.folders.find((f: KFolder): boolean => f.id === cur);
+    if (p === undefined) {
+      break;
+    }
+    cur = p.parentId;
+    guard++;
+  }
+  const f = store.folders.find((x: KFolder): boolean => x.id === folderId);
+  if (f === undefined) {
+    return false;
+  }
+  f.parentId = targetParentId;
+  return true;
+}
+
+/** ★ 0.221.0：递归复制整个文件夹子树（文件夹+卡片+子文件夹全部新 id；记忆字段清零）——返回复制卡片数 */
+export function copyFolder(store: KnowledgeBankStore, folderId: string, targetParentId: string): number {
+  const src = store.folders.find((f: KFolder): boolean => f.id === folderId);
+  if (src === undefined) {
+    return 0;
+  }
+  const newName = genUniqueFolderName(store, src.name, targetParentId);
+  const newId = addFolder(store, newName, targetParentId);
+  let cardCount = 0;
+  const now = Date.now();
+  const copies: KnowledgeCard[] = [];
+  for (let i = 0; i < store.cards.length; i++) {
+    const c = store.cards[i];
+    if (c.folderId !== folderId) {
+      continue;
+    }
+    copies.push(new KnowledgeCard(genCardId(), c.title, c.definition, c.imageUri, now + cardCount,
+      0, 0, 0, 0, c.tags, c.images, newId, c.titleImages));
+    cardCount++;
+  }
+  if (copies.length > 0) {
+    store.cards = [...copies, ...store.cards];
+  }
+  // 递归复制子文件夹（先快照 children 再递归，防遍历时改 store.folders）
+  const children = store.folders.filter((f: KFolder): boolean => f.parentId === folderId);
+  for (let j = 0; j < children.length; j++) {
+    cardCount += copyFolder(store, children[j].id, newId);
+  }
+  return cardCount;
+}
+
+/** ★ 0.221.0：级联删除文件夹（自身+子孙文件夹+其中所有卡片）——返回删除的卡片数 */
+export function deleteFolderCascade(store: KnowledgeBankStore, folderId: string): number {
+  const toDelete: string[] = [folderId];
+  let guard = 0;
+  for (let i = 0; i < toDelete.length && guard < 1000; i++) {
+    const pid = toDelete[i];
+    const children = store.folders.filter((f: KFolder): boolean => f.parentId === pid);
+    for (let j = 0; j < children.length; j++) {
+      if (!toDelete.includes(children[j].id)) {
+        toDelete.push(children[j].id);
+      }
+    }
+    guard++;
+  }
+  let cardCount = 0;
+  const keep: KnowledgeCard[] = [];
+  for (let k = 0; k < store.cards.length; k++) {
+    if (toDelete.includes(store.cards[k].folderId)) {
+      cardCount++;
+    } else {
+      keep.push(store.cards[k]);
+    }
+  }
+  store.cards = keep;
+  store.folders = store.folders.filter((f: KFolder): boolean => !toDelete.includes(f.id));
+  return cardCount;
+}
+
 /** 移动卡片（批量）到目标文件夹（folderId='' 即根目录） */
 export function moveCards(store: KnowledgeBankStore, cardIds: string[], folderId: string): void {
   for (let i = 0; i < store.cards.length; i++) {

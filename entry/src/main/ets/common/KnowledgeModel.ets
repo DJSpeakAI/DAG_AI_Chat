@@ -282,6 +282,9 @@ export function isAttentionHot(c: KnowledgeCard, heat: Map<string, number>): boo
 export class KbFolderNavStore {
   @Trace folderId: string = ''; // 当前视图文件夹（'' = 根目录）；边栏树点击与页内面包屑同源
   @Trace nonce: number = 0; // 边栏点击递增（页面若需事件感知可用；V1 页面直读 folderId 即响应）
+  @Trace folderAction: string = '';   // ★ 0.221.0：边栏树文件夹操作请求（'' / move / copy / delete / rename）
+  @Trace folderActionId: string = ''; // 目标文件夹 id（移动/复制/删除/重命名的对象）
+  @Trace folderActionName: string = ''; // 重命名时的初始名（边栏树写入，页面 TextInput 读）
 }
 
 export function connectKbFolderNav(): KbFolderNavStore {

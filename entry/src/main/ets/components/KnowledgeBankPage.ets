@@ -38,7 +38,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder } from '../common/KnowledgeModel';
-import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain } from '../utils/KnowledgeStoreUtil';
+import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade } from '../utils/KnowledgeStoreUtil';
 import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
 import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, packChildFolders, packCardCount, packSubtreeRefs, packFolderPath } from '../utils/PackUtil';
@@ -1377,9 +1377,79 @@ export struct KnowledgeBankPage {
     this.showToast(`已删除「${f.name}」——卡片已移到上一级`);
   }
 
-  /** 移动/复制确认（folderPicker 行点击） */
+
+  /** ★ 0.221.0：folderPicker 标题（文件夹移动/复制 与 卡片移动/复制 分流） */
+  folderPickerTitle(): string {
+    if (this.folderNav.folderAction === 'move') {
+      return '移动文件夹到…';
+    }
+    if (this.folderNav.folderAction === 'copy') {
+      return '复制文件夹到…';
+    }
+    return this.moveOrCopyMode === 'copy' ? `复制 ${this.selectedIds.length} 张到…` : `移动 ${this.selectedIds.length} 张到…`;
+  }
+
+  /** ★ 0.221.0：按 id 取文件夹名 */
+  folderNameById(folderId: string): string {
+    const f = this.knowledgeBank.folders.find((x: KFolder): boolean => x.id === folderId);
+    return f === undefined ? '' : f.name;
+  }
+
+  /** ★ 0.221.0：确认级联删除文件夹 */
+  confirmFolderDelete(): void {
+    const fid = this.folderNav.folderActionId;
+    const deleted = deleteFolderCascade(this.knowledgeBank, fid);
+    if (this.folderNav.folderId === fid) {
+      this.folderNav.folderId = this.folderParentId();
+    }
+    this.folderNav.folderAction = '';
+    this.folderNav.folderActionId = '';
+    this.showToast(`已删除文件夹及 ${deleted} 张卡片`);
+  }
+
+  /** ★ 0.221.0：取消文件夹操作（关闭弹窗 + 清请求） */
+  cancelFolderAction(): void {
+    this.folderNav.folderAction = '';
+    this.folderNav.folderActionId = '';
+    this.folderNav.folderActionName = '';
+  }
+
+  /** ★ 0.221.0：确认重命名文件夹（边栏树触发） */
+  confirmFolderRename(): void {
+    const nm = this.folderNav.folderActionName.trim();
+    if (nm.length === 0) {
+      this.showToast('名称不能为空');
+      return;
+    }
+    renameFolder(this.knowledgeBank, this.folderNav.folderActionId, nm);
+    this.folderNav.folderAction = '';
+    this.folderNav.folderActionId = '';
+    this.folderNav.folderActionName = '';
+  }  /** 移动/复制确认（folderPicker 行点击） */
   confirmFolderTarget(folderId: string): void {
-    const ids = [...this.selectedIds];
+
+    // ★ 0.221.0：文件夹移动/复制（边栏树右键触发）——与卡片移动/复制分流
+    if (this.folderNav.folderAction === 'move' || this.folderNav.folderAction === 'copy') {
+      const fid = this.folderNav.folderActionId;
+      if (this.folderNav.folderAction === 'copy') {
+        const n = copyFolder(this.knowledgeBank, fid, folderId);
+        this.showToast(`已复制文件夹（含 ${n} 张卡片）`);
+      } else {
+        const ok = moveFolder(this.knowledgeBank, fid, folderId);
+        if (!ok) {
+          this.showToast('不能移动到自身或其子文件夹');
+          this.folderNav.folderAction = '';
+          this.folderNav.folderActionId = '';
+          this.folderPickerVisible = false;
+          return;
+        }
+        this.showToast('已移动文件夹');
+      }
+      this.folderNav.folderAction = '';
+      this.folderNav.folderActionId = '';
+      this.folderPickerVisible = false;
+      return;
+    }    const ids = [...this.selectedIds];
     if (this.moveOrCopyMode === 'copy') {
       const n = copyCards(this.knowledgeBank, ids, folderId);
       const tp: Record<string, string> = {}; tp['count'] = `${n}`; // ArkTS 铁律：空对象+键赋值（0.206 挂点同款）
@@ -1635,6 +1705,46 @@ export struct KnowledgeBankPage {
     .width(160)
   }
 
+  // ★ 0.221.0：卡片右键菜单（移动/复制/删除）——带参 @Builder，bindContextMenu 箭头函数包调用
+  @Builder
+  cardContextMenu(c: KnowledgeCard) {
+    Column() {
+      Text('移动')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.moveOrCopyMode = 'move';
+          this.selectedIds = [c.id];
+          this.folderPickerVisible = true;
+        })
+      Divider().color(STROKE_CARD)
+      Text('复制')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.moveOrCopyMode = 'copy';
+          this.selectedIds = [c.id];
+          this.folderPickerVisible = true;
+        })
+      Divider().color(STROKE_CARD)
+      Text('删除')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.requestDeleteCard(c);
+        })
+    }
+    .width(140)
+  }
   @Builder
   folderDialog() {
     Column() {
@@ -1685,11 +1795,106 @@ export struct KnowledgeBankPage {
     })
   }
 
+
+  // ★ 0.221.0：文件夹删除确认弹窗（边栏树右键「删除」）
   @Builder
+  folderDeleteConfirmDialog() {
+    Column() {
+      Column() {
+        Text(`删除「${this.folderNameById(this.folderNav.folderActionId)}」`)
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text('将删除该文件夹及其中所有卡片和子文件夹，不可恢复。')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 10 })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.cancelFolderAction();
+            })
+          Button('删除')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmFolderDelete();
+            })
+        }
+        .margin({ top: 16 })
+      }
+      .width('86%')
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.cancelFolderAction();
+    })
+  }
+
+  // ★ 0.221.0：文件夹重命名弹窗（边栏树右键「重命名」）
+  @Builder
+  renameFolderDialog() {
+    Column() {
+      Column() {
+        Text('重命名文件夹')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        TextInput({ text: this.folderNav.folderActionName, placeholder: '文件夹名称' })
+          .fontSize(14)
+          .height(40)
+          .margin({ top: 12 })
+          .padding({ left: 10, right: 10 })
+          .backgroundColor(SURFACE_SOFT)
+          .borderRadius(8)
+          .onChange((v: string) => {
+            this.folderNav.folderActionName = v;
+          })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.cancelFolderAction();
+            })
+          Button('确定')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmFolderRename();
+            })
+        }
+        .margin({ top: 14 })
+      }
+      .width('86%')
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.cancelFolderAction();
+    })
+  }  @Builder
   folderPickerDialog() {
     Column() {
       Column() {
-        Text(this.moveOrCopyMode === 'copy' ? `复制 ${this.selectedIds.length} 张到…` : `移动 ${this.selectedIds.length} 张到…`)
+        Text(this.folderPickerTitle())
           .fontSize(16)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
@@ -1745,6 +1950,7 @@ export struct KnowledgeBankPage {
           .margin({ top: 10 })
           .onClick(() => {
             this.folderPickerVisible = false;
+            this.cancelFolderAction();
           })
       }
       .width('86%')
@@ -1759,6 +1965,7 @@ export struct KnowledgeBankPage {
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.folderPickerVisible = false;
+      this.cancelFolderAction();
     })
   }
 
@@ -2418,6 +2625,7 @@ export struct KnowledgeBankPage {
                     this.swipeActionsPanel(c)
                   }
                 })
+                .bindContextMenu(() => { this.cardContextMenu(c) }, ResponseType.RightClick)
               }, (c: KnowledgeCard) => c.id)
             }
             .width('100%')
@@ -2465,8 +2673,15 @@ export struct KnowledgeBankPage {
         if (this.folderDialogVisible) {
           this.folderDialog()
         }
-        if (this.folderPickerVisible) {
+        if (this.folderPickerVisible || this.folderNav.folderAction === 'move' || this.folderNav.folderAction === 'copy') {
           this.folderPickerDialog()
+
+        if (this.folderNav.folderAction === 'delete') {
+          this.folderDeleteConfirmDialog()
+        }
+        if (this.folderNav.folderAction === 'rename') {
+          this.renameFolderDialog()
+        }
         }
         if (this.importPreviewVisible) {
           this.importPreviewDialog()
@@ -2547,6 +2762,12 @@ export struct KnowledgeBankPage {
       // ★ 0.208.0：Anki 弹窗
       if (this.apkgPreviewVisible) {
         this.apkgPreviewVisible = false;
+        return true;
+      }
+
+      // ★ 0.221.0：文件夹操作弹窗（移动/复制/删除/重命名）——返回键先关
+      if (this.folderNav.folderAction !== '') {
+        this.cancelFolderAction();
         return true;
       }
       if (this.folderPickerVisible) {
