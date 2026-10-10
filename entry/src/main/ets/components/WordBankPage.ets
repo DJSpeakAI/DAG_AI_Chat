@@ -51,6 +51,7 @@ export struct WordBankPage {
   @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
   @Local sortMenuVisible: boolean = false; // ★ 0.218.3 用户拍板：三排序按钮合并为一个「排序」入口——点击弹三选项（最新/需复习/字母），点选项只切排序**不收起**（用户可连续切换），点遮罩才收起
   @Local gridMode: boolean = false; // ★ 0.218.6 用户拍板：宽屏视图切换（false=横条列表 / true=方块网格）；仅宽屏显示切换入口，手机永远横条（用户拍板"手机上不做，看了舒服"）
+  @Local gridCols: number = 5; // ★ 0.218.7：网格列数随容器宽自适应（0.218.6 写死 5 列——窗口拖小时每格被挤到 ~100vp 内容全变形=用户截图"排列乱码"；改 onAreaChange 动态算列，每格保底 170vp 最窄 2 列）
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -1277,12 +1278,23 @@ export struct WordBankPage {
                 }
               }, (w: WordItem) => w.id)
             }
-            .columnsTemplate('repeat(5, 1fr)')
+            .columnsTemplate(`repeat(${this.gridCols}, 1fr)`)
             .columnsGap(12)
             .rowsGap(12)
             .width('100%')
             .layoutWeight(1)
             .padding({ left: 16, right: 16, top: 12 })
+            .onAreaChange((_o: Area, n: Area) => {
+              // ★ 0.218.7：列数随容器宽自适应——目标每格 ≥170vp（宁大勿挤），最窄保 2 列；
+              //   PC 全宽 7 列 / 半窗 4 列 / 窄窗 2 列，任何窗口尺寸都整齐不挤压
+              const availW = Number(n.width) - 32; // 减左右 padding 16×2
+              if (availW > 0) {
+                const cols = Math.max(2, Math.floor(availW / 170));
+                if (cols !== this.gridCols) {
+                  this.gridCols = cols;
+                }
+              }
+            })
           } else {
             List({ space: 8 }) {
               ForEach(this.filteredWords, (w: WordItem) => {
