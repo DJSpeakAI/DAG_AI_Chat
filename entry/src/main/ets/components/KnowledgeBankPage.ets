@@ -2536,7 +2536,7 @@ export struct KnowledgeBankPage {
       .bindContextMenu(this.kbCreateMenuBuilder, ResponseType.RightClick)
       .bindPopup(this.createMenuVisible, {
         builder: this.kbCreateMenuBuilder(),
-        placement: Placement.Center,
+        placement: Placement.Bottom,
         popupColor: SURFACE_NODE,
         radius: 12,
         mask: { color: 'rgba(0,0,0,0.3)' },

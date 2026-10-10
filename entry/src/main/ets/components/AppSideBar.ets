@@ -340,6 +340,7 @@ export struct AppSideBar {
           })
         }, (item: KFolderTreeItem) => item.folder.id)
       }
+      }
 
       // ── 弹性空隙（底部设置 + 账号沉底）──
       Blank()
