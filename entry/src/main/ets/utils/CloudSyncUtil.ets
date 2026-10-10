@@ -50,9 +50,25 @@ export function connectCloudSync(): CloudSyncStore {
     () => new CloudSyncStore()) as CloudSyncStore;
 }
 
+// ★ 0.218.0 云同步写冲突止血：仲裁器（本地池时间戳+下行备份）——全新 key 挂载
+//   （0.185 铁律：PersistenceV2 新字段须全新 key，勿挂 cloud-sync-switch 旧 key）
+@ObservedV2
+export class CloudSyncArbiter {
+  @Trace mtimeFlat: number = 0; // 平铺池最后一次本地编辑上行的时间戳（=上行行 updated_at）
+  @Trace mtimeTabs: number = 0; // Tab 池同上
+  @Trace backupFlat: string = ''; // 下行覆盖前的整池快照备份（数据安全兜底）
+  @Trace backupTabs: string = '';
+}
+
+export function connectCloudSyncArbiter(): CloudSyncArbiter {
+  return PersistenceV2.connect(CloudSyncArbiter, 'cloud-sync-arbiter-v1',
+    () => new CloudSyncArbiter()) as CloudSyncArbiter;
+}
+
 // ★ 0.165.2：云端下行处理器（回调注入——ChatModel 已 import 本文件，本文件反向
 // import ChatModel 会循环依赖，故业务写回逻辑由 ChatModel 侧注册进来）
-type CloudDataHandler = (key: string, value: string) => void;
+// ★ 0.218.0：签名加 updatedAt（云端行时间戳，ChatModel 侧仲裁用——云端不新于本地则丢弃）
+type CloudDataHandler = (key: string, value: string, updatedAt: number) => void;
 let downlinkHandler: CloudDataHandler | null = null;
 
 // ★ 0.165.1：初始化云同步 RDB（EntryAbility.onWindowStageCreate 调用，幂等）
@@ -194,6 +210,29 @@ function ensureReady(): Promise<boolean> {
 // ★ 0.165.1：写入/更新一行快照（fire-and-forget：失败仅日志，绝不阻塞本地持久化路径）
 // ON_CONFLICT_REPLACE = INSERT OR REPLACE 语义：主键冲突删旧插新（表无外键引用，无副作用）
 export function upsertCloudData(key: string, value: string): void {
+  // ★ 0.218.0 空不上行守卫（清零事故命门）：空池数据禁止上云——新装设备/清空状态
+  // 的空快照一旦上行即覆盖云端真实数据（PC 清零事故机制），从源头掐断
+  try {
+    const parsed: object = JSON.parse(value);
+    if (Array.isArray(parsed) && (parsed as Array<Object>).length === 0) {
+      return; // tabs 池空数组
+    }
+    const rec = parsed as Record<string, Object>;
+    const nodeList = rec['nodeList'];
+    if (Array.isArray(nodeList) && (nodeList as Array<Object>).length === 0) {
+      return; // flat 池空树
+    }
+  } catch (_e) {
+    // 非法 JSON 也不上行（防脏数据污染云端）
+    return;
+  }
+  const now = Date.now();
+  const arbiter = connectCloudSyncArbiter();
+  if (key === 'flat_pool') {
+    arbiter.mtimeFlat = now;
+  } else if (key === 'tabs_pool') {
+    arbiter.mtimeTabs = now;
+  }
   ensureReady().then((ok: boolean) => {
     if (!ok || rdbStore === null) {
       return;
@@ -201,7 +240,7 @@ export function upsertCloudData(key: string, value: string): void {
     const bucket: relationalStore.ValuesBucket = {
       'key': key,
       'value': value,
-      'updated_at': Date.now()
+      'updated_at': now
     };
     rdbStore.insert(TABLE_NAME, bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE)
       .catch((err: BusinessError) => {
@@ -210,23 +249,31 @@ export function upsertCloudData(key: string, value: string): void {
   });
 }
 
-// 查询一行快照（0.165.2 下行链路内部使用：pullAndNotify 拉快照通知业务层）
-async function queryCloudData(key: string): Promise<string | null> {
+// ★ 0.218.0：查一行快照的 value + updated_at（下行仲裁用）
+class CloudCloudRow {
+  value: string = '';
+  updatedAt: number = 0;
+}
+
+async function queryCloudRow(key: string): Promise<CloudCloudRow | null> {
   if (!await ensureReady() || rdbStore === null) {
     return null;
   }
   try {
     const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
     predicates.equalTo('key', key);
-    const resultSet = await rdbStore.query(predicates, ['value']);
-    let result: string | null = null;
+    const resultSet = await rdbStore.query(predicates, ['value', 'updated_at']);
+    let result: CloudCloudRow | null = null;
     if (resultSet.goToNextRow()) {
-      result = resultSet.getString(resultSet.getColumnIndex('value'));
+      result = {
+        value: resultSet.getString(resultSet.getColumnIndex('value')),
+        updatedAt: resultSet.getLong(resultSet.getColumnIndex('updated_at'))
+      };
     }
     resultSet.close();
     return result;
   } catch (err) {
-    hilog.warn(DOMAIN, TAG, `query ${key} failed: ${JSON.stringify(err)}`);
+    hilog.warn(DOMAIN, TAG, `queryRow ${key} failed: ${JSON.stringify(err)}`);
     return null;
   }
 }
@@ -270,9 +317,9 @@ async function pullAndNotify(key: string): Promise<void> {
   if (downlinkHandler === null) {
     return;
   }
-  const value = await queryCloudData(key);
-  if (value !== null) {
-    downlinkHandler(key, value);
+  const row = await queryCloudRow(key);
+  if (row !== null) {
+    downlinkHandler(key, row.value, row.updatedAt); // ★ 0.218.0：带云端行时间戳，业务侧仲裁
   }
 }
 

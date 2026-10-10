@@ -17,7 +17,7 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
- import { upsertCloudData, registerCloudDataHandler } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册
+ import { upsertCloudData, registerCloudDataHandler, connectCloudSyncArbiter } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册；★ 0.218.0 仲裁器（写冲突止血）
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
@@ -1262,18 +1262,31 @@ export function migrateLegacyPoolsIfNeeded(canvasMode: CanvasMode): void {
 //     触发条件是另一台设备刚改过数据，属用户预期内的多端一致，MVP 接受
 // ============================================================
 export function setupCloudDownlink(): void {
-  registerCloudDataHandler((key: string, value: string): void => {
+  registerCloudDataHandler((key: string, value: string, updatedAt: number): void => {
+    // ★ 0.218.0 时间戳仲裁（写冲突止血核心）：云端行时间戳不新于本地最后编辑/写回时间 → 丢弃。
+    //   根除 0.165 快照行固有缺陷——他端旧树/空树下行整池覆盖本地（PC 清零事故机制）；
+    //   本机上行回声（updatedAt == 本地 mtime）亦被此条件天然挡住，接替旧"值比较挡回声"。
+    //   个人用户场景语义：最新编辑者胜（用户拍板 2026-10-10）。
+    const arbiter = connectCloudSyncArbiter();
+    const localMtime = key === 'flat_pool' ? arbiter.mtimeFlat : arbiter.mtimeTabs;
+    if (updatedAt <= localMtime) {
+      return;
+    }
     if (key === 'flat_pool') {
       const persist = PersistenceV2.connect(PersistData, 'persist-data',
         () => new PersistData()) as PersistData;
       if (persist.bubbleTreeJson !== value) {
+        arbiter.backupFlat = persist.bubbleTreeJson; // ★ 0.218.0 写回前整池备份（数据安全兜底）
         persist.bubbleTreeJson = value; // PersistenceV2 自动落盘（绝不 upsert，防回环）
+        arbiter.mtimeFlat = updatedAt; // 写回即推进本地水位（后续更旧的下行同样被挡）
         refreshWorkspaceFromPools();
       }
     } else if (key === 'tabs_pool') {
       const forest = connectTabForest();
       if (forest.tabsJson !== value) {
+        arbiter.backupTabs = forest.tabsJson;
         forest.tabsJson = value;
+        arbiter.mtimeTabs = updatedAt;
         refreshWorkspaceFromPools();
       }
     }
