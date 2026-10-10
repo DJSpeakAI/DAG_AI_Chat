@@ -24,7 +24,7 @@ import { AnnotationPage } from '../components/AnnotationPage'; // ★ 0.152：�
 import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：学习统计页路由
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
-import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态（把手跨页面共享）
+import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState, SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
@@ -75,6 +75,9 @@ struct Index {
   }
   // ★ 0.219.0：宽屏边栏收起状态（AppStorageV2 共享实例——气泡树页把手与本页同源，跨页面保持收起）
   indexSidebarState: IndexSidebarState = connectIndexSidebarState();
+  // ★ 0.220.0：边栏折叠态+文件夹导航（AppSideBar 与本页共享——点知识库折叠六大模块出文件夹树）
+  kbSection: SidebarSectionState = connectSidebarSection();
+  folderNav: KbFolderNavStore = connectKbFolderNav();
   // ★ 0.195.0 bugfix：边栏选中态跟踪——didShow 拦截拿目标页名（'navBar'=首页 → 清空无高亮；
   //   用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」，原画布项硬编码永久高亮已废）
   @Local currentRoute: string = '';
@@ -175,6 +178,7 @@ struct Index {
     if (kind === 'wordbank') {
       this.pathStack.pushPath({ name: 'WordBankPage' });
     } else if (kind === 'knowledge') {
+      this.kbSection.collapsed = true; // ★ 0.220.0 用户拍板：点「知识库」自动折叠六大模块（出文件夹树；手动展开后记忆保持，再点知识库才再折叠）
       this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
     } else if (kind === 'review') {
       this.pathStack.pushPath({ name: 'ReviewPage' }); // ★ 0.196.1：知识复习页（Anki 式单卡）
@@ -336,6 +340,14 @@ struct Index {
               settingsOpen: this.globalSettingsVisible,
               onNavClick: (kind: string) => {
                 this.sideBarNav(kind);
+              },
+              onFolderClick: (folderId: string) => {
+                // ★ 0.220.0：文件夹树点击——视图切换已由共享 store（folderNav.folderId）生效，
+                //   此处只需确保路由在知识库页（树仅在知识库页显示，正常恒在；兜底 pushPath）
+                const names = this.pathStack.getAllPathName();
+                if (names.indexOf('KnowledgeBankPage') < 0) {
+                  this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+                }
               }
             })
           }

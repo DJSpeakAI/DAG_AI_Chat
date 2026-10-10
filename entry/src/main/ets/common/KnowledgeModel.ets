@@ -276,3 +276,25 @@ export function isAttentionHot(c: KnowledgeCard, heat: Map<string, number>): boo
   }
   return false;
 }
+
+// ★ 0.220.0：知识库文件夹导航（AppSideBar 文件夹树 ⇄ KnowledgeBankPage 视图 跨组件共享真相源）
+@ObservedV2
+export class KbFolderNavStore {
+  @Trace folderId: string = ''; // 当前视图文件夹（'' = 根目录）；边栏树点击与页内面包屑同源
+  @Trace nonce: number = 0; // 边栏点击递增（页面若需事件感知可用；V1 页面直读 folderId 即响应）
+}
+
+export function connectKbFolderNav(): KbFolderNavStore {
+  return AppStorageV2.connect(KbFolderNavStore, 'kb-folder-nav', () => new KbFolderNavStore()) as KbFolderNavStore;
+}
+
+// ★ 0.220.0：边栏六大模块折叠态（点「知识库」自动折叠出文件夹树；点折叠条手动展开；
+//   AppStorageV2 会话级记忆——切页面/重进知识库保持用户选择，不反复自动折叠）
+@ObservedV2
+export class SidebarSectionState {
+  @Trace collapsed: boolean = false;
+}
+
+export function connectSidebarSection(): SidebarSectionState {
+  return AppStorageV2.connect(SidebarSectionState, 'sidebar-section', () => new SidebarSectionState()) as SidebarSectionState;
+}

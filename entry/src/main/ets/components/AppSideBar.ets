@@ -13,10 +13,43 @@ import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHos
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.220.0：折叠态 store
+import { connectKnowledgeBank, addFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据+新建
+import { KnowledgeBankStore, KFolder, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store
+
+// ★ 0.220.0：边栏六大模块折叠态（点「知识库」自动折叠出文件夹树；点折叠条手动展开；
+//   AppStorageV2 会话级记忆——切页面/重进知识库保持用户选择，不反复自动折叠）
+@ObservedV2
+export class SidebarSectionState {
+  @Trace collapsed: boolean = false;
+}
+
+export function connectSidebarSection(): SidebarSectionState {
+  return AppStorageV2.connect(SidebarSectionState, 'sidebar-section', () => new SidebarSectionState()) as SidebarSectionState;
+}
+
+// ★ 0.220.0：知识库文件夹导航（边栏树点击 ⇄ KnowledgeBankPage 视图，跨组件共享真相源）
+@ObservedV2
+export class KbFolderNavStore {
+  @Trace folderId: string = ''; // 当前视图文件夹（'' = 根目录）
+  @Trace nonce: number = 0; // 边栏点击递增（页面可感知事件；V1 直读 folderId 即响应）
+}
+
+export function connectKbFolderNav(): KbFolderNavStore {
+  return AppStorageV2.connect(KbFolderNavStore, 'kb-folder-nav', () => new KbFolderNavStore()) as KbFolderNavStore;
+}
+
+/** ★ 0.220.0：文件夹树平铺项（DFS 顺序+缩进深度） */
+export interface KFolderTreeItem {
+  folder: KFolder;
+  depth: number;
+}
 
 @ComponentV2
 export struct AppSideBar {
   @Event onNavClick: (kind: string) => void = (kind: string) => {};
+  // ★ 0.220.0：文件夹树点击回调（宿主消费：确保路由在知识库页+视图切换已在共享 store 生效）
+  @Event onFolderClick: (folderId: string) => void = (folderId: string) => {};
   // ★ 0.195.0 bugfix：选中态动态跟踪（用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」——
   //   原画布项硬编码永久高亮已废）。宿主注入当前路由名，本组件按映射判定高亮；
   //   BBTreeCanvas 手机抽屉形态固定传 'BBTreeCanvas'（抽屉只能从画布唤出，人就在画布上）
@@ -24,6 +57,50 @@ export struct AppSideBar {
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
   account: HuaweiAccountStore = connectHuaweiAccount();
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
+  // ★ 0.220.0：知识库折叠态+文件夹树
+  kbSection: SidebarSectionState = connectSidebarSection();
+  folderNav: KbFolderNavStore = connectKbFolderNav();
+  kbStore: KnowledgeBankStore = connectKnowledgeBank();
+  @Local selFolderId: string = ''; // 树内选中文件夹（新建子文件夹的父级）
+  @Local folderInputVisible: boolean = false; // 新建文件夹输入行
+  @Local folderInputText: string = '';
+
+  /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
+  kbFolderTreeItems(): KFolderTreeItem[] {
+    const out: KFolderTreeItem[] = [];
+    const walk = (parentId: string, depth: number): void => {
+      const kids = this.kbStore.folders
+        .filter((f: KFolder): boolean => f.parentId === parentId)
+        .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
+      for (let i = 0; i < kids.length; i++) {
+        out.push({ folder: kids[i], depth: depth });
+        walk(kids[i].id, depth + 1);
+      }
+    };
+    walk('', 0);
+    return out;
+  }
+
+  /** ★ 0.220.0：树内新建文件夹（父级=树内选中项；未选中=根）。空名忽略；成功后选中新文件夹 */
+  commitNewFolder(): void {
+    const newId = addFolder(this.kbStore, this.folderInputText, this.selFolderId);
+    if (newId.length > 0) {
+      this.selFolderId = newId;
+      this.folderInputText = '';
+      this.folderInputVisible = false;
+    }
+  }
+
+  /** ★ 0.220.0：树内卡片计数（直算，与页内 folderCardCount 同口径） */
+  kbCardCount(folderId: string): number {
+    let n = 0;
+    for (let i = 0; i < this.kbStore.cards.length; i++) {
+      if (this.kbStore.cards[i].folderId === folderId) {
+        n++;
+      }
+    }
+    return n;
+  }
 
   /** ★ 0.195.0：导航项高亮判定——当前路由映射（ChatPage/AnnotationPage 是气泡树子页，归气泡树） */
   isItemActive(kind: string): boolean {
@@ -210,12 +287,124 @@ export struct AppSideBar {
       .margin({ top: 20, bottom: 24 })
 
       // ── 导航项：气泡树（主）/ 单词库 / 知识库 / 复习 / 统计 / 账单 ──
-      this.SideBarNavItem('canvas')
-      this.SideBarNavItem('wordbank')
-      this.SideBarNavItem('knowledge')
-      this.SideBarNavItem('review') // ★ 0.196.1：知识复习（用户定稿：知识库下方）
-      this.SideBarNavItem('statistics')
-      this.SideBarNavItem('billing')
+      // ★ 0.220.0 用户拍板：点「知识库」→ 六大模块自动折叠成「导航」窄条（下方出文件夹树）；
+      //   点折叠条手动展开；折叠态 AppStorageV2 记忆（切页面/重进知识库保持用户选择）
+      if (!this.kbSection.collapsed) {
+        this.SideBarNavItem('canvas')
+        this.SideBarNavItem('wordbank')
+        this.SideBarNavItem('knowledge')
+        this.SideBarNavItem('review') // ★ 0.196.1：知识复习（用户定稿：知识库下方）
+        this.SideBarNavItem('statistics')
+        this.SideBarNavItem('billing')
+      } else {
+        // 折叠条：「导航」+ 展开箭头——点击恢复六大模块（用户手动选择，记忆保持）
+        Row() {
+          Text('导航')
+            .fontSize(FONT_SIZE_NAV_LABEL)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .fontColor(TEXT_PRIMARY)
+          Blank()
+          Text('›')
+            .fontSize(14)
+            .fontColor(TEXT_TERTIARY)
+        }
+        .width('100%')
+        .height(40)
+        .padding({ left: 12, right: 12 })
+        .borderRadius(RADIUS_NAV)
+        .backgroundColor(SURFACE_SOFT)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.kbSection.collapsed = false;
+        })
+      }
+
+      // ── ★ 0.220.0：文件夹树区（折叠态+当前在知识库页时显示）──
+      if (this.kbSection.collapsed && this.currentRoute === 'KnowledgeBankPage') {
+        Row({ space: 6 }) {
+          Text('文件夹')
+            .fontSize(FONT_SIZE_CAPTION)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .fontColor(TEXT_TERTIARY)
+          Blank()
+          Text('+')
+            .fontSize(16)
+            .fontColor(BRAND_SECONDARY)
+            .onClick(() => {
+              this.folderInputVisible = !this.folderInputVisible;
+            })
+        }
+        .width('100%')
+        .padding({ left: 12, right: 8, top: 10, bottom: 4 })
+        if (this.folderInputVisible) {
+          Row({ space: 6 }) {
+            TextInput({ text: this.folderInputText, placeholder: '新文件夹名' })
+              .fontSize(12)
+              .height(32)
+              .layoutWeight(1)
+              .backgroundColor(SURFACE_SOFT)
+              .onChange((v: string) => {
+                this.folderInputText = v;
+              })
+            Text('添加')
+              .fontSize(12)
+              .fontColor(BRAND_SECONDARY)
+              .onClick(() => {
+                this.commitNewFolder();
+              })
+          }
+          .width('100%')
+          .padding({ left: 8, right: 8, top: 2, bottom: 4 })
+        }
+        // 「全部卡片」= 根目录视图入口
+        Row({ space: 8 }) {
+          Text('全部卡片')
+            .fontSize(13)
+            .fontColor(this.folderNav.folderId === '' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .layoutWeight(1)
+          Text(`${this.kbStore.cards.length}`)
+            .fontSize(10)
+            .fontColor(TEXT_TERTIARY)
+        }
+        .height(32)
+        .padding({ left: 8, right: 8 })
+        .borderRadius(RADIUS_NAV)
+        .backgroundColor(this.folderNav.folderId === '' ? SURFACE_HOVER : Color.Transparent)
+        .onClick(() => {
+          this.selFolderId = '';
+          this.folderNav.folderId = '';
+          this.folderNav.nonce++;
+          this.onFolderClick('');
+        })
+        // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮）
+        ForEach(this.kbFolderTreeItems(), (item: KFolderTreeItem) => {
+          Row({ space: 6 }) {
+            Text('›')
+              .fontSize(12)
+              .fontColor(TEXT_TERTIARY)
+            Text(item.folder.name)
+              .fontSize(13)
+              .fontColor(this.folderNav.folderId === item.folder.id ? TEXT_PRIMARY : TEXT_SECONDARY)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            Text(`${this.kbCardCount(item.folder.id)}`)
+              .fontSize(10)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .width('100%')
+          .height(32)
+          .padding({ left: 8 + item.depth * 14, right: 8 })
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(this.folderNav.folderId === item.folder.id ? SURFACE_HOVER : Color.Transparent)
+          .onClick(() => {
+            this.selFolderId = item.folder.id;
+            this.folderNav.folderId = item.folder.id;
+            this.folderNav.nonce++;
+            this.onFolderClick(item.folder.id);
+          })
+        }, (item: KFolderTreeItem) => item.folder.id)
+      }
 
       // ── 弹性空隙（底部设置 + 账号沉底）──
       Blank()

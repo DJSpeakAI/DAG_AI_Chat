@@ -25,7 +25,7 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, parseTags, getCardImages, getTitleImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡；★ 0.202.0：parseTags；★ 0.202.1：getCardImages（多图兼容读取）
+import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, parseTags, getCardImages, getTitleImages, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡；★ 0.202.0：parseTags；★ 0.202.1：getCardImages（多图兼容读取）
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
 import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
@@ -160,7 +160,9 @@ export struct KnowledgeBankPage {
   @Local batchConfirmVisible: boolean = false;
 
   // ── ★ 0.207.0：文件夹体系（anything 导入）状态 ──
-  @Local currentFolderId: string = '';          // '' = 根目录（面包屑跳转/文件夹点击切换）
+  // ★ 0.220.0：currentFolderId 迁 KbFolderNavStore（AppStorageV2 共享 @Trace folderId）——
+  //   边栏文件夹树与页内视图同源同步（边栏点文件夹=页内视图立即切换，同一 store 实例零桥接）
+  folderNav: KbFolderNavStore = connectKbFolderNav();
   @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
   @Local folderDialogIsRename: boolean = false;
   @Local folderDialogTargetId: string = '';
@@ -197,7 +199,7 @@ export struct KnowledgeBankPage {
   @Computed
   get currentFolders(): KFolder[] {
     return this.knowledgeBank.folders
-      .filter((f: KFolder): boolean => f.parentId === this.currentFolderId)
+      .filter((f: KFolder): boolean => f.parentId === this.folderNav.folderId)
       .sort((a: KFolder, b: KFolder) => b.createdAt - a.createdAt);
   }
 
@@ -225,7 +227,7 @@ export struct KnowledgeBankPage {
     let list: KnowledgeCard[] = [];
     if (kw.length === 0) {
       // ★ 0.207.0：目录视图——无关键字只看当前文件夹（跨库找卡走搜索）
-      list = this.knowledgeBank.cards.filter((c: KnowledgeCard) => c.folderId === this.currentFolderId);
+      list = this.knowledgeBank.cards.filter((c: KnowledgeCard) => c.folderId === this.folderNav.folderId);
     } else {
       // 搜索保持全库（含所有文件夹——找卡不被目录困住）
       list = this.knowledgeBank.cards.filter((c: KnowledgeCard) => {
@@ -317,7 +319,7 @@ export struct KnowledgeBankPage {
       // cards may legitimately share a title (0.146 spec)
       // ★ 0.219.2 用户实测 bug 修复：新建卡片 folderId 曾写死空串（永落根目录）——用户双击进入
       //   文件夹后新建，卡片理应归属**当前所在文件夹**（currentFolderId；'' = 根目录视图原样）
-      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson, this.currentFolderId, titleImagesJson));
+      addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', title, definition, '', 0, 0, 0, 0, 0, tags, imagesJson, this.folderNav.folderId, titleImagesJson));
     } else {
       updateKnowledgeCard(this.knowledgeBank, this.editorId, title, definition, '', tags, imagesJson, titleImagesJson);
     }
@@ -668,7 +670,7 @@ export struct KnowledgeBankPage {
             { value: '导入 Anki 包（.apkg）', action: () => { this.pickApkgFile(); } },
             { value: '导入 DagPack（知识库包）', action: () => { this.pickPackFile(); } },
             { value: '导出 CSV（当前文件夹）', action: () => { this.doExportCsv(); } },
-            { value: '导出 DagPack（当前文件夹）', action: () => { this.exportDagPack(this.currentFolderId); } }
+            { value: '导出 DagPack（当前文件夹）', action: () => { this.exportDagPack(this.folderNav.folderId); } }
           ])
       } else {
         // ★ 0.148: multi-select replaces the add button with batch delete
@@ -1330,7 +1332,7 @@ export struct KnowledgeBankPage {
   /** 当前目录名链（根→…→当前）——面包屑/导出命名用 */
   @Computed
   get currentChain(): KFolder[] {
-    return folderChain(this.knowledgeBank, this.currentFolderId);
+    return folderChain(this.knowledgeBank, this.folderNav.folderId);
   }
 
   folderParentId(): string {
@@ -1365,7 +1367,7 @@ export struct KnowledgeBankPage {
     if (this.folderDialogIsRename) {
       renameFolder(this.knowledgeBank, this.folderDialogTargetId, nm);
     } else {
-      addFolder(this.knowledgeBank, nm, this.currentFolderId);
+      addFolder(this.knowledgeBank, nm, this.folderNav.folderId);
       const tp: Record<string, string> = {};
       track(this.getUIContext().getHostContext() as Context, 'folder_create', tp);
     }
@@ -1374,8 +1376,8 @@ export struct KnowledgeBankPage {
 
   requestDeleteFolder(f: KFolder): void {
     deleteFolder(this.knowledgeBank, f.id);
-    if (this.currentFolderId === f.id) {
-      this.currentFolderId = this.folderParentId();
+    if (this.folderNav.folderId === f.id) {
+      this.folderNav.folderId = this.folderParentId();
     }
     this.showToast(`已删除「${f.name}」——卡片已移到上一级`);
   }
@@ -1521,7 +1523,7 @@ export struct KnowledgeBankPage {
     }
     // refId → 新库 folderId 映射（包根 '' → 当前文件夹；parentRef 已映射才建——固定点循环防乱序）
     const idMap: Map<string, string> = new Map<string, string>();
-    idMap.set('', this.currentFolderId);
+    idMap.set('', this.folderNav.folderId);
     let guard = 0;
     while (idMap.size < inRefs.size + 1 && guard < 64) {
       guard++;
@@ -1566,7 +1568,7 @@ export struct KnowledgeBankPage {
     for (let i = 0; i < this.importRows.length; i++) {
       const r = this.importRows[i];
       addKnowledgeCard(this.knowledgeBank, new KnowledgeCard('', r.title, r.definition, '', now + i,
-        0, 0, 0, 0, r.tags, '', this.currentFolderId));
+        0, 0, 0, 0, r.tags, '', this.folderNav.folderId));
       n++;
     }
     const tp: Record<string, string> = {}; tp['format'] = this.importFormat; tp['count'] = `${n}`;
@@ -1617,7 +1619,7 @@ export struct KnowledgeBankPage {
           .fontSize(13)
           .fontColor(TEXT_TERTIARY)
           .onClick(() => {
-            this.currentFolderId = '';
+            this.folderNav.folderId = '';
           })
         ForEach(this.currentChain, (f: KFolder, idx: number) => {
           Text(' › ')
@@ -1628,7 +1630,7 @@ export struct KnowledgeBankPage {
             .fontColor(idx === this.currentChain.length - 1 ? TEXT_PRIMARY : BRAND_SECONDARY)
             .maxLines(1)
             .onClick(() => {
-              this.currentFolderId = f.id;
+              this.folderNav.folderId = f.id;
             })
         }, (f: KFolder) => f.id)
       }
@@ -1892,7 +1894,7 @@ export struct KnowledgeBankPage {
       if (fid === undefined) {
         // 「::」层级拆链（空段滤除）；'（重复导入幂等——同 deck 复用已有文件夹链）
         const segs = deckKey.split('::').map((s: string): string => s.trim()).filter((s: string): boolean => s.length > 0);
-        fid = segs.length === 0 ? this.currentFolderId : ensureFolderPath(this.knowledgeBank, segs, this.currentFolderId);
+        fid = segs.length === 0 ? this.folderNav.folderId : ensureFolderPath(this.knowledgeBank, segs, this.folderNav.folderId);
         folderIdCache.set(deckKey, fid);
       }
       const imgs = ac.images.length > 0 ? JSON.stringify(ac.images) : '';
@@ -2100,7 +2102,7 @@ export struct KnowledgeBankPage {
           this.topBar()
 
           // ★ 0.207.0：面包屑（非根目录显示；点级名跳转，点「知识库」回根）
-          if (this.currentFolderId.length > 0) {
+          if (this.folderNav.folderId.length > 0) {
             this.folderBreadcrumb()
           }
 
@@ -2255,7 +2257,7 @@ export struct KnowledgeBankPage {
                     .borderWidth(1)
                     .alignItems(VerticalAlign.Center)
                     .onClick(() => {
-                      this.currentFolderId = f.id;
+                      this.folderNav.folderId = f.id;
                       this.searchKeyword = ''; // 进目录清搜索（目录视图）
                     })
                   }
@@ -2593,8 +2595,8 @@ export struct KnowledgeBankPage {
         return true;
       }
       // ★ 0.207.0：非根目录时返回=回上一级（最后才退出页面）
-      if (this.currentFolderId.length > 0) {
-        this.currentFolderId = this.folderParentId();
+      if (this.folderNav.folderId.length > 0) {
+        this.folderNav.folderId = this.folderParentId();
         return true;
       }
       return false;
