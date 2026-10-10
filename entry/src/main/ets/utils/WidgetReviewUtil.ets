@@ -251,7 +251,7 @@ export function ensureWidgetFormIds(context: Context): void {
   formProvider.getPublishedRunningFormInfos().then((infos: formInfo.RunningFormInfo[]) => {
     const healed: string[] = [];
     infos.forEach((f: formInfo.RunningFormInfo) => {
-      if (f.bundleName === 'com.example.dag_ai_chat' && !healed.includes(f.formId)) {
+      if (f.bundleName === 'com.dagaichat.app' && !healed.includes(f.formId)) {
         healed.push(f.formId);
       }
     });
@@ -434,7 +434,7 @@ function handleRate(context: Context, rating: string): void {
 /** ★ 0.204.0：打开本应用卡片管理器（账户行入口；用户选规格后添加——2×2/2×4/4×4） */
 export function requestPublishReviewWidget(): void {
   const want: Want = {
-    bundleName: 'com.example.dag_ai_chat',
+    bundleName: 'com.dagaichat.app',
     abilityName: 'EntryFormAbility',
     parameters: {
       'ohos.extra.param.key.form_dimension': 3, // Dimension_2_4（默认定位主力规格）

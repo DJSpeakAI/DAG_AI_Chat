@@ -37,7 +37,6 @@ import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; 
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
-import { localStreamChat } from '../utils/LocalLlm'; // ★ 0.216.0：端侧大模型（API Key 未配时的免费离线兜底）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
@@ -1048,64 +1047,7 @@ export struct ChatPage {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
     }
 
-    // ★ 0.216.0 三级降级·第一分叉：API Key 未配 → 端侧大模型（免费离线，DataAugmentationKit）；
-    //   已配 → 云端 streamChat（下方原链路不变）。端侧不支持图片——无 Key 且带图时提前友好报错
-    // ★ 0.216.1：降级判定诊断日志（Key 长度+provider+model，抓"Key 清了还走云端"的真实现场）
-    console.info(`DAGAI-LLM route keyLen=${this.apiConfig.apiKey.trim().length} provider=${this.apiConfig.provider} model=${this.apiConfig.model}`);
-    if (this.apiConfig.apiKey.trim().length === 0) {
-      if (this.pendingImages.length > 0) {
-        this.isLoading = false;
-        this.streamPhase = 0;
-        const cb0 = this.currentBubble; // ★ ArkTS 严格空检查
-        if (cb0) {
-          cb0.messages = cb0.messages.slice(0, cb0.messages.length - 2); // 撤回刚压入的用户+AI 占位
-          cb0.messages = [...cb0.messages];
-        }
-        this.saveTree();
-        this.getUIContext().getPromptAction().showToast({ message: '端侧大模型暂不支持图片，请配置 API Key 使用多模态云端模型', duration: 3500 });
-        return;
-      }
-      this.streamController = localStreamChat(
-        messagesToSend,
-        (chunk: string) => {
-          if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
-            aiMsg.content = '';
-          }
-          aiMsg.content += chunk;
-          this.scroller.scrollEdge(Edge.Bottom); // ★ 0.216.0：端侧流式同样自动滚底（对齐云端链路）
-          const cb1 = this.currentBubble; // ★ ArkTS 严格空检查：getter 返回可空须判
-          if (cb1) {
-            cb1.messages = [...cb1.messages];
-            cb1.historySummaryCount = cb1.messages.length;
-          }
-        },
-        (inputTokens: number, outputTokens: number) => {
-          this.isLoading = false;
-          this.streamPhase = 0;
-          this.streamController = null;
-          const cb2 = this.currentBubble;
-          if (cb2) {
-            cb2.messages = [...cb2.messages];
-          }
-          this.scroller.scrollEdge(Edge.Bottom);
-          this.saveTree();
-          recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens);
-        },
-        (error: string) => {
-          this.isLoading = false;
-          this.streamPhase = 0;
-          this.streamController = null;
-          aiMsg.content = classifyStreamError(error); // ★ 0.216.0：错误气泡对齐云端链路（含端侧引导文案分类）
-          const cb3 = this.currentBubble;
-          if (cb3) {
-            cb3.messages = [...cb3.messages];
-          }
-          this.scroller.scrollEdge(Edge.Bottom);
-          this.saveTree();
-        }
-      ) as StreamController;
-      return;
-    }
+    // ★ 0.217.0 端侧大模型全线回滚（个人开发者白名单不通过=企业限定，0.216.0~0.216.2 时代终结）
 
     this.streamController = streamChat(
       messagesToSend,
@@ -1199,49 +1141,7 @@ export struct ChatPage {
     if (msg.isPodcastMode) {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
     }
-    // ★ 0.216.1：regenerateMessage 同样降级——Key 空→端侧（与 sendMessage 同款判定，两处调用点全覆盖）
-    console.info(`DAGAI-LLM route(regen) keyLen=${this.apiConfig.apiKey.trim().length}`);
-    if (this.apiConfig.apiKey.trim().length === 0) {
-      this.streamController = localStreamChat(
-        messagesToSend,
-        (chunk: string) => {
-          if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
-            msg.content = '';
-          }
-          msg.content += chunk;
-          this.scroller.scrollEdge(Edge.Bottom);
-          const cb1 = this.currentBubble;
-          if (cb1) {
-            cb1.messages = [...cb1.messages];
-          }
-        },
-        (inputTokens: number, outputTokens: number) => {
-          this.isLoading = false;
-          this.streamPhase = 0;
-          this.streamController = null;
-          const cb2 = this.currentBubble;
-          if (cb2) {
-            cb2.messages = [...cb2.messages];
-          }
-          this.scroller.scrollEdge(Edge.Bottom);
-          this.saveTree();
-          recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens);
-        },
-        (error: string) => {
-          this.isLoading = false;
-          this.streamPhase = 0;
-          this.streamController = null;
-          msg.content = classifyStreamError(error);
-          const cb3 = this.currentBubble;
-          if (cb3) {
-            cb3.messages = [...cb3.messages];
-          }
-          this.scroller.scrollEdge(Edge.Bottom);
-          this.saveTree();
-        }
-      ) as StreamController;
-      return;
-    }
+
     this.streamController = streamChat(
       messagesToSend,
       this.apiConfig,
