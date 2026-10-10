@@ -14,7 +14,7 @@ import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
-import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
+import { connectKnowledgeBank, deleteFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
 import { KnowledgeBankStore, KFolder, KFolderTreeItem, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
 
 
@@ -65,6 +65,16 @@ export struct AppSideBar {
       }
     }
     return n;
+
+  /** ★ 0.220.2：边栏树删除文件夹（卡片移到上一级；当前视图文件夹被删则视图回退到其父级） */
+  deleteTreeFolder(f: KFolder): void {
+    deleteFolder(this.kbStore, f.id);
+    if (this.folderNav.folderId === f.id) {
+      const parentId = this.kbStore.folders.find((x: KFolder): boolean => x.id === f.parentId)?.parentId ?? '';
+      this.folderNav.folderId = parentId;
+    }
+    this.getUIContext().getPromptAction().showToast({ message: `已删除「${f.name}」——卡片已移到上一级`, duration: 2000 });
+  }
   }
 
   /** ★ 0.195.0：导航项高亮判定——当前路由映射（ChatPage/AnnotationPage 是气泡树子页，归气泡树） */
