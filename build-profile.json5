@@ -7,11 +7,11 @@
         "material": {
           "certpath": "./signing/default_dag_ai_chat.cer",
           "keyAlias": "dagai_debug_key",
-          "keyPassword": "Dagai2026!",
-          "profile": "./signing/dag_ai_chat_debugDebug.p7b", // ★ 包名切换（2026-10-10）：新三件套（com.dagaichat.app，app-identifier=6917618685526149144）；明文密码先试，DevEco 不认则须 GUI 生成密文
+          "keyPassword": "Dagai2026!Dagai2026!Dagai2026!!",
+          "profile": "./signing/dag_ai_chat_debugDebug.p7b", // ★ 包名切换（2026-10-10）：新三件套（com.dagaichat.app，app-identifier=6917618685526149144）；密码=32字符明文（hvigor 只查长度≥32，密文格式免了）
           "signAlg": "SHA256withECDSA",
           "storeFile": "./signing/default_dag_ai_chat.p12",
-          "storePassword": "Dagai2026!"
+          "storePassword": "Dagai2026!Dagai2026!Dagai2026!!"
         }
       }
     ],
