@@ -118,17 +118,25 @@
 
 -   **强制读取**：[docs/CONTEXT_MANAGEMENT.md](docs/CONTEXT_MANAGEMENT.md)——AI 助手上下文自律操作手册（阈值整理/阶段总结清单/MEMORY.md 写入纪律/长会话自救）
 -   **Prompt 编写 10 条军规**（详见该文档第三节）：所有新 prompt（鼓励/圈注/摘要/统计等一切 AI 功能）必须遵守——数字锚定（禁写"简洁"，必须"1~2 句"）、负向约束配对、穷举优于概括、BAD/GOOD 示例并列、首尾强化等
--   **核心纪律**：MEMORY.md 只放活规则（每次会话必须注入的稳定层）；历史细节进 docs/ 按需查；跨多轮话题动手前先重读文档不凭对话记忆改代码
-## ���� Schema ���ɣ�0.205.0 �𡪡����ݰ�ȫ��һ�����ߣ�
+- **核心纪律**：MEMORY.md 只放活规则（每次会话必须注入的稳定层）；历史细节进 docs/ 按需查；跨多轮话题动手前先重读文档不凭对话记忆改代码
+## 9. 华为平台证书/密钥材料规范（★ 2026-10-10 CSR 算法事故入档）
 
-�û����ߣ����¾����������û����ݣ��ʿ�/֪ʶ�⣩��bug �����ޣ�����û�˲�����ء�
+- **AGC 证书 CSR 的密钥算法必须 EC（椭圆曲线 P-256 / prime256v1），禁止 RSA**——RSA CSR 上传直接报「上传的CSR文件无效」，且报错不提示算法原因，极易误判为文件损坏/格式问题（2026-10-10 包名迁移实证，用户被多耗一轮 AGC 网页流程）
+- openssl 正确生成两步（勿用 `openssl req -newkey` 默认 RSA 路线）：
+  `openssl ecparam -name prime256v1 -genkey -noout -out key.pem`
+  `openssl req -new -key key.pem -out xxx.csr -subj "/CN=xxx/C=CN/O=Personal Developer"`
+- 交付前必须自验：`openssl req -in xxx.csr -noout -text | grep -A2 "Public Key Algorithm"`——看到 `id-ecPublicKey` 才算合格
+- **举一反三铁律：给华为/AGC 平台生成任何上传材料（CSR/密钥/Profile/配置文件）前，先核实平台的算法、格式、后缀要求，绝不拿工具默认产物直接交**（同族前科：AGC 上传只认 .csr 后缀、.pem 内容正确也拒收）
+## ���� Schema ���ɣ�0.205.0 �𡪡����ݰ�ȫ��һ�����ߣ�
 
-1. @Type �־û��ࣨWordItem/KnowledgeCard �ȣ��ֶ�**ֻ����β��׷��**����Ĭ��ֵ���ף�����0.148 �� id��0.187 �Ӽ����ֶΡ�0.202 �� tags ����ģʽ��**��ֹ**���ֶ��������ֶ����͡�ɾ�ֶΡ�
-2. PersistenceV2 �� key ��**�����ı�**���� key = �����¿տ� = ������ orphan����
-3. �ƻ��Ա�������ɱ���ʱ��������д migration �����������ݶ�����ת����д���½ṹ�������� BackupUtil.SCHEMA_VERSION ���� + jsonToPayload У����¡�
-4. �κγ־û��ṹ����ǰ����ȷ���ڲ�˫���ݴ��ڣ��ڶ������߶��ף���
-5. ����/�ָ���·��BackupUtil.ets���Ķ����������֤�����ݡ������ָ�������һ�¡�
+�û����ߣ����¾����������û����ݣ��ʿ�/֪ʶ�⣩��bug �����ޣ�����û�˲�����ء�
 
-## @ObservedV2 ���л����ɣ�0.205.4 ��ѵ��
+1. @Type �־û��ࣨWordItem/KnowledgeCard �ȣ��ֶ�**ֻ����β��׷��**����Ĭ��ֵ���ף�����0.148 �� id��0.187 �Ӽ����ֶΡ�0.202 �� tags ����ģʽ��**��ֹ**���ֶ��������ֶ����͡�ɾ�ֶΡ�
+2. PersistenceV2 �� key ��**�����ı�**���� key = �����¿տ� = ������ orphan����
+3. �ƻ��Ա�������ɱ���ʱ��������д migration �����������ݶ�����ת����д���½ṹ�������� BackupUtil.SCHEMA_VERSION ���� + jsonToPayload У����¡�
+4. �κγ־û��ṹ����ǰ����ȷ���ڲ�˫���ݴ��ڣ��ڶ������߶��ף���
+5. ����/�ָ���·��BackupUtil.ets���Ķ����������֤�����ݡ������ָ�������һ�¡�
 
-@ObservedV2 ��ʵ����WordItem/KnowledgeCard/BubbleNode �ȣ��� @Trace �ֶ� JSON.stringify ����ö�١���ֱ�����л���� {} �ն��󣨱��ݻָ����տǿ�Ƭ�ĸ��򣩡�**���־û�/���� @ObservedV2 ���ݣ�������д plain �ֶ�ӳ��**��wordToPlain ����������ȡ���� Record ������ + revive ���졣������ serialize/deserialize ����ģʽ������
+## @ObservedV2 ���л����ɣ�0.205.4 ��ѵ��
+
+@ObservedV2 ��ʵ����WordItem/KnowledgeCard/BubbleNode �ȣ��� @Trace �ֶ� JSON.stringify ����ö�١���ֱ�����л���� {} �ն��󣨱��ݻָ����տǿ�Ƭ�ĸ��򣩡�**���־û�/���� @ObservedV2 ���ݣ�������д plain �ֶ�ӳ��**��wordToPlain ����������ȡ���� Record ������ + revive ���졣������ serialize/deserialize ����ģʽ������
