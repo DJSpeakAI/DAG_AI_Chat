@@ -666,7 +666,7 @@ export struct KnowledgeBankPage {
           .padding({ left: 8, right: 8 })
           .bindMenu([
             { value: '新建卡片', action: () => { this.openAddEditor(); } },
-            { value: '新建文件夹', action: () => { this.openFolderCreate(); } },
+
             { value: '批量导入（TXT · CSV · XLSX）', action: () => { this.pickImportFile(); } },
             { value: '导入 Anki 包（.apkg）', action: () => { this.pickApkgFile(); } },
             { value: '导入 DagPack（知识库包）', action: () => { this.pickPackFile(); } },
@@ -1345,12 +1345,6 @@ export struct KnowledgeBankPage {
     return folderChain(this.knowledgeBank, f.id).map((x: KFolder): string => x.name).join(' › ');
   }
 
-  openFolderCreate(): void {
-    this.folderDialogIsRename = false;
-    this.folderDialogTargetId = '';
-    this.folderDialogName = '';
-    this.folderDialogVisible = true;
-  }
 
   openFolderRename(f: KFolder): void {
     this.folderDialogIsRename = true;
