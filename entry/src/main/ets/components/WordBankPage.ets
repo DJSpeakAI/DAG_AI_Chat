@@ -1228,9 +1228,12 @@ export struct WordBankPage {
             // ★ 0.218.6：方块网格视图（仅宽屏可切入）——WaterFlow 瀑布流 5 等列，拖窗口大小自动整齐重排；
             //   网格卡交互=单击选中/双击编辑+长按多选（同横条）；滑动删除仅横条模式（网格下拖动与滑动冲突，
             //   删除走长按多选批量）
-            WaterFlow() {
+            // ★ 0.218.9 用户拍板（截图实锤"高度不统一+有重叠"）：瀑布流按内容自适应高度=行高参差
+            //   +动态高度布局重叠——弃 WaterFlow 改 **Grid 等高网格**：GridItem 内卡片固定 150vp，
+            //   全部格子完全一致（整齐即正义）；内容超出裁剪（explain 已 2 行省略，下方留白可接受）
+            Grid() {
               ForEach(this.filteredWords, (w: WordItem) => {
-                FlowItem() {
+                GridItem() {
                   Column() {
                     Row({ space: 6 }) {
                       Text(w.word)
@@ -1274,6 +1277,7 @@ export struct WordBankPage {
                   }
                   .alignItems(HorizontalAlign.Start)
                   .width('100%')
+                  .height(150) // ★ 0.218.9：固定格高——等高网格（瀑布流内容自适应高度=行高参差+重叠根因）
                   .padding(12)
                   .borderRadius(RADIUS_CONTROL)
                   .backgroundColor(SURFACE_NODE)
