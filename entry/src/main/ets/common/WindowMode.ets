@@ -15,3 +15,15 @@ export class WindowMode {
 export function connectWindowMode(): WindowMode {
   return AppStorageV2.connect(WindowMode, 'window-mode', () => new WindowMode()) as WindowMode;
 }
+
+// ★ 0.219.0：Index 宽屏边栏收起状态（跨页面共享真相源）——用户拍板"PC/Pad 边栏右缘把手点击收起，
+// 收起后跳到对话页也保持隐藏，点把手才恢复"：AppStorageV2 同 key 连接=Index 与所有页面同实例；
+// 会话级（不落盘），重启恢复默认展开
+@ObservedV2
+export class IndexSidebarState {
+  @Trace collapsed: boolean = false;
+}
+
+export function connectIndexSidebarState(): IndexSidebarState {
+  return AppStorageV2.connect(IndexSidebarState, 'index-sidebar-state', () => new IndexSidebarState()) as IndexSidebarState;
+}

@@ -24,7 +24,7 @@ import { AnnotationPage } from '../components/AnnotationPage'; // ★ 0.152：�
 import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：学习统计页路由
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
-import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
+import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态（把手跨页面共享）
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
@@ -73,6 +73,8 @@ struct Index {
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
   }
+  // ★ 0.219.0：宽屏边栏收起状态（AppStorageV2 共享实例——气泡树页把手与本页同源，跨页面保持收起）
+  indexSidebarState: IndexSidebarState = connectIndexSidebarState();
   // ★ 0.195.0 bugfix：边栏选中态跟踪——didShow 拦截拿目标页名（'navBar'=首页 → 清空无高亮；
   //   用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」，原画布项硬编码永久高亮已废）
   @Local currentRoute: string = '';
@@ -323,17 +325,24 @@ struct Index {
     // NavBar toolbar 预留且 clip 裁剪，Column 在其内 expandSafeArea 底部无法突破露黑；
     // Stack 在 Navigation 外不受 NavBar 裁剪，背景直达全屏——各页安全区统一露暗紫不露黑）
     Stack() {
-      // ★ 0.195.0：大屏边栏常驻（用户定稿「边栏一直存在，页面平移，体验非常棒」）——
-      //   Row [AppSideBar 208 | Navigation layoutWeight(1)]；手机不渲染边栏（画布抽屉承担导航）
+      // ★ 0.195.0：大屏边栏常驻；★ 0.219.0 用户拍板改版：右缘竖把手点击→边栏滑向左侧隐藏，
+      //   把手浮在左缘变右箭头，再点恢复（滑入滑出带动画）；收起状态 AppStorageV2 共享——
+      //   跳到对话页等任何页面边栏保持隐藏，跨页面一致；手机不渲染边栏（画布抽屉承担导航）
       Row() {
         if (this.isTablet) {
-          AppSideBar({
-            currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
-            settingsOpen: this.globalSettingsVisible,
-            onNavClick: (kind: string) => {
-              this.sideBarNav(kind);
-            }
-          })
+          Column() {
+            AppSideBar({
+              currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
+              settingsOpen: this.globalSettingsVisible,
+              onNavClick: (kind: string) => {
+                this.sideBarNav(kind);
+              }
+            })
+          }
+          .width(this.indexSidebarState.collapsed ? 0 : 208)
+          .opacity(this.indexSidebarState.collapsed ? 0 : 1)
+          .clip(true)
+          .alignItems(HorizontalAlign.Start)
         }
     Navigation(this.pathStack) {
       // 首页内容（★ 0.174.1：按 UI_GUIDELINES 重做——BG_APP 暗紫底 + expandSafeArea 满屏 +
@@ -497,6 +506,29 @@ struct Index {
     // 「首页一直出现在屏幕左边」）；改 Stack 强制单栏，push 后目标页全屏覆盖，平板与手机一致
     .mode(NavigationMode.Stack)
     .layoutWeight(1) // ★ 0.195.0：边栏常驻布局——Navigation 占边栏右侧剩余区域（页面在此平移不遮边栏）
+      }
+      // ★ 0.219.0 用户拍板：宽屏边栏右缘「竖把手」——点击边栏滑向左侧隐藏（把手浮左缘变右箭头），
+      //   再点恢复（滑入滑出 220ms 动画）；收起状态 AppStorageV2 共享——切到对话页等页面边栏保持隐藏。
+      //   把手样式=16×64 圆角竖条（SURFACE_NODE 底+描边+阴影），三角字符指示方向（几何字符无居中问题）
+      if (this.isTablet) {
+        Column() {
+          Text(this.indexSidebarState.collapsed ? '▶' : '◀')
+            .fontSize(12)
+            .fontColor(TEXT_SECONDARY)
+        }
+        .justifyContent(FlexAlign.Center)
+        .width(16)
+        .height(64)
+        .borderRadius({ topRight: 8, bottomRight: 8, topLeft: 0, bottomLeft: 0 })
+        .backgroundColor(SURFACE_NODE)
+        .border({ width: 1, color: STROKE_CARD })
+        .shadow({ radius: 10, color: 'rgba(0,0,0,0.3)', offsetX: 2, offsetY: 0 })
+        .position({ x: this.indexSidebarState.collapsed ? 0 : 200, y: '50%' })
+        .onClick(() => {
+          this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
+            this.indexSidebarState.collapsed = !this.indexSidebarState.collapsed;
+          });
+        })
       }
       // ★ 0.195.0：全局设置弹窗（常驻边栏「设置」入口；实例与画布/对话页共用 PersistenceV2 数据）
       if (this.globalSettingsVisible) {

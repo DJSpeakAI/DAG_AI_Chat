@@ -1497,9 +1497,9 @@ export struct BBTreeCanvas {
           if (!this.isTablet) {
             Column() {
               Row() {
-                // ★ 0.190.2：Text('☰') 字符换回 0.168.4 原始 menu.svg 图标资源（用户反馈：字符
-                //   版偏小且不居中，「之前那个就很好看」——git 考古 4bba3c9 实锤原始即此图标 18×18）
-                Image($r('app.media.menu'))
+                // ★ 0.219.0 用户拍板：三横线 menu.svg 换 sidebar.svg（带边框侧边栏图标，与用户样例
+                //   统一——"三个横线没有这个边框来的好"）
+                Image($r('app.media.sidebar'))
                   .width(20)
                   .height(20)
               }
