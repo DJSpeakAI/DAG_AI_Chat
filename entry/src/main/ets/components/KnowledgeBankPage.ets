@@ -39,7 +39,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade, copyRootFolder, clearRootFolder } from '../utils/KnowledgeStoreUtil';
-import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
+import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, cardsToTxt, cardsToXlsxBuffer, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
 import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, packChildFolders, packCardCount, packSubtreeRefs, packFolderPath } from '../utils/PackUtil';
 // ★ 0.208.0 Anki：apkg 导入（知识库专用——单词库不���，用户拍板）
@@ -180,6 +180,9 @@ export struct KnowledgeBankPage {
   @Local importRows: ImportRow[] = [];
   @Local importFileName: string = '';
   @Local importFormat: string = 'txt';
+  // ★ 0.225.0：+ 菜单重构（用户拍板三主项+二级格式）——bindPopup drill-down 替代系统 bindMenu
+  @Local plusMenuVisible: boolean = false;
+  @Local plusMenuMode: string = 'main'; // 'main' | 'import' | 'export'
 
   // ── ★ 0.207.1：DagPack 导入（勾选树）状态 ──
   @Local packPreviewVisible: boolean = false;
@@ -787,22 +790,32 @@ export struct KnowledgeBankPage {
           this.cardSettingsVisible = true;
         })
       if (!this.multiSelectMode) {
-        // ★ 0.207.0：+ 升级为菜单——anything 导入体系入口（新建卡片/文件夹/批量导入/导出）
+        // ★ 0.207.0：+ 升级为菜单——anything 导入体系入口（新建卡片/导入/导出）
+        // ★ 0.225.0 重构（用户拍板）：系统 bindMenu（灰色不可定制）→ bindPopup 自定义紫字菜单
+        //   + 三主项（新建卡片/导入/导出）drill-down 二级格式（导入 5 项/导出 4 项）——复刻 0.218.3 sortMenu 已验证模式
         Button('+')
           .fontSize(20)
           .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
           .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
-          .bindMenu([
-            { value: '新建卡片', action: () => { this.openAddEditor(); } },
-
-            { value: '批量导入（TXT · CSV · XLSX）', action: () => { this.pickImportFile(); } },
-            { value: '导入 Anki 包（.apkg）', action: () => { this.pickApkgFile(); } },
-            { value: '导入 DagPack（知识库包）', action: () => { this.pickPackFile(); } },
-            { value: '导出 CSV（当前文件夹）', action: () => { this.doExportCsv(); } },
-            { value: '导出 DagPack（当前文件夹）', action: () => { this.exportDagPack(this.folderNav.folderId); } }
-          ])
+          .bindPopup(this.plusMenuVisible, {
+            builder: this.kbPlusMenuBuilder(),
+            placement: Placement.Bottom,
+            popupColor: SURFACE_NODE,
+            radius: 12,
+            mask: { color: 'rgba(0,0,0,0.3)' },
+            onStateChange: (e: PopupStateChangeParam) => {
+              this.plusMenuVisible = e.isVisible;
+              if (!e.isVisible) {
+                this.plusMenuMode = 'main'; // 关闭时复位主级（下次打开从头开始）
+              }
+            }
+          })
+          .onClick(() => {
+            this.plusMenuMode = 'main';
+            this.plusMenuVisible = !this.plusMenuVisible;
+          })
       } else {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
@@ -1671,11 +1684,12 @@ export struct KnowledgeBankPage {
   }
 
   /** 批量导入第一步：选文件 → 解析 → 预览弹窗（★ 0.207.1 加 xlsx 分流） */
-  async pickImportFile(): Promise<void> {
+  async pickImportFile(fmt: string): Promise<void> {
     try {
       const doc = new picker.DocumentViewPicker();
       const selOpt = new picker.DocumentSelectOptions();
-      selOpt.fileSuffixFilters = ['.txt', '.csv', '.xlsx'];
+      // ★ 0.225.0：菜单分项参数化——每格式只显自己后缀（语义清晰；统一三后缀的旧版随 bindMenu 退役）
+      selOpt.fileSuffixFilters = ['.' + fmt];
       selOpt.maxSelectNumber = 1;
       const uris: string[] = await doc.select(selOpt);
       if (uris.length === 0) {
@@ -1683,20 +1697,20 @@ export struct KnowledgeBankPage {
       }
       const uri = uris[0];
       let rows: ImportRow[] = [];
-      let fmt = 'txt';
+      let parsedFmt = 'txt'; // ★ 0.225.0：改名防与参数 fmt 撞名（参数=菜单格式、本变量=按文件后缀实判格式）
       if (uri.toLowerCase().endsWith('.xlsx')) {
-        fmt = 'xlsx';
+        parsedFmt = 'xlsx';
         rows = await readXlsxRows(uri);
       } else {
-        fmt = uri.toLowerCase().endsWith('.csv') ? 'csv' : 'txt';
-        rows = parseTextToRows(readTextFile(uri), fmt);
+        parsedFmt = uri.toLowerCase().endsWith('.csv') ? 'csv' : 'txt';
+        rows = parseTextToRows(readTextFile(uri), parsedFmt);
       }
       if (rows.length === 0) {
         this.showToast('没解析出卡片：每行需「标题 + 分隔符 + 背面」（xlsx 取 A/B/C 三列）');
         return;
       }
       this.importRows = rows;
-      this.importFormat = fmt;
+      this.importFormat = parsedFmt;
       this.importFileName = uri.substring(uri.lastIndexOf('/') + 1);
       this.importPreviewVisible = true;
     } catch (_e) {
@@ -1877,9 +1891,221 @@ export struct KnowledgeBankPage {
     }
   }
 
+  // ★ 0.225.0：TXT 导出（用户拍板菜单四格式）——复刻 doExportCsv 全链（当前文件夹语义+保存选择器+写入校验）
+  async doExportTxt(): Promise<void> {
+    try {
+      const cards = this.filteredCards;
+      if (cards.length === 0) {
+        this.showToast('当前没有卡片可导出');
+        return;
+      }
+      const names = this.currentChain.map((x: KFolder): string => x.name).join('/');
+      const scopeName = names.length === 0 ? '知识库根目录' : names;
+      const txt = cardsToTxt(cards, scopeName);
+      const saver = new picker.DocumentViewPicker();
+      const saveOpt = new picker.DocumentSaveOptions();
+      saveOpt.newFileNames = ['DAGAI_知识库.txt'];
+      const uris: string[] = await saver.save(saveOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const f = fileIo.openSync(uris[0], fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(f.fd, txt);
+      fileIo.closeSync(f);
+      this.showToast(`已导出 ${cards.length} 张 → TXT`);
+    } catch (_e) {
+      this.showToast('导出失败');
+    }
+  }
+
+  // ★ 0.225.0：XLSX 导出（用户拍板菜单四格式）——cardsToXlsxBuffer（ExcelJS writeBuffer）+同款保存链
+  async doExportXlsx(): Promise<void> {
+    try {
+      const cards = this.filteredCards;
+      if (cards.length === 0) {
+        this.showToast('当前没有卡片可导出');
+        return;
+      }
+      const buf = await cardsToXlsxBuffer(cards);
+      const saver = new picker.DocumentViewPicker();
+      const saveOpt = new picker.DocumentSaveOptions();
+      saveOpt.newFileNames = ['DAGAI_知识库.xlsx'];
+      const uris: string[] = await saver.save(saveOpt);
+      if (uris.length === 0) {
+        return;
+      }
+      const f = fileIo.openSync(uris[0], fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(f.fd, buf);
+      fileIo.closeSync(f);
+      this.showToast(`已导出 ${cards.length} 张 → XLSX`);
+    } catch (_e) {
+      this.showToast('导出失败');
+    }
+  }
+
   // ============================================================
   // ★ 0.207.0：builders——面包屑 / 文件夹弹窗 / 目标选择 / 导入预览
   // ============================================================
+  // ★ 0.225.0：+ 菜单 builder（无参直读状态 0.190.1 铁律）——三主项 drill-down：
+  //   main=新建卡片/导入›/导出›；import=DAG/APKG/TXT/CSV/XLSX；export=DAG/TXT/CSV/XLSX。
+  //   选项紫字 BRAND_SECONDARY（用户拍板「变紫色」）；返回行 TEXT_TERTIARY；样式复刻 sortMenu 规格
+  @Builder
+  kbPlusMenuBuilder() {
+    Column() {
+      if (this.plusMenuMode === 'main') {
+        Text('新建卡片')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.openAddEditor();
+          })
+        Divider().color(STROKE_CARD)
+        Text('导入 ›')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuMode = 'import';
+          })
+        Divider().color(STROKE_CARD)
+        Text('导出 ›')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuMode = 'export';
+          })
+      } else if (this.plusMenuMode === 'import') {
+        Text('‹ 返回')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 10, bottom: 10, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuMode = 'main';
+          })
+        Divider().color(STROKE_CARD)
+        Text('DAG（知识库包）')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.pickPackFile();
+          })
+        Divider().color(STROKE_CARD)
+        Text('APKG（Anki 包）')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.pickApkgFile();
+          })
+        Divider().color(STROKE_CARD)
+        Text('TXT')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.pickImportFile('txt');
+          })
+        Divider().color(STROKE_CARD)
+        Text('CSV')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.pickImportFile('csv');
+          })
+        Divider().color(STROKE_CARD)
+        Text('XLSX')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.pickImportFile('xlsx');
+          })
+      } else {
+        Text('‹ 返回')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 10, bottom: 10, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuMode = 'main';
+          })
+        Divider().color(STROKE_CARD)
+        Text('DAG（知识库包）')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.exportDagPack(this.folderNav.folderId);
+          })
+        Divider().color(STROKE_CARD)
+        Text('TXT')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.doExportTxt();
+          })
+        Divider().color(STROKE_CARD)
+        Text('CSV')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.doExportCsv();
+          })
+        Divider().color(STROKE_CARD)
+        Text('XLSX')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.plusMenuVisible = false;
+            this.doExportXlsx();
+          })
+      }
+    }
+  }
+
   // ★ 0.220.2：PC 右键/Pad 长按创建菜单（两项：新卡片/新文件夹）——无参 @Builder 直读状态（0.190.1 铁律）
   @Builder
   kbCreateMenuBuilder() {

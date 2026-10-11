@@ -106,8 +106,11 @@ export function parseTextToRows(text: string, format: string): ImportRow[] {
     if (cols.length < 2 || cols[0].length === 0 || cols[1].length === 0) {
       continue; // 单列/空列不成卡
     }
-    // 表头识别：第 2 列是典型表头词且无实义内容
-    if (i === 0 && rows.length === 0) {
+    // 表头识别：首个入卡行的第 2 列是典型表头词且无实义内容
+    // ★ 0.225.0 fix：原判 i===0（文件首行）——本应用导出件首行是「# DAGAI 知识库导出…」注释行
+    //   （单列被跳过），表头被挤到第 2 行 → 表头未被剔除混入卡片（TXT/CSV roundtrip 实测 16 张=15+表头）。
+    //   改判 rows.length===0（首个将入卡的行）——注释行/空行天然跳过，表头恒被剔除
+    if (rows.length === 0) {
       const h = cols[1].toLowerCase();
       if (h === '背面' || h === 'back' || h === 'definition' || h === '答案' || h === 'answer') {
         continue;
@@ -139,6 +142,32 @@ export function cardsToCsv(cards: KnowledgeCard[], scopeName: string): string {
   const body = lines.join('\r\n');
   const head = scopeName.length > 0 ? '# DAGAI 知识库导出：' + scopeName + '（' + cards.length + ' 张）\r\n' : '';
   return '\uFEFF' + head + body;
+}
+
+/** ★ 0.225.0：TXT 导出（标题\t背面\t标签——与 TXT 导入同构 roundtrip；首行注释行 # 开头导入端跳过空列自然兼容） */
+export function cardsToTxt(cards: KnowledgeCard[], scopeName: string): string {
+  const lines: string[] = ['标题\t背面\t标签'];
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    lines.push(c.title + '\t' + c.definition + '\t' + c.tags);
+  }
+  const body = lines.join('\r\n');
+  const head = scopeName.length > 0 ? '# DAGAI 知识库导出：' + scopeName + '（' + cards.length + ' 张）\r\n' : '';
+  return head + body;
+}
+
+/** ★ 0.225.0：XLSX 导出 buffer（ExcelJS writeBuffer→ArrayBuffer；首表 A/B/C 三列同导入约定，表头行导入端自动剔除） */
+export async function cardsToXlsxBuffer(cards: KnowledgeCard[]): Promise<ArrayBuffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Sheet1');
+  const header: string[] = ['标题', '背面', '标签'];
+  ws.addRow(header);
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    const row: string[] = [c.title, c.definition, c.tags];
+    ws.addRow(row);
+  }
+  return wb.xlsx.writeBuffer();
 }
 
 /** 预览摘要（导入确认弹窗用）：前 n 条 + 总数 */

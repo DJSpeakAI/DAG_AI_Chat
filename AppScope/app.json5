@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000237, // ★ 0.224.8：PC 桌面卡片调查期代码回退（0.224.6/0.224.7 toast 分诊+PC 说明——用户拍板清理，PC 不支持已成案手机/Pad 从不抛错无谓防御）；0.224.x 卡面模式+模型标识+埋点 region 根治系列；更早历史见 MEMORY.md
+    "versionCode": 1000239, // ★ 0.225.1：TXT/CSV roundtrip 表头混入修复（导出注释行挤位+表头识别只查首行→改查首个入卡行）；0.225.0：加号菜单重构+TXT/XLSX导出；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
