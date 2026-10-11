@@ -3,7 +3,7 @@
 // ============================================================
 // 本文件封装了与火山引擎（Volcano）AI 大模型的通信逻辑：
 //   - streamChat()：流式对话请求，AI 边生成边返回（SSE 协议）
-//   - queryWord()：AI 查词，结果入单词库（★ 0.145；★ 0.155：划词含中文走中译英，美式音标+英文格式）
+//   - queryWord()：AI 查词，结果入单词库（★ 0.145；★ 0.222.21：首字符中文走中翻英——word=原文、explain=英文）
 //   - queryKnowledge()：AI 知识卡片草稿提炼（★ 0.146）
 //   - queryKnowledgeFromImage()：AI 知识卡片草稿提炼·多模态版，屏幕圈选截图入知识库（★ 0.152）
 //   - synthesizeTTS()：★ 0.189.0 已移除——云端 TTS 取消，发音/朗读改走本地 CoreSpeechKit（LocalTtsEngine.ets）；配置存档见 docs/0.165+/0.189.0 §9
@@ -490,28 +490,26 @@ function buildWordQueryPrompt(british: boolean): string {
   return `你是英文词典助手。用户会给你一个英文单词或缩写。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"...","usPhonetic":"...","explain":"..."}。字段规则：word=用户查询的原文；fullName=仅当查询对象是缩写（如 OS、AI、CPU）时返回其英文全称（如 Operating System），普通单词必须返回空字符串；usPhonetic=${accent}音标并用斜杠包裹（缩写时返回全称的音标，普通单词返回该词音标）；explain=简明中文释义（缩写时返回全称的中文释义）。`;
 }
 
-// ★ 0.155：检测文本是否含中文字符（CJK 统一表意区 0x4E00-0x9FFF）。
-// 划词含中文（纯中文或中英混合）→ 走中译英 prompt；纯英文 → 原英译中 prompt。
-// 混合词组无论第一个字符是中文还是英文，输出统一归一为「音标 + 英文词组」（口音随设置），
-// 与用户规则「以第一个字符为准」在结果上等价（两种方向最终都输出英文词组）。
-export function containsChinese(text: string): boolean {
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code >= 0x4E00 && code <= 0x9FFF) {
-      return true;
-    }
+// ★ 0.222.21：检测文本首字符是否中文（CJK 统一表意区 0x4E00-0x9FFF）——用户拍板
+// 「以划词第 1 个字符是中文还是英文来判定查词方向」：首字符中文=中翻英，否则英翻中。
+// （★ 0.155 旧检测=任一字符含中文；0.222.21 起改首字符判定，混合文本按首字符归向）
+export function startsWithChinese(text: string): boolean {
+  if (text.length === 0) {
+    return false;
   }
-  return false;
+  const code = text.charCodeAt(0);
+  return code >= 0x4E00 && code <= 0x9FFF;
 }
 
-// ★ 0.155：中译英查词 prompt——划词含中文时使用。
-// 中文部分译成对应英文单词、已有英文保持原样、按原词序组合成英文词组；
-// 输出统一为「音标 + 英文词组」：usPhonetic=整体音标、explain=英文词组
-//（浮窗按 音标→英文 顺序展示）；word=英文词组（入单词库的词条名）。
+// ★ 0.155：中译英查词 prompt——划词首字符为中文时使用（★ 0.222.21：检测改首字符判定）。
+// 中文部分译成对应英文单词、已有英文保持原样、按原词序组合成英文词组。
+// ★ 0.222.21 字段方向重写（修复「英翻英」bug：旧版 word=英文词组、explain=与 word 相同，
+// 入库后内容与单词一模一样）：word=用户划选的原文一字不改（词条正面）；explain=翻译后的
+// 完整英文词组（词条背面）；usPhonetic=英文词组音标。浮窗按 原文→音标→英文 顺序展示。
 // ★ 0.185.0：音标口音参数化（原常量改函数），与英译中 prompt 同步生效。
 function buildWordQueryZhPrompt(british: boolean): string {
   const accent = british ? '英式' : '美式';
-  return `你是中英互译词典助手。用户会给你一段划选文本，其中包含中文（可能混有英文单词）。请把其中的中文部分翻译成对应的英文单词，已有的英文部分保持原样，按原顺序组合成英文词组。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"","usPhonetic":"...","explain":"..."}。字段规则：word=翻译后的完整英文词组；fullName=固定返回空字符串；usPhonetic=整个英文词组的${accent}音标并用斜杠包裹；explain=翻译后的完整英文词组（与 word 相同）。`;
+  return `你是中英互译词典助手。用户会给你一段划选文本，其中包含中文（可能混有英文单词）。请把其中的中文部分翻译成对应的英文单词，已有的英文部分保持原样，按原顺序组合成英文词组。你只能输出一个 JSON 对象，禁止输出任何其他文字、禁止 markdown 代码块。格式：{"word":"...","fullName":"","usPhonetic":"...","explain":"..."}。字段规则：word=用户划选的原文，一字不改原样返回；fullName=固定返回空字符串；usPhonetic=翻译后完整英文词组的${accent}音标并用斜杠包裹；explain=翻译后的完整英文词组（与 word 不同）。`;
 }
 
 // Parse the raw AI reply into a WordQueryResult.
@@ -554,11 +552,11 @@ export function queryWord(
   onDone: (result: WordQueryResult) => void,
   onError: (error: string) => void
 ): StreamController {
-  // ★ 0.155：划词含中文（纯中文/中英混合）→ 中译英 prompt（音标+英文格式）；
-  // 纯英文 → 原英译中 prompt（中文释义格式）
+  // ★ 0.222.21：划词首字符中文 → 中译英 prompt（原文+音标+英文格式）；
+  // 其余（英文/数字/符号开头）→ 原英译中 prompt（中文释义格式）
   // ★ 0.185.0：音标口音从单词库设置读取（美式默认/英式），两路 prompt 同步生效
   const british = connectPhoneticAccent().british;
-  const prompt = containsChinese(word) ? buildWordQueryZhPrompt(british) : buildWordQueryPrompt(british);
+  const prompt = startsWithChinese(word) ? buildWordQueryZhPrompt(british) : buildWordQueryPrompt(british);
   const messages: ChatMessage[] = [
     new ChatMessage(generateMessageId(), 'system', prompt),
     new ChatMessage(generateMessageId(), 'user', word)

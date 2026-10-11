@@ -33,10 +33,10 @@ import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, ENCOURAGE_LIGHT_PROMPT, ENCOURAGE_HEAVY_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）+鼓励三档
-import { WordItem, WordBankStore, WordQueryResult } from '../common/WordModel'; // ★ 0.145：单词库数据模型
+import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
-import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, containsChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.155：containsChinese（划词语言检测）；★ 0.189.0：synthesizeTTS 移除（云端 TTS 取消，改本地引擎）；★ 0.190.6：classifyStreamError（错误场景分类）
+import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
@@ -97,6 +97,9 @@ class KnowledgeReviewCacheEntry {
 // 注意：PLACEHOLDER_LOADING 字面值与历史持久化数据一致，不可改动（旧数据的过滤判断依赖它）
 const PLACEHOLDER_LOADING = 'AI正在回复中，请稍候...';
 const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
+
+// ★ 0.222.21：树形连接线每层缩进宽度（vp，与单词库/知识库 TREE_CELL 同款——加词文件夹选择弹窗用）
+const TREE_CELL: number = 14;
 
 // ★ 0.191.0：会话级阅读高度记忆（方案 A）——模块级 Map，页面销毁不丢（同会话内返回画布/切气泡
 // 再回来都在），重启清零（像素值跨设备/字体漂移不做持久化，重启走书签/底部兜底）
@@ -522,10 +525,14 @@ export struct ChatPage {
   @Local wordPopupQuery: string = '';         // 浮窗展示的查询原文
   @Local wordPopupLoading: boolean = false;   // AI 查词进行中
   @Local wordPopupResult: WordQueryResult | null = null; // 查词结果（null=未出结果）
-  @Local wordPopupError: string = '';         // 查词错误信息
-  @Local wordPopupAdded: boolean = false;     // 当前结果已加入单词库（按钮转「已加入」防重复）
-  @Local wordExistsTip: boolean = false;      // 「单词已存在」提示（重复添加时显示）
-  // ★ 0.150：删除确认弹窗状态（防误触；「不再提示」仅本次对话会话内生效，重进对话页重置）
+   @Local wordPopupError: string = '';         // 查词错误信息
+   @Local wordPopupAdded: boolean = false;     // 当前结果已加入单词库（按钮转「已加入」防重复）
+   @Local wordExistsTip: boolean = false;      // 「单词已存在」提示（重复添加时显示）
+   // ★ 0.222.21：加词目标文件夹选择弹窗（点「加入单词库」弹出；UI 与单词库移动/复制弹窗同款）
+   @Local wordFolderPickerVisible: boolean = false;
+   // ★ 0.222.21：选择弹窗折叠态（@Local string[] 替换引用触发重渲染——0.222.2 铁律）
+   @Local wordPickerCollapsedFolderIds: string[] = [];
+   // ★ 0.150：删除确认弹窗状态（防误触；「不再提示」仅本次对话会话内生效，重进对话页重置）
   @Local deleteConfirmVisible: boolean = false; // 确认弹窗可见
   @Local deleteConfirmMessageId: string = '';   // 待删除的消息 ID
   @Local deleteConfirmNoAsk: boolean = false;   // 弹窗内「不再提示」勾选框当前状态（每次打开复位）
@@ -1732,22 +1739,39 @@ export struct ChatPage {
 
   // ★ 0.155：翻译浮窗发音文本——中译英结果（查询词含中文）播英文译文（explain 字段），
   // 原英译中路径不变（缩略词播全称、普通词播原文）
+  // ★ 0.222.21：检测改首字符判定（与 queryWord 方向检测同源——首字符中文=中翻英，播英文译文）
   wordPopupSpeakText(): string {
     const r = this.wordPopupResult;
-    if (r !== null && containsChinese(this.wordPopupQuery) && r.explain.length > 0) {
+    if (r !== null && startsWithChinese(this.wordPopupQuery) && r.explain.length > 0) {
       return r.explain;
     }
     return wordSpeaker.textFor(this.wordPopupQuery, r !== null ? r.fullName : '');
   }
 
-  // 「加入单词库」：查词结果转 WordItem 入库；重复时显示「单词已存在」
+  // 「加入单词库」：★ 0.222.21 起弹目标文件夹选择弹窗（用户拍板——加词必须选归入哪个文件夹，
+  // UI 与单词库移动/复制弹窗同款）；单词库无任何文件夹时不弹、直接入根目录（无选择可言，行为与旧版一致）。
+  // 查词结果转 WordItem 的真正入库落点在 confirmAddWordToFolder。
   addCurrentWordToBank(): void {
+    if (this.wordPopupResult === null) {
+      return;
+    }
+    if (this.wordBank.folders.length === 0) {
+      this.confirmAddWordToFolder('');
+      return;
+    }
+    this.wordFolderPickerVisible = true;
+  }
+
+  // ★ 0.222.21：确认加词到目标文件夹——WordItem 第 11 参显式传 folderId
+  //（0.222.20 教训：构造尾部可省参数=最容易漏；第 5~10 参占位 ''/0 须逐个显式传才能传到 folderId）。
+  // 重复时显示「单词已存在」（addWordToBank 仅空文本拒绝返回 false，0.222.19 已放开同名）。
+  confirmAddWordToFolder(folderId: string): void {
     if (this.wordPopupResult === null) {
       return;
     }
     track(this.getUIContext().getHostContext() as common.Context, 'add_word_from_chat'); // 0.206.0 埋点：对话翻译弹窗加词
     const r = this.wordPopupResult;
-    const item = new WordItem(r.word, r.fullName, r.usPhonetic, r.explain);
+    const item = new WordItem(r.word, r.fullName, r.usPhonetic, r.explain, '', 0, 0, 0, 0, 0, folderId);
     const ok = addWordToBank(this.wordBank, item);
     if (ok) {
       this.wordPopupAdded = true;
@@ -1755,6 +1779,169 @@ export struct ChatPage {
     } else {
       this.wordExistsTip = true;
     }
+    this.wordFolderPickerVisible = false;
+  }
+
+  // ★ 0.222.21：加词目标选择器的树形目录（DFS 层级+连接线字段，复刻单词库移动/复制弹窗；加词场景无排除项）
+  wordPickerTreeItems(): WordFolderTreeItem[] {
+    const out: WordFolderTreeItem[] = [];
+    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
+      const kids = this.wordBank.folders
+        .filter((f: WordFolder): boolean => f.parentId === parentId)
+        .sort((a: WordFolder, b: WordFolder): number => b.createdAt - a.createdAt);
+      for (let i = 0; i < kids.length; i++) {
+        const isLast = i === kids.length - 1;
+        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
+        if (!this.isWordPickerCollapsed(kids[i].id)) {
+          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
+        }
+      }
+    };
+    walk('', 0, [], []);
+    return out;
+  }
+
+  // ★ 0.222.21：选择器里文件夹是否有子文件夹
+  wordPickerHasChildren(folderId: string): boolean {
+    for (let i = 0; i < this.wordBank.folders.length; i++) {
+      if (this.wordBank.folders[i].parentId === folderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ★ 0.222.21：选择器文件夹是否折叠
+  isWordPickerCollapsed(folderId: string): boolean {
+    return this.wordPickerCollapsedFolderIds.indexOf(folderId) >= 0;
+  }
+
+  // ★ 0.222.21：切换选择器文件夹折叠（@Local string[] 替换引用触发重渲染）
+  toggleWordPickerCollapse(folderId: string): void {
+    if (this.isWordPickerCollapsed(folderId)) {
+      this.wordPickerCollapsedFolderIds = this.wordPickerCollapsedFolderIds.filter((id: string): boolean => id !== folderId);
+    } else {
+      this.wordPickerCollapsedFolderIds = [...this.wordPickerCollapsedFolderIds, folderId];
+    }
+  }
+
+  // ★ 0.222.21：加词目标文件夹选择弹窗——UI 逐行复刻单词库移动/复制弹窗（树形连接线+折叠三角+
+  // 行高 32/字号 13/RADIUS_NAV+根目录行显示单词总数+取消行），标题「加入单词到…」。
+  // 无参 @Builder 内部直读状态（0.190.1 铁律）；点行=确认入该文件夹、点取消/遮罩=关闭。
+  @Builder
+  wordFolderPickerDialog() {
+    Column() {
+      Column() {
+        Text('加入单词到…')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Scroll() {
+          Column() {
+            Row() {
+              Text('根目录')
+                .fontSize(13)
+                .fontColor(TEXT_PRIMARY)
+                .layoutWeight(1)
+              Text(`${this.wordBank.words.length}`)
+                .fontSize(10)
+                .fontColor(TEXT_TERTIARY)
+            }
+            .width('100%')
+            .height(32)
+            .padding({ left: 8, right: 8 })
+            .borderRadius(RADIUS_NAV)
+            .onClick(() => {
+              this.confirmAddWordToFolder('');
+            })
+            ForEach(this.wordPickerTreeItems(), (item: WordFolderTreeItem) => {
+              Row({ space: 6 }) {
+                // 静态经典树形连接线（与边栏同款，弹窗无路径高亮）
+                Row() {
+                  ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
+                    Stack({ alignContent: Alignment.Top }) {
+                      if (cont) {
+                        Column()
+                          .width(1)
+                          .height('100%')
+                          .backgroundColor(STROKE_CARD)
+                      }
+                    }
+                    .width(TREE_CELL)
+                    .height('100%')
+                  }, (cont: boolean, k: number) => `${k}_${cont}`)
+                  Row() {
+                    Stack({ alignContent: Alignment.TopEnd }) {
+                      Column()
+                        .width(1)
+                        .height(item.isLast ? '50%' : '100%')
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                    Stack({ alignContent: Alignment.Center }) {
+                      Row()
+                        .width('100%')
+                        .height(1)
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                  }
+                  .width(TREE_CELL)
+                  .height('100%')
+                }
+                .height('100%')
+                Text(this.wordPickerHasChildren(item.folder.id) ? (this.isWordPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
+                  .fontSize(16)
+                  .fontColor(TEXT_TERTIARY)
+                  .width(22)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => {
+                    this.toggleWordPickerCollapse(item.folder.id);
+                  })
+                Text(item.folder.name)
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .height(32)
+              .padding({ left: 8, right: 8 })
+              .borderRadius(RADIUS_NAV)
+              .onClick(() => {
+                this.confirmAddWordToFolder(item.folder.id);
+              })
+            }, (item: WordFolderTreeItem) => item.folder.id)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 320 })
+        Text('取消')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 10 })
+          .onClick(() => {
+            this.wordFolderPickerVisible = false;
+          })
+      }
+      .width(this.isTablet ? 520 : '86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.wordFolderPickerVisible = false;
+    })
   }
 
   // 生词复习：按消息 ID 取 N 词（N=学习数量，单词库 ⚙ 设置）。
@@ -2559,6 +2746,10 @@ export struct ChatPage {
   handleBack(): boolean {
     if (this.imageViewerVisible) {
       this.imageViewerVisible = false; // 图片预览（0.120）
+      return true;
+    }
+    if (this.wordFolderPickerVisible) {
+      this.wordFolderPickerVisible = false; // 加词目标文件夹选择弹窗（0.222.21）——返回键先关此弹窗
       return true;
     }
     if (this.wordPopupVisible) {
@@ -4033,6 +4224,12 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
           .alignContent(Alignment.Center)
+        }
+
+        // ★ 0.222.21：加词目标文件夹选择弹窗（点「加入单词库」弹出）——渲染在翻译浮窗之后=同层后绘制在上，
+        // 浮窗保持可见但被遮罩覆盖；选完文件夹浮窗按钮转「已加入」。
+        if (this.wordFolderPickerVisible) {
+          this.wordFolderPickerDialog()
         }
 
         // ★ 0.150：删除确认弹窗（防误触）——首次点 × 弹出；勾选「此次对话不再提示」后本次会话内直接删；
