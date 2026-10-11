@@ -601,6 +601,9 @@ export struct KnowledgeBankPage {
   // custom builder's content-area width reference includes the system
   // back-button slot and overflows the screen (proven on ChatPage).
 
+  aboutToAppear(): void {
+    console.error('DAGAI-SIDEBAR kb aboutToAppear isTablet=' + this.windowMode.isTablet);
+  }
   // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出）
   openSidebar(): void {
     console.error('DAGAI-SIDEBAR openSidebar isTablet=' + this.isTablet);
@@ -644,6 +647,12 @@ export struct KnowledgeBankPage {
   @Builder
   kbMobileDrawerLayer() {
     // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出；宽屏边栏由 Index 常驻，这里不渲染）
+    Column()
+      .width(0)
+      .height(0)
+      .onAppear(() => {
+        console.error('DAGAI-SIDEBAR drawerLayer onAppear isTablet=' + this.windowMode.isTablet);
+      })
     if (!this.windowMode.isTablet) {
       if (this.sidebarVisible) {
         Column()
@@ -666,6 +675,9 @@ export struct KnowledgeBankPage {
           }
         })
       }
+      .onAppear(() => {
+        console.error('DAGAI-SIDEBAR drawerCol onAppear');
+      })
       .translate({ x: this.sidebarVisible ? 0 : -208 })
     }
   }
