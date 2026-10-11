@@ -119,7 +119,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.222.8';
+const APP_VERSION: string = 'v0.222.9';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -1451,37 +1451,63 @@ export struct GlobalSettingsDialog {
   }
 
   // ★ 0.190.6：Tab5 关于——版本号 + 反馈与联系（邮箱复制 / mailto 预填设备信息）+ 隐私政策入口
+  // ★ 0.222.9：关于页 UI 卡片化重排——品牌信息卡（Logo+应用名+版本号+版权）+ 体验改进 + 反馈 + 隐私
   @Builder
   aboutTabContent() {
-    Column() {
-      // 版本
-      Column() {
-        Text('版本')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-        Text(APP_VERSION)
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
+    Column({ space: 12 }) {
+      // 品牌信息卡（Logo 渐变容器同边栏视觉语言；版本号下挂版权行）
+      Column({ space: 4 }) {
+        Column() {
+          Image($r('app.media.gitbranch'))
+            .width(24)
+            .height(24)
+            .objectFit(ImageFit.Contain)
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(RADIUS_LOGO)
+        .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+        .justifyContent(FlexAlign.Center)
+        .margin({ bottom: 4 })
+
+        Text('DAG AI Chat')
+          .fontSize(15)
+          .fontWeight(600)
+          .fontFamily(FONT_INTER_SEMIBOLD)
           .fontColor(TEXT_PRIMARY)
+
+        Text(APP_VERSION)
+          .fontSize(12)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ top: 2 })
+
+        Text('本应用由孙加腾独立开发，版权所有')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 2 })
       }
       .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 16 })
+      .padding({ top: 20, bottom: 18 })
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_SOFT)
+      .alignItems(HorizontalAlign.Center)
 
       // ★ 0.206.0：体验改进计划（埋点隐私开关，默认关——用户拍板）
-      Column() {
+      Column({ space: 10 }) {
         Text('体验改进计划')
-          .fontSize(14)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
           .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
+          .width('100%')
+
         Row({ space: 10 }) {
           Column({ space: 2 }) {
             Text('共享匿名使用数据')
-              .fontSize(15)
+              .fontSize(14)
               .fontColor(TEXT_PRIMARY)
             Text('帮助我们了解哪些功能被使用（仅匿名功能点击次数，不含任何对话/学习内容）。可随时关闭。')
               .fontSize(11)
+              .lineHeight(18)
               .fontColor(TEXT_TERTIARY)
           }
           .alignItems(HorizontalAlign.Start)
@@ -1496,28 +1522,31 @@ export struct GlobalSettingsDialog {
         .width('100%')
       }
       .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_NODE)
       .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 16 })
 
       // 反馈与联系
-      Column() {
+      Column({ space: 10 }) {
         Text('反馈与联系')
-          .fontSize(14)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
           .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
+          .width('100%')
 
         // 邮箱行（点击复制）
         Row() {
           Text(FEEDBACK_EMAIL)
-            .fontSize(14)
+            .fontSize(13)
             .fontColor(BRAND_PRIMARY)
             .layoutWeight(1)
           Text('复制')
-            .fontSize(12)
-            .fontColor(TEXT_SECONDARY)
+            .fontSize(11)
+            .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
-        .height(48)
+        .height(40)
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(SURFACE_SOFT)
         .padding({ left: 12, right: 12 })
@@ -1529,13 +1558,12 @@ export struct GlobalSettingsDialog {
         // 写反馈邮件（mailto 预填设备信息）
         Button('✉ 写反馈邮件')
           .width('100%')
-          .height(48)
+          .height(40)
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontWeight(FontWeight.Medium)
           .backgroundColor(BRAND_PRIMARY)
           .fontColor(TEXT_PRIMARY)
           .borderRadius(RADIUS_CONTROL)
-          .margin({ top: 8 })
           .onClick(() => {
             this.openFeedbackMail();
           })
@@ -1544,21 +1572,25 @@ export struct GlobalSettingsDialog {
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
+          .width('100%')
       }
       .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_NODE)
       .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 16 })
 
       // 隐私政策
-      Column() {
+      Column({ space: 10 }) {
         Text('隐私政策')
-          .fontSize(14)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
           .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
+          .width('100%')
+
         Button('查看隐私政策')
           .width('100%')
-          .height(48)
+          .height(40)
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontWeight(FontWeight.Medium)
           .backgroundColor(SURFACE_SOFT)
@@ -1567,13 +1599,17 @@ export struct GlobalSettingsDialog {
           .onClick(() => {
             this.showPrivacyPolicy();
           })
+
         Text('💡 本应用不收集任何个人信息，数据全部存储在设备本地。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
+          .width('100%')
       }
       .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_NODE)
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
