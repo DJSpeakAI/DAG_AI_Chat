@@ -608,21 +608,16 @@ export struct KnowledgeBankPage {
     if (this.sidebarVisible) {
       return;
     }
-    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
-      this.sidebarVisible = true;
-      console.error('DAGAI-SIDEBAR visible=true');
-    });
+    this.sidebarVisible = true; // ★ 0.222.6 直接赋值——animateTo 闭包内赋值真机不通知观察（日志实锤 visible=true 打了 UI 不刷新）
+    console.error('DAGAI-SIDEBAR visible=true');
   }
 
   closeSidebar(): void {
     if (!this.sidebarVisible) {
       return;
     }
-    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
-      this.sidebarVisible = false;
-    });
+    this.sidebarVisible = false; // ★ 0.222.6 直接赋值（同 openSidebar 根因）
   }
-
   /** 手机抽屉导航（点导航项跳转+收抽屉；kind=''/knowledge/settings=只收抽屉） */
   onSidebarNav(kind: string): void {
     this.closeSidebar();
@@ -677,6 +672,7 @@ export struct KnowledgeBankPage {
         console.error('DAGAI-SIDEBAR drawerCol onAppear');
       })
       .translate({ x: this.sidebarVisible ? 0 : -208 })
+      .animation({ duration: 220, curve: this.sidebarVisible ? Curve.EaseOut : Curve.EaseIn }) // ★ 0.222.6 属性动画替代 animateTo
     }
   }
   @Builder
