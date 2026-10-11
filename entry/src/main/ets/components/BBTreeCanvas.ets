@@ -605,7 +605,6 @@ export struct BBTreeCanvas {
   // ★ 0.215.4：滚轮缩放（第十一轮·轴事件版；锚点=光标位置——AxisEvent 自带 x/y 坐标，
   //   无记录时回落画布中心；限幅/公式同 zoomBy）
   wheelZoomAt(factor: number, ax: number = -1, ay: number = -1): void {
-    console.info(`DAGAI-ZOOM wheelZoomAt factor=${factor} ax=${ax} ay=${ay}`);
     const newScale = this.canvasScale * factor;
     if (factor > 1.0 && newScale > 2.0) {
       return; // 放大：只拦上限（方向感知，同 zoomBy）
@@ -1215,7 +1214,6 @@ export struct BBTreeCanvas {
           //   →滚轮变平移；本版 Pan 已改回普通 .gesture（滚轮不再触发 Pan）。
           .onAxisEvent((event: AxisEvent) => {
             const v = event.getVerticalAxisValue(); // ★ 0.215.5：方向真载体（AxisEvent 方法，d.ts 9892 行实锤；scrollStep 恒正 3 无方向，224 条日志实证）
-            console.info(`DAGAI-ZOOM axis action=${event.action} step=${event.scrollStep} v=${v} x=${event.x} y=${event.y}`);
             this.lastAxisAt = Date.now(); // ★ 0.215.5：时间窗联动——滚轮伴生的 Pan（上下平移）在 250ms 窗内被抑制
             if (v !== 0) {
               this.wheelZoomAt(v < 0 ? 1.04 : 0.96, event.x, event.y); // ★ 0.215.6：方向按真机实测翻转（上滚 v<0=放大）+速度翻倍 1.02/0.98→1.04/0.96（用户：太慢滚起来累）

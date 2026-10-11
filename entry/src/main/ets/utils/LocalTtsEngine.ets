@@ -188,8 +188,6 @@ export class LocalTtsEngine {
         }
       }
     } catch (err) {
-      const be = err as BusinessError;
-      console.error(`[LocalTts] listVoices failed: ${be.code} ${be.message}`);
       this.enStatus = 'none'; // 查询失败按无处理（聆小珊兜底）
     }
     return this.enStatus;
@@ -279,7 +277,6 @@ export class LocalTtsEngine {
       this.bindListener(e);
       return true;
     }).catch((err: BusinessError) => {
-      console.error(`[LocalTts] createEngine zh failed: ${err.code} ${err.message}`);
       this.zhCreating = null; // 允许下次重试（如语音包下载完成后）
       return false;
     });
@@ -312,7 +309,6 @@ export class LocalTtsEngine {
       this.bindListener(e);
       return true;
     }).catch((err: BusinessError) => {
-      console.error(`[LocalTts] createEngine en failed: ${err.code} ${err.message}`);
       this.enCreating = null;
       return false;
     });

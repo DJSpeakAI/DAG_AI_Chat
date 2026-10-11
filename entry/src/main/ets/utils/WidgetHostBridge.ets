@@ -108,7 +108,6 @@ export function handleWidgetRate(context: Context, rating: string): void {
   track(context, 'widget_rate', _tp1); // 0.206.0 埋点：桌面卡片评分
   const s = readWidgetState(context);
   const q = s.mode === 'word' ? s.word : s.knowledge;
-  console.info(`[WGT] callRate mode=${s.mode} idx=${q.idx}/${q.items.length} done=${q.done} rating=${rating}`);
   if (q.done || q.idx >= q.items.length) {
     pushWidgetState(context); // 已完成态重推一次
     return;
@@ -170,10 +169,8 @@ export function handleWidgetContinue(context: Context): void {
     const wb = connectWordBank();
     const all = pickReviewWords(wb, wb.words.length, now);
     const future = all.filter((w: WordItem): boolean => w.reviewCount > 0 && w.nextReviewAt > now);
-    console.info(`[WGT] continue word: total=${wb.words.length} future=${future.length}`);
     if (future.length === 0) {
       const daily = all.filter((w: WordItem): boolean => w.reviewCount === 0 || w.nextReviewAt <= now).slice(0, 30);
-      console.info(`[WGT] continue word fallback daily=${daily.length}`);
       daily.forEach((w: WordItem) => items.push(wordToItem(w)));
     } else {
       future.slice(0, 30).forEach((w: WordItem) => items.push(wordToItem(w)));
@@ -182,10 +179,8 @@ export function handleWidgetContinue(context: Context): void {
     const kb = connectKnowledgeBank();
     const all = pickReviewCards(kb, kb.cards.length, now);
     const future = all.filter((c: KnowledgeCard): boolean => c.reviewCount > 0 && c.nextReviewAt > now);
-    console.info(`[WGT] continue klg: total=${kb.cards.length} future=${future.length}`);
     if (future.length === 0) {
       const daily = all.filter((c: KnowledgeCard): boolean => c.reviewCount === 0 || c.nextReviewAt <= now).slice(0, 30);
-      console.info(`[WGT] continue klg fallback daily=${daily.length}`);
       daily.forEach((c: KnowledgeCard) => items.push(cardToItem(c)));
     } else {
       future.slice(0, 30).forEach((c: KnowledgeCard) => items.push(cardToItem(c)));

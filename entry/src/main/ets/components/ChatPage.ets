@@ -114,7 +114,6 @@ export struct WaitingDots { // ★ 0.196.2：export——ReviewPage 完成页「
   private timerId: number = -1;
 
   aboutToAppear(): void {
-    console.info(`DAGAI-DEV deviceType=${deviceInfo.deviceType}`); // ★ 0.215.14：三档判定实锤日志（装机后拉 hilog 验证 Matebook 实际值）
     this.timerId = setInterval(() => {
       this.phase = (this.phase + 1) % 3;
     }, 400);
@@ -3300,7 +3299,6 @@ export struct ChatPage {
                 ctrl = false;
               }
               const v = event.getVerticalAxisValue();
-              console.info(`DAGAI-ZOOM chatAxis v=${v} ctrl=${ctrl}`);
               if (ctrl && v !== 0 && this.windowMode.isTablet) {
                 this.ctrlAxisAt = Date.now(); // ★ 0.215.10：Ctrl+滚轮时刻窗——窗内 List 滚动被 onScrollFrameBegin 全吞（只缩放不滚动，用户拍板"一边放大一边滚动很傻"）
                 const s = this.fontScale * (v < 0 ? 1.04 : 0.96);
@@ -3437,7 +3435,6 @@ export struct ChatPage {
             //   键码实锤（keyCode.d.ts）：KEY_ENTER=2054（2040 是错值）、SHIFT_LEFT/RIGHT=2047/2048；
             //   Shift 判定双保险=即时查 getModifierKeyState + Shift 键 Down/Up 状态追踪兜底。
             .onKeyPreIme((event: KeyEvent): boolean => {
-              console.info(`DAGAI-KEY preIme code=${event.keyCode} type=${event.type}`);
               if (event.keyCode === 2047 || event.keyCode === 2048) { // Shift 键本身：维护状态不消费
                 this.shiftHeld = event.type === KeyType.Down;
                 return false;
@@ -3457,9 +3454,6 @@ export struct ChatPage {
                 }
               }
               return false; // 普通回车放行 → onSubmit 发送
-            })
-            .onKeyEvent((e: KeyEvent) => {
-              console.info(`DAGAI-KEY legacy code=${e.keyCode} type=${e.type}`);
             })
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
 

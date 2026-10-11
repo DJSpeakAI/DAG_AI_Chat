@@ -15,19 +15,15 @@
 //   - 云侧须在 AGC 配置：容器 dag_chat_cloud + 数据类型 cloudData（本地表名称 cloud_data）
 //     + 字段一一对应 + 主键勾「端侧去重主键」（实测新界面，详见 docs/0.165.md 第三章）
 //   - debug 证书连开发环境 / release 证书连生产环境（当前 debug 签名 → 开发环境调测）
-//   - 云侧未配置时：本地写入正常，上云失败仅打日志（不崩溃不阻塞持久化路径）
+//   - 云侧未配置时：本地写入正常，上云失败静默（不崩溃不阻塞持久化路径）
 // ============================================================
 
 import { relationalStore } from '@kit.ArkData';
 import { abilityAccessCtrl, bundleManager, common } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { PersistenceV2, UIContext } from '@kit.ArkUI'; // ★ 0.196.8：应用级开关持久化 + 登录后弹窗（UIContext）
 
 const DB_NAME = 'dag_chat_cloud.db'; // 库名（AGC 容器名 = dag_chat_cloud）
 const TABLE_NAME = 'cloud_data';     // 表名 = 云侧「本地表名称」字段值（数据类型名为驼峰 cloudData）
-const TAG = 'CloudSyncUtil';
-const DOMAIN = 0x0165;
 
 // 模块级 RDB 实例 + 初始化 Promise（EntryAbility 启动时 init 一次，全应用共享）
 let rdbStore: relationalStore.RdbStore | null = null;
@@ -91,20 +87,16 @@ export function initCloudDb(context: common.UIAbilityContext): void {
         updated_at INTEGER
       )`);
       rdbStore = store;
-      hilog.info(DOMAIN, TAG, 'cloud db init ok');
       // ★ 0.165.1：DISTRIBUTED_DATASYNC（normal + user_grant）须用户弹窗授权后才能开云同步；
       // 未授权时本地 RDB 正常读写（upsertCloudData 照常落库），云同步待命——授权后 activateCloudSync 激活
       const granted = await hasSyncPermission();
       // ★ 0.196.8：应用级开关也须开——退出账号时开关已强制关，权限仍在也不激活（UI/行为与账号一致）
       if (granted && connectCloudSync().enabled) {
         activateCloudSync();
-      } else {
-        hilog.info(DOMAIN, TAG, 'sync permission not granted yet, cloud sync standby');
       }
       return true;
-    } catch (err) {
+    } catch (_e) {
       // 初始化失败（如系统 RDB 异常）：云同步整体静默降级，本地 PersistenceV2 路径不受影响
-      hilog.error(DOMAIN, TAG, `cloud db init failed: ${JSON.stringify(err)}`);
       return false;
     }
   })();
@@ -121,15 +113,14 @@ function activateCloudSync(): void {
       { autoSync: true });
     cloudSyncActive = true;
     subscribeCloudDownlink(); // ★ 0.165.2：激活即订阅云端下行（无论启动时已有权限还是用户刚授权，都挂上）
-    hilog.info(DOMAIN, TAG, 'cloud sync activated (autoSync on)');
     // ★ 0.218.1 激活即主动拉两池：下行 dataChange 是事件驱动（云端有新变更才触发）——
     //   新装设备/重装后云端早已有的数据永远等不到事件 → "没第一时间同步"根治。
     //   时序安全：EntryAbility 里 setupCloudDownlink（同步注册 handler）先于本函数（微任务）执行。
     //   仲裁兜底：云端不新于本地 mtime 会被 handler 丢弃，正常设备重复拉零副作用。
     pullAndNotify('flat_pool');
     pullAndNotify('tabs_pool');
-  } catch (err) {
-    hilog.warn(DOMAIN, TAG, `activate cloud sync failed: ${JSON.stringify(err)}`);
+  } catch (_e) {
+    // 静默（激活失败不阻断，下次开启时重试）
   }
 }
 
@@ -143,11 +134,10 @@ function deactivateCloudSync(): void {
   if (rdbStore !== null && downlinkCallback !== null) {
     try {
       rdbStore.off('dataChange', relationalStore.SubscribeType.SUBSCRIBE_TYPE_CLOUD, downlinkCallback);
-    } catch (err) {
-      hilog.warn(DOMAIN, TAG, `off dataChange failed: ${JSON.stringify(err)}`);
+    } catch (_e) {
+      // 静默
     }
   }
-  hilog.info(DOMAIN, TAG, 'cloud sync deactivated (logout)');
 }
 
 // ★ 0.196.8：设置应用级开关（登录弹窗「开启」/设置页按钮/退出账号三条路径统一走这里）
@@ -175,8 +165,7 @@ async function hasSyncPermission(): Promise<boolean> {
     const result = await atm.checkAccessToken(bundleInfo.appInfo.accessTokenId,
       'ohos.permission.DISTRIBUTED_DATASYNC');
     return result === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
-  } catch (err) {
-    hilog.warn(DOMAIN, TAG, `check permission failed: ${JSON.stringify(err)}`);
+  } catch (_e) {
     return false;
   }
 }
@@ -192,15 +181,12 @@ export async function requestSyncPermission(context: common.UIAbilityContext): P
       ['ohos.permission.DISTRIBUTED_DATASYNC']);
     if (result.authResults.length > 0 &&
       result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
-      hilog.info(DOMAIN, TAG, 'sync permission granted by user');
       connectCloudSync().enabled = true; // ★ 0.196.8：授权即用户意图开——开关落 true（激活由下方 activate）
       activateCloudSync();
       return true;
     }
-    hilog.info(DOMAIN, TAG, 'sync permission denied by user');
     return false;
-  } catch (err) {
-    hilog.warn(DOMAIN, TAG, `request permission failed: ${JSON.stringify(err)}`);
+  } catch (_e) {
     return false;
   }
 }
@@ -213,7 +199,7 @@ function ensureReady(): Promise<boolean> {
   return initPromise;
 }
 
-// ★ 0.165.1：写入/更新一行快照（fire-and-forget：失败仅日志，绝不阻塞本地持久化路径）
+// ★ 0.165.1：写入/更新一行快照（fire-and-forget：失败静默，绝不阻塞本地持久化路径）
 // ON_CONFLICT_REPLACE = INSERT OR REPLACE 语义：主键冲突删旧插新（表无外键引用，无副作用）
 export function upsertCloudData(key: string, value: string): void {
   // ★ 0.218.0 空不上行守卫（清零事故命门）：空池数据禁止上云——新装设备/清空状态
@@ -249,8 +235,8 @@ export function upsertCloudData(key: string, value: string): void {
       'updated_at': now
     };
     rdbStore.insert(TABLE_NAME, bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE)
-      .catch((err: BusinessError) => {
-        hilog.warn(DOMAIN, TAG, `upsert ${key} failed: code=${err.code} msg=${err.message}`);
+      .catch(() => {
+        // 静默（上云失败不阻断本地持久化路径）
       });
   });
 }
@@ -278,8 +264,7 @@ async function queryCloudRow(key: string): Promise<CloudCloudRow | null> {
     }
     resultSet.close();
     return result;
-  } catch (err) {
-    hilog.warn(DOMAIN, TAG, `queryRow ${key} failed: ${JSON.stringify(err)}`);
+  } catch (_e) {
     return null;
   }
 }
@@ -307,14 +292,12 @@ function subscribeCloudDownlink(): void {
   }
   try {
     downlinkCallback = (storeUri: Array<string>) => { // ★ 0.196.8：回调存模块变量（deactivateCloudSync off 用）
-      hilog.info(DOMAIN, TAG, `cloud dataChange: ${JSON.stringify(storeUri)}`);
       pullAndNotify('flat_pool');
       pullAndNotify('tabs_pool');
     };
     rdbStore.on('dataChange', relationalStore.SubscribeType.SUBSCRIBE_TYPE_CLOUD, downlinkCallback);
-    hilog.info(DOMAIN, TAG, 'cloud dataChange subscribed');
-  } catch (err) {
-    hilog.warn(DOMAIN, TAG, `subscribe dataChange failed: ${JSON.stringify(err)}`);
+  } catch (_e) {
+    // 静默
   }
 }
 

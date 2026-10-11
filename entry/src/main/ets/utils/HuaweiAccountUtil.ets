@@ -69,7 +69,6 @@ function errorToTip(error: BusinessError): string {
     tip = '操作失败';
   }
   // ★ 0.164.4：附原始错误码 + 服务端 message（截断 200 字符防 UI 溢出）
-  console.error(`[HuaweiLogin] code=${error.code}, msg=${error.message}`); // DevEco Log 窗口可见
   const rawMsg = (error.message || '').substring(0, 200);
   return `${tip}【code=${error.code}${rawMsg ? ` | ${rawMsg}` : ''}】`;
 }
