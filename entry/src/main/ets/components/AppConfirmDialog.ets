@@ -9,6 +9,7 @@
 
 import { AppStorageV2 } from '@kit.ArkUI';
 import { SURFACE_NODE, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, STROKE_CARD, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.225.2：宽屏断点（弹窗宽度收敛，UI_GUIDELINES 暂停-12）
 
 // ★ 0.196.9：确认弹窗触发桥——AppStorageV2（应用生命周期共享、非持久化）
 //   任意组件 set visible=true → Index 根挂载的对应弹窗实例显示（跨组件解耦）
@@ -37,6 +38,12 @@ export struct AppConfirmDialog {
   @Param confirmOnLeft: boolean = false;
   @Event onConfirm: () => void = () => {};
   @Event onCancel: () => void = () => {};
+
+  // ★ 0.225.2：宽屏断点——@ObservedV2 实例须挂 @Local 才可靠响应 @Trace（同 KnowledgeBankPage）
+  @Local windowMode: WindowMode = connectWindowMode();
+  @Computed get isTablet(): boolean {
+    return this.windowMode.isTablet;
+  }
 
   // 取消钮（弱化：SURFACE_NODE 底 + STROKE_CARD 描边）
   @Builder
@@ -111,7 +118,8 @@ export struct AppConfirmDialog {
         .width('100%')
         .margin({ top: 16 })
       }
-      .width('88%')
+      // ★ 0.225.2 用户实测 PC 端太宽：88% 在宽屏被拉满——改断点制（手机 86% / 平板与 PC 固定 400，UI_GUIDELINES 暂停-12 确认类对话框定式）
+      .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)

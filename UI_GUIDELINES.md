@@ -161,6 +161,13 @@
 - 结构：标题 16/600 → 勾选行（checkbox svg 20 + 13 说明字）→ 双按钮行（取消=透明底 TEXT_SECONDARY / 确认=DANGER 底 TEXT_PRIMARY，layoutWeight 等分，间距 12）
 - 内边距 20，圆角 RADIUS_NAV，底色 SURFACE_NODE，遮罩 OVERLAY
 
+**12a. 通用信息/确认弹窗（★ 0.225.2 入规则——补第 12 条的适用范围，杜绝"漏网"弹窗写裸百分比宽度）**
+- **适用组件**：`ReminderDialog`（订阅提醒/首登 30 天试用欢迎：「🎉 30 天云同步试用已开启」）、`AppConfirmDialog`（登录后「开启云同步」询问 / 退出账号确认 / 未登录登录引导 / 内部备份恢复）——**所有"居中模态 + 遮罩"的暗紫面板弹窗统一遵本条**，不再逐组件各写各的宽度
+- **宽度断点制（同第 12 条，唯一姿势）**：`.width(this.isTablet ? 400 : '86%')`——手机 86%（居中模态标准宽）/ 平板与 PC **固定 400**；**禁止裸 `.width('88%')` / `.width('100%')` 等纯百分比**（88% 在 PC 宽屏被拉满一整片、按钮与正文过长——0.225.2 用户实测 PC 端首页登录后弹窗「太宽了」实锤）
+- **断点取自 `WindowMode` 共享真相源**：组件内 `@Local windowMode: WindowMode = connectWindowMode();` + `@Computed get isTablet()`（`@ObservedV2` 实例须挂 `@Local`，否则 `@Computed` 依赖链真机不可靠）
+- 结构：标题 16/600（TEXT_PRIMARY）→ 正文 FONT_SIZE_BODY/lineHeight 22（TEXT_SECONDARY）→ 按钮行；内边距 20，圆角 RADIUS_NAV，底色 SURFACE_NODE，描边 1px STROKE_CARD，遮罩 `rgba(0,0,0,0.5)`
+- 按钮：单按钮通栏「知道了」= BRAND_PRIMARY 底白字高 48 圆角 RADIUS_CONTROL；双按钮 = `Row({ space: 10 })` + 各 `layoutWeight(1)` 等宽
+
 ## 七、图标资源
 
 `PixsoUI/*/arkui/entry/src/main/resources/base/media/` 下 svg 可直接拷入工程 media/（描边风格 1.5px）：
