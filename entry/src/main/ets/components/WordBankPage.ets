@@ -592,7 +592,7 @@ export struct WordBankPage {
       Button(this.sortText())
         .fontSize(12)
         .height(28)
-        // ★ 0.222.16 用户拍板：排序入口恒定紫底紫字——此前默认「最新↓」为透明底，用户反馈"最新往下没有紫颜色背景"（其他排序有），补上使四种状态视觉一致
+        // ★ 0.222.15 用户拍板：排序入口恒定紫底紫字——此前默认「最新↓」为透明底，用户反馈"最新往下没有紫颜色背景"（其他排序有），补上使四种状态视觉一致
         .backgroundColor(SURFACE_HOVER)
         .fontColor(BRAND_SECONDARY)
         .padding({ left: 8, right: 8 })

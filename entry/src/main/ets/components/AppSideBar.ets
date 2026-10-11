@@ -17,7 +17,7 @@ import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFAC
 import { connectKnowledgeBank, deleteFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
 import { KnowledgeBankStore, KFolder, KFolderTreeItem, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
 
-
+const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 
 @ComponentV2
 export struct AppSideBar {
@@ -45,25 +45,60 @@ export struct AppSideBar {
   @Local treeMenuFolderName: string = '';    // 目标原名（重命名弹窗预填）
   @Local rootTreeMenuVisible: boolean = false; // ★ 0.222.13：根目录「全部卡片」行触摸长按菜单开关（Pad/手机）
   @Local focusTreeId: string = 'none'; // ★ 0.222.14：右键/长按焦点高亮（指哪打哪）——onMouse Right Press 或 LongPress 时置目标文件夹 id（根=''），菜单项/点击/弹窗关闭后复位 'none'
-
-  /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
+  @Local hoverTreeId: string = 'none'; // ★ 0.222.17：PC 鼠标悬停行 id（路径高亮 B 悬停触发；离开复位 'none'）
+  /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产平铺数组供边栏树渲染 */
+  /** ★ 0.222.17：补 isLast/ancestorIds/ancestorHasNext（经典树形连接线 A + 路径高亮 B） */
   kbFolderTreeItems(): KFolderTreeItem[] {
     const out: KFolderTreeItem[] = [];
-    const walk = (parentId: string, depth: number): void => {
+    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
       const kids = this.kbStore.folders
         .filter((f: KFolder): boolean => f.parentId === parentId)
         .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
       for (let i = 0; i < kids.length; i++) {
-        out.push({ folder: kids[i], depth: depth });
+        const isLast = i === kids.length - 1;
+        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
         if (!this.isFolderCollapsed(kids[i].id)) {
-          walk(kids[i].id, depth + 1);
+          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
         }
       }
     };
-    walk('', 0);
+    walk('', 0, [], []);
     return out;
   }
 
+  /** ★ 0.222.17：树形连接线当前激活 id（右键/长按焦点 > 鼠标悬停 > 导航选中） */
+  treeActiveId(): string {
+    if (this.focusTreeId !== 'none') {
+      return this.focusTreeId;
+    }
+    if (this.hoverTreeId !== 'none') {
+      return this.hoverTreeId;
+    }
+    return this.folderNav.folderId;
+  }
+
+  /** ★ 0.222.17：某行第 colIndex 段引导线是否属于当前激活路径（B 路径高亮） */
+  treeGuideActive(item: KFolderTreeItem, colIndex: number): boolean {
+    const active = this.treeActiveId();
+    if (active === '') {
+      return false;
+    }
+    if (item.folder.id === active) {
+      return true;
+    }
+    return colIndex < item.ancestorIds.length && item.ancestorIds[colIndex] === active;
+  }
+
+  /** ★ 0.222.17：行是否激活（右键焦点/鼠标悬停/导航选中）——背景与文字高亮 */
+  treeRowActive(id: string): boolean {
+    if (this.focusTreeId !== 'none' && this.focusTreeId === id) {
+      return true;
+    }
+    if (this.hoverTreeId !== 'none' && this.hoverTreeId === id) {
+      return true;
+    }
+    return this.folderNav.folderId === id;
+  }
   /** ★ 0.222.1：文件夹是否有子文件夹（决定折叠三角显隐） */
   hasChildren(folderId: string): boolean {
     for (let i = 0; i < this.kbStore.folders.length; i++) {
@@ -540,7 +575,7 @@ export struct AppSideBar {
         Row({ space: 8 }) {
           Text('全部卡片')
             .fontSize(13)
-            .fontColor(this.folderNav.folderId === '' || this.focusTreeId === '' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .fontColor(this.treeRowActive('') ? TEXT_PRIMARY : TEXT_SECONDARY)
             .layoutWeight(1)
           Text(`${this.kbStore.cards.length}`)
             .fontSize(10)
@@ -549,7 +584,10 @@ export struct AppSideBar {
         .height(32)
         .padding({ left: 8, right: 8 })
         .borderRadius(RADIUS_NAV)
-        .backgroundColor(this.folderNav.folderId === '' || this.focusTreeId === '' ? SURFACE_HOVER : Color.Transparent)
+        .backgroundColor(this.treeRowActive('') ? SURFACE_HOVER : Color.Transparent)
+        .onHover((isHover: boolean) => {
+          this.hoverTreeId = isHover ? '' : 'none';
+        })
         .onClick(() => {
           this.selFolderId = '';
           this.folderNav.folderId = '';
@@ -586,9 +624,45 @@ export struct AppSideBar {
                 this.rootTreeMenuVisible = true;
               })
           )
-        // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮）
+        // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮；★ 0.222.17 经典树形连接线）
         ForEach(this.kbFolderTreeItems(), (item: KFolderTreeItem) => {
           Row({ space: 6 }) {
+            // ★ 0.222.17：经典树形连接线（A）——按深度绘制祖先竖线 + L 型拐角（├/└），色走 STROKE_CARD
+            Row() {
+              ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
+                Stack({ alignContent: Alignment.Top }) {
+                  if (cont) {
+                    Column()
+                      .width(1)
+                      .height('100%')
+                      .backgroundColor(this.treeGuideActive(item, k) ? BRAND_SECONDARY : STROKE_CARD)
+                  }
+                }
+                .width(TREE_CELL)
+                .height('100%')
+              }, (cont: boolean, k: number) => `${k}_${cont}`)
+              Row() {
+                Stack({ alignContent: Alignment.TopEnd }) {
+                  Column()
+                    .width(1)
+                    .height(item.isLast ? '50%' : '100%')
+                    .backgroundColor(this.treeGuideActive(item, item.depth) ? BRAND_SECONDARY : STROKE_CARD)
+                }
+                .width('50%')
+                .height('100%')
+                Stack({ alignContent: Alignment.Center }) {
+                  Row()
+                    .width('100%')
+                    .height(1)
+                    .backgroundColor(this.treeGuideActive(item, item.depth) ? BRAND_SECONDARY : STROKE_CARD)
+                }
+                .width('50%')
+                .height('100%')
+              }
+              .width(TREE_CELL)
+              .height('100%')
+            }
+            .height('100%')
             Text(this.hasChildren(item.folder.id) ? (this.isFolderCollapsed(item.folder.id) ? '▸' : '▾') : '')
               .fontSize(16)
               .fontColor(TEXT_TERTIARY)
@@ -599,7 +673,7 @@ export struct AppSideBar {
               })
             Text(item.folder.name)
               .fontSize(13)
-              .fontColor(this.folderNav.folderId === item.folder.id || this.focusTreeId === item.folder.id ? TEXT_PRIMARY : TEXT_SECONDARY)
+              .fontColor(this.treeRowActive(item.folder.id) ? TEXT_PRIMARY : TEXT_SECONDARY)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
@@ -609,9 +683,12 @@ export struct AppSideBar {
           }
           .width('100%')
           .height(32)
-          .padding({ left: 8 + item.depth * 14, right: 8 })
+          .padding({ left: 8, right: 8 })
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(this.folderNav.folderId === item.folder.id || this.focusTreeId === item.folder.id ? SURFACE_HOVER : Color.Transparent)
+          .backgroundColor(this.treeRowActive(item.folder.id) ? SURFACE_HOVER : Color.Transparent)
+          .onHover((isHover: boolean) => {
+            this.hoverTreeId = isHover ? item.folder.id : 'none';
+          })
           .onClick(() => {
             this.selFolderId = item.folder.id;
             this.folderNav.folderId = item.folder.id;

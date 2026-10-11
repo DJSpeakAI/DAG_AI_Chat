@@ -305,7 +305,11 @@ export function connectSidebarSection(): SidebarSectionState {
 }
 
 /** ★ 0.220.0：文件夹树平铺项（DFS 顺序+缩进深度）——AppSideBar 边栏树渲染用 */
+/** ★ 0.222.17：扩展经典树形连接线字段（A 连接线 + B 路径高亮） */
 export interface KFolderTreeItem {
   folder: KFolder;
   depth: number;
+  isLast: boolean;              // 同级最后一个（决定拐角 └ 还是 ├）
+  ancestorIds: string[];        // 祖先链（长度=depth；路径高亮判定哪条竖线属于当前路径）
+  ancestorHasNext: boolean[];   // 各祖先层是否有后续兄弟（长度=depth；决定该列竖线是否贯穿）
 }

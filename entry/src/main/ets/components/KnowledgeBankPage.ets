@@ -38,6 +38,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
+const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade, copyRootFolder, clearRootFolder } from '../utils/KnowledgeStoreUtil';
 import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
@@ -1532,26 +1533,24 @@ export struct KnowledgeBankPage {
     return f === undefined ? '' : f.name;
   }
   /** ★ 0.222.1：移动/复制目标选择器的树形目录（DFS 层级 + 折叠 + 排除源文件夹） */
+  /** ★ 0.222.17：补 isLast/ancestorIds/ancestorHasNext（静态树形连接线；弹窗无路径高亮） */
   folderPickerTreeItems(): KFolderTreeItem[] {
     const out: KFolderTreeItem[] = [];
-    const walk = (parentId: string, depth: number): void => {
-      const kids = this.knowledgeBank.folders
+    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
+      const all = this.knowledgeBank.folders
         .filter((f: KFolder): boolean => f.parentId === parentId)
         .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
+      // ★ 0.222.14：仅「移动」排除源文件夹自身（避免移到自己下面形成环）；「复制」全显示（含源自身/子孙）
+      const kids = all.filter((f: KFolder): boolean => !(this.folderNav.folderAction === 'move' && f.id === this.folderNav.folderActionId));
       for (let i = 0; i < kids.length; i++) {
-        const f = kids[i];
-        // ★ 0.222.14：仅「移动」排除源文件夹自身（避免移到自己下面形成环）；
-        //   「复制」全显示（含源自身/子孙——复制自己=变成自己的子文件夹，快照法保证不死循环，用户拍板）
-        if (this.folderNav.folderAction === 'move' && f.id === this.folderNav.folderActionId) {
-          continue;
-        }
-        out.push({ folder: f, depth: depth });
-        if (!this.isPickerCollapsed(f.id)) {
-          walk(f.id, depth + 1);
+        const isLast = i === kids.length - 1;
+        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
+        if (!this.isPickerCollapsed(kids[i].id)) {
+          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
         }
       }
     };
-    walk('', 0);
+    walk('', 0, [], []);
     return out;
   }
 
@@ -2070,24 +2069,59 @@ export struct KnowledgeBankPage {
         Scroll() {
           Column() {
             Row() {
-              Text('📂 根目录')
-                .fontSize(14)
+              Text('根目录')
+                .fontSize(13)
                 .fontColor(TEXT_PRIMARY)
                 .layoutWeight(1)
-              Text('选择')
-                .fontSize(12)
-                .fontColor(BRAND_SECONDARY)
+              Text(`${this.knowledgeBank.cards.length}`)
+                .fontSize(10)
+                .fontColor(TEXT_TERTIARY)
             }
             .width('100%')
-            .padding(12)
-            .borderRadius(8)
-            .backgroundColor(SURFACE_SOFT)
-            .margin({ top: 10 })
+            .height(32)
+            .padding({ left: 8, right: 8 })
+            .borderRadius(RADIUS_NAV)
             .onClick(() => {
               this.confirmFolderTarget('');
             })
             ForEach(this.folderPickerTreeItems(), (item: KFolderTreeItem) => {
-              Row() {
+              Row({ space: 6 }) {
+                // ★ 0.222.17：静态经典树形连接线（与边栏同款，弹窗无路径高亮）
+                Row() {
+                  ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
+                    Stack({ alignContent: Alignment.Top }) {
+                      if (cont) {
+                        Column()
+                          .width(1)
+                          .height('100%')
+                          .backgroundColor(STROKE_CARD)
+                      }
+                    }
+                    .width(TREE_CELL)
+                    .height('100%')
+                  }, (cont: boolean, k: number) => `${k}_${cont}`)
+                  Row() {
+                    Stack({ alignContent: Alignment.TopEnd }) {
+                      Column()
+                        .width(1)
+                        .height(item.isLast ? '50%' : '100%')
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                    Stack({ alignContent: Alignment.Center }) {
+                      Row()
+                        .width('100%')
+                        .height(1)
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                  }
+                  .width(TREE_CELL)
+                  .height('100%')
+                }
+                .height('100%')
                 Text(this.pickerHasChildren(item.folder.id) ? (this.isPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
                   .fontSize(16)
                   .fontColor(TEXT_TERTIARY)
@@ -2096,25 +2130,22 @@ export struct KnowledgeBankPage {
                   .onClick(() => {
                     this.togglePickerCollapse(item.folder.id);
                   })
-                Text('📁 ' + item.folder.name)
+                Text(item.folder.name)
                   .fontSize(13)
                   .fontColor(TEXT_PRIMARY)
                   .layoutWeight(1)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text('选择')
-                  .fontSize(12)
-                  .fontColor(BRAND_SECONDARY)
               }
               .width('100%')
-              .padding({ left: 8 + item.depth * 14, right: 12 })
-              .borderRadius(8)
-              .backgroundColor(SURFACE_SOFT)
-              .margin({ top: 6 })
+              .height(32)
+              .padding({ left: 8, right: 8 })
+              .borderRadius(RADIUS_NAV)
               .onClick(() => {
                 this.confirmFolderTarget(item.folder.id);
               })
-            }, (item: KFolderTreeItem) => item.folder.id)          }
+            }, (item: KFolderTreeItem) => item.folder.id)
+          }
           .width('100%')
         }
         .layoutWeight(1)
