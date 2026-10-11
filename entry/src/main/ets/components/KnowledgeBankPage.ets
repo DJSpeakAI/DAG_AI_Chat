@@ -641,7 +641,7 @@ export struct KnowledgeBankPage {
     Row() {
       // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
       // ★ 0.222.0：手机端 ⇄ 改边栏图标（sidebar.svg，点击切出边栏抽屉）；宽屏保持 ⇄ 切单词库
-      if (this.isTablet) {
+      if (this.windowMode.isTablet) {
         Text('⇄')
           .fontSize(16)
           .fontColor(TEXT_TERTIARY)
@@ -666,7 +666,7 @@ export struct KnowledgeBankPage {
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
         .onClick(() => {
-          if (this.isTablet) {
+          if (this.windowMode.isTablet) {
             this.pathStack.replacePath({ name: 'WordBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
           } else {
             this.openSidebar(); // ★ 0.222.0：手机点标题也切边栏（与边栏图标同款）
@@ -2819,7 +2819,7 @@ export struct KnowledgeBankPage {
           })
       )
       // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出；宽屏边栏由 Index 常驻，这里不渲染）
-      if (!this.isTablet) {
+      if (!this.windowMode.isTablet) {
         if (this.sidebarVisible) {
           Column()
             .width('100%')
