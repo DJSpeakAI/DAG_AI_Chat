@@ -116,6 +116,7 @@ export struct KnowledgeBankPage {
 
   aboutToAppear(): void {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
+    console.error('DAGAI-SIDEBAR kb aboutToAppear isTablet=' + this.windowMode.isTablet); // ★ 0.222.5 诊断
   }
 
   // ★ 0.148: search / sort state
@@ -601,9 +602,6 @@ export struct KnowledgeBankPage {
   // custom builder's content-area width reference includes the system
   // back-button slot and overflows the screen (proven on ChatPage).
 
-  aboutToAppear(): void {
-    console.error('DAGAI-SIDEBAR kb aboutToAppear isTablet=' + this.windowMode.isTablet);
-  }
   // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出）
   openSidebar(): void {
     console.error('DAGAI-SIDEBAR openSidebar isTablet=' + this.isTablet);
