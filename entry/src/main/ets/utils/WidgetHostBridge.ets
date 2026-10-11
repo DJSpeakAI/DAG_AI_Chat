@@ -14,6 +14,8 @@ import { connectWordBank } from './WordStoreUtil';
 import { connectKnowledgeBank } from './KnowledgeStoreUtil';
 import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds } from './WidgetReviewUtil';
 import { track } from './TrackUtil'; // 0.206.0 埋点
+import { noteBankMutation } from './CloudSyncBridge'; // ★ 0.223.0：卡片评分进度上云钩子
+import { connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：快照注入卡面模式（主进程安全；卡片进程经 face 字段读）
 
 const DEF_MAX = 200; // 释义截断长度（防爆 preferences 快照）
 
@@ -64,6 +66,9 @@ export function buildWidgetState(context: Context, mode: string,
   }
 
   const s: WidgetState = { mode: mode === 'word' ? 'word' : 'knowledge', word: wq, knowledge: kq };
+  // ★ 0.224.0：卡面模式随快照注入（卡片进程禁连 FaceModeStore——@ObservedV2 在卡片进程崩，0.204.1 铁律）
+  s.face = connectFaceMode().mode === 'double' ? 'double' : 'single';
+  s.flipped = 'n'; // 新快照一律从正面开始
   writeWidgetStateForHost(context, s);
 }
 
@@ -92,6 +97,7 @@ export function mergeWidgetPending(context: Context,
       }
     }
   });
+  noteBankMutation(); // ★ 0.223.0：卡片评分回放=进度变更，防抖上云
   clearWidgetPending(context);
   return true;
 }
@@ -126,6 +132,7 @@ export function handleWidgetRate(context: Context, rating: string): void {
       applyRating(c, rating as MemoryRating, now);
     }
   }
+  noteBankMutation(); // ★ 0.223.0：卡片评分=进度变更，防抖上云
   // 快照会话进度推进（idx/计数/done——items 记忆字段不推，真数据已落）
   if (rating === 'hard') {
     q.hard += 1;
@@ -138,6 +145,7 @@ export function handleWidgetRate(context: Context, rating: string): void {
   if (q.idx >= q.items.length) {
     q.done = true;
   }
+  s.flipped = 'n'; // ★ 0.224.0：换卡回正面（双面模式新卡先看题面）
   writeWidgetStateForHost(context, s);
 }
 
@@ -199,6 +207,7 @@ export function handleWidgetContinue(context: Context): void {
   q.good = 0;
   q.easy = 0;
   s.noMore = 'n';
+  s.flipped = 'n'; // ★ 0.224.0：新队列从正面开始
   writeWidgetStateForHost(context, s);
 }
 

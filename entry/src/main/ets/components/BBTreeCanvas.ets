@@ -28,7 +28,9 @@ import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; /
 @ComponentV2
 export struct BBTreeCanvas {
   @Param pathStack: NavPathStack = new NavPathStack();
-  store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
+  // ★ 0.223.0：store 挂 @Local（@ObservedV2 实例作 @ComponentV2 成员须挂 @Local 才可靠响应
+  //   @Trace——0.222.2 铁律；needsCloudRedraw 的 @Monitor 路径监听依赖此声明）
+  @Local store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   @Local canvasOffsetX: number = 0;
@@ -628,6 +630,27 @@ export struct BBTreeCanvas {
       count += node.messages.length;
     }
     return count;
+  }
+
+  // ★ 0.223.0：云端下行重建——保坐标重绘（绝不 autoLayout 重排，对端坐标是真相；
+  //   斩断「重排→saveTree→上行→污染对端布局」乒乓链）。画布在栈时 @Monitor 即时消费，
+  //   不在栈时 onShown 兜底（双保险，防单一监听链真机不可靠）。
+  @Monitor('store.needsCloudRedraw')
+  onCloudRedraw(): void {
+    if (!this.store.needsCloudRedraw) {
+      return;
+    }
+    this.store.needsCloudRedraw = false;
+    this.applyCloudRedraw();
+  }
+
+  applyCloudRedraw(): void {
+    if (this.store.nodeList.length === 0) {
+      this.autoLayout(); // 空树无坐标可保——回落自动布局
+      return;
+    }
+    this.redrawEdges(); // 连线 Canvas 命令式绘制无状态绑定——下行替换 nodeList 后必须显式重绘
+    this.fitViewport(); // 视口适配全树（对端新增节点可见）
   }
 
   // ★ 0.167：信息条分段控件切换画布模式——核心置换走 applyCanvasModeSwitch
@@ -1857,6 +1880,11 @@ export struct BBTreeCanvas {
     .onShown(() => {
       // ★ 0.200.0：知识库/复习页发起导入回到画布 → 进入选择模式（action 空 = 普通返回，零副作用）
       this.enterImportSelecting();
+      // ★ 0.223.0：云端下行兜底消费（@Monitor 失效/画布不在栈时的第二道网——保坐标重绘）
+      if (this.store.needsCloudRedraw) {
+        this.store.needsCloudRedraw = false;
+        this.applyCloudRedraw();
+      }
       // ★ 0.126：从 ChatPage 返回时，若 needsRelayout 则重新布局 + 适配视口
       if (this.store.needsRelayout) {
         this.autoLayout();

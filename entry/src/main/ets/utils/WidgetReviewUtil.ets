@@ -63,6 +63,8 @@ export interface WidgetState {
   word: WidgetQueue;
   knowledge: WidgetQueue;
   noMore?: string;  // 0.204.2：'y'=全部学完（含未来）——完成态隐藏继续按钮显示「全部学完」文案；主应用重建快照时重置
+  face?: string;    // ★ 0.224.0：卡面模式（'single' | 'double'——跟全局 FaceModeStore，经快照注入卡片进程）
+  flipped?: string; // ★ 0.224.0：当前卡是否已翻面（'y' | 'n'——双面模式卡身点击切换；评分/切库/换卡重置）
 }
 
 /** 待回放评分（卡片上产生；主应用按 happenedAt 顺序 applyRating 到真数据） */
@@ -298,7 +300,9 @@ export function formBindingDataOf(context: Context): formBindingData.FormBinding
     hard: `${q.hard}`,
     good: `${q.good}`,
     easy: `${q.easy}`,
-    noMore: s.noMore === 'y' ? 'y' : 'n'
+    noMore: s.noMore === 'y' ? 'y' : 'n',
+    face: s.face === 'double' ? 'double' : 'single', // ★ 0.224.0：卡面模式（卡片进程禁连 FaceModeStore——经快照注入）
+    flipped: s.flipped === 'y' ? 'y' : 'n' // ★ 0.224.0：翻面态
   });
 }
 
@@ -363,9 +367,37 @@ export function processWidgetCommand(context: Context, message: string): void {
   } else if (cmd === 'switch' && (mode === 'word' || mode === 'knowledge')) {
     const s = readWidgetState(context);
     s.mode = mode;
+    s.flipped = 'n'; // ★ 0.224.0：换卡面回正面
     writeWidgetState(context, s);
     pushWidgetState(context);
+  } else if (cmd === 'flip') {
+    // ★ 0.224.0：双面模式卡身点击翻面（纯显示态——卡片进程可独立处理，经 onFormEvent 备用入口）
+    handleWidgetFlip(context);
   }
+}
+
+// ★ 0.224.0：卡身翻面——切换 flipped 推回卡片（纯显示态零数据变更；call/message 双入口共用）
+export function handleWidgetFlip(context: Context): void {
+  const s = readWidgetState(context);
+  if (s.face !== 'double') {
+    return; // 单面模式无翻面语义
+  }
+  const q = s.mode === 'word' ? s.word : s.knowledge;
+  if (q.done || q.idx >= q.items.length) {
+    return; // 完成态无卡可翻
+  }
+  s.flipped = s.flipped === 'y' ? 'n' : 'y';
+  writeWidgetState(context, s);
+  pushWidgetState(context);
+}
+
+// ★ 0.224.0：卡面模式全局变更（全局设置/复习页 ⚙ 调用——写快照+即时推全部卡片）
+export function setWidgetFace(context: Context, face: string): void {
+  const s = readWidgetState(context);
+  s.face = face === 'double' ? 'double' : 'single';
+  s.flipped = 'n'; // 模式切换回正面
+  writeWidgetState(context, s);
+  pushWidgetState(context);
 }
 
 /**
@@ -414,6 +446,7 @@ function handleRate(context: Context, rating: string): void {
   if (q.idx >= q.items.length) {
     q.done = true;
   }
+  s.flipped = 'n'; // ★ 0.224.0：换卡回正面（双面模式新卡先看题面）
   writeWidgetState(context, s);
 
   // 记 pending（主应用下次进复习页时回放到 PersistenceV2 真数据）
@@ -431,7 +464,9 @@ function handleRate(context: Context, rating: string): void {
 
 // ---------------- 边栏入口：打开卡片管理器 ----------------
 
-/** ★ 0.204.0：打开本应用卡片管理器（账户行入口；用户选规格后添加——2×2/2×4/4×4） */
+/** ★ 0.204.0：打开本应用卡片管理器（账户行入口；用户选规格后添加——2×2/2×4/4×4）
+ *  ★ 0.224.8：0.224.6/0.224.7 调查期代码回退（用户拍板清理——PC 桌面不支持加卡已成案，
+ *    手机/Pad 上 openFormManager 从不抛错，错误上屏属无谓防御）；恢复 0.204.0 原样 */
 export function requestPublishReviewWidget(): void {
   const want: Want = {
     bundleName: 'com.dagaichat.app',

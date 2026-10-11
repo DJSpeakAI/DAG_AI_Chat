@@ -44,6 +44,7 @@ export class KnowledgeCard {
   @Trace images: string = '';      // ★ 0.202.1：多图（JSON string[]；'' = 无图。imageUri 保留兼容——getCardImages 统一读取）
   @Trace folderId: string = '';    // ★ 0.207.0：所属文件夹（'' = 根目录）——anything 导入体系（对标 Anki 牌组）
   @Trace titleImages: string = ''; // ★ 0.210.0：标题图（JSON string[]；'' = 无。Anki「图对图」场景——题面插图，复习双面模式随正面显示）
+  @Trace mtime: number = 0;       // ★ 0.223.0：条目最后编辑时间（云同步条目级仲裁——同 id 最后编辑者胜）
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
@@ -52,9 +53,10 @@ export class KnowledgeCard {
   // ★ 0.202.1: images appended at the tail — legacy 10-arg call sites unchanged.
   // ★ 0.207.0: folderId appended at the tail — legacy 11-arg call sites unchanged（Schema 铁律：只尾部追加）.
   // ★ 0.210.0: titleImages appended at the tail — legacy 12-arg call sites unchanged（Schema 铁律：只尾部追加）.
+  // ★ 0.223.0: mtime appended at the tail — legacy 13-arg call sites unchanged（Schema 铁律：只尾部追加）.
   constructor(id: string = '', title: string = '', definition: string = '', imageUri: string = '', createdAt: number = 0,
     strength: number = 0, reviewCount: number = 0, lastReviewAt: number = 0, nextReviewAt: number = 0,
-    tags: string = '', images: string = '', folderId: string = '', titleImages: string = '') {
+    tags: string = '', images: string = '', folderId: string = '', titleImages: string = '', mtime: number = 0) {
     this.id = id;
     this.title = title;
     this.definition = definition;
@@ -68,6 +70,7 @@ export class KnowledgeCard {
     this.images = images;
     this.folderId = folderId;
     this.titleImages = titleImages;
+    this.mtime = mtime;
   }
 }
 
@@ -78,12 +81,15 @@ export class KFolder {
   @Trace name: string = '';
   @Trace parentId: string = '';   // '' = 根目录
   @Trace createdAt: number = 0;
+  @Trace mtime: number = 0;       // ★ 0.223.0：云同步条目级仲裁（文件夹改名/移动/复制时刷新）
 
-  constructor(id: string = '', name: string = '', parentId: string = '', createdAt: number = 0) {
+  constructor(id: string = '', name: string = '', parentId: string = '', createdAt: number = 0,
+    mtime: number = 0) {
     this.id = id;
     this.name = name;
     this.parentId = parentId;
     this.createdAt = createdAt;
+    this.mtime = mtime;
   }
 }
 

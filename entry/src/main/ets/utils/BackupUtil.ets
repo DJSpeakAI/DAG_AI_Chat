@@ -13,7 +13,7 @@
 import { preferences } from '@kit.ArkData';
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
-import { WordItem, WordBankStore } from '../common/WordModel';
+import { WordItem, WordBankStore, WordFolder } from '../common/WordModel';
 import { KnowledgeCard, KnowledgeBankStore, KFolder } from '../common/KnowledgeModel';
 
 const SCHEMA_VERSION = 1;
@@ -32,6 +32,7 @@ export interface BackupPayload {
   words: Record<string, Object>[];
   cards: Record<string, Object>[];
   folders?: Record<string, Object>[]; // ★ 0.207.0：知识库文件夹（可选——旧备份无此字段，恢复端兼容）
+  wordFolders?: Record<string, Object>[]; // ★ 0.223.0：单词库文件夹（可选——存量备份无此字段，恢复端兼容）
 }
 
 /** 备份设置快照（UI 显示用） */
@@ -50,7 +51,9 @@ function getPref(context: Context): preferences.Preferences {
 // ★ 0.205.4 根因修复：@ObservedV2 类的 @Trace 字段 JSON.stringify 不可枚举 → 序列化成 {}
 //   （用户实测：备份恢复后卡片条数对但内容全空）。导出端必须手写字段映射——内部备份与
 //   外部 .dagbak 共用本函数（同一流水线，一处修两处好）。气泡树 serialize 先例同理。
-function wordToPlain(w: WordItem): Record<string, Object> {
+//   ★ 0.223.0：导出复用至云同步（CloudSyncBridge 词/卡池快照）+ 补 folderId/mtime
+//   （存量缺口：0.222.19 词库文件夹上线后 wordToPlain 一直没带 folderId——本轮顺带修复备份丢词库文件夹归属）。
+export function wordToPlain(w: WordItem): Record<string, Object> {
   const o: Record<string, Object> = {};
   o['word'] = w.word;
   o['fullName'] = w.fullName;
@@ -62,10 +65,12 @@ function wordToPlain(w: WordItem): Record<string, Object> {
   o['reviewCount'] = w.reviewCount;
   o['lastReviewAt'] = w.lastReviewAt;
   o['nextReviewAt'] = w.nextReviewAt;
+  o['folderId'] = w.folderId;
+  o['mtime'] = w.mtime;
   return o;
 }
 
-function cardToPlain(c: KnowledgeCard): Record<string, Object> {
+export function cardToPlain(c: KnowledgeCard): Record<string, Object> {
   const o: Record<string, Object> = {};
   o['id'] = c.id;
   o['title'] = c.title;
@@ -80,16 +85,18 @@ function cardToPlain(c: KnowledgeCard): Record<string, Object> {
   o['images'] = c.images;
   o['folderId'] = c.folderId; // ★ 0.207.0：所属文件夹（anything 导入体系）
   o['titleImages'] = c.titleImages; // ★ 0.210.0：标题图（Anki 图对图）
+  o['mtime'] = c.mtime; // ★ 0.223.0：云同步条目级仲裁
   return o;
 }
 
 /** ★ 0.207.0：文件夹平铺序列化（同 cardToPlain 理由——@Trace 字段手写映射） */
-function folderToPlain(f: KFolder): Record<string, Object> {
+export function folderToPlain(f: KFolder): Record<string, Object> {
   const o: Record<string, Object> = {};
   o['id'] = f.id;
   o['name'] = f.name;
   o['parentId'] = f.parentId;
   o['createdAt'] = f.createdAt;
+  o['mtime'] = f.mtime;
   return o;
 }
 
@@ -100,7 +107,18 @@ export function buildBackupPayload(wordBank: WordBankStore, knowledgeBank: Knowl
   knowledgeBank.cards.forEach((c: KnowledgeCard) => cards.push(cardToPlain(c)));
   const folders: Record<string, Object>[] = [];
   knowledgeBank.folders.forEach((f: KFolder) => folders.push(folderToPlain(f)));
-  return { schemaVersion: SCHEMA_VERSION, exportedAt: Date.now(), words: words, cards: cards, folders: folders };
+  const wordFolders: Record<string, Object>[] = [];
+  wordBank.folders.forEach((f) => {
+    const o: Record<string, Object> = {}; // WordFolder 与 KFolder 字段同构（序列化面）
+    o['id'] = f.id;
+    o['name'] = f.name;
+    o['parentId'] = f.parentId;
+    o['createdAt'] = f.createdAt;
+    o['mtime'] = f.mtime;
+    wordFolders.push(o);
+  });
+  return { schemaVersion: SCHEMA_VERSION, exportedAt: Date.now(), words: words, cards: cards,
+    folders: folders, wordFolders: wordFolders };
 }
 
 function payloadToJson(p: BackupPayload): string {
@@ -210,7 +228,7 @@ export function getLastInternalTime(context: Context): number {
 
 // ---------------- 恢复（合并导入——绝不删现有数据） ----------------
 
-function reviveWord(src: Record<string, Object>): WordItem {
+export function reviveWord(src: Record<string, Object>): WordItem {
   const w = new WordItem();
   w.word = (src['word'] ?? '') as string;
   w.fullName = (src['fullName'] ?? '') as string;
@@ -222,10 +240,12 @@ function reviveWord(src: Record<string, Object>): WordItem {
   w.reviewCount = (src['reviewCount'] ?? 0) as number;
   w.lastReviewAt = (src['lastReviewAt'] ?? 0) as number;
   w.nextReviewAt = (src['nextReviewAt'] ?? 0) as number;
+  w.folderId = (src['folderId'] ?? '') as string; // ★ 0.223.0：旧备份无此字段 → 根目录
+  w.mtime = (src['mtime'] ?? 0) as number; // ★ 0.223.0：旧备份无此字段 → 0（视为最旧）
   return w;
 }
 
-function reviveCard(src: Record<string, Object>): KnowledgeCard {
+export function reviveCard(src: Record<string, Object>): KnowledgeCard {
   const c = new KnowledgeCard();
   c.id = (src['id'] ?? '') as string;
   c.title = (src['title'] ?? '') as string;
@@ -240,11 +260,12 @@ function reviveCard(src: Record<string, Object>): KnowledgeCard {
   c.images = (src['images'] ?? '') as string;
   c.folderId = (src['folderId'] ?? '') as string; // ★ 0.207.0：旧备份无此字段 → 根目录
   c.titleImages = (src['titleImages'] ?? '') as string; // ★ 0.210.0：旧备份无此字段 → 无标题图
+  c.mtime = (src['mtime'] ?? 0) as number; // ★ 0.223.0：旧备份无此字段 → 0（视为最旧）
   return c;
 }
 
 /** ★ 0.207.0：文件夹 revive（旧备份无 folders → 不动现有目录结构） */
-function reviveFolder(src: Record<string, Object>): KFolder | undefined {
+export function reviveFolder(src: Record<string, Object>): KFolder | undefined {
   const id = (src['id'] ?? '') as string;
   const name = (src['name'] ?? '') as string;
   if (id.length === 0 || name.length === 0) {
@@ -255,6 +276,7 @@ function reviveFolder(src: Record<string, Object>): KFolder | undefined {
   f.name = name;
   f.parentId = (src['parentId'] ?? '') as string;
   f.createdAt = (src['createdAt'] ?? 0) as number;
+  f.mtime = (src['mtime'] ?? 0) as number; // ★ 0.223.0：旧备份无此字段 → 0
   return f;
 }
 
@@ -317,6 +339,32 @@ export function restoreFromPayload(wordBank: WordBankStore, knowledgeBank: Knowl
       }
     });
     knowledgeBank.folders = folders;
+  }
+
+  // ★ 0.223.0：单词库文件夹合并恢复（旧备份无 wordFolders 字段 → 跳过不动现有目录）
+  if (Array.isArray(p.wordFolders) && p.wordFolders.length > 0) {
+    const wf: WordFolder[] = [];
+    wordBank.folders.forEach((f: WordFolder) => wf.push(f));
+    p.wordFolders.forEach((src: Record<string, Object>) => {
+      const id = (src['id'] ?? '') as string;
+      const name = (src['name'] ?? '') as string;
+      if (id.length === 0 || name.length === 0) {
+        return;
+      }
+      const f = new WordFolder();
+      f.id = id;
+      f.name = name;
+      f.parentId = (src['parentId'] ?? '') as string;
+      f.createdAt = (src['createdAt'] ?? 0) as number;
+      f.mtime = (src['mtime'] ?? 0) as number;
+      const idx = wf.findIndex((x: WordFolder): boolean => x.id === id);
+      if (idx >= 0) {
+        wf[idx] = f;
+      } else {
+        wf.push(f);
+      }
+    });
+    wordBank.folders = wf;
   }
   return count;
 }

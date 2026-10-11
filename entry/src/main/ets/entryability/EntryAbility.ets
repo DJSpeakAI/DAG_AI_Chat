@@ -15,8 +15,10 @@ import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——U
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
-import { initCloudDb } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）
+import { initCloudDb, forceCloudSyncNow, upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）；★ 0.223.0：回前台强制端云同步（手机掉队根治）+ 退后台池快照上行
+import { initCloudSyncBridge, snapshotWordPool, snapshotKnowledgePool } from '../utils/CloudSyncBridge'; // ★ 0.223.0：词/卡池桥（提供者注入防环）+ 退后台快照上行
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
+import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
 import { buildBackupPayload, writeInternalBackup } from '../utils/BackupUtil'; // 0.205.0 三道防线：退后台自动内部备份
 import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
@@ -102,6 +104,11 @@ export default class EntryAbility extends UIAbility {
         handleWidgetContinue(this.context);
         return new EmptyParcelable();
       });
+      // ★ 0.224.0：双面模式卡身翻面（纯显示态零数据变更——切 flipped 推回卡片）
+      this.callee.on('widgetFlip', (_data: rpc.MessageSequence): rpc.Parcelable => {
+        handleWidgetFlip(this.context);
+        return new EmptyParcelable();
+      });
     } catch (_e) {
       // 注册失败静默（不影响应用启动）
     }
@@ -116,7 +123,8 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       const method = (p['method'] ?? '') as string;
-      if (method !== 'widgetRate' && method !== 'widgetSwitch' && method !== 'widgetContinue') {
+      if (method !== 'widgetRate' && method !== 'widgetSwitch' && method !== 'widgetContinue' &&
+        method !== 'widgetFlip') {
         return;
       }
       const params = p['params'];
@@ -125,6 +133,8 @@ export default class EntryAbility extends UIAbility {
         handleWidgetRate(this.context, m['rating'] ?? 'good');
       } else if (method === 'widgetContinue') {
         handleWidgetContinue(this.context);
+      } else if (method === 'widgetFlip') {
+        handleWidgetFlip(this.context); // ★ 0.224.0：冷启动翻面（评分同款双路径）
       } else {
         handleWidgetSwitch(this.context, m['mode'] ?? 'knowledge');
       }
@@ -161,6 +171,14 @@ export default class EntryAbility extends UIAbility {
       setupCloudDownlink();
     } catch (err) {
       // 注册失败静默——仅丢失下行刷新，本地功能与上云不受影响
+    }
+
+    // ★ 0.223.0：词/卡池桥提供者注入（防循环依赖——StoreUtil import Bridge 挂变更钩子，
+    //   Bridge 不能反向 import StoreUtil 取 connect 函数，由本入口注入）
+    try {
+      initCloudSyncBridge(connectWordBank, connectKnowledgeBank);
+    } catch (err) {
+      // 注入失败静默（词/卡池上行降级，气泡树池不受影响）
     }
 
     // Main window is created, set main page for this ability
@@ -211,6 +229,14 @@ export default class EntryAbility extends UIAbility {
     //   （前台满批实测秒到，退后台 flush 全军覆没）；回前台网络已恢复，此处是可靠补发点
     //   （失败仍有 0.206.2 队列回滚兜底 + 下次满批/onForeground 再试）
     flushTrackQueue(this.context);
+    // ★ 0.223.0：回前台强制端云同步——手机掉队根治点（下行此前纯等系统同步轮施舍：
+    //   后台/冻结错过轮次后永远拿不到新数据；此处主动 cloudSync 拉平四池，
+    //   与埋点补发同为「回前台=可靠追赶点」结论——0.206.2 同源经验）
+    try {
+      forceCloudSyncNow();
+    } catch (_e) {
+      // 静默（未激活/网络未就绪——下次前台再试）
+    }
   }
 
   onBackground(): void {
@@ -218,6 +244,14 @@ export default class EntryAbility extends UIAbility {
     // 鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）
     const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
     lifecycle.isBackground = true;
+    // ★ 0.223.0：词/卡池快照上行（本地 RDB 写入不受后台网络限制——推云交给 autoSync 轮/
+    //   下次前台 forceCloudSyncNow；评分 3 秒防抖未到点的残余变更由本快照兜底收口）
+    try {
+      upsertCloudData('word_pool', snapshotWordPool());
+      upsertCloudData('knowledge_pool', snapshotKnowledgePool());
+    } catch (_e) {
+      // 静默（下次启动/前台重试）
+    }
     // ★ 0.205.0 三道防线：退后台时内部双备份（本会话最后状态落沙箱——升级异常/损坏的最后兜底）
     try {
       const wb = connectWordBank();
@@ -227,7 +261,7 @@ export default class EntryAbility extends UIAbility {
       // 备份失败静默（下次启动会再备）
     }
     // ★ 0.206.0 埋点：退后台尝试上报（★ 0.206.2 实证：多被鸿蒙后台网络限制掐掉，失败回滚队列——
-    //   真正可靠的补发点是 onForeground 回前台；此处保留碰运气，万一发了就赚）
+    // 真正可靠的补发点是 onForeground 回前台；此处保留碰运气，万一发了就赚）
     flushTrackQueue(this.context);
   }
 }

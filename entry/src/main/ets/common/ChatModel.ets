@@ -18,6 +18,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connect
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
  import { upsertCloudData, registerCloudDataHandler, connectCloudSyncArbiter } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册；★ 0.218.0 仲裁器（写冲突止血）
+import { mergeWordPoolFromCloud, mergeKnowledgePoolFromCloud } from '../utils/CloudSyncBridge'; // ★ 0.223.0 词/卡池下行条目级合并（无循环依赖：Bridge 不反向 import 本文件）
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
@@ -35,9 +36,10 @@ export class ChatMessage {
   @Trace inputTokens: number; // 输入 token 数
   @Trace outputTokens: number; // 输出 token 数
   @Trace isPodcastMode: boolean; // ★ 0.133：本次交互是否以播客模式发起（仅标记存储，MVP 不做视觉区分）
+  @Trace model: string = ''; // ★ 0.224.3：生成本条回复的模型 ID（请求发出时打标——操作行显示供用户跨模型对比；旧消息空串不显示）
 
   constructor(messageId: string, role: ChatRole, content: string, imageUrl: string[] = [], inputTokens: number = 0, outputTokens: number = 0,
-              isPodcastMode: boolean = false) { // ★ 0.133：可选参数带默认值，现有 7 处调用点不破坏
+              isPodcastMode: boolean = false, model: string = '') { // ★ 0.133：可选参数带默认值，现有 7 处调用点不破坏；★ 0.224.3 尾部追加同款
     this.messageId = messageId;
     this.role = role;
     this.content = content;
@@ -45,6 +47,7 @@ export class ChatMessage {
     this.inputTokens = inputTokens;
     this.outputTokens = outputTokens;
     this.isPodcastMode = isPodcastMode;
+    this.model = model;
   }
 }
 
@@ -87,6 +90,7 @@ export class BubbleNode {
 export class BubbleTree {
   @Trace nodeList: BubbleNode[] = [];
   @Trace needsRelayout: boolean = false; // ★ 0.126：标记需要重新布局（新建气泡后触发）
+  @Trace needsCloudRedraw: boolean = false; // ★ 0.223.0：云端下行重建画布（保坐标重绘连线，绝不 autoLayout 重排——对端坐标是真相）
 
   constructor(nodeList: BubbleNode[] = []) {
     this.nodeList = nodeList;
@@ -108,6 +112,7 @@ interface SerializedMessage {
   inputTokens: number;
   outputTokens: number;
   isPodcastMode?: boolean; // ★ 0.133 新增（可选字段，旧数据无此字段，反序列化时 ?? false 兜底）
+  model?: string; // ★ 0.224.3 新增（可选字段，旧数据无此字段，反序列化时 ?? '' 兜底）
 }
 interface SerializedNode {
   nodeID: string;
@@ -139,7 +144,8 @@ export function serializeBubbleTree(tree: BubbleTree): string {
           imageUrl: msg.imageUrl,
           inputTokens: msg.inputTokens,
           outputTokens: msg.outputTokens,
-          isPodcastMode: msg.isPodcastMode // ★ 0.133
+          isPodcastMode: msg.isPodcastMode, // ★ 0.133
+          model: msg.model // ★ 0.224.3
         };
       });
       return {
@@ -171,7 +177,7 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
     const nodeList: BubbleNode[] = data.nodeList.map((node: SerializedNode): BubbleNode => {
       const messages: ChatMessage[] = node.messages.map((msg: SerializedMessage): ChatMessage => {
         return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl, msg.inputTokens ?? 0, msg.outputTokens ?? 0,
-          msg.isPodcastMode ?? false); // ★ 0.133：旧数据无此字段自动补 false，不报错不丢失
+          msg.isPodcastMode ?? false, msg.model ?? ''); // ★ 0.133：旧数据无此字段自动补 false；★ 0.224.3：旧消息无模型标记补空串
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
         node.historySummary ?? '', node.historySummaryCount ?? 0, node.nodeTitle ?? '', // ★ 0.147：旧数据无此字段自动补空串
@@ -1300,6 +1306,20 @@ export function setupCloudDownlink(): void {
         arbiter.mtimeTabs = updatedAt;
         refreshWorkspaceFromPools();
       }
+    } else if (key === 'word_pool') {
+      // ★ 0.223.0：词池下行——池级时间戳仲裁（挡回声/整池旧数据）+ Bridge 条目级合并
+      //   （同 id 最后编辑者胜、双端各改各条全保留、墓碑传播删除）。下行写池绝不 upsert（防回环）。
+      if (updatedAt > arbiter.mtimeWord) {
+        if (mergeWordPoolFromCloud(value)) {
+          arbiter.mtimeWord = updatedAt; // 写回即推进水位（echo 由 updatedAt==mtime 天然挡）
+        }
+      }
+    } else if (key === 'knowledge_pool') {
+      if (updatedAt > arbiter.mtimeKnowledge) {
+        if (mergeKnowledgePoolFromCloud(value)) {
+          arbiter.mtimeKnowledge = updatedAt;
+        }
+      }
     }
   });
 }
@@ -1307,7 +1327,13 @@ export function setupCloudDownlink(): void {
 // ★ 0.218.1：平铺池节点级 union 合并——两棵树 nodeList 按 nodeID 取并集；
 //   同 id 冲突时云端版本胜（能走到下行分支=云端行时间戳已胜出，本地旧版无理由保留）。
 //   合并产物序列化返回；任一侧解析失败返回 null（调用方放弃合并、不写回，保守保数据）。
+//   ★ 0.223.1 fix：本地空串=全新安装（PersistData 默认 ''，deserialize 必 null）——云端即真相
+//   直接采纳（此前 null 保守分支把「新设备从云恢复整棵树」拦死了，Pad 实测 0 个气泡）。
+//   非空的坏 JSON（真实损坏）仍走 null 保守——不碰本地数据。
 function unionMergeFlatPool(localJson: string, cloudJson: string): string | null {
+  if (localJson.trim().length === 0) {
+    return cloudJson; // 全新安装空池——云端树直接落地
+  }
   const local = deserializeBubbleTree(localJson);
   const cloud = deserializeBubbleTree(cloudJson);
   if (local === null || cloud === null) {
@@ -1337,7 +1363,11 @@ function unionMergeFlatPool(localJson: string, cloudJson: string): string | null
 
 // ★ 0.165.2：按当前模式的权威池重建工作区（复用 0.151 applyCanvasModeSwitch 的搬移模式）——
 // flat：工作区 = 平铺池全部树；tabs：工作区 = activeTab 的树。
-// 清空 current（旧选中节点在新工作区可能失效）+ 置 needsRelayout（BBTreeCanvas 消费触发重布局）
+// 清空 current（旧选中节点在新工作区可能失效）。
+// ★ 0.223.0：needsRelayout → needsCloudRedraw——下行重建**绝不再 autoLayout 重排**：
+//   对端同步来的节点坐标是真相（0.223.0 前旧链路把坐标全丢重排=「样式和PC不一样」+重排
+//   saveTree 又上行污染对端布局的乒乓毁灭链）；BBTreeCanvas 消费 needsCloudRedraw 做
+//   保坐标的 redrawEdges + fitViewport，画布不在栈时由 onShown 兜底。
 function refreshWorkspaceFromPools(): void {
   const store = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   const current = AppStorageV2.connect(CurrentBubble, 'current-bubble',
@@ -1358,5 +1388,5 @@ function refreshWorkspaceFromPools(): void {
   current.nodeID = '';
   current.bubbleX = 0;
   current.bubbleY = 0;
-  store.needsRelayout = true;
+  store.needsCloudRedraw = true;
 }

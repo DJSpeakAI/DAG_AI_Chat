@@ -18,6 +18,7 @@
 
 import { PersistenceV2 } from '@kit.ArkUI';
 import { KnowledgeCard, KnowledgeBankStore, KFolder } from '../common/KnowledgeModel';
+import { noteBankMutation, recordKnowledgeTomb } from './CloudSyncBridge'; // ★ 0.223.0：云同步变更钩子（单向依赖，Bridge 经提供者注入反向取 store 防环）
 
 // Dedicated PersistenceV2 key, isolated from bubble tree / word bank keys
 const KNOWLEDGE_BANK_KEY = 'knowledge-bank';
@@ -164,8 +165,9 @@ export function addFolder(store: KnowledgeBankStore, name: string, parentId: str
   if (nm.length === 0) {
     return '';
   }
-  const f = new KFolder(genFolderId(), nm, parentId, Date.now());
+  const f = new KFolder(genFolderId(), nm, parentId, Date.now(), Date.now());
   store.folders = [...store.folders, f];
+  noteBankMutation(); // ★ 0.223.0
   return f.id;
 }
 
@@ -178,6 +180,8 @@ export function renameFolder(store: KnowledgeBankStore, folderId: string, name: 
   for (let i = 0; i < store.folders.length; i++) {
     if (store.folders[i].id === folderId) {
       store.folders[i].name = nm;
+      store.folders[i].mtime = Date.now(); // ★ 0.223.0
+      noteBankMutation();
       return;
     }
   }
@@ -192,9 +196,11 @@ export function deleteFolder(store: KnowledgeBankStore, folderId: string): void 
     return;
   }
   const upParent = target.parentId;
+  const now = Date.now();
   for (let i = 0; i < store.cards.length; i++) {
     if (store.cards[i].folderId === folderId) {
       store.cards[i].folderId = upParent;
+      store.cards[i].mtime = now; // ★ 0.223.0：归属变化=条目变更
     }
   }
   const newFolders: KFolder[] = [];
@@ -204,10 +210,12 @@ export function deleteFolder(store: KnowledgeBankStore, folderId: string): void 
     }
     if (store.folders[i].parentId === folderId) {
       store.folders[i].parentId = upParent;
+      store.folders[i].mtime = now; // ★ 0.223.0
     }
     newFolders.push(store.folders[i]);
   }
   store.folders = newFolders;
+  recordKnowledgeTomb([folderId]); // ★ 0.223.0：文件夹墓碑（内含防抖上行）
 }
 
 /** ★ 0.221.0：同级是否已存在同名文件夹（excludeId 排除自身——重命名/移动时用） */
@@ -256,6 +264,8 @@ export function moveFolder(store: KnowledgeBankStore, folderId: string, targetPa
     return false;
   }
   f.parentId = targetParentId;
+  f.mtime = Date.now(); // ★ 0.223.0
+  noteBankMutation();
   return true;
 }
 
@@ -286,7 +296,7 @@ export function copyFolder(store: KnowledgeBankStore, folderId: string, targetPa
       continue;
     }
     copies.push(new KnowledgeCard(genCardId(), c.title, c.definition, c.imageUri, now + cardCount,
-      0, 0, 0, 0, c.tags, c.images, newId, c.titleImages));
+      0, 0, 0, 0, c.tags, c.images, newId, c.titleImages, now + cardCount)); // ★ 0.223.0：复制件 mtime
     cardCount++;
   }
   if (copies.length > 0) {
@@ -296,6 +306,7 @@ export function copyFolder(store: KnowledgeBankStore, folderId: string, targetPa
   for (let j = 0; j < childIds.length; j++) {
     cardCount += copyFolder(store, childIds[j], newId);
   }
+  noteBankMutation(); // ★ 0.223.0
   return cardCount;
 }
 
@@ -326,21 +337,25 @@ export function copyRootFolder(store: KnowledgeBankStore, targetParentId: string
       continue;
     }
     copies.push(new KnowledgeCard(genCardId(), c.title, c.definition, c.imageUri, now + k,
-      0, 0, 0, 0, c.tags, c.images, targetParentId, c.titleImages));
+      0, 0, 0, 0, c.tags, c.images, targetParentId, c.titleImages, now + k)); // ★ 0.223.0：复制件 mtime
     k++;
   }
   if (copies.length > 0) {
     store.cards = [...copies, ...store.cards];
   }
   cardCount += k;
+  noteBankMutation(); // ★ 0.223.0
   return cardCount;
 }
 
 /** ★ 0.222.13：清空根目录全部内容（卡片+文件夹全删，根目录「全部卡片」入口概念保留）——返回删除卡片数 */
 export function clearRootFolder(store: KnowledgeBankStore): number {
   const n = store.cards.length;
+  const tombIds: string[] = store.cards.map((c: KnowledgeCard): string => c.id);
+  store.folders.forEach((f: KFolder) => tombIds.push(f.id));
   store.cards = [];
   store.folders = [];
+  recordKnowledgeTomb(tombIds); // ★ 0.223.0：全量墓碑（内含防抖上行）
   return n;
 }
 
@@ -360,8 +375,10 @@ export function deleteFolderCascade(store: KnowledgeBankStore, folderId: string)
   }
   let cardCount = 0;
   const keep: KnowledgeCard[] = [];
+  const tombIds: string[] = [...toDelete]; // ★ 0.223.0：文件夹全集墓碑
   for (let k = 0; k < store.cards.length; k++) {
     if (toDelete.includes(store.cards[k].folderId)) {
+      tombIds.push(store.cards[k].id);
       cardCount++;
     } else {
       keep.push(store.cards[k]);
@@ -369,16 +386,20 @@ export function deleteFolderCascade(store: KnowledgeBankStore, folderId: string)
   }
   store.cards = keep;
   store.folders = store.folders.filter((f: KFolder): boolean => !toDelete.includes(f.id));
+  recordKnowledgeTomb(tombIds); // ★ 0.223.0：级联删除墓碑（内含防抖上行）
   return cardCount;
 }
 
 /** 移动卡片（批量）到目标文件夹（folderId='' 即根目录） */
 export function moveCards(store: KnowledgeBankStore, cardIds: string[], folderId: string): void {
+  const now = Date.now();
   for (let i = 0; i < store.cards.length; i++) {
     if (cardIds.includes(store.cards[i].id)) {
       store.cards[i].folderId = folderId;
+      store.cards[i].mtime = now; // ★ 0.223.0：归属变化=条目变更
     }
   }
+  noteBankMutation();
 }
 
 /**
@@ -395,12 +416,13 @@ export function copyCards(store: KnowledgeBankStore, cardIds: string[], folderId
       continue;
     }
     const cp = new KnowledgeCard(genCardId(), src.title, src.definition, src.imageUri, now + n,
-      0, 0, 0, 0, src.tags, src.images, folderId);
+      0, 0, 0, 0, src.tags, src.images, folderId, '', now + n); // ★ 0.223.0：复制件 mtime（titleImages 不复制=原逻辑）
     copies.push(cp);
     n++;
   }
   if (copies.length > 0) {
     store.cards = [...copies, ...store.cards];
+    noteBankMutation(); // ★ 0.223.0
   }
   return n;
 }
@@ -452,13 +474,18 @@ export function genCardId(): string {
 // ★ 0.148: auto-fills id/createdAt when absent — the bank-page add editor
 // creates a card without them; ChatPage's call site passes both already.
 export function addKnowledgeCard(store: KnowledgeBankStore, card: KnowledgeCard): void {
+  const now = Date.now();
   if (card.id.length === 0) {
     card.id = genCardId();
   }
   if (card.createdAt === 0) {
-    card.createdAt = Date.now();
+    card.createdAt = now;
+  }
+  if (card.mtime === 0) {
+    card.mtime = now; // ★ 0.223.0：条目级仲裁时间戳
   }
   store.cards = [card, ...store.cards];
+  noteBankMutation();
 }
 
 // ★ 0.148: edit a card's title/definition by id. ★ 0.160: imageUri is now
@@ -475,6 +502,8 @@ export function updateKnowledgeCard(store: KnowledgeBankStore, cardId: string,
       store.cards[i].tags = tags.trim();
       store.cards[i].images = images; // ★ 0.202.1：多图（编辑保存时清空 imageUri 旧字段——getCardImages 统一读 images）
       store.cards[i].titleImages = titleImages; // ★ 0.210.0：标题图（尾部默认参——旧调用点不传=清空，语义与 images 同）
+      store.cards[i].mtime = Date.now(); // ★ 0.223.0：条目级仲裁时间戳
+      noteBankMutation();
       return;
     }
   }
@@ -484,11 +513,13 @@ export function updateKnowledgeCard(store: KnowledgeBankStore, cardId: string,
 // via the editor), so id is the only safe key for deletion.
 export function removeKnowledgeCard(store: KnowledgeBankStore, cardId: string): void {
   store.cards = store.cards.filter((c: KnowledgeCard) => c.id !== cardId);
+  recordKnowledgeTomb([cardId]); // ★ 0.223.0：墓碑传播删除（内含防抖上行）
 }
 
 // ★ 0.148: batch delete for the multi-select mode.
 export function removeCardsByIds(store: KnowledgeBankStore, cardIds: string[]): void {
   store.cards = store.cards.filter((c: KnowledgeCard) => !cardIds.includes(c.id));
+  recordKnowledgeTomb(cardIds); // ★ 0.223.0：墓碑传播删除
 }
 
 // ★ 0.188.0: pickRandomKnowledgeCards REMOVED — review selection now goes

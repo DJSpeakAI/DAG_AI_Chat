@@ -83,3 +83,10 @@ Pad（TrackUtil.ets 攒批/回前台补发）
 - AGC 控制台 → 云开发（Serverless）→ **Cloud DB → 数据管理** → 存储区 `default` → 对象类型 `events`
 - 字段含义见 **docs/埋点字典.md**（事件 ID ↔ 中文按钮对照）
 - 导出：数据管理页导出 CSV → Excel 分析
+
+## ★ 0.224.5 region 字段血泪（2026-10-12 埋点全灭事故）
+
+- **端侧 agconnect-services.json 顶层必须有 `"region": "CN"`**——AGC SDK（hmcore+cloud）的网关 URL=`https:// + agcgw_all[region] + path`，region 缺失 → 域名变成字面量 `undefined` → DNS 必败（err 2300006 "Failed to resolve the host name"）→ callFunction 全链静默死。
+- 0.217 包名迁移时换的新配置恰好丢了该字段 → 自迁移起埋点上报零成功（看板全零的真凶）；云同步走系统通道、AI 聊天走直连不受影响——**AGC SDK 是唯一受害者，极易误判为「云函数问题」**。
+- **以后凡从 AGC 控制台下载 agconnect-services.json / agc-apiclient.json：装进项目前逐字段 diff 老配置**（老配置有 region，新下载的可能没有——SDK 不校验只静默死）。
+- App 端隐私闸门「体验改进计划」默认关（合规）；全新安装/卸载重装后需在 设置→关于 重新开启才有数据。

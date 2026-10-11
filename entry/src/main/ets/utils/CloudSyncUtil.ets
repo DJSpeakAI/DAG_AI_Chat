@@ -54,6 +54,15 @@ export class CloudSyncArbiter {
   @Trace mtimeTabs: number = 0; // Tab 池同上
   @Trace backupFlat: string = ''; // 下行覆盖前的整池快照备份（数据安全兜底）
   @Trace backupTabs: string = '';
+  // ★ 0.223.0 尾部追加（Schema 铁律：只追加+默认值，旧字段不动）——词/卡池池级仲裁 + 墓碑持久化
+  @Trace mtimeWord: number = 0;
+  @Trace mtimeKnowledge: number = 0;
+  @Trace wordTombJson: string = '';        // 单词库墓碑表 JSON（id → 删除时间）
+  @Trace knowledgeTombJson: string = '';   // 知识库墓碑表 JSON
+  // ★ 0.223.1 尾部追加——首拉闸门：首轮强制拉取完成前禁止一切池上行
+  //   （0.223.1 测试实锤事故：全新安装自动播种预置数据 → 防抖上云顶掉云端真实数据行；
+  //    空不上行守卫只挡空数据挡不住非空种子——闸门从「内容判」升级为「时序判」）
+  @Trace poolsInitDone: boolean = false;
 }
 
 export function connectCloudSyncArbiter(): CloudSyncArbiter {
@@ -117,10 +126,48 @@ function activateCloudSync(): void {
     //   新装设备/重装后云端早已有的数据永远等不到事件 → "没第一时间同步"根治。
     //   时序安全：EntryAbility 里 setupCloudDownlink（同步注册 handler）先于本函数（微任务）执行。
     //   仲裁兜底：云端不新于本地 mtime 会被 handler 丢弃，正常设备重复拉零副作用。
-    pullAndNotify('flat_pool');
-    pullAndNotify('tabs_pool');
+    // ★ 0.223.0：forceCloudSyncNow 替代裸拉——cloudSync 强制端云同步（框架先下载云端数据到
+    //   本地 RDB → dataChange/拉池才拿得到真数据；此前 pullAndNotify 只查本地表，激活时
+    //   框架没下载过=永远查旧数据，纯等系统同步轮施舍=手机掉队真凶）。
+    forceCloudSyncNow();
   } catch (_e) {
     // 静默（激活失败不阻断，下次开启时重试）
+  }
+}
+
+// ★ 0.223.0：强制立即端云同步（追赶点——激活时/回前台时调用）。
+//   手机掉队根因：下行完全依赖系统自动触发的同步轮（autoSync 系统调度），设备后台/冻结
+//   错过轮次后无任何主动拉取（initCloudDb/activateCloudSync 均幂等守卫，热启动回前台零动作）
+//   → 本函数用 cloudSync(SYNC_MODE_TIME_FIRST) 主动推拉一次（TIME_FIRST=最新修改时间优先，
+//   与 0.218.0 仲裁「最新编辑者胜」语义一致）。完成后再拉四池兜底（不押注单一 dataChange 事件）。
+//   ★ 0.223.1：四池拉取全部完成后置 poolsInitDone——首拉闸门解锁（此前一切池上行被闸门拦下，
+//   防 0.223.1 测试实锤的「全新安装种子数据顶掉云端真实数据」事故；云端无行也算初始化完成——
+//   行存在与否都代表「已看过云端状态」，此后上行安全）。
+//   失败静默（下次前台再试，闸门保持关闭=离线期间零上行零风险）；未激活（权限/开关未就绪）静默跳过。
+export function forceCloudSyncNow(): void {
+  if (!cloudSyncActive || rdbStore === null) {
+    return;
+  }
+  try {
+    rdbStore.cloudSync(relationalStore.SyncMode.SYNC_MODE_TIME_FIRST, [TABLE_NAME],
+      (_progress: relationalStore.ProgressDetails): void => {
+        // 进度回调无需处理（统计信息）
+      }).then(() => {
+      const pulls: Promise<void>[] = [];
+      pulls.push(pullAndNotify('flat_pool'));
+      pulls.push(pullAndNotify('tabs_pool'));
+      pulls.push(pullAndNotify('word_pool'));
+      pulls.push(pullAndNotify('knowledge_pool'));
+      Promise.all(pulls).then(() => {
+        connectCloudSyncArbiter().poolsInitDone = true; // 首轮拉取完成——解锁上行闸门
+      }).catch(() => {
+        // 静默（闸门保持关闭，下次成功同步再解锁）
+      });
+    }).catch(() => {
+      // 静默（网络未就绪等——下次前台重试）
+    });
+  } catch (_e) {
+    // 静默（RDB 已关闭等极端场景）
   }
 }
 
@@ -202,6 +249,16 @@ function ensureReady(): Promise<boolean> {
 // ★ 0.165.1：写入/更新一行快照（fire-and-forget：失败静默，绝不阻塞本地持久化路径）
 // ON_CONFLICT_REPLACE = INSERT OR REPLACE 语义：主键冲突删旧插新（表无外键引用，无副作用）
 export function upsertCloudData(key: string, value: string): void {
+  // ★ 0.223.1 首拉闸门：首轮强制拉取（poolsInitDone）完成前禁止一切池上行——
+  //   测试实锤事故链：全新安装自动播种预置数据 → 防抖上云 → TIME_FIRST 本地新写入胜出
+  //   → 云端真实数据行被预置种子整体替换（0.218.0 空守卫只挡空数据、挡不住非空种子）。
+  //   闸门在 forceCloudSyncNow 四池拉取完成后解锁；被闸下的变更不丢（本地 PersistenceV2
+  //   原样保留，下一轮 mutation/onBackground 快照重新上云）。
+  if (key === 'flat_pool' || key === 'tabs_pool' || key === 'word_pool' || key === 'knowledge_pool') {
+    if (!connectCloudSyncArbiter().poolsInitDone) {
+      return;
+    }
+  }
   // ★ 0.218.0 空不上行守卫（清零事故命门）：空池数据禁止上云——新装设备/清空状态
   // 的空快照一旦上行即覆盖云端真实数据（PC 清零事故机制），从源头掐断
   try {
@@ -214,6 +271,20 @@ export function upsertCloudData(key: string, value: string): void {
     if (Array.isArray(nodeList) && (nodeList as Array<Object>).length === 0) {
       return; // flat 池空树
     }
+    // ★ 0.223.0：词/卡池空不上行守卫（空库快照禁上云——0.218.0 清零事故命门同源）
+    if (key === 'word_pool' || key === 'knowledge_pool') {
+      const words = rec['words'];
+      const cards = rec['cards'];
+      const folders = rec['folders'];
+      const tomb = rec['tomb'];
+      const n = (Array.isArray(words) ? (words as Array<Object>).length : 0) +
+        (Array.isArray(cards) ? (cards as Array<Object>).length : 0) +
+        (Array.isArray(folders) ? (folders as Array<Object>).length : 0) +
+        (tomb !== undefined ? Object.keys(tomb as Record<string, number>).length : 0);
+      if (n === 0) {
+        return;
+      }
+    }
   } catch (_e) {
     // 非法 JSON 也不上行（防脏数据污染云端）
     return;
@@ -224,6 +295,10 @@ export function upsertCloudData(key: string, value: string): void {
     arbiter.mtimeFlat = now;
   } else if (key === 'tabs_pool') {
     arbiter.mtimeTabs = now;
+  } else if (key === 'word_pool') {
+    arbiter.mtimeWord = now; // ★ 0.223.0：词池池级时间戳（挡回声+整池旧数据）
+  } else if (key === 'knowledge_pool') {
+    arbiter.mtimeKnowledge = now;
   }
   ensureReady().then((ok: boolean) => {
     if (!ok || rdbStore === null) {
@@ -292,8 +367,11 @@ function subscribeCloudDownlink(): void {
   }
   try {
     downlinkCallback = (storeUri: Array<string>) => { // ★ 0.196.8：回调存模块变量（deactivateCloudSync off 用）
+      // ★ 0.223.0：四池全拉（词/卡池与气泡树池同享 dataChange 事件）
       pullAndNotify('flat_pool');
       pullAndNotify('tabs_pool');
+      pullAndNotify('word_pool');
+      pullAndNotify('knowledge_pool');
     };
     rdbStore.on('dataChange', relationalStore.SubscribeType.SUBSCRIBE_TYPE_CLOUD, downlinkCallback);
   } catch (_e) {

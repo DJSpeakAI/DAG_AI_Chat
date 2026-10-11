@@ -39,9 +39,16 @@ struct ReviewWidgetCard {
   @LocalStorageProp('good') good: string = '0';
   @LocalStorageProp('easy') easy: string = '0';
   @LocalStorageProp('noMore') noMore: string = 'n';
+  @LocalStorageProp('face') face: string = 'single';   // ★ 0.224.0：卡面模式（快照注入）
+  @LocalStorageProp('flipped') flipped: string = 'n';  // ★ 0.224.0：翻面态
 
   dim(): number {
     return Number(this.dimension);
+  }
+
+  // ★ 0.224.0：反面可见性（单面恒显=现状；双面须翻面）
+  showBack(): boolean {
+    return this.face !== 'double' || this.flipped === 'y';
   }
 
   // ── 交互出口（★ 0.204.1 定稿：call 通道——message 的 msg 在本机桌面被 IPC 剥空，
@@ -72,6 +79,16 @@ struct ReviewWidgetCard {
       'abilityName': 'EntryAbility',
       'method': 'widgetContinue',
       'params': { 'method': 'widgetContinue', 'cmd': 'continue' }
+    });
+  }
+
+  // ★ 0.224.0：双面模式卡身翻面（call 通道——主进程切 flipped 推回；纯显示态零数据变更）
+  sendFlip(): void {
+    postCardAction(this, {
+      'action': 'call',
+      'abilityName': 'EntryAbility',
+      'method': 'widgetFlip',
+      'params': { 'method': 'widgetFlip', 'cmd': 'flip' }
     });
   }
 
@@ -212,28 +229,46 @@ struct ReviewWidgetCard {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
 
-          if (this.definition.length > 0) {
-            Text(this.definition)
+          if (this.showBack()) {
+            if (this.definition.length > 0) {
+              Text(this.definition)
+                .fontSize(10)
+                .fontColor(SUB_COLOR)
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .lineHeight(14)
+                .width('100%')
+                .layoutWeight(1)
+            }
+          } else {
+            // ★ 0.224.0：双面未翻面——题面提示占位（评分按钮同步隐藏）
+            Text('点击卡片翻面查看')
               .fontSize(10)
               .fontColor(SUB_COLOR)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .lineHeight(14)
               .width('100%')
               .layoutWeight(1)
+              .textAlign(TextAlign.Start)
           }
         }
         .width('100%')
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        // ★ 0.224.0：双面模式点卡身翻面（翻面后反面=终态不再响应——0.209.3 同语义）
+        .onClick(() => {
+          if (this.face === 'double' && this.flipped !== 'y') {
+            this.sendFlip();
+          }
+        })
 
-        Row({ space: 4 }) {
-          this.rateButton('生疏', '', 'hard', HARD_COLOR, HARD_BG, 26, 10)
-          this.rateButton('尚可', '', 'good', GOOD_COLOR, GOOD_BG, 26, 10)
-          this.rateButton('熟知', '', 'easy', EASY_COLOR, EASY_BG, 26, 10)
+        if (this.showBack()) {
+          Row({ space: 4 }) {
+            this.rateButton('生疏', '', 'hard', HARD_COLOR, HARD_BG, 26, 10)
+            this.rateButton('尚可', '', 'good', GOOD_COLOR, GOOD_BG, 26, 10)
+            this.rateButton('熟知', '', 'easy', EASY_COLOR, EASY_BG, 26, 10)
+          }
+          .width('100%')
+          .margin({ top: 5 })
         }
-        .width('100%')
-        .margin({ top: 5 })
       } else {
         // ── 2×4 标准 / 4×4 大卡（结构同构，字号行数分层）──
         Column({ space: 6 }) {
@@ -264,34 +299,52 @@ struct ReviewWidgetCard {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
 
-          if (this.definition.length > 0) {
-            Text(this.definition)
+          if (this.showBack()) {
+            if (this.definition.length > 0) {
+              Text(this.definition)
+                .fontSize(this.dim() === 4 ? 12 : 11)
+                .fontColor(SUB_COLOR)
+                .maxLines(this.dim() === 4 ? 8 : 4)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .lineHeight(this.dim() === 4 ? 18 : 16)
+                .width('100%')
+                .layoutWeight(1)
+            }
+          } else {
+            // ★ 0.224.0：双面未翻面——题面提示占位（评分按钮同步隐藏）
+            Text('点击卡片翻面查看')
               .fontSize(this.dim() === 4 ? 12 : 11)
               .fontColor(SUB_COLOR)
-              .maxLines(this.dim() === 4 ? 8 : 4)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .lineHeight(this.dim() === 4 ? 18 : 16)
               .width('100%')
               .layoutWeight(1)
+              .textAlign(TextAlign.Start)
           }
         }
         .width('100%')
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-
-        Row({ space: 6 }) {
-          if (this.dim() === 4) {
-            this.rateButton('生疏', '几乎想不起来', 'hard', HARD_COLOR, HARD_BG, 48, 14)
-            this.rateButton('尚可', '回忆有点费劲', 'good', GOOD_COLOR, GOOD_BG, 48, 14)
-            this.rateButton('熟知', '一眼就能反应', 'easy', EASY_COLOR, EASY_BG, 48, 14)
-          } else {
-            this.rateButton('生疏', '', 'hard', HARD_COLOR, HARD_BG, 36, 12)
-            this.rateButton('尚可', '', 'good', GOOD_COLOR, GOOD_BG, 36, 12)
-            this.rateButton('熟知', '', 'easy', EASY_COLOR, EASY_BG, 36, 12)
+        // ★ 0.224.0：双面模式点卡身翻面（翻面后反面=终态不再响应——0.209.3 同语义）
+        .onClick(() => {
+          if (this.face === 'double' && this.flipped !== 'y') {
+            this.sendFlip();
           }
+        })
+
+        if (this.showBack()) {
+          Row({ space: 6 }) {
+            if (this.dim() === 4) {
+              this.rateButton('生疏', '几乎想不起来', 'hard', HARD_COLOR, HARD_BG, 48, 14)
+              this.rateButton('尚可', '回忆有点费劲', 'good', GOOD_COLOR, GOOD_BG, 48, 14)
+              this.rateButton('熟知', '一眼就能反应', 'easy', EASY_COLOR, EASY_BG, 48, 14)
+            } else {
+              this.rateButton('生疏', '', 'hard', HARD_COLOR, HARD_BG, 36, 12)
+              this.rateButton('尚可', '', 'good', GOOD_COLOR, GOOD_BG, 36, 12)
+              this.rateButton('熟知', '', 'easy', EASY_COLOR, EASY_BG, 36, 12)
+            }
+          }
+          .width('100%')
+          .margin({ top: 6 })
         }
-        .width('100%')
-        .margin({ top: 6 })
       }
     }
     .width('100%')

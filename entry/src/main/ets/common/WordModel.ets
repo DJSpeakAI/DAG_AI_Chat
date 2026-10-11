@@ -32,6 +32,7 @@ export class WordItem {
   @Trace lastReviewAt: number = 0; // 上次展示复习时间戳（ms）
   @Trace nextReviewAt: number = 0; // 计划下次复习时间戳（ms）；0 = 新词，视为已到期
   @Trace folderId: string = '';    // ★ 0.222.19：所属文件夹（'' = 根目录）——对标知识库 anything 导入体系
+  @Trace mtime: number = 0;        // ★ 0.223.0：条目最后编辑时间（云同步条目级仲裁——同 id 最后编辑者胜）
 
   // All params have defaults so the class satisfies TypeConstructor<T> (new (): T),
   // which @Type requires for PersistenceV2 nested-class re-creation from disk.
@@ -39,10 +40,11 @@ export class WordItem {
   // (ChatPage translate-popup add, preset samples) stay source-compatible;
   // addWordToBank() auto-fills both when they are left empty.
   // ★ 0.222.19: folderId appended at the tail — legacy 10-arg call sites unchanged（Schema 铁律：只尾部追加）.
+  // ★ 0.223.0: mtime appended at the tail — legacy 11-arg call sites unchanged（Schema 铁律：只尾部追加）.
   constructor(word: string = '', fullName: string = '', usPhonetic: string = '', explain: string = '',
     id: string = '', createTime: number = 0,
     strength: number = 0, reviewCount: number = 0, lastReviewAt: number = 0, nextReviewAt: number = 0,
-    folderId: string = '') {
+    folderId: string = '', mtime: number = 0) {
     this.word = word;
     this.fullName = fullName;
     this.usPhonetic = usPhonetic;
@@ -54,6 +56,7 @@ export class WordItem {
     this.lastReviewAt = lastReviewAt;
     this.nextReviewAt = nextReviewAt;
     this.folderId = folderId;
+    this.mtime = mtime;
   }
 }
 
@@ -64,12 +67,15 @@ export class WordFolder {
   @Trace name: string = '';
   @Trace parentId: string = '';   // '' = 根目录
   @Trace createdAt: number = 0;
+  @Trace mtime: number = 0;       // ★ 0.223.0：云同步条目级仲裁（文件夹改名/移动/复制时刷新）
 
-  constructor(id: string = '', name: string = '', parentId: string = '', createdAt: number = 0) {
+  constructor(id: string = '', name: string = '', parentId: string = '', createdAt: number = 0,
+    mtime: number = 0) {
     this.id = id;
     this.name = name;
     this.parentId = parentId;
     this.createdAt = createdAt;
+    this.mtime = mtime;
   }
 }
 

@@ -18,11 +18,14 @@ import { streamChat } from '../utils/ApiClient';
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
 import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
+import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面模式变更即时推桌面卡片
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
+import { noteBankMutation } from '../utils/CloudSyncBridge'; // ★ 0.223.0：评分进度上云钩子（3 秒防抖）
 import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
+import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（原居本文件——外提防 WidgetHostBridge 反向成环）
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -56,16 +59,8 @@ export function connectDailyReviewCount(): DailyReviewCountStore {
 }
 
 // ★ 0.209.0：卡面模式（用户需求：复习卡支持「正反两面」——先看题面，点击翻面后再评分）
-// 'single'=单面（现状：题面+内容全显，评分按钮直接可按）；'double'=正反两面
-@ObservedV2
-export class FaceModeStore {
-  @Trace wordFace: string = 'single';      // 单词库：正面=单词+音标，反面=释义
-  @Trace knowledgeFace: string = 'single'; // 知识库：正面=标题，反面=图片+定义
-}
-
-export function connectFaceMode(): FaceModeStore {
-  return PersistenceV2.connect(FaceModeStore, 'review-face-mode-v1', () => new FaceModeStore()) as FaceModeStore;
-}
+// ★ 0.224.0：升级全局单通道——类与 store 外提 common/FaceModeStore.ets（桌面卡片跟随需
+//   WidgetHostBridge 读取，原居本文件反向 import 组件会成环）；本页 ⚙ 与全局设置同一真相源即时同步。
 
 function todayKey(): string {
   const d = new Date();
@@ -89,7 +84,7 @@ export struct ReviewPage {
   @Local cardFlipped: boolean = false; // 当前卡是否已翻到反面（每换一张卡重置为 false）
 
   @Computed get isDoubleFace(): boolean {
-    return this.mode === 'word' ? this.faceMode.wordFace === 'double' : this.faceMode.knowledgeFace === 'double';
+    return this.faceMode.mode === 'double'; // ★ 0.224.0：全局单通道（原两库分治字段休眠）
   }
 
   // ★ 0.209.0：评分区可见条件——单面模式恒显（现状不变）；双面模式须翻面后才显示（评分逻辑本身完全不动）
@@ -243,6 +238,7 @@ export struct ReviewPage {
  const _tp1: Record<string, string> = {}; _tp1['rating'] = rating;
     track(this.getUIContext().getHostContext() as common.Context, 'review_rate', _tp1); // 0.206.0 埋点：复习页评分
     applyRating(item, rating, Date.now());
+    noteBankMutation(); // ★ 0.223.0：评分=进度变更，3 秒防抖上云（用户拍板）
     if (rating === 'hard') {
       this.ratedHard += 1;
     } else if (rating === 'good') {
@@ -410,6 +406,19 @@ export struct ReviewPage {
           .maxFontSize(30)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .textAlign(TextAlign.Center) // 换行后各行居中（原单行靠 alignItems 居中，折行后左歪）
+        // ★ 0.224.2：全称行（四行制第二行=缩写全称专用）——复习卡此前漏渲染；双面=反面内容
+        //   （缩写全称是「答案」与释义同藏，翻面后显示；单面恒显）
+        if ((this.currentItem() as WordItem).fullName.length > 0 && (!this.isDoubleFace || this.cardFlipped)) {
+          Text((this.currentItem() as WordItem).fullName)
+            .fontSize(18)
+            .fontWeight(500)
+            .fontColor(BRAND_SECONDARY)
+            .maxLines(2)
+            .minFontSize(12)
+            .maxFontSize(18)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .textAlign(TextAlign.Center)
+        }
         if ((this.currentItem() as WordItem).usPhonetic !== '') {
           Row({ space: 6 }) {
             Text((this.currentItem() as WordItem).usPhonetic)
@@ -914,30 +923,31 @@ export struct ReviewPage {
 
   // ★ 0.209.0：卡面模式分段控件（单面 | 正反两面——样式同 countSegment 分段）
   // ★ 0.209.1 修复：带参 @Builder 按值传参不刷新（0.190.1 铁律复发）——无参化拆分，内部直读状态
+  // ★ 0.224.0：两库分治合并为全局单通道（用户拍板「不要分开、不要两头选」——与全局设置同 store 即时同步）
   @Builder
-  wordFaceSegment(): void {
+  unifiedFaceSegment(): void {
     Row({ space: 6 }) {
       Text('单面')
         .fontSize(12)
-        .fontWeight(this.faceMode.wordFace !== 'double' ? 600 : 400)
-        .fontColor(this.faceMode.wordFace !== 'double' ? Color.White : TEXT_SECONDARY)
+        .fontWeight(this.faceMode.mode !== 'double' ? 600 : 400)
+        .fontColor(this.faceMode.mode !== 'double' ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(this.faceMode.wordFace !== 'double' ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.faceMode.mode !== 'double' ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          this.applyWordFace('single');
+          this.applyFace('single');
         })
       Text('正反两面')
         .fontSize(12)
-        .fontWeight(this.faceMode.wordFace === 'double' ? 600 : 400)
-        .fontColor(this.faceMode.wordFace === 'double' ? Color.White : TEXT_SECONDARY)
+        .fontWeight(this.faceMode.mode === 'double' ? 600 : 400)
+        .fontColor(this.faceMode.mode === 'double' ? Color.White : TEXT_SECONDARY)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(this.faceMode.wordFace === 'double' ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.faceMode.mode === 'double' ? BRAND_PRIMARY : Color.Transparent)
         .onClick(() => {
-          this.applyWordFace('double');
+          this.applyFace('double');
         })
     }
     .padding(3)
@@ -945,46 +955,15 @@ export struct ReviewPage {
     .backgroundColor(SURFACE_SOFT)
   }
 
-  @Builder
-  knowledgeFaceSegment(): void {
-    Row({ space: 6 }) {
-      Text('单面')
-        .fontSize(12)
-        .fontWeight(this.faceMode.knowledgeFace !== 'double' ? 600 : 400)
-        .fontColor(this.faceMode.knowledgeFace !== 'double' ? Color.White : TEXT_SECONDARY)
-        .height(30)
-        .padding({ left: 14, right: 14 })
-        .borderRadius(8)
-        .backgroundColor(this.faceMode.knowledgeFace !== 'double' ? BRAND_PRIMARY : Color.Transparent)
-        .onClick(() => {
-          this.applyKnowledgeFace('single');
-        })
-      Text('正反两面')
-        .fontSize(12)
-        .fontWeight(this.faceMode.knowledgeFace === 'double' ? 600 : 400)
-        .fontColor(this.faceMode.knowledgeFace === 'double' ? Color.White : TEXT_SECONDARY)
-        .height(30)
-        .padding({ left: 14, right: 14 })
-        .borderRadius(8)
-        .backgroundColor(this.faceMode.knowledgeFace === 'double' ? BRAND_PRIMARY : Color.Transparent)
-        .onClick(() => {
-          this.applyKnowledgeFace('double');
-        })
+  // ★ 0.224.0：切换卡面模式（即时生效全局——卡片复习/司忆区/桌面卡片全跟随；当前卡回正面+即时推桌面卡片）
+  applyFace(mode: string): void {
+    this.faceMode.mode = mode;
+    this.cardFlipped = false;
+    try {
+      setWidgetFace(this.getUIContext().getHostContext() as common.Context, mode);
+    } catch (_e) {
+      // 桌面卡片推送失败静默（下次快照重建自然携带）
     }
-    .padding(3)
-    .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(SURFACE_SOFT)
-  }
-
-  // ★ 0.209.0：切换卡面模式（即时生效；当前卡回到正面）
-  applyWordFace(mode: string): void {
-    this.faceMode.wordFace = mode;
-    this.cardFlipped = false;
-  }
-
-  applyKnowledgeFace(mode: string): void {
-    this.faceMode.knowledgeFace = mode;
-    this.cardFlipped = false;
   }
 
   @Builder
@@ -992,40 +971,23 @@ export struct ReviewPage {
     Column() {
       Column() {
         // ── ★ 0.209.0：卡面模式（用户需求：置于每日复习量上方）──
+        // ★ 0.224.0：全局单通道（与全局设置同一真相源——两处任一变更互相同步，勿两头选）
         Text('卡面模式')
           .fontSize(16)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
-        Text('正反两面：先看题面，点击卡片翻面后再评分')
+        Text('正反两面：先看题面，点击卡片翻面后再评分；全局生效（司忆区/桌面卡片跟随）')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
         Column() {
-          Text('单词库')
-            .fontSize(14)
-            .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
-            .alignSelf(ItemAlign.Start)
-          this.wordFaceSegment()
+          this.unifiedFaceSegment()
         }
         .width('100%')
         .padding(12)
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(SURFACE_SOFT)
         .margin({ top: 16 })
-        Column() {
-          Text('知识库')
-            .fontSize(14)
-            .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
-            .alignSelf(ItemAlign.Start)
-          this.knowledgeFaceSegment()
-        }
-        .width('100%')
-        .padding(12)
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
-        .margin({ top: 12 })
         // ── 每日复习量（原有）──
         Text('每日复习量')
           .fontSize(16)

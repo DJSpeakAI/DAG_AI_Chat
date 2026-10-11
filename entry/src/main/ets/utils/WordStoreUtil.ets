@@ -20,6 +20,7 @@
 
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WordItem, WordBankStore, WordFolder } from '../common/WordModel';
+import { noteBankMutation, recordWordTomb } from './CloudSyncBridge'; // ★ 0.223.0：云同步变更钩子（增删改/文件夹操作统一挂——单向依赖，Bridge 经提供者注入反向取 store 防环）
 
 // Dedicated PersistenceV2 key, isolated from bubble tree / api config keys
 const WORD_BANK_KEY = 'word-bank';
@@ -50,12 +51,12 @@ function buildPresetWords(): WordItem[] {
     // Abbreviation (abbreviation → English full name)
     new WordItem('OS', 'Operating System', '/ˈɒpəreɪtɪŋ ˈsɪstəm/', 'n. 操作系统（管理硬件与软件资源的系统软件）', 'preset-os', now - 2000),
     new WordItem('DAG', 'Directed Acyclic Graph', '/dəˈrektɪd eɪˈsaɪklɪk ɡræf/', 'n. 有向无环图（本应用对话树的核心结构）', 'preset-dag', now - 3000),
-    // CN→EN word (Chinese word → English answer in fullName)
-    new WordItem('智慧', 'Wisdom', '/ˈwɪzdəm/', 'n. 智慧；才智', 'preset-wisdom', now - 4000),
-    new WordItem('韧性', 'Resilience', '/rɪˈzɪliəns/', 'n. 韧性；快速恢复的能力', 'preset-resilience', now - 5000),
-    // CN→EN phrase (Chinese phrase → English phrase in fullName)
-    new WordItem('人工智能', 'Artificial Intelligence', '/ˌɑːrtɪˈfɪʃl ɪnˈtelɪdʒəns/', 'n. 人工智能', 'preset-ai', now - 6000),
-    new WordItem('机器学习', 'Machine Learning', '/məˈʃiːn ˈlɜːrnɪŋ/', 'n. 机器学习', 'preset-ml', now - 7000),
+    // ★ 0.224.2 CN→EN word（用户拍板四行制修正：第二行 fullName=缩写全称专用——中译英的英文
+    //   进第四行 explain、第二行必须空、中文不重复。旧版把英文塞 fullName+中文重复 explain 是错位格式）
+    new WordItem('智慧', '', '/ˈwɪzdəm/', 'Wisdom', 'preset-wisdom', now - 4000),
+    new WordItem('韧性', '', '/rɪˈzɪliəns/', 'Resilience', 'preset-resilience', now - 5000),
+    new WordItem('人工智能', '', '/ˌɑːrtɪˈfɪʃl ɪnˈtelɪdʒəns/', 'Artificial Intelligence', 'preset-ai', now - 6000),
+    new WordItem('机器学习', '', '/məˈʃiːn ˈlɜːrnɪŋ/', 'Machine Learning', 'preset-ml', now - 7000),
     // EN→CN phrase (English phrase → Chinese phrase)
     new WordItem('Neural Network', '', '/ˈnʊrəl ˈnetwɜːrk/', 'n. 神经网络', 'preset-neural-network', now - 8000),
     new WordItem('Natural Language Processing', '', '/ˈnætʃrəl ˈlæŋɡwɪdʒ prəˈsesɪŋ/', 'n. 自然语言处理（缩写 NLP）', 'preset-nlp', now - 9000)
@@ -63,10 +64,9 @@ function buildPresetWords(): WordItem[] {
 }
 
 // ★ 0.151: one-shot seed-merge marker. v1 = 0.145 Harmony/OS presets;
-// v2 = the 10-entry test set above. The marker is persisted under its own
-// key so each seed version merges missing presets EXACTLY ONCE — entries
-// the user deleted stay deleted afterwards.
-const WORD_SEED_VERSION = 2;
+// v2 = the 10-entry test set; v3 = ★ 0.224.2 四行制内容修正（中译英 4 条：英文
+//   从 fullName 挪到 explain、fullName 置空——同 id 更新内容保留记忆字段）。
+const WORD_SEED_VERSION = 3;
 const WORD_SEED_KEY = 'word-bank-seed';
 
 // Ids already seeded by v1 (0.145): v2 seeding must NOT resurrect these
@@ -105,13 +105,29 @@ export function connectWordBank(): WordBankStore {
 function seedPresetWords(store: WordBankStore): void {
   const marker = PersistenceV2.connect(WordSeedMarker, WORD_SEED_KEY, () => new WordSeedMarker()) as WordSeedMarker;
   if (marker.version >= WORD_SEED_VERSION) {
-    return; // v2 already merged — deleted presets stay deleted
+    return; // 已合入最新版——已删的预置保持删除
   }
+  const presets = buildPresetWords();
+  // ★ 0.224.2 v3：同 id 内容修正（四行制格式纠错——中译英旧版英文塞 fullName+中文重复 explain）。
+  //   仅更新内容四字段，记忆/归档字段原样保留（同 0.202.2 知识卡 v3「同 id 更新内容保留记忆」模式）；
+  //   已删 id 不在库中天然跳过（「删除保持删除」不破坏）。
+  const byId = new Map<string, WordItem>();
+  store.words.forEach((w: WordItem) => byId.set(w.id, w));
+  presets.forEach((p: WordItem) => {
+    const cur = byId.get(p.id);
+    if (cur !== undefined) {
+      cur.word = p.word;
+      cur.fullName = p.fullName;
+      cur.usPhonetic = p.usPhonetic;
+      cur.explain = p.explain;
+      cur.mtime = Date.now();
+    }
+  });
   const existing: Set<string> = new Set<string>();
   store.words.forEach((w: WordItem) => {
     existing.add(w.id);
   });
-  const missing = buildPresetWords().filter((w: WordItem) =>
+  const missing = presets.filter((w: WordItem) =>
     !existing.has(w.id) && !WORD_SEED_V1_IDS.includes(w.id));
   if (missing.length > 0) {
     const now = Date.now();
@@ -161,13 +177,18 @@ export function addWordToBank(store: WordBankStore, item: WordItem): boolean {
   if (item.word.trim().length === 0) {
     return false;
   }
+  const now = Date.now();
   if (item.id.length === 0) {
     item.id = genWordId();
   }
   if (item.createTime === 0) {
-    item.createTime = Date.now();
+    item.createTime = now;
+  }
+  if (item.mtime === 0) {
+    item.mtime = now; // ★ 0.223.0：条目级仲裁时间戳
   }
   store.words = [item, ...store.words];
+  noteBankMutation();
   return true;
 }
 
@@ -184,6 +205,8 @@ export function updateWordInBank(store: WordBankStore, wordId: string,
       store.words[i].fullName = fullName.trim();
       store.words[i].usPhonetic = usPhonetic.trim();
       store.words[i].explain = explain.trim();
+      store.words[i].mtime = Date.now(); // ★ 0.223.0：条目级仲裁时间戳
+      noteBankMutation();
       return true;
     }
   }
@@ -194,11 +217,13 @@ export function updateWordInBank(store: WordBankStore, wordId: string,
 // change word text, so id is the only stable delete key).
 export function removeWordFromBank(store: WordBankStore, wordId: string): void {
   store.words = store.words.filter((w: WordItem) => w.id !== wordId);
+  recordWordTomb([wordId]); // ★ 0.223.0：墓碑传播删除（内含防抖上行）
 }
 
 // ★ 0.148: batch delete for the multi-select mode.
 export function removeWordsByIds(store: WordBankStore, wordIds: string[]): void {
   store.words = store.words.filter((w: WordItem) => !wordIds.includes(w.id));
+  recordWordTomb(wordIds); // ★ 0.223.0：墓碑传播删除
 }
 
 // ★ 0.187.0: pickRandomWords REMOVED — review selection now goes through
@@ -208,9 +233,12 @@ export function removeWordsByIds(store: WordBankStore, wordIds: string[]): void 
 // pronunciations). In-place loop mirrors updateWordInBank; @Trace on
 // usPhonetic triggers the word-bank list refresh.
 export function clearAllPhonetics(store: WordBankStore): void {
+  const now = Date.now();
   for (let i = 0; i < store.words.length; i++) {
     store.words[i].usPhonetic = '';
+    store.words[i].mtime = now; // ★ 0.223.0：条目级仲裁时间戳（口音切换=全量条目变更）
   }
+  noteBankMutation();
 }
 
 // ============================================================
@@ -228,8 +256,9 @@ export function addWordFolder(store: WordBankStore, name: string, parentId: stri
   if (nm.length === 0) {
     return '';
   }
-  const f = new WordFolder(genWordFolderId(), nm, parentId, Date.now());
+  const f = new WordFolder(genWordFolderId(), nm, parentId, Date.now(), Date.now());
   store.folders = [...store.folders, f];
+  noteBankMutation(); // ★ 0.223.0
   return f.id;
 }
 
@@ -242,6 +271,8 @@ export function renameWordFolder(store: WordBankStore, folderId: string, name: s
   for (let i = 0; i < store.folders.length; i++) {
     if (store.folders[i].id === folderId) {
       store.folders[i].name = nm;
+      store.folders[i].mtime = Date.now(); // ★ 0.223.0
+      noteBankMutation();
       return;
     }
   }
@@ -256,9 +287,11 @@ export function deleteWordFolder(store: WordBankStore, folderId: string): void {
     return;
   }
   const upParent = target.parentId;
+  const now = Date.now();
   for (let i = 0; i < store.words.length; i++) {
     if (store.words[i].folderId === folderId) {
       store.words[i].folderId = upParent;
+      store.words[i].mtime = now; // ★ 0.223.0：归属变化=条目变更
     }
   }
   const newFolders: WordFolder[] = [];
@@ -268,10 +301,12 @@ export function deleteWordFolder(store: WordBankStore, folderId: string): void {
     }
     if (store.folders[i].parentId === folderId) {
       store.folders[i].parentId = upParent;
+      store.folders[i].mtime = now; // ★ 0.223.0
     }
     newFolders.push(store.folders[i]);
   }
   store.folders = newFolders;
+  recordWordTomb([folderId]); // ★ 0.223.0：文件夹墓碑（内含防抖上行）
 }
 
 /** 同级是否已存在同名文件夹（excludeId 排除自身——重命名/移动时用） */
@@ -320,6 +355,8 @@ export function moveWordFolder(store: WordBankStore, folderId: string, targetPar
     return false;
   }
   f.parentId = targetParentId;
+  f.mtime = Date.now(); // ★ 0.223.0
+  noteBankMutation();
   return true;
 }
 
@@ -349,7 +386,7 @@ export function copyWordFolder(store: WordBankStore, folderId: string, targetPar
       continue;
     }
     copies.push(new WordItem(w.word, w.fullName, w.usPhonetic, w.explain, genWordId(), now + wordCount,
-      0, 0, 0, 0, newId));
+      0, 0, 0, 0, newId, now + wordCount)); // ★ 0.223.0：复制件 mtime（新条目）
     wordCount++;
   }
   if (copies.length > 0) {
@@ -359,6 +396,7 @@ export function copyWordFolder(store: WordBankStore, folderId: string, targetPar
   for (let j = 0; j < childIds.length; j++) {
     wordCount += copyWordFolder(store, childIds[j], newId);
   }
+  noteBankMutation(); // ★ 0.223.0
   return wordCount;
 }
 
@@ -389,21 +427,25 @@ export function copyRootWordFolder(store: WordBankStore, targetParentId: string)
       continue;
     }
     copies.push(new WordItem(w.word, w.fullName, w.usPhonetic, w.explain, genWordId(), now + k,
-      0, 0, 0, 0, targetParentId));
+      0, 0, 0, 0, targetParentId, now + k)); // ★ 0.223.0：复制件 mtime
     k++;
   }
   if (copies.length > 0) {
     store.words = [...copies, ...store.words];
   }
   wordCount += k;
+  noteBankMutation(); // ★ 0.223.0
   return wordCount;
 }
 
 /** 清空根目录全部内容（单词+文件夹全删，根目录「全部单词」入口概念保留）——返回删除单词数 */
 export function clearRootWordFolder(store: WordBankStore): number {
   const n = store.words.length;
+  const tombIds: string[] = store.words.map((w: WordItem): string => w.id);
+  store.folders.forEach((f: WordFolder) => tombIds.push(f.id));
   store.words = [];
   store.folders = [];
+  recordWordTomb(tombIds); // ★ 0.223.0：全量墓碑（内含防抖上行）
   return n;
 }
 
@@ -423,8 +465,10 @@ export function deleteWordFolderCascade(store: WordBankStore, folderId: string):
   }
   let wordCount = 0;
   const keep: WordItem[] = [];
+  const tombIds: string[] = [...toDelete]; // ★ 0.223.0：文件夹全集墓碑
   for (let k = 0; k < store.words.length; k++) {
     if (toDelete.includes(store.words[k].folderId)) {
+      tombIds.push(store.words[k].id);
       wordCount++;
     } else {
       keep.push(store.words[k]);
@@ -432,16 +476,20 @@ export function deleteWordFolderCascade(store: WordBankStore, folderId: string):
   }
   store.words = keep;
   store.folders = store.folders.filter((f: WordFolder): boolean => !toDelete.includes(f.id));
+  recordWordTomb(tombIds); // ★ 0.223.0：级联删除墓碑（内含防抖上行）
   return wordCount;
 }
 
 /** 移动单词（批量）到目标文件夹（folderId='' 即根目录） */
 export function moveWords(store: WordBankStore, wordIds: string[], folderId: string): void {
+  const now = Date.now();
   for (let i = 0; i < store.words.length; i++) {
     if (wordIds.includes(store.words[i].id)) {
       store.words[i].folderId = folderId;
+      store.words[i].mtime = now; // ★ 0.223.0：归属变化=条目变更
     }
   }
+  noteBankMutation();
 }
 
 /** 复制单词（批量）到目标文件夹——新 id / 新 createTime，记忆字段清零；返回新增条数 */
@@ -455,11 +503,12 @@ export function copyWords(store: WordBankStore, wordIds: string[], folderId: str
       continue;
     }
     copies.push(new WordItem(src.word, src.fullName, src.usPhonetic, src.explain, genWordId(), now + n,
-      0, 0, 0, 0, folderId));
+      0, 0, 0, 0, folderId, now + n)); // ★ 0.223.0：复制件 mtime
     n++;
   }
   if (copies.length > 0) {
     store.words = [...copies, ...store.words];
+    noteBankMutation();
   }
   return n;
 }

@@ -40,6 +40,8 @@ import {
   writeExternalBackup, maybeAutoBackup, BackupPayload
 } from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
 import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关
+import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件）
+import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面变更即时推桌面卡片
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
 
@@ -119,7 +121,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.222.22';
+const APP_VERSION: string = 'v0.224.8';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -184,6 +186,10 @@ export struct GlobalSettingsDialog {
   // ★ 0.167.8 用户拍板：删「画布」Tab（画布多树模式切换已由画布页顶部分段控件承担，此处重复）；
   //   currentTab 索引保持 0=API 配置 / 1=AI 偏好 / 3=云同步 不重排（避免误伤云同步分支）
   @Local currentTab: number = 0;
+
+  // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件——与复习页 ⚙ 同一 @ObservedV2 实例，
+  //   两处任一变更互相同步+即时推桌面卡片；@Local 接管 0.221.4 铁律）
+  @Local faceMode: FaceModeStore = connectFaceMode();
 
   // Tab1 编辑副本（点保存才写入持久化）★ 0.190.0：提供商化重构
   @Local editProvider: string = 'volcano';     // huawei / volcano / deepseek / custom
@@ -325,6 +331,16 @@ export struct GlobalSettingsDialog {
       });
     } else {
       this.onClose();
+    }
+  }
+
+  // ★ 0.224.0：切换卡面模式（即时生效全局单通道——写共享 store 即同步复习页 ⚙；即时推桌面卡片）
+  applyFaceMode(mode: string): void {
+    this.faceMode.mode = mode;
+    try {
+      setWidgetFace(this.getUIContext().getHostContext() as common.Context, mode);
+    } catch (_e) {
+      // 桌面卡片推送失败静默（下次快照重建自然携带）
     }
   }
 
@@ -843,6 +859,45 @@ export struct GlobalSettingsDialog {
   @Builder
   reviewTabContent() {
     Column() {
+      // ── ★ 0.224.0：卡面模式（全局单通道——即时生效，不走下方编辑副本+保存流程；
+      //    与复习页 ⚙ 同一真相源互相同步，司忆区两处/桌面卡片全跟随）──
+      Text('卡面模式')
+        .fontSize(14)
+        .fontColor(TEXT_PRIMARY)
+        .margin({ bottom: 6 })
+      Text('正反两面：先看题面，点击翻面后再评分；全局生效（复习页/司忆区/桌面卡片跟随），与复习页设置同步')
+        .fontSize(11)
+        .fontColor(TEXT_TERTIARY)
+        .margin({ bottom: 10 })
+      Row({ space: 6 }) {
+        Text('单面')
+          .fontSize(12)
+          .fontWeight(this.faceMode.mode !== 'double' ? 600 : 400)
+          .fontColor(this.faceMode.mode !== 'double' ? Color.White : TEXT_SECONDARY)
+          .height(30)
+          .padding({ left: 14, right: 14 })
+          .borderRadius(8)
+          .backgroundColor(this.faceMode.mode !== 'double' ? BRAND_PRIMARY : Color.Transparent)
+          .onClick(() => {
+            this.applyFaceMode('single');
+          })
+        Text('正反两面')
+          .fontSize(12)
+          .fontWeight(this.faceMode.mode === 'double' ? 600 : 400)
+          .fontColor(this.faceMode.mode === 'double' ? Color.White : TEXT_SECONDARY)
+          .height(30)
+          .padding({ left: 14, right: 14 })
+          .borderRadius(8)
+          .backgroundColor(this.faceMode.mode === 'double' ? BRAND_PRIMARY : Color.Transparent)
+          .onClick(() => {
+            this.applyFaceMode('double');
+          })
+      }
+      .padding(3)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(SURFACE_SOFT)
+      .margin({ bottom: 16 })
+
       // ── 单词库词条数 ──
       Column() {
         Text('单词库词条数')

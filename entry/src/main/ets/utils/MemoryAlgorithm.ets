@@ -71,6 +71,7 @@ export function applyPassiveReview(w: MemoryItem, now: number): boolean {
   w.reviewCount += 1;
   w.lastReviewAt = now;
   w.nextReviewAt = now + PASSIVE_INTERVAL_DAYS * DAY_MS;
+  w.mtime = now; // ★ 0.223.0：展示即复习=进度变化，条目级仲裁时间戳刷新
   return true;
 }
 
@@ -95,6 +96,7 @@ export function applyRating(w: MemoryItem, rating: MemoryRating, now: number): v
     }
   }
   w.lastReviewAt = now;
+  w.mtime = now; // ★ 0.223.0：评分=进度变化，条目级仲裁时间戳刷新（两库唯一评分咽喉）
   let next = now + w.strength * DAY_MS;
   // 层2：提前背的排期散开保底（仅 now < 原排期时生效——到期背零影响）
   if (rating !== 'hard' && now < w.nextReviewAt &&
