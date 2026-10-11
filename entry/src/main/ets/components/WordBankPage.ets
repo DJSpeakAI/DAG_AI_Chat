@@ -393,7 +393,9 @@ export struct WordBankPage {
     const explain = this.editorExplain.trim();
     if (this.editorIsAdd) {
       // addWordToBank auto-fills id/createTime (createTime = creation record)
-      const item = new WordItem(word, fullName, phonetic, explain);
+      // ★ 0.222.19 fix：新单词归属当前文件夹（对标知识库 new KnowledgeCard(..., folderNav.folderId)）——
+      //   此前漏传 folderId 致在文件夹内新建的单词全落根目录（用户实测）
+      const item = new WordItem(word, fullName, phonetic, explain, '', 0, 0, 0, 0, 0, this.wbFolderNav.folderId);
       if (!addWordToBank(this.wordBank, item)) {
         this.showToast('该单词已在单词库中');
         return;
