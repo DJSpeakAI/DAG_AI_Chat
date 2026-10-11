@@ -33,6 +33,7 @@ import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
 import { GlobalSettingsDialog } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
+import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
 import { BG_APP, SURFACE_HOVER, SURFACE_SOFT, SURFACE_NODE, STROKE_CARD, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_BRAND, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.174.1：UI Token 单一来源；★ 0.219.0：加 SURFACE_NODE/STROKE_CARD（边栏把手）
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
@@ -71,6 +72,10 @@ struct Index {
   // ★ 0.196.4：isTablet 改窗口宽度共享真相源（WindowMode）——分屏/悬浮窗屏宽不变导致小窗仍渲染
   //   平板布局（用户实测边栏挤压+黑屏）；本页根 onAreaChange 写入窗口实宽，首帧用屏宽猜测
   windowMode: WindowMode = connectWindowMode();
+  // ★ 0.222.11：设备类型兜底——手机（deviceType='phone'）永远手机模式（<600 抽屉），
+  //   不受 600vp 断点踩线误判影响（畅享90pro 1128px≈600.6vp 被旧断点误判平板）；
+  //   Pad/PC(2in1) 维持窗口宽度断点不变
+  isPhoneDevice: boolean = deviceInfo.deviceType === 'phone';
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
   }
@@ -222,7 +227,7 @@ struct Index {
     // ★ 0.196.4：只做首帧初始猜测——真值由根 Stack onAreaChange 按窗口实宽写入（分屏/悬浮窗纠正）
     try {
       const d = display.getDefaultDisplaySync();
-      this.windowMode.isTablet = d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+      this.windowMode.isTablet = !this.isPhoneDevice && d.densityPixels > 0 && d.width / d.densityPixels >= 600;
     } catch (_e) {
       this.windowMode.isTablet = false; // 取显示信息失败：保守按手机处理（无边栏，画布抽屉承担导航）
     }
@@ -644,7 +649,7 @@ struct Index {
     // ★ 0.196.4：窗口实宽写入共享模式——根 Stack 满窗，onAreaChange 在分屏/悬浮窗 resize 时
     //   实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）
     .onAreaChange((oldVal: Area, newVal: Area) => {
-      this.windowMode.isTablet = (newVal.width as number) >= 600;
+      this.windowMode.isTablet = !this.isPhoneDevice && (newVal.width as number) >= 600; // ★ 0.222.11：手机设备永远手机模式（断点踩线误判根治）
     })
   }
 }
