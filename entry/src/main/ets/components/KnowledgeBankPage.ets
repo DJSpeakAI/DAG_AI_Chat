@@ -2670,13 +2670,13 @@ export struct KnowledgeBankPage {
         }
         if (this.folderPickerVisible || this.folderNav.folderAction === 'move' || this.folderNav.folderAction === 'copy') {
           this.folderPickerDialog()
+        }
 
         if (this.folderNav.folderAction === 'delete') {
           this.folderDeleteConfirmDialog()
         }
         if (this.folderNav.folderAction === 'rename') {
           this.renameFolderDialog()
-        }
         }
         if (this.importPreviewVisible) {
           this.importPreviewDialog()
