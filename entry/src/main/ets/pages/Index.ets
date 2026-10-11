@@ -348,7 +348,7 @@ struct Index {
           Column() {
             AppSideBar({
               currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
-              wideScreen: this.isTablet, // ★ 0.220.1：宽屏形态（知识库页边栏=折叠形态）
+
               settingsOpen: this.globalSettingsVisible,
               onNavClick: (kind: string) => {
                 this.sideBarNav(kind);
@@ -511,7 +511,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.222.11') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
+        Text('v0.222.12') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

@@ -12,7 +12,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确�
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
-import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, SURFACE_NODE, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.222.12: SURFACE_NODE 增补（长按菜单浮层用）
 
 import { connectKnowledgeBank, deleteFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
 import { KnowledgeBankStore, KFolder, KFolderTreeItem, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store+KFolderTreeItem 接口（统一定义处）
@@ -29,7 +29,6 @@ export struct AppSideBar {
   //   BBTreeCanvas 手机抽屉形态固定传 'BBTreeCanvas'（抽屉只能从画布唤出，人就在画布上）
   @Param currentRoute: string = '';
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
-  @Param wideScreen: boolean = false; // ★ 0.220.1：宽屏形态（宿主传 isTablet）——宽屏知识库页边栏=折叠形态（导航+文件夹树双区块）；手机抽屉传 false=六大常显原样
   account: HuaweiAccountStore = connectHuaweiAccount();
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
   // ★ 0.220.0：知识库折叠态+文件夹树
@@ -38,6 +37,12 @@ export struct AppSideBar {
   kbStore: KnowledgeBankStore = connectKnowledgeBank();
   @Local selFolderId: string = ''; // 树内选中文件夹（新建子文件夹的父级）
   @Local collapsedFolderIds: string[] = []; // ★ 0.222.1 文件夹树折叠状态（id → 是否折叠）
+
+  // ★ 0.222.12: 文件夹树触摸长按菜单（Pad/手机）——PC 走右键，触摸设备 RightClick 不映射长按（用户实测无反应），
+  //   补 LongPressGesture+bindPopup 双通道（透明复刻知识库页创建菜单 0.220.2 已验证模式）
+  @Local treeMenuVisible: boolean = false;   // bindPopup 开关
+  @Local treeMenuFolderId: string = '';      // 长按目标文件夹（菜单 action 写 folderNav 共享 store）
+  @Local treeMenuFolderName: string = '';    // 目标原名（重命名弹窗预填）
 
   /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
   kbFolderTreeItems(): KFolderTreeItem[] {
@@ -112,6 +117,117 @@ export struct AppSideBar {
       this.folderNav.folderId = parentId;
     }
     this.getUIContext().getPromptAction().showToast({ message: `已删除「${f.name}」——卡片已移到上一级`, duration: 2000 });
+  }
+
+  /** ★ 0.222.12: 文件夹树触摸长按弹菜单（Pad/手机）——记录目标后 visible=true 唤起 bindPopup */
+  openTreeMenu(folderId: string, folderName: string): void {
+    this.treeMenuFolderId = folderId;
+    this.treeMenuFolderName = folderName;
+    this.treeMenuVisible = true;
+  }
+
+  /** ★ 0.222.12: 文件夹树长按菜单浮层（无参 @Builder——6 项 action 与 PC 右键 MenuElement 完全一致；点击写 folderNav 由 KnowledgeBankPage 消费弹对应操作弹窗） */
+  @Builder
+  folderTreeMenuBuilder() {
+    Column({ space: 2 }) {
+      Row() {
+        Text('新建卡片')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderId = this.treeMenuFolderId; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = this.treeMenuFolderId;
+        this.treeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('新建文件夹')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = this.treeMenuFolderId;
+        this.treeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('移动')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'move'; this.folderNav.folderActionId = this.treeMenuFolderId;
+        this.treeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('复制')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = this.treeMenuFolderId;
+        this.treeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('重命名')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = this.treeMenuFolderId; this.folderNav.folderActionName = this.treeMenuFolderName;
+        this.treeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('删除')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = this.treeMenuFolderId;
+        this.treeMenuVisible = false;
+        this.onNavClick('');
+      })
+    }
+    .width(160)
+    .padding({ top: 6, bottom: 6 })
+    .backgroundColor(SURFACE_NODE)
+    .borderRadius(RADIUS_NAV)
+  }
+
+  // ★ 0.222.12: 手机/Pad 抽屉与 PC 统一——进知识库首次自动配置默认态（导航收起+文件夹展开），与 Index.sideBarNav('knowledge') 同款（autoConfigured 确保有效一次）
+  aboutToAppear(): void {
+    if (this.currentRoute === 'KnowledgeBankPage' && !this.kbSection.autoConfigured) {
+      this.kbSection.navExpanded = false;
+      this.kbSection.folderExpanded = true;
+      this.kbSection.autoConfigured = true;
+    }
   }
 
   /** ★ 0.195.0：导航项高亮判定——当前路由映射（ChatPage/AnnotationPage 是气泡树子页，归气泡树） */
@@ -303,9 +419,9 @@ export struct AppSideBar {
       // ── 导航区（★ 0.220.1 用户拍板终版：两区块独立收放——「导航」归导航、「文件夹」归文件夹）──
       //   宽屏知识库页=折叠形态：「导航」条（点击切换六大模块展开/收起，箭头随态）+「文件夹」标题行
       //   （点击切换树收放）——两者独立、状态 AppStorageV2 记忆（切页面/重进保持用户选择）；
-      //   非知识库页或手机抽屉=六大模块常显原样（进入知识库由 sideBarNav 首次自动配置默认态）
+      //   非知识库页=六大模块常显原样；★ 0.222.12：知识库页（含手机/Pad 抽屉）统一显示「导航」折叠条——三端一致
       // （kbFolded 条件内联于下方两处 if——build 内禁 const 局部声明，0.220.1 编译实锤）
-      if (this.wideScreen && this.currentRoute === 'KnowledgeBankPage') {
+      if (this.currentRoute === 'KnowledgeBankPage') {
         // 「导航」条（顶部——0.220.2 用户拍板：展开时也放在上面）：点击切换六大模块展开/收起
         Row() {
           Text('导航')
@@ -328,7 +444,7 @@ export struct AppSideBar {
           this.kbSection.navExpanded = !this.kbSection.navExpanded;
         })
       }
-      if (!this.wideScreen || this.currentRoute !== 'KnowledgeBankPage' || this.kbSection.navExpanded) {
+      if (this.currentRoute !== 'KnowledgeBankPage' || this.kbSection.navExpanded) {
         this.SideBarNavItem('canvas')
         this.SideBarNavItem('wordbank')
         this.SideBarNavItem('knowledge')
@@ -400,6 +516,22 @@ export struct AppSideBar {
             { value: '重命名', action: () => { this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = item.folder.id; this.folderNav.folderActionName = item.folder.name; } },
             { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = item.folder.id; } }
           ], ResponseType.RightClick)
+          .bindPopup(this.treeMenuVisible, {
+            builder: this.folderTreeMenuBuilder(),
+            placement: Placement.Bottom,
+            popupColor: SURFACE_NODE,
+            radius: 12,
+            mask: { color: 'rgba(0,0,0,0.3)' },
+            onStateChange: (e: PopupStateChangeParam) => {
+              this.treeMenuVisible = e.isVisible;
+            }
+          })
+          .gesture(
+            LongPressGesture({ duration: 500 })
+              .onAction(() => {
+                this.openTreeMenu(item.folder.id, item.folder.name);
+              })
+          )
         }, (item: KFolderTreeItem) => item.folder.id)
       }
       }
