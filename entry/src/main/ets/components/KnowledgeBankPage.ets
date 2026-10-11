@@ -116,7 +116,6 @@ export struct KnowledgeBankPage {
 
   aboutToAppear(): void {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
-    console.error('DAGAI-SIDEBAR kb aboutToAppear isTablet=' + this.windowMode.isTablet); // ★ 0.222.5 诊断
   }
 
   // ★ 0.148: search / sort state
@@ -604,12 +603,10 @@ export struct KnowledgeBankPage {
 
   // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出）
   openSidebar(): void {
-    console.error('DAGAI-SIDEBAR openSidebar isTablet=' + this.isTablet);
     if (this.sidebarVisible) {
       return;
     }
     this.sidebarVisible = true; // ★ 0.222.6 直接赋值——animateTo 闭包内赋值真机不通知观察（日志实锤 visible=true 打了 UI 不刷新）
-    console.error('DAGAI-SIDEBAR visible=true');
   }
 
   closeSidebar(): void {
@@ -662,10 +659,6 @@ export struct KnowledgeBankPage {
         })
       }
       .width(208)
-      .height('100%')
-      .onAppear(() => {
-        console.error('DAGAI-SIDEBAR drawerCol onAppear v2'); // ★ 0.222.7 诊断
-      })
       .transition(TransitionEffect.translate({ x: -208 }).animation({ duration: 220, curve: Curve.EaseOut }))
     }
   }
