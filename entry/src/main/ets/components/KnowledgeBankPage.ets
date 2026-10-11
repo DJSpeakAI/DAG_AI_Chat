@@ -669,6 +669,14 @@ export struct KnowledgeBankPage {
       .transition(TransitionEffect.translate({ x: -208 }).animation({ duration: 220, curve: Curve.EaseOut }))
     }
   }
+  @Builder
+  topBar() {
+    Row() {
+      // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
+      // ★ 0.222.0：手机端 ⇄ 改边栏图标（sidebar.svg，点击切出边栏抽屉）；宽屏保持 ⇄ 切单词库
+      if (this.windowMode.isTablet) {
+        Text('⇄')
+          .fontSize(16)
           .fontColor(TEXT_TERTIARY)
           .padding({ left: 4, right: 4 })
           .margin({ right: 4 })
