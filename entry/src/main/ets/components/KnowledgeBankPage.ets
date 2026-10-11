@@ -172,7 +172,7 @@ export struct KnowledgeBankPage {
   @Local folderDialogName: string = '';
   @Local folderPickerVisible: boolean = false;  // 移动/复制目标选择弹窗
   @Local moveOrCopyMode: string = 'move';       // 'move' | 'copy'（folderPicker 确认时分流）
-  @Local pickerCollapsedFolders: Record<string, boolean> = {}; // ★ 0.222.1 目标选择器文件夹折叠状态
+  @Local pickerCollapsedFolderIds: string[] = []; // ★ 0.222.1 目标选择器文件夹折叠状态
   @Local importPreviewVisible: boolean = false; // 批量导入预览弹窗
   @Local importRows: ImportRow[] = [];
   @Local importFileName: string = '';
@@ -1472,7 +1472,7 @@ export struct KnowledgeBankPage {
           continue;
         }
         out.push({ folder: f, depth: depth });
-        if (!this.pickerCollapsedFolders[f.id]) {
+        if (!this.isPickerCollapsed(f.id)) {
           walk(f.id, depth + 1);
         }
       }
@@ -1491,9 +1491,18 @@ export struct KnowledgeBankPage {
     return false;
   }
 
-  /** ★ 0.222.1：切换目标选择器文件夹折叠 */
+  /** ★ 0.222.1：目标选择器文件夹是否折叠 */
+  isPickerCollapsed(folderId: string): boolean {
+    return this.pickerCollapsedFolderIds.indexOf(folderId) >= 0;
+  }
+
+  /** ★ 0.222.1：切换目标选择器文件夹折叠（string[] 替换引用触发重渲染） */
   togglePickerCollapse(folderId: string): void {
-    this.pickerCollapsedFolders[folderId] = !this.pickerCollapsedFolders[folderId];
+    if (this.isPickerCollapsed(folderId)) {
+      this.pickerCollapsedFolderIds = this.pickerCollapsedFolderIds.filter((id: string): boolean => id !== folderId);
+    } else {
+      this.pickerCollapsedFolderIds = [...this.pickerCollapsedFolderIds, folderId];
+    }
   }
   /** ★ 0.221.0：确认级联删除文件夹 */
   confirmFolderDelete(): void {
@@ -1990,10 +1999,10 @@ export struct KnowledgeBankPage {
             })
             ForEach(this.folderPickerTreeItems(), (item: KFolderTreeItem) => {
               Row() {
-                Text(this.pickerHasChildren(item.folder.id) ? (this.pickerCollapsedFolders[item.folder.id] ? '▸' : '▾') : '')
-                  .fontSize(10)
+                Text(this.pickerHasChildren(item.folder.id) ? (this.isPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
+                  .fontSize(13)
                   .fontColor(TEXT_TERTIARY)
-                  .width(14)
+                  .width(18)
                   .textAlign(TextAlign.Center)
                   .onClick(() => {
                     this.togglePickerCollapse(item.folder.id);

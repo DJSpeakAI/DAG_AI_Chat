@@ -37,7 +37,7 @@ export struct AppSideBar {
   folderNav: KbFolderNavStore = connectKbFolderNav();
   kbStore: KnowledgeBankStore = connectKnowledgeBank();
   @Local selFolderId: string = ''; // 树内选中文件夹（新建子文件夹的父级）
-  @Local collapsedFolders: Record<string, boolean> = {}; // ★ 0.222.1 文件夹树折叠状态（id → 是否折叠）
+  @Local collapsedFolderIds: string[] = []; // ★ 0.222.1 文件夹树折叠状态（id → 是否折叠）
 
   /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
   kbFolderTreeItems(): KFolderTreeItem[] {
@@ -48,7 +48,7 @@ export struct AppSideBar {
         .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
       for (let i = 0; i < kids.length; i++) {
         out.push({ folder: kids[i], depth: depth });
-        if (!this.collapsedFolders[kids[i].id]) {
+        if (!this.isFolderCollapsed(kids[i].id)) {
           walk(kids[i].id, depth + 1);
         }
       }
@@ -67,23 +67,43 @@ export struct AppSideBar {
     return false;
   }
 
-  /** ★ 0.222.1：切换文件夹折叠状态 */
+  /** ★ 0.222.1：文件夹是否处于折叠态 */
+  isFolderCollapsed(folderId: string): boolean {
+    return this.collapsedFolderIds.indexOf(folderId) >= 0;
+  }
+
+  /** ★ 0.222.1：切换文件夹折叠状态（string[] 替换引用触发重渲染——Record 属性改不触发） */
   toggleFolderCollapse(folderId: string): void {
-    this.collapsedFolders[folderId] = !this.collapsedFolders[folderId];
+    if (this.isFolderCollapsed(folderId)) {
+      this.collapsedFolderIds = this.collapsedFolderIds.filter((id: string): boolean => id !== folderId);
+    } else {
+      this.collapsedFolderIds = [...this.collapsedFolderIds, folderId];
+    }
   }
   /** ★ 0.220.0：树内新建文件夹（父级=树内选中项；未选中=根）。空名忽略；成功后选中新文件夹 */
 
-  /** ★ 0.220.0：树内卡片计数（直算，与页内 folderCardCount 同口径） */
+  /** ★ 0.220.0：树内卡片计数（★ 0.222.2 递归统计整个子树，含所有子孙文件夹的卡片） */
   kbCardCount(folderId: string): number {
+    const ids: string[] = [folderId];
+    let guard = 0;
+    for (let i = 0; i < ids.length && guard < 1000; i++) {
+      const pid = ids[i];
+      const children = this.kbStore.folders.filter((f: KFolder): boolean => f.parentId === pid);
+      for (let j = 0; j < children.length; j++) {
+        if (!ids.includes(children[j].id)) {
+          ids.push(children[j].id);
+        }
+      }
+      guard++;
+    }
     let n = 0;
-    for (let i = 0; i < this.kbStore.cards.length; i++) {
-      if (this.kbStore.cards[i].folderId === folderId) {
+    for (let k = 0; k < this.kbStore.cards.length; k++) {
+      if (ids.includes(this.kbStore.cards[k].folderId)) {
         n++;
       }
     }
     return n;
   }
-
   /** ★ 0.220.2：边栏树删除文件夹（卡片移到上一级；当前视图文件夹被删则视图回退到其父级） */
   deleteTreeFolder(f: KFolder): void {
     deleteFolder(this.kbStore, f.id);
@@ -294,7 +314,7 @@ export struct AppSideBar {
             .fontColor(TEXT_PRIMARY)
           Blank()
           Text(this.kbSection.navExpanded ? '▾' : '▸')
-            .fontSize(12)
+            .fontSize(13)
             .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
@@ -343,10 +363,10 @@ export struct AppSideBar {
         // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮）
         ForEach(this.kbFolderTreeItems(), (item: KFolderTreeItem) => {
           Row({ space: 6 }) {
-            Text(this.hasChildren(item.folder.id) ? (this.collapsedFolders[item.folder.id] ? '▸' : '▾') : '')
-              .fontSize(10)
+            Text(this.hasChildren(item.folder.id) ? (this.isFolderCollapsed(item.folder.id) ? '▸' : '▾') : '')
+              .fontSize(13)
               .fontColor(TEXT_TERTIARY)
-              .width(14)
+              .width(18)
               .textAlign(TextAlign.Center)
               .onClick(() => {
                 this.toggleFolderCollapse(item.folder.id);
