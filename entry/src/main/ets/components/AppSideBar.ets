@@ -156,11 +156,22 @@ export struct AppSideBar {
     this.getUIContext().getPromptAction().showToast({ message: `已删除「${f.name}」——卡片已移到上一级`, duration: 2000 });
   }
 
+/** ★ 0.222.18：树内选中统一切换（左键点击外，右键/长按也同步调用）——
+   *  同步父级 selFolderId + 共享视图 folderNav.folderId（知识库页卡片随之切换），
+   *  并让「原先选中的文件夹」立即失焦（消除新旧两个文件夹同时高亮）；
+   *  ⚠️ 不调用 onFolderClick——手机抽屉版该回调=closeSidebar，会让长按菜单来不及显示 */
+  selectTreeFolder(folderId: string): void {
+    this.selFolderId = folderId;
+    this.folderNav.folderId = folderId;
+    this.folderNav.nonce++;
+  }
+
   /** ★ 0.222.12: 文件夹树触摸长按弹菜单（Pad/手机）——记录目标后 visible=true 唤起 bindPopup */
   openTreeMenu(folderId: string, folderName: string): void {
     this.treeMenuFolderId = folderId;
     this.treeMenuFolderName = folderName;
     this.focusTreeId = folderId;
+    this.selectTreeFolder(folderId);
     this.treeMenuVisible = true;
   }
 
@@ -598,6 +609,8 @@ export struct AppSideBar {
           .onMouse((e: MouseEvent) => {
             if (e.action === MouseAction.Press && e.button === MouseButton.Right) {
               this.focusTreeId = '';
+              this.selectTreeFolder('');
+              this.onFolderClick('');
             }
           })
           .bindContextMenuByResponseType([
@@ -621,6 +634,7 @@ export struct AppSideBar {
             LongPressGesture({ duration: 500 })
               .onAction(() => {
                 this.focusTreeId = '';
+                this.selectTreeFolder('');
                 this.rootTreeMenuVisible = true;
               })
           )
@@ -699,6 +713,8 @@ export struct AppSideBar {
           .onMouse((e: MouseEvent) => {
             if (e.action === MouseAction.Press && e.button === MouseButton.Right) {
               this.focusTreeId = item.folder.id;
+              this.selectTreeFolder(item.folder.id);
+              this.onFolderClick(item.folder.id);
             }
           })
           .bindContextMenuByResponseType([
@@ -709,15 +725,17 @@ export struct AppSideBar {
             { value: '重命名', action: () => { this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = item.folder.id; this.folderNav.folderActionName = item.folder.name; this.focusTreeId = 'none'; } },
             { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = item.folder.id; this.focusTreeId = 'none'; } }
           ], ResponseType.RightClick)
-          .bindPopup(this.treeMenuVisible, {
+          .bindPopup(this.treeMenuVisible && this.treeMenuFolderId === item.folder.id, {
             builder: this.folderTreeMenuBuilder(),
             placement: Placement.Bottom,
             popupColor: SURFACE_NODE,
             radius: 12,
             mask: { color: 'rgba(0,0,0,0.3)' },
             onStateChange: (e: PopupStateChangeParam) => {
-              this.treeMenuVisible = e.isVisible;
-              if (!e.isVisible) { this.focusTreeId = 'none'; }
+              if (this.treeMenuFolderId === item.folder.id) {
+                this.treeMenuVisible = e.isVisible;
+                if (!e.isVisible) { this.focusTreeId = 'none'; }
+              }
             }
           })
           .gesture(

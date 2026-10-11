@@ -47,6 +47,7 @@ import { ApkgCard, ApkgParseResult, parseApkg } from '../utils/ApkgUtil';
 import { ensureFolderPath } from '../utils/KnowledgeStoreUtil';
 import { track } from '../utils/TrackUtil';
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.0 手机知识库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
+import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.18：设备类型判定（仅手机去掉知识库空白处长按创建菜单，PC 右键/Pad 长按保留）
 const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 
 @ComponentV2
@@ -2937,7 +2938,7 @@ export struct KnowledgeBankPage {
       .gesture(
         LongPressGesture({ duration: 500 })
           .onAction(() => {
-            this.createMenuVisible = true;
+            if (deviceInfo.deviceType !== 'phone') { this.createMenuVisible = true; }
           })
       )
     }
