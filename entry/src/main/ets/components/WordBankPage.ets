@@ -592,8 +592,9 @@ export struct WordBankPage {
       Button(this.sortText())
         .fontSize(12)
         .height(28)
-        .backgroundColor(this.sortMode !== 0 ? SURFACE_HOVER : Color.Transparent)
-        .fontColor(this.sortMode !== 0 ? BRAND_SECONDARY : TEXT_TERTIARY)
+        // ★ 0.222.16 用户拍板：排序入口恒定紫底紫字——此前默认「最新↓」为透明底，用户反馈"最新往下没有紫颜色背景"（其他排序有），补上使四种状态视觉一致
+        .backgroundColor(SURFACE_HOVER)
+        .fontColor(BRAND_SECONDARY)
         .padding({ left: 8, right: 8 })
         .margin({ right: 4 })
         .bindPopup(this.sortMenuVisible, {

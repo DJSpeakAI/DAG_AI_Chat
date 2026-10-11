@@ -120,7 +120,8 @@ export struct KnowledgeBankPage {
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
-  @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；两按钮独立，再点同按钮切倒序
+  @Local sortMode: number = 0; // ★ 0.191.0：排序 4 态——0=最新↓（创建降序，默认）1=最新↑（创建升序）2=需复习↑（复习升序）3=需复习↓（复习降序）；★ 0.222.16 已并拢为单个「排序」入口
+  @Local sortMenuVisible: boolean = false; // ★ 0.222.16 用户拍板：两个排序按钮并拢为单个「排序」入口（参考单词库右上角 UI）——点击弹两选项（最新/需复习），点选项只切排序不收起（可连续切换），点遮罩才收
 
   // ★ 0.148: multi-select state (batch delete only)
   @Local multiSelectMode: boolean = false;
@@ -253,6 +254,42 @@ export struct KnowledgeBankPage {
       list.sort((a: KnowledgeCard, b: KnowledgeCard) => b.createdAt - a.createdAt);
     }
     return list;
+  }
+
+  // ★ 0.222.16 用户拍板：「排序」入口文字=当前模式名+方向箭头（两按钮并拢后保留一眼可读性）
+  sortText(): string {
+    if (this.sortMode === 1) return '最新 ↑';
+    if (this.sortMode === 2) return '需复习 ↑';
+    if (this.sortMode === 3) return '需复习 ↓';
+    return '最新 ↓';
+  }
+
+  // ★ 0.222.16：排序选项菜单（bindPopup 自定义 builder）——无参 @Builder 内部直读 sortMode（0.190.1 铁律）；
+  //   两项=最新/需复习，各带当前方向箭头，激活项品牌紫高亮；点击只改 sortMode 不收起，点遮罩才收
+  @Builder
+  sortMenuBuilder() {
+    Column() {
+      Text(this.sortMode === 1 ? '最新 ↑' : '最新 ↓')
+        .fontSize(14)
+        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.sortMode = this.sortMode === 0 ? 1 : 0;
+        })
+      Divider().color(STROKE_CARD)
+      Text(this.sortMode === 3 ? '需复习 ↓' : '需复习 ↑')
+        .fontSize(14)
+        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .width('100%')
+        .textAlign(TextAlign.Start)
+        .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+        .onClick(() => {
+          this.sortMode = this.sortMode === 2 ? 3 : 2;
+        })
+    }
+    .width(160)
   }
 
   // ★ 0.188.0：下次复习标签——未学习 / 下次复习：已到期·N分钟后·N小时后·N天后·日期
@@ -708,27 +745,28 @@ export struct KnowledgeBankPage {
         })
       Blank()
         .layoutWeight(1)
-      // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
-      //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
-      Button(this.sortMode === 1 ? '最新↑' : '最新↓')
+      // ★ 0.222.16 用户拍板：两个独立排序按钮并拢为单个「排序」入口（参考单词库右上角 UI）；
+      //   点击弹两选项（最新/需复习），点选项只切排序不收起（可连续切换），点遮罩才收；
+      //   按钮恒定紫底紫字（含默认「最新↓」——用户反馈默认态无紫底包裹不协调）
+      Button(this.sortText())
         .fontSize(12)
-        .height(28) // ★ 0.195.0：排序按钮高度缩小与右侧 ⚙ 图标对齐（用户实测太高）
-        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
-        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_TERTIARY)
-        .padding({ left: 8, right: 4 })
-        .margin({ right: 2 })
-        .onClick(() => {
-          this.sortMode = this.sortMode === 0 ? 1 : 0;
-        })
-      Button(this.sortMode === 3 ? '需复习↓' : '需复习↑')
-        .fontSize(12)
-        .height(28) // ★ 0.195.0：高度对齐 ⚙
-        .backgroundColor(this.sortMode >= 2 ? SURFACE_HOVER : Color.Transparent)
-        .fontColor(this.sortMode >= 2 ? BRAND_SECONDARY : TEXT_TERTIARY)
-        .padding({ left: 8, right: 4 })
+        .height(28)
+        .backgroundColor(SURFACE_HOVER)
+        .fontColor(BRAND_SECONDARY)
+        .padding({ left: 8, right: 8 })
         .margin({ right: 4 })
+        .bindPopup(this.sortMenuVisible, {
+          builder: this.sortMenuBuilder(),
+          placement: Placement.Bottom,
+          popupColor: SURFACE_NODE,
+          radius: 12,
+          mask: { color: 'rgba(0,0,0,0.3)' },
+          onStateChange: (e: PopupStateChangeParam) => {
+            this.sortMenuVisible = e.isVisible;
+          }
+        })
         .onClick(() => {
-          this.sortMode = this.sortMode === 2 ? 3 : 2;
+          this.sortMenuVisible = !this.sortMenuVisible;
         })
       // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
       // ★ 0.195.0：⚙ emoji 换 settings.svg 单色图标（UI 统一——与边栏/ChatPage 顶栏同款）
