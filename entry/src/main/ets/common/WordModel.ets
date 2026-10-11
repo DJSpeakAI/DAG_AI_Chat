@@ -15,7 +15,7 @@
 // fullName row/cell is simply NOT rendered when empty (no placeholder).
 // ============================================================
 
-import { Type } from '@kit.ArkUI'; // @Type decorator: required by PersistenceV2 nested class arrays
+import { Type, AppStorageV2 } from '@kit.ArkUI'; // @Type decorator: required by PersistenceV2 nested class arrays；★ 0.222.19：AppStorageV2（文件夹导航/折叠态共享 store）
 
 // A single word entry stored in the word bank
 @ObservedV2
