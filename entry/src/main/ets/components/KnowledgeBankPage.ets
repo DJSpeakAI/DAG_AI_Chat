@@ -1442,6 +1442,13 @@ export struct KnowledgeBankPage {
       const fid = this.folderNav.folderActionId;
       if (this.folderNav.folderAction === 'copy') {
         const n = copyFolder(this.knowledgeBank, fid, folderId);
+        if (n < 0) {
+          this.showToast('不能复制到自身或其子文件夹');
+          this.folderNav.folderAction = '';
+          this.folderNav.folderActionId = '';
+          this.folderPickerVisible = false;
+          return;
+        }
         this.showToast(`已复制文件夹（含 ${n} 张卡片）`);
       } else {
         const ok = moveFolder(this.knowledgeBank, fid, folderId);
@@ -2650,6 +2657,16 @@ export struct KnowledgeBankPage {
         // ★ 0.207.0：文件夹/导入/导出弹窗（最顶层）
         if (this.folderDialogVisible || this.folderNav.folderAction === 'newfolder') {
           this.folderDialog()
+        }
+        if (this.folderNav.folderAction === 'newcard') {
+          Column()
+            .width(0)
+            .height(0)
+            .onAppear(() => {
+              this.folderNav.folderAction = '';
+              this.folderNav.folderActionId = '';
+              this.openAddEditor();
+            })
         }
         if (this.folderPickerVisible || this.folderNav.folderAction === 'move' || this.folderNav.folderAction === 'copy') {
           this.folderPickerDialog()

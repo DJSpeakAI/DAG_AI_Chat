@@ -261,6 +261,20 @@ export function moveFolder(store: KnowledgeBankStore, folderId: string, targetPa
 
 /** ★ 0.221.0：递归复制整个文件夹子树（文件夹+卡片+子文件夹全部新 id；记忆字段清零）——返回复制卡片数 */
 export function copyFolder(store: KnowledgeBankStore, folderId: string, targetParentId: string): number {
+  // ★ 0.221.5 防环（复制到自己/子孙会无限递归→ANR，用户实测踩中）：目标沿 parentId 上溯命中自身则拒绝
+  let cur = targetParentId;
+  let guard = 0;
+  while (cur !== '' && guard < 64) {
+    if (cur === folderId) {
+      return -1; // 目标是自身/子孙，拒绝
+    }
+    const p = store.folders.find((f: KFolder): boolean => f.id === cur);
+    if (p === undefined) {
+      break;
+    }
+    cur = p.parentId;
+    guard++;
+  }
   const src = store.folders.find((f: KFolder): boolean => f.id === folderId);
   if (src === undefined) {
     return 0;
