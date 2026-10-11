@@ -38,7 +38,6 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
-const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade, copyRootFolder, clearRootFolder } from '../utils/KnowledgeStoreUtil';
 import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
@@ -48,6 +47,7 @@ import { ApkgCard, ApkgParseResult, parseApkg } from '../utils/ApkgUtil';
 import { ensureFolderPath } from '../utils/KnowledgeStoreUtil';
 import { track } from '../utils/TrackUtil';
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.0 手机知识库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
+const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 
 @ComponentV2
 export struct KnowledgeBankPage {
