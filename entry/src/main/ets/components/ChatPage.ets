@@ -34,7 +34,7 @@ import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（
  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, ENCOURAGE_LIGHT_PROMPT, ENCOURAGE_HEAVY_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）+鼓励三档
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
-import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）
+import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
@@ -549,9 +549,13 @@ export struct ChatPage {
   @Local knowledgeSuggestedTags: string[] = [];  // ★ 0.202.1：AI 建议标签（弹窗勾选采纳）
   @Local knowledgeSelectedTags: string = '';     // ★ 0.202.1：已勾选标签（逗号分隔，随卡保存）
   @Local knowledgeCardDefinition: string = '';   // 定义输入框内容（AI 草稿自动填充，可自由编辑）
-  @Local knowledgeImageUri: string = '';         // 卡片配图（base64 data URI；'' = 无图片，图片区不渲染）
-  @Local knowledgeEditLoading: boolean = false;  // AI 提炼进行中
-  @Local knowledgeEditError: string = '';        // AI 提炼错误信息（输入框仍可手动填写）
+   @Local knowledgeImageUri: string = '';         // 卡片配图（base64 data URI；'' = 无图片，图片区不渲染）
+   @Local knowledgeEditLoading: boolean = false;  // AI 提炼进行中
+   @Local knowledgeEditError: string = '';        // AI 提炼错误信息（输入框仍可手动填写）
+   // ★ 0.222.22：知识卡入库目标文件夹选择弹窗（点「保存入库」弹出；UI 与知识库移动/复制弹窗同款）
+   @Local cardFolderPickerVisible: boolean = false;
+   // ★ 0.222.22：选择弹窗折叠态（@Local string[] 替换引用触发重渲染——0.222.2 铁律）
+   @Local cardPickerCollapsedFolderIds: string[] = [];
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // ★ 0.146：知识库（独立 PersistenceV2 key，与气泡树/单词库隔离）
   attention: AttentionStore = connectAttention(); // ★ 0.202.0：注意力标签热度（发消息时提取——艾宾浩斯 2.0）
   private knowledgeQueryController: StreamController | null = null; // 进行中的提炼请求（弹窗关闭时取消）
@@ -2221,15 +2225,199 @@ export struct ChatPage {
 
   // 【保存入库】：输入框内容转 KnowledgeCard 入库（用户确认后的最终卡片）。
   // 标题与定义全空时不入库（空卡片防御）。★ 0.202.1：勾选的建议标签随卡保存。
+  // ★ 0.222.22 起弹目标文件夹选择弹窗（用户拍板——划词「入知识库」与屏幕圈选「存入知识库」
+  // 两入口汇聚本弹窗，改此一处全覆盖）；知识库无任何文件夹时不弹、直接入根目录（同单词库拍板）。
+  // 真正入库落点在 confirmSaveKnowledgeCard。
   saveKnowledgeCard(): void {
     const title = this.knowledgeCardTitle.trim();
     const definition = this.knowledgeCardDefinition.trim();
     if (title.length === 0 && definition.length === 0) {
       return;
     }
-    const card = new KnowledgeCard(generateMessageId(), title, definition, this.knowledgeImageUri, Date.now(), 0, 0, 0, 0, this.knowledgeSelectedTags);
+    if (this.knowledgeBank.folders.length === 0) {
+      this.confirmSaveKnowledgeCard('');
+      return;
+    }
+    this.cardFolderPickerVisible = true;
+  }
+
+  // ★ 0.222.22：确认知识卡入库到目标文件夹——KnowledgeCard 13 参显式传全
+  //（第 11 参 images / 第 13 参 titleImages 均为 '' 占位，第 12 参 folderId 才是目标；
+  // 构造尾部可省参数最容易漏，0.222.20 同族教训：显式占位逐参核对防错位）。
+  confirmSaveKnowledgeCard(folderId: string): void {
+    const title = this.knowledgeCardTitle.trim();
+    const definition = this.knowledgeCardDefinition.trim();
+    if (title.length === 0 && definition.length === 0) {
+      return;
+    }
+    const card = new KnowledgeCard(generateMessageId(), title, definition, this.knowledgeImageUri,
+      Date.now(), 0, 0, 0, 0, this.knowledgeSelectedTags, '', folderId, '');
     addKnowledgeCard(this.knowledgeBank, card);
+    this.cardFolderPickerVisible = false;
     this.closeKnowledgeEdit();
+  }
+
+  // ★ 0.222.22：知识卡入库目标选择器的树形目录（DFS 层级+连接线字段，复刻知识库移动/复制弹窗；
+  // 加卡=新建实体无源文件夹，全文件夹可选——与「移动」排除源自身的唯一区别，其余一致）
+  cardPickerTreeItems(): KFolderTreeItem[] {
+    const out: KFolderTreeItem[] = [];
+    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
+      const kids = this.knowledgeBank.folders
+        .filter((f: KFolder): boolean => f.parentId === parentId)
+        .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
+      for (let i = 0; i < kids.length; i++) {
+        const isLast = i === kids.length - 1;
+        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
+        if (!this.isCardPickerCollapsed(kids[i].id)) {
+          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
+        }
+      }
+    };
+    walk('', 0, [], []);
+    return out;
+  }
+
+  // ★ 0.222.22：选择器里文件夹是否有子文件夹
+  cardPickerHasChildren(folderId: string): boolean {
+    for (let i = 0; i < this.knowledgeBank.folders.length; i++) {
+      if (this.knowledgeBank.folders[i].parentId === folderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ★ 0.222.22：选择器文件夹是否折叠
+  isCardPickerCollapsed(folderId: string): boolean {
+    return this.cardPickerCollapsedFolderIds.indexOf(folderId) >= 0;
+  }
+
+  // ★ 0.222.22：切换选择器文件夹折叠（@Local string[] 替换引用触发重渲染）
+  toggleCardPickerCollapse(folderId: string): void {
+    if (this.isCardPickerCollapsed(folderId)) {
+      this.cardPickerCollapsedFolderIds = this.cardPickerCollapsedFolderIds.filter((id: string): boolean => id !== folderId);
+    } else {
+      this.cardPickerCollapsedFolderIds = [...this.cardPickerCollapsedFolderIds, folderId];
+    }
+  }
+
+  // ★ 0.222.22：知识卡入库目标文件夹选择弹窗——UI 逐行复刻知识库移动/复制弹窗（树形连接线+
+  // 折叠三角+行高 32/字号 13/RADIUS_NAV+根目录行显示卡片总数+取消行），标题「保存卡片到…」。
+  // 无参 @Builder 内部直读状态（0.190.1 铁律）；点行=确认入该文件夹、点取消/遮罩=回到编辑弹窗（草稿不丢）。
+  @Builder
+  cardFolderPickerDialog() {
+    Column() {
+      Column() {
+        Text('保存卡片到…')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Scroll() {
+          Column() {
+            Row() {
+              Text('根目录')
+                .fontSize(13)
+                .fontColor(TEXT_PRIMARY)
+                .layoutWeight(1)
+              Text(`${this.knowledgeBank.cards.length}`)
+                .fontSize(10)
+                .fontColor(TEXT_TERTIARY)
+            }
+            .width('100%')
+            .height(32)
+            .padding({ left: 8, right: 8 })
+            .borderRadius(RADIUS_NAV)
+            .onClick(() => {
+              this.confirmSaveKnowledgeCard('');
+            })
+            ForEach(this.cardPickerTreeItems(), (item: KFolderTreeItem) => {
+              Row({ space: 6 }) {
+                // 静态经典树形连接线（与边栏同款，弹窗无路径高亮）
+                Row() {
+                  ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
+                    Stack({ alignContent: Alignment.Top }) {
+                      if (cont) {
+                        Column()
+                          .width(1)
+                          .height('100%')
+                          .backgroundColor(STROKE_CARD)
+                      }
+                    }
+                    .width(TREE_CELL)
+                    .height('100%')
+                  }, (cont: boolean, k: number) => `${k}_${cont}`)
+                  Row() {
+                    Stack({ alignContent: Alignment.TopEnd }) {
+                      Column()
+                        .width(1)
+                        .height(item.isLast ? '50%' : '100%')
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                    Stack({ alignContent: Alignment.Center }) {
+                      Row()
+                        .width('100%')
+                        .height(1)
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                  }
+                  .width(TREE_CELL)
+                  .height('100%')
+                }
+                .height('100%')
+                Text(this.cardPickerHasChildren(item.folder.id) ? (this.isCardPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
+                  .fontSize(16)
+                  .fontColor(TEXT_TERTIARY)
+                  .width(22)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => {
+                    this.toggleCardPickerCollapse(item.folder.id);
+                  })
+                Text(item.folder.name)
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .height(32)
+              .padding({ left: 8, right: 8 })
+              .borderRadius(RADIUS_NAV)
+              .onClick(() => {
+                this.confirmSaveKnowledgeCard(item.folder.id);
+              })
+            }, (item: KFolderTreeItem) => item.folder.id)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 320 })
+        Text('取消')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 10 })
+          .onClick(() => {
+            this.cardFolderPickerVisible = false;
+          })
+      }
+      .width(this.isTablet ? 520 : '86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.cardFolderPickerVisible = false;
+    })
   }
 
   // 选择卡片配图：相册单选 → base64 data URI（跟随图片消息的既有存储模式，重启不丢）
@@ -2754,6 +2942,10 @@ export struct ChatPage {
     }
     if (this.wordPopupVisible) {
       this.closeWordPopup(); // 翻译浮窗，取消查词请求（0.145）
+      return true;
+    }
+    if (this.cardFolderPickerVisible) {
+      this.cardFolderPickerVisible = false; // 知识卡入库文件夹选择弹窗（0.222.22）——返回键先关此弹窗（编辑弹窗保留）
       return true;
     }
     if (this.knowledgeEditVisible) {
@@ -4075,6 +4267,12 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
           .alignContent(Alignment.Center)
+        }
+
+        // ★ 0.222.22：知识卡入库目标文件夹选择弹窗（点「保存入库」弹出）——渲染在编辑弹窗之后=
+        // 同层后绘制在上；点取消/遮罩回到编辑弹窗（草稿不丢），选完文件夹入库+双弹窗齐关。
+        if (this.cardFolderPickerVisible) {
+          this.cardFolderPickerDialog()
         }
 
         // 全屏图片浏览器
