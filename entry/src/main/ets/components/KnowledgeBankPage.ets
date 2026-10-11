@@ -46,10 +46,12 @@ import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, pack
 import { ApkgCard, ApkgParseResult, parseApkg } from '../utils/ApkgUtil';
 import { ensureFolderPath } from '../utils/KnowledgeStoreUtil';
 import { track } from '../utils/TrackUtil';
+import { AppSideBar } from './AppSideBar'; // ★ 0.222.0 手机知识库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
 
 @ComponentV2
 export struct KnowledgeBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
+  @Local sidebarVisible: boolean = false; // ★ 0.222.0 手机知识库页边栏抽屉开关
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // isolated PersistenceV2 instance
 
   // ── ★ 0.200.0：知识卡片导入气泡（入口 A 列表 / 入口 B 编辑弹窗）──
@@ -597,26 +599,76 @@ export struct KnowledgeBankPage {
   // ★ 0.159 pattern: self-drawn top bar with hideTitleBar(true) — a .title()
   // custom builder's content-area width reference includes the system
   // back-button slot and overflows the screen (proven on ChatPage).
-  @Builder
+
+  // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出）
+  openSidebar(): void {
+    if (this.sidebarVisible) {
+      return;
+    }
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+      this.sidebarVisible = true;
+    });
+  }
+
+  closeSidebar(): void {
+    if (!this.sidebarVisible) {
+      return;
+    }
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
+      this.sidebarVisible = false;
+    });
+  }
+
+  /** 手机抽屉导航（点导航项跳转+收抽屉；kind=''/knowledge/settings=只收抽屉） */
+  onSidebarNav(kind: string): void {
+    this.closeSidebar();
+    if (kind === '' || kind === 'knowledge' || kind === 'settings') {
+      return;
+    }
+    if (kind === 'canvas') {
+      this.pathStack.replacePath({ name: 'BBTreeCanvas' });
+      return;
+    }
+    const target = kind === 'wordbank' ? 'WordBankPage' : kind === 'review' ? 'ReviewPage' : kind === 'statistics' ? 'StatisticsPage' : kind === 'billing' ? 'BillingPage' : '';
+    if (target !== '') {
+      this.pathStack.pushPath({ name: target });
+    }
+  }  @Builder
   topBar() {
     Row() {
       // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
-      Text('⇄')
-        .fontSize(16)
-        .fontColor(TEXT_TERTIARY)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
-          this.pathStack.replacePath({ name: 'WordBankPage' });
-        })
+      // ★ 0.222.0：手机端 ⇄ 改边栏图标（sidebar.svg，点击切出边栏抽屉）；宽屏保持 ⇄ 切单词库
+      if (this.isTablet) {
+        Text('⇄')
+          .fontSize(16)
+          .fontColor(TEXT_TERTIARY)
+          .padding({ left: 4, right: 4 })
+          .margin({ right: 4 })
+          .onClick(() => {
+            this.pathStack.replacePath({ name: 'WordBankPage' });
+          })
+      } else {
+        Image($r('app.media.sidebar'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+          .padding({ left: 4, right: 4 })
+          .margin({ right: 4 })
+          .onClick(() => {
+            this.openSidebar();
+          })
+      }
       Text('知识库')
         .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
         .onClick(() => {
-          this.pathStack.replacePath({ name: 'WordBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
-        })
-      Blank()
+          if (this.isTablet) {
+            this.pathStack.replacePath({ name: 'WordBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
+          } else {
+            this.openSidebar(); // ★ 0.222.0：手机点标题也切边栏（与边栏图标同款）
+          }
+        })      Blank()
         .layoutWeight(1)
       // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
       //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
@@ -2711,11 +2763,41 @@ export struct KnowledgeBankPage {
             this.createMenuVisible = true;
           })
       )
+      // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出；宽屏边栏由 Index 常驻，这里不渲染）
+      if (!this.isTablet) {
+        if (this.sidebarVisible) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.45)')
+            .onClick(() => {
+              this.closeSidebar();
+            })
+            .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
+        }
+        Column() {
+          AppSideBar({
+            currentRoute: 'KnowledgeBankPage',
+            onNavClick: (kind: string) => {
+              this.onSidebarNav(kind);
+            },
+            onFolderClick: (folderId: string) => {
+              this.closeSidebar();
+            }
+          })
+        }
+        .translate({ x: this.sidebarVisible ? 0 : -208 })
+      }
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
+      // ★ 0.222.0：手机边栏抽屉开着时返回键先收抽屉
+      if (this.sidebarVisible) {
+        this.closeSidebar();
+        return true;
+      }
       // ★ 0.200.0: 问 AI 面板最顶层先关
       if (this.askSheetVisible) {
         this.askSheetVisible = false;

@@ -301,7 +301,7 @@ export struct AppSideBar {
       }
 
       // ── ★ 0.220.1：文件夹树区（折叠形态+当前在知识库页时显示；标题行点击切换树收放——独立于导航区）──
-      if (this.wideScreen && this.currentRoute === 'KnowledgeBankPage') {
+      if (this.currentRoute === 'KnowledgeBankPage') {
         Column() {
         // 「全部卡片」= 根目录视图入口
         Row({ space: 8 }) {
