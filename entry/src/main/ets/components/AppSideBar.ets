@@ -44,6 +44,7 @@ export struct AppSideBar {
   @Local treeMenuFolderId: string = '';      // 长按目标文件夹（菜单 action 写 folderNav 共享 store）
   @Local treeMenuFolderName: string = '';    // 目标原名（重命名弹窗预填）
   @Local rootTreeMenuVisible: boolean = false; // ★ 0.222.13：根目录「全部卡片」行触摸长按菜单开关（Pad/手机）
+  @Local focusTreeId: string = 'none'; // ★ 0.222.14：右键/长按焦点高亮（指哪打哪）——onMouse Right Press 或 LongPress 时置目标文件夹 id（根=''），菜单项/点击/弹窗关闭后复位 'none'
 
   /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
   kbFolderTreeItems(): KFolderTreeItem[] {
