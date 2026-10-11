@@ -639,29 +639,37 @@ export struct KnowledgeBankPage {
     // ★ 0.222.7：重写=条件渲染+transition——0.222.4~0.222.6 三轮实锤 translate 藏屏+animateTo/直接赋值
     //   全不刷新（日志证明组件创建+赋值成功、UI 不动），改用与「正常工作弹窗块」同款的条件渲染机制
     if (!this.windowMode.isTablet && this.sidebarVisible) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.45)')
-        .onClick(() => {
-          this.closeSidebar();
-        })
-        .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
-      Column() {
-        AppSideBar({
-          currentRoute: 'KnowledgeBankPage',
-          onNavClick: (kind: string) => {
-            this.onSidebarNav(kind);
-          },
-          onFolderClick: (folderId: string) => {
+      // ★ 0.224.8 空隙病根：遮罩/边栏两兄弟裸挂页面 Stack——边栏包裹列无 height，
+      //   自适应高撑不满全屏（底部漏遮罩黑条），且 AppSideBar height('100%')
+      //   参照失效致内部 Blank() 弹性错乱（设置与账号栏间出现 500+px 大空隙）。
+      //   修法=包一层全屏 Stack（TopStart 贴左上），边栏列显式 height('100%')。
+      Stack({ alignContent: Alignment.TopStart }) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.45)')
+          .onClick(() => {
             this.closeSidebar();
-          }
-        })
+          })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
+        Column() {
+          AppSideBar({
+            currentRoute: 'KnowledgeBankPage',
+            onNavClick: (kind: string) => {
+              this.onSidebarNav(kind);
+            },
+            onFolderClick: (folderId: string) => {
+              this.closeSidebar();
+            }
+          })
+        }
+        .width(208)
+        .height('100%')
+        .transition(TransitionEffect.translate({ x: -208 }).animation({ duration: 220, curve: Curve.EaseOut }))
       }
-      .width(208)
-      .transition(TransitionEffect.translate({ x: -208 }).animation({ duration: 220, curve: Curve.EaseOut }))
-    }
-  }
+      .width('100%')
+      .height('100%')
+    }  }
   @Builder
   topBar() {
     Row() {
