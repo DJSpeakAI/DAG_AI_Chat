@@ -260,13 +260,10 @@ export function moveFolder(store: KnowledgeBankStore, folderId: string, targetPa
 }
 
 /** ★ 0.221.0：递归复制整个文件夹子树（文件夹+卡片+子文件夹全部新 id；记忆字段清零）——返回复制卡片数
- * ★ 0.222.13：复制到子孙文件夹放开（用户拍板：整树复制到子节点是合理场景）——只拒绝目标==自身；
+ * ★ 0.222.14：复制到自身/子孙全部放开（用户拍板：复制自己=把自己复制一份变成自己的子文件夹，可行）
  *   ANR 根治=children 快照务必在 addFolder 之前取（0.221.5 根因正是快照在 addFolder 后取，
- *   复制到自身时把刚生成的副本含入遍历→无限递归；快照前置后即使目标在源子树内也安全） */
+ *   复制到自身时把刚生成的副本含入遍历→无限递归；快照前置后目标即使=自身或任意子孙也安全） */
 export function copyFolder(store: KnowledgeBankStore, folderId: string, targetParentId: string): number {
-  if (targetParentId === folderId) {
-    return -1; // 复制到自身：无意义（不构成环但属误操作），拒绝
-  }
   const src = store.folders.find((f: KFolder): boolean => f.id === folderId);
   if (src === undefined) {
     return 0;

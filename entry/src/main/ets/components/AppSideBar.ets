@@ -124,6 +124,7 @@ export struct AppSideBar {
   openTreeMenu(folderId: string, folderName: string): void {
     this.treeMenuFolderId = folderId;
     this.treeMenuFolderName = folderName;
+    this.focusTreeId = folderId;
     this.treeMenuVisible = true;
   }
 
@@ -143,6 +144,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderId = this.treeMenuFolderId; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = this.treeMenuFolderId;
         this.treeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -157,6 +159,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = this.treeMenuFolderId;
         this.treeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -171,6 +174,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'move'; this.folderNav.folderActionId = this.treeMenuFolderId;
         this.treeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -185,6 +189,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = this.treeMenuFolderId;
         this.treeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -199,6 +204,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = this.treeMenuFolderId; this.folderNav.folderActionName = this.treeMenuFolderName;
         this.treeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -213,6 +219,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = this.treeMenuFolderId;
         this.treeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
     }
@@ -239,6 +246,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderId = ''; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = '';
         this.rootTreeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -253,6 +261,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = '';
         this.rootTreeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -267,6 +276,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = '';
         this.rootTreeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
       Row() {
@@ -281,6 +291,7 @@ export struct AppSideBar {
       .onClick(() => {
         this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = '';
         this.rootTreeMenuVisible = false;
+        this.focusTreeId = 'none';
         this.onNavClick('');
       })
     }
@@ -498,7 +509,7 @@ export struct AppSideBar {
             .fontColor(TEXT_PRIMARY)
           Blank()
           Text(this.kbSection.navExpanded ? '▾' : '▸')
-            .fontSize(13)
+            .fontSize(16)
             .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
@@ -528,7 +539,7 @@ export struct AppSideBar {
         Row({ space: 8 }) {
           Text('全部卡片')
             .fontSize(13)
-            .fontColor(this.folderNav.folderId === '' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .fontColor(this.folderNav.folderId === '' || this.focusTreeId === '' ? TEXT_PRIMARY : TEXT_SECONDARY)
             .layoutWeight(1)
           Text(`${this.kbStore.cards.length}`)
             .fontSize(10)
@@ -537,18 +548,24 @@ export struct AppSideBar {
         .height(32)
         .padding({ left: 8, right: 8 })
         .borderRadius(RADIUS_NAV)
-        .backgroundColor(this.folderNav.folderId === '' ? SURFACE_HOVER : Color.Transparent)
+        .backgroundColor(this.folderNav.folderId === '' || this.focusTreeId === '' ? SURFACE_HOVER : Color.Transparent)
         .onClick(() => {
           this.selFolderId = '';
           this.folderNav.folderId = '';
           this.folderNav.nonce++;
           this.onFolderClick('');
+          this.focusTreeId = 'none';
         })
+          .onMouse((e: MouseEvent) => {
+            if (e.action === MouseAction.Press && e.button === MouseButton.Right) {
+              this.focusTreeId = '';
+            }
+          })
           .bindContextMenuByResponseType([
-            { value: '新建卡片', action: () => { this.folderNav.folderId = ''; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = ''; } },
-            { value: '新建文件夹', action: () => { this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = ''; } },
-            { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = ''; } },
-            { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = ''; } }
+            { value: '新建卡片', action: () => { this.folderNav.folderId = ''; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = ''; this.focusTreeId = 'none'; } },
+            { value: '新建文件夹', action: () => { this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = ''; this.focusTreeId = 'none'; } },
+            { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = ''; this.focusTreeId = 'none'; } },
+            { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = ''; this.focusTreeId = 'none'; } }
           ], ResponseType.RightClick)
           .bindPopup(this.rootTreeMenuVisible, {
             builder: this.rootTreeMenuBuilder(),
@@ -558,11 +575,13 @@ export struct AppSideBar {
             mask: { color: 'rgba(0,0,0,0.3)' },
             onStateChange: (e: PopupStateChangeParam) => {
               this.rootTreeMenuVisible = e.isVisible;
+              if (!e.isVisible) { this.focusTreeId = 'none'; }
             }
           })
           .gesture(
             LongPressGesture({ duration: 500 })
               .onAction(() => {
+                this.focusTreeId = '';
                 this.rootTreeMenuVisible = true;
               })
           )
@@ -570,16 +589,16 @@ export struct AppSideBar {
         ForEach(this.kbFolderTreeItems(), (item: KFolderTreeItem) => {
           Row({ space: 6 }) {
             Text(this.hasChildren(item.folder.id) ? (this.isFolderCollapsed(item.folder.id) ? '▸' : '▾') : '')
-              .fontSize(13)
+              .fontSize(16)
               .fontColor(TEXT_TERTIARY)
-              .width(18)
+              .width(22)
               .textAlign(TextAlign.Center)
               .onClick(() => {
                 this.toggleFolderCollapse(item.folder.id);
               })
             Text(item.folder.name)
               .fontSize(13)
-              .fontColor(this.folderNav.folderId === item.folder.id ? TEXT_PRIMARY : TEXT_SECONDARY)
+              .fontColor(this.folderNav.folderId === item.folder.id || this.focusTreeId === item.folder.id ? TEXT_PRIMARY : TEXT_SECONDARY)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
@@ -591,20 +610,26 @@ export struct AppSideBar {
           .height(32)
           .padding({ left: 8 + item.depth * 14, right: 8 })
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(this.folderNav.folderId === item.folder.id ? SURFACE_HOVER : Color.Transparent)
+          .backgroundColor(this.folderNav.folderId === item.folder.id || this.focusTreeId === item.folder.id ? SURFACE_HOVER : Color.Transparent)
           .onClick(() => {
             this.selFolderId = item.folder.id;
             this.folderNav.folderId = item.folder.id;
             this.folderNav.nonce++;
             this.onFolderClick(item.folder.id);
+            this.focusTreeId = 'none';
+          })
+          .onMouse((e: MouseEvent) => {
+            if (e.action === MouseAction.Press && e.button === MouseButton.Right) {
+              this.focusTreeId = item.folder.id;
+            }
           })
           .bindContextMenuByResponseType([
-            { value: '新建卡片', action: () => { this.folderNav.folderId = item.folder.id; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = item.folder.id; } },
-            { value: '新建文件夹', action: () => { this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = item.folder.id; } },
-            { value: '移动', action: () => { this.folderNav.folderAction = 'move'; this.folderNav.folderActionId = item.folder.id; } },
-            { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = item.folder.id; } },
-            { value: '重命名', action: () => { this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = item.folder.id; this.folderNav.folderActionName = item.folder.name; } },
-            { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = item.folder.id; } }
+            { value: '新建卡片', action: () => { this.folderNav.folderId = item.folder.id; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = item.folder.id; this.focusTreeId = 'none'; } },
+            { value: '新建文件夹', action: () => { this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = item.folder.id; this.focusTreeId = 'none'; } },
+            { value: '移动', action: () => { this.folderNav.folderAction = 'move'; this.folderNav.folderActionId = item.folder.id; this.focusTreeId = 'none'; } },
+            { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = item.folder.id; this.focusTreeId = 'none'; } },
+            { value: '重命名', action: () => { this.folderNav.folderAction = 'rename'; this.folderNav.folderActionId = item.folder.id; this.folderNav.folderActionName = item.folder.name; this.focusTreeId = 'none'; } },
+            { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = item.folder.id; this.focusTreeId = 'none'; } }
           ], ResponseType.RightClick)
           .bindPopup(this.treeMenuVisible, {
             builder: this.folderTreeMenuBuilder(),
@@ -614,6 +639,7 @@ export struct AppSideBar {
             mask: { color: 'rgba(0,0,0,0.3)' },
             onStateChange: (e: PopupStateChangeParam) => {
               this.treeMenuVisible = e.isVisible;
+              if (!e.isVisible) { this.focusTreeId = 'none'; }
             }
           })
           .gesture(

@@ -511,7 +511,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.222.13') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
+        Text('v0.222.14') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -534,10 +534,11 @@ struct Index {
       // ★ 0.219.1 用户拍板（0.219.0 大块头"太难看"）：把手重设计=**极细竖胶囊**——宽 8/高 56/
       //   圆角 4，无外框无阴影无三角字符（细条本身即表意），底色 STROKE_CARD 与边栏描边同色系克制；
       //   展开时骑缝边栏右缘（x=206），收起时浮左缘（x=2）；交互零变化（点击 220ms 滑入滑出）
+      // ★ 0.222.14 用户拍板再精化：更细更长——宽 8→7（缩小 1vp）、高 56→112（加一倍）
       if (this.isTablet) {
         Column()
-          .width(8)
-          .height(56)
+          .width(7)
+          .height(112)
           .borderRadius(4)
           .backgroundColor(STROKE_CARD)
           .position({ x: this.indexSidebarState.collapsed ? 2 : 206, y: '50%' })

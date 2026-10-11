@@ -1502,7 +1502,9 @@ export struct KnowledgeBankPage {
         .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
       for (let i = 0; i < kids.length; i++) {
         const f = kids[i];
-        if (f.id === this.folderNav.folderActionId) {
+        // ★ 0.222.14：仅「移动」排除源文件夹自身（避免移到自己下面形成环）；
+        //   「复制」全显示（含源自身/子孙——复制自己=变成自己的子文件夹，快照法保证不死循环，用户拍板）
+        if (this.folderNav.folderAction === 'move' && f.id === this.folderNav.folderActionId) {
           continue;
         }
         out.push({ folder: f, depth: depth });
@@ -1597,13 +1599,6 @@ export struct KnowledgeBankPage {
           this.showToast(`已复制根目录全部内容（含 ${n} 张卡片）`);
         } else {
           n = copyFolder(this.knowledgeBank, fid, folderId);
-          if (n < 0) {
-            this.showToast('不能复制到自身');
-            this.folderNav.folderAction = '';
-            this.folderNav.folderActionId = '';
-            this.folderPickerVisible = false;
-            return;
-          }
           this.showToast(`已复制文件夹（含 ${n} 张卡片）`);
         }
       } else {
@@ -2056,9 +2051,9 @@ export struct KnowledgeBankPage {
             ForEach(this.folderPickerTreeItems(), (item: KFolderTreeItem) => {
               Row() {
                 Text(this.pickerHasChildren(item.folder.id) ? (this.isPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
-                  .fontSize(13)
+                  .fontSize(16)
                   .fontColor(TEXT_TERTIARY)
-                  .width(18)
+                  .width(22)
                   .textAlign(TextAlign.Center)
                   .onClick(() => {
                     this.togglePickerCollapse(item.folder.id);
