@@ -668,7 +668,8 @@ export struct KnowledgeBankPage {
           } else {
             this.openSidebar(); // ★ 0.222.0：手机点标题也切边栏（与边栏图标同款）
           }
-        })      Blank()
+        })
+      Blank()
         .layoutWeight(1)
       // ★ 0.191.0 定稿：两个独立排序按钮（创建时间/下次复习时间各一个）——激活态紫字+底色；
       //   再点同按钮切倒序（最新↓↔最新↑ / 需复习↑↔需复习↓），箭头随方向实时变
