@@ -259,25 +259,24 @@ export function moveFolder(store: KnowledgeBankStore, folderId: string, targetPa
   return true;
 }
 
-/** ★ 0.221.0：递归复制整个文件夹子树（文件夹+卡片+子文件夹全部新 id；记忆字段清零）——返回复制卡片数 */
+/** ★ 0.221.0：递归复制整个文件夹子树（文件夹+卡片+子文件夹全部新 id；记忆字段清零）——返回复制卡片数
+ * ★ 0.222.13：复制到子孙文件夹放开（用户拍板：整树复制到子节点是合理场景）——只拒绝目标==自身；
+ *   ANR 根治=children 快照务必在 addFolder 之前取（0.221.5 根因正是快照在 addFolder 后取，
+ *   复制到自身时把刚生成的副本含入遍历→无限递归；快照前置后即使目标在源子树内也安全） */
 export function copyFolder(store: KnowledgeBankStore, folderId: string, targetParentId: string): number {
-  // ★ 0.221.5 防环（复制到自己/子孙会无限递归→ANR，用户实测踩中）：目标沿 parentId 上溯命中自身则拒绝
-  let cur = targetParentId;
-  let guard = 0;
-  while (cur !== '' && guard < 64) {
-    if (cur === folderId) {
-      return -1; // 目标是自身/子孙，拒绝
-    }
-    const p = store.folders.find((f: KFolder): boolean => f.id === cur);
-    if (p === undefined) {
-      break;
-    }
-    cur = p.parentId;
-    guard++;
+  if (targetParentId === folderId) {
+    return -1; // 复制到自身：无意义（不构成环但属误操作），拒绝
   }
   const src = store.folders.find((f: KFolder): boolean => f.id === folderId);
   if (src === undefined) {
     return 0;
+  }
+  // 先快照源子树直属 children（在 addFolder 之前——0.222.13 ANR 根治）
+  const childIds: string[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].parentId === folderId) {
+      childIds.push(store.folders[i].id);
+    }
   }
   const newName = genUniqueFolderName(store, src.name, targetParentId);
   const newId = addFolder(store, newName, targetParentId);
@@ -296,12 +295,56 @@ export function copyFolder(store: KnowledgeBankStore, folderId: string, targetPa
   if (copies.length > 0) {
     store.cards = [...copies, ...store.cards];
   }
-  // 递归复制子文件夹（先快照 children 再递归，防遍历时改 store.folders）
-  const children = store.folders.filter((f: KFolder): boolean => f.parentId === folderId);
-  for (let j = 0; j < children.length; j++) {
-    cardCount += copyFolder(store, children[j].id, newId);
+  // 递归复制子文件夹（基于前置快照，新增副本永不进遍历）
+  for (let j = 0; j < childIds.length; j++) {
+    cardCount += copyFolder(store, childIds[j], newId);
   }
   return cardCount;
+}
+
+/** ★ 0.222.13：复制根目录全部内容（所有文件夹子树 + 直属根卡片）到目标文件夹——返回复制卡片数；目标==根拒绝 */
+export function copyRootFolder(store: KnowledgeBankStore, targetParentId: string): number {
+  if (targetParentId === '') {
+    return -1;
+  }
+  let cardCount = 0;
+  const topFolders: string[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].parentId === '') {
+      topFolders.push(store.folders[i].id);
+    }
+  }
+  for (let j = 0; j < topFolders.length; j++) {
+    const n = copyFolder(store, topFolders[j], targetParentId);
+    if (n > 0) {
+      cardCount += n;
+    }
+  }
+  const now = Date.now();
+  const copies: KnowledgeCard[] = [];
+  let k = 0;
+  for (let m = 0; m < store.cards.length; m++) {
+    const c = store.cards[m];
+    if (c.folderId !== '') {
+      continue;
+    }
+    copies.push(new KnowledgeCard(genCardId(), c.title, c.definition, c.imageUri, now + k,
+      0, 0, 0, 0, c.tags, c.images, targetParentId, c.titleImages));
+    k++;
+  }
+  if (copies.length > 0) {
+    store.cards = [...copies, ...store.cards];
+  }
+  cardCount += k;
+  return cardCount;
+}
+
+/** ★ 0.222.13：清空根目录全部内容（卡片+文件夹全删，根目录「全部卡片」入口概念保留）——返回删除卡片数 */
+export function clearRootFolder(store: KnowledgeBankStore): number {
+  const n = store.cards.length;
+  store.cards = [];
+  store.folders = [];
+  return n;
 }
 
 /** ★ 0.221.0：级联删除文件夹（自身+子孙文件夹+其中所有卡片）——返回删除的卡片数 */

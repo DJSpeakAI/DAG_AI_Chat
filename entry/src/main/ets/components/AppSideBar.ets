@@ -43,6 +43,7 @@ export struct AppSideBar {
   @Local treeMenuVisible: boolean = false;   // bindPopup 开关
   @Local treeMenuFolderId: string = '';      // 长按目标文件夹（菜单 action 写 folderNav 共享 store）
   @Local treeMenuFolderName: string = '';    // 目标原名（重命名弹窗预填）
+  @Local rootTreeMenuVisible: boolean = false; // ★ 0.222.13：根目录「全部卡片」行触摸长按菜单开关（Pad/手机）
 
   /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
   kbFolderTreeItems(): KFolderTreeItem[] {
@@ -222,6 +223,73 @@ export struct AppSideBar {
   }
 
   // ★ 0.222.12: 手机/Pad 抽屉与 PC 统一——进知识库首次自动配置默认态（导航收起+文件夹展开），与 Index.sideBarNav('knowledge') 同款（autoConfigured 确保有效一次）
+  // ★ 0.222.13：根目录「全部卡片」行触摸长按菜单（Pad/手机）——4 项，根目录裁剪版（无移动/无重命名；删除=清空内容保留入口；复制=根全部内容到子文件夹）；action 写 folderNav 由 KnowledgeBankPage 消费
+  @Builder
+  rootTreeMenuBuilder() {
+    Column({ space: 2 }) {
+      Row() {
+        Text('新建卡片')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderId = ''; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = '';
+        this.rootTreeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('新建文件夹')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = '';
+        this.rootTreeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('复制')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = '';
+        this.rootTreeMenuVisible = false;
+        this.onNavClick('');
+      })
+      Row() {
+        Text('删除')
+          .fontSize(13)
+          .fontColor(TEXT_SECONDARY)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(RADIUS_NAV)
+      .onClick(() => {
+        this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = '';
+        this.rootTreeMenuVisible = false;
+        this.onNavClick('');
+      })
+    }
+    .width(160)
+    .padding({ top: 6, bottom: 6 })
+    .backgroundColor(SURFACE_NODE)
+    .borderRadius(RADIUS_NAV)
+  }
+
   aboutToAppear(): void {
     if (this.currentRoute === 'KnowledgeBankPage' && !this.kbSection.autoConfigured) {
       this.kbSection.navExpanded = false;
@@ -476,6 +544,28 @@ export struct AppSideBar {
           this.folderNav.nonce++;
           this.onFolderClick('');
         })
+          .bindContextMenuByResponseType([
+            { value: '新建卡片', action: () => { this.folderNav.folderId = ''; this.folderNav.folderAction = 'newcard'; this.folderNav.folderActionId = ''; } },
+            { value: '新建文件夹', action: () => { this.folderNav.folderAction = 'newfolder'; this.folderNav.folderActionId = ''; } },
+            { value: '复制', action: () => { this.folderNav.folderAction = 'copy'; this.folderNav.folderActionId = ''; } },
+            { value: '删除', action: () => { this.folderNav.folderAction = 'delete'; this.folderNav.folderActionId = ''; } }
+          ], ResponseType.RightClick)
+          .bindPopup(this.rootTreeMenuVisible, {
+            builder: this.rootTreeMenuBuilder(),
+            placement: Placement.Bottom,
+            popupColor: SURFACE_NODE,
+            radius: 12,
+            mask: { color: 'rgba(0,0,0,0.3)' },
+            onStateChange: (e: PopupStateChangeParam) => {
+              this.rootTreeMenuVisible = e.isVisible;
+            }
+          })
+          .gesture(
+            LongPressGesture({ duration: 500 })
+              .onAction(() => {
+                this.rootTreeMenuVisible = true;
+              })
+          )
         // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮）
         ForEach(this.kbFolderTreeItems(), (item: KFolderTreeItem) => {
           Row({ space: 6 }) {

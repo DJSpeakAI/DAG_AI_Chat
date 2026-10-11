@@ -38,7 +38,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
-import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade } from '../utils/KnowledgeStoreUtil';
+import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade, copyRootFolder, clearRootFolder } from '../utils/KnowledgeStoreUtil';
 import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
 import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, packChildFolders, packCardCount, packSubtreeRefs, packFolderPath } from '../utils/PackUtil';
@@ -1483,7 +1483,7 @@ export struct KnowledgeBankPage {
       return '移动文件夹到…';
     }
     if (this.folderNav.folderAction === 'copy') {
-      return '复制文件夹到…';
+      return this.folderNav.folderActionId === '' ? '复制根目录全部内容到…' : '复制文件夹到…';
     }
     return this.moveOrCopyMode === 'copy' ? `复制 ${this.selectedIds.length} 张到…` : `移动 ${this.selectedIds.length} 张到…`;
   }
@@ -1550,6 +1550,15 @@ export struct KnowledgeBankPage {
     this.showToast(`已删除文件夹及 ${deleted} 张卡片`);
   }
 
+  // ★ 0.222.13: 清空根目录（全部卡片+全部文件夹；根目录「全部卡片」入口保留）（边栏根目录右键/长按「删除」引发）
+  confirmRootDelete(): void {
+    const n = clearRootFolder(this.knowledgeBank);
+    this.folderNav.folderAction = '';
+    this.folderNav.folderActionId = '';
+    this.folderNav.folderId = '';
+    this.showToast(`已清空全部 ${n} 张卡片与全部文件夹`);
+  }
+
   /** ★ 0.221.0：取消文件夹操作（关闭弹窗 + 清请求） */
   cancelFolderAction(): void {
     this.folderNav.folderAction = '';
@@ -1575,15 +1584,28 @@ export struct KnowledgeBankPage {
     if (this.folderNav.folderAction === 'move' || this.folderNav.folderAction === 'copy') {
       const fid = this.folderNav.folderActionId;
       if (this.folderNav.folderAction === 'copy') {
-        const n = copyFolder(this.knowledgeBank, fid, folderId);
-        if (n < 0) {
-          this.showToast('不能复制到自身或其子文件夹');
-          this.folderNav.folderAction = '';
-          this.folderNav.folderActionId = '';
-          this.folderPickerVisible = false;
-          return;
+        let n = 0;
+        if (fid === '') {
+          if (folderId === '') {
+            this.showToast('不能复制根目录到根目录');
+            this.folderNav.folderAction = '';
+            this.folderNav.folderActionId = '';
+            this.folderPickerVisible = false;
+            return;
+          }
+          n = copyRootFolder(this.knowledgeBank, folderId);
+          this.showToast(`已复制根目录全部内容（含 ${n} 张卡片）`);
+        } else {
+          n = copyFolder(this.knowledgeBank, fid, folderId);
+          if (n < 0) {
+            this.showToast('不能复制到自身');
+            this.folderNav.folderAction = '';
+            this.folderNav.folderActionId = '';
+            this.folderPickerVisible = false;
+            return;
+          }
+          this.showToast(`已复制文件夹（含 ${n} 张卡片）`);
         }
-        this.showToast(`已复制文件夹（含 ${n} 张卡片）`);
       } else {
         const ok = moveFolder(this.knowledgeBank, fid, folderId);
         if (!ok) {
@@ -1915,11 +1937,11 @@ export struct KnowledgeBankPage {
   folderDeleteConfirmDialog() {
     Column() {
       Column() {
-        Text(`删除「${this.folderNameById(this.folderNav.folderActionId)}」`)
+        Text(this.folderNav.folderActionId === '' ? '清空根目录「全部卡片」' : `删除「${this.folderNameById(this.folderNav.folderActionId)}」`)
           .fontSize(16)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
-        Text('将删除该文件夹及其中所有卡片和子文件夹，不可恢复。')
+        Text(this.folderNav.folderActionId === '' ? '将清空根目录下所有卡片和文件夹，根目录入口将保留。不可恢复。' : '将删除该文件夹及其中所有卡片和子文件夹，不可恢复。')
           .fontSize(13)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 10 })
@@ -1936,7 +1958,7 @@ export struct KnowledgeBankPage {
             .backgroundColor(DANGER)
             .fontColor(Color.White)
             .onClick(() => {
-              this.confirmFolderDelete();
+              this.folderNav.folderActionId === '' ? this.confirmRootDelete() : this.confirmFolderDelete();
             })
         }
         .margin({ top: 16 })
