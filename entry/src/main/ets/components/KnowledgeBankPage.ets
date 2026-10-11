@@ -636,7 +636,40 @@ export struct KnowledgeBankPage {
     if (target !== '') {
       this.pathStack.pushPath({ name: target });
     }
-  }  @Builder
+  }
+  // ★ 0.222.4：抽屉块抽成 @Builder——build 主体 Stack children 内联 if 的 windowMode.isTablet
+  //   依赖追踪真机不可靠（首帧 Index 屏宽猜测 isTablet=true、onAreaChange 纠正 false 后该 if
+  //   不重求值、抽屉块永不创建——0.222.1 @Local 与 0.222.3 直读都没治到点上）；@Builder=独立
+  //   渲染单元、依赖追踪可靠（BBTreeCanvas MobileDrawerLayer 同款模式、真机已验证）
+  @Builder
+  kbMobileDrawerLayer() {
+    // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出；宽屏边栏由 Index 常驻，这里不渲染）
+    if (!this.windowMode.isTablet) {
+      if (this.sidebarVisible) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.45)')
+          .onClick(() => {
+            this.closeSidebar();
+          })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
+      }
+      Column() {
+        AppSideBar({
+          currentRoute: 'KnowledgeBankPage',
+          onNavClick: (kind: string) => {
+            this.onSidebarNav(kind);
+          },
+          onFolderClick: (folderId: string) => {
+            this.closeSidebar();
+          }
+        })
+      }
+      .translate({ x: this.sidebarVisible ? 0 : -208 })
+    }
+  }
+  @Builder
   topBar() {
     Row() {
       // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
@@ -2818,31 +2851,8 @@ export struct KnowledgeBankPage {
             this.createMenuVisible = true;
           })
       )
-      // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出；宽屏边栏由 Index 常驻，这里不渲染）
-      if (!this.windowMode.isTablet) {
-        if (this.sidebarVisible) {
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('rgba(0,0,0,0.45)')
-            .onClick(() => {
-              this.closeSidebar();
-            })
-            .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
-        }
-        Column() {
-          AppSideBar({
-            currentRoute: 'KnowledgeBankPage',
-            onNavClick: (kind: string) => {
-              this.onSidebarNav(kind);
-            },
-            onFolderClick: (folderId: string) => {
-              this.closeSidebar();
-            }
-          })
-        }
-        .translate({ x: this.sidebarVisible ? 0 : -208 })
-      }
+      // ★ 0.222.4：抽屉块抽成 @Builder kbMobileDrawerLayer（见上）——内联 if 换 @Builder 调用
+      this.kbMobileDrawerLayer()
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
