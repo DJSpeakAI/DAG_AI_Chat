@@ -639,24 +639,17 @@ export struct KnowledgeBankPage {
   //   渲染单元、依赖追踪可靠（BBTreeCanvas MobileDrawerLayer 同款模式、真机已验证）
   @Builder
   kbMobileDrawerLayer() {
-    // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出；宽屏边栏由 Index 常驻，这里不渲染）
-    Column()
-      .width(0)
-      .height(0)
-      .onAppear(() => {
-        console.error('DAGAI-SIDEBAR drawerLayer onAppear isTablet=' + this.windowMode.isTablet);
-      })
-    if (!this.windowMode.isTablet) {
-      if (this.sidebarVisible) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor('rgba(0,0,0,0.45)')
-          .onClick(() => {
-            this.closeSidebar();
-          })
-          .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
-      }
+    // ★ 0.222.7：重写=条件渲染+transition——0.222.4~0.222.6 三轮实锤 translate 藏屏+animateTo/直接赋值
+    //   全不刷新（日志证明组件创建+赋值成功、UI 不动），改用与「正常工作弹窗块」同款的条件渲染机制
+    if (!this.windowMode.isTablet && this.sidebarVisible) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .onClick(() => {
+          this.closeSidebar();
+        })
+        .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
       Column() {
         AppSideBar({
           currentRoute: 'KnowledgeBankPage',
@@ -668,21 +661,14 @@ export struct KnowledgeBankPage {
           }
         })
       }
+      .width(208)
+      .height('100%')
       .onAppear(() => {
-        console.error('DAGAI-SIDEBAR drawerCol onAppear');
+        console.error('DAGAI-SIDEBAR drawerCol onAppear v2'); // ★ 0.222.7 诊断
       })
-      .translate({ x: this.sidebarVisible ? 0 : -208 })
-      .animation({ duration: 220, curve: this.sidebarVisible ? Curve.EaseOut : Curve.EaseIn }) // ★ 0.222.6 属性动画替代 animateTo
+      .transition(TransitionEffect.translate({ x: -208 }).animation({ duration: 220, curve: Curve.EaseOut }))
     }
   }
-  @Builder
-  topBar() {
-    Row() {
-      // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
-      // ★ 0.222.0：手机端 ⇄ 改边栏图标（sidebar.svg，点击切出边栏抽屉）；宽屏保持 ⇄ 切单词库
-      if (this.windowMode.isTablet) {
-        Text('⇄')
-          .fontSize(16)
           .fontColor(TEXT_TERTIARY)
           .padding({ left: 4, right: 4 })
           .margin({ right: 4 })
@@ -2835,6 +2821,8 @@ export struct KnowledgeBankPage {
         if (this.apkgPreviewVisible) {
           this.apkgPreviewDialog()
         }
+        // ★ 0.222.7：抽屉移入主 Column children 末尾（与正常工作的弹窗块同层）——「属性链后兄弟」位置弃用
+        this.kbMobileDrawerLayer()
       }
       .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
       // ★ 0.220.2 用户拍板：PC 右键 / Pad 长按空白 → 弹「创建新卡片 / 创建新文件夹」菜单
@@ -2857,8 +2845,6 @@ export struct KnowledgeBankPage {
             this.createMenuVisible = true;
           })
       )
-      // ★ 0.222.4：抽屉块抽成 @Builder kbMobileDrawerLayer（见上）——内联 if 换 @Builder 调用
-      this.kbMobileDrawerLayer()
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
