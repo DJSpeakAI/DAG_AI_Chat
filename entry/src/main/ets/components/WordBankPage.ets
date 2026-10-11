@@ -24,9 +24,9 @@
 // Tech stack: HarmonyOS ArkUI V2 (@ComponentV2)
 // ============================================================
 
-import { WordItem, WordBankStore } from '../common/WordModel';
+import { WordItem, WordBankStore, WordFolder, WordFolderNavStore, connectWordFolderNav, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.222.19：单词库文件夹体系（对标知识库）
 import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
-import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）
+import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics, addWordFolder, renameWordFolder, deleteWordFolder, moveWords, copyWords, wordFolderChain, moveWordFolder, copyWordFolder, deleteWordFolderCascade, copyRootWordFolder, clearRootWordFolder } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）；★ 0.222.19：单词库文件夹 CRUD + 单词移动/复制
 // ★ 0.208.0：单词库 DagPack 导入导出（只走 DagPack——用户拍板不做 Anki/表格）
 import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord } from '../utils/PackUtil';
 import { readTextFile } from '../utils/ImportUtil';
@@ -41,6 +41,8 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档（PC 窄窗保持网格的 deviceType 判定，复刻 ChatPage isPcDevice 先例）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
+import { AppSideBar } from './AppSideBar'; // ★ 0.222.19：手机单词库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
+const TREE_CELL: number = 14; // ★ 0.222.19：树形连接线每层缩进宽度（vp，与知识库同款）
 
 // ★ 0.219.2：单词库视图模式（AppStorageV2 共享 @Trace grid）——gridMode 从 @Local 改挂共享 store：
 //   页面组件销毁重建（切其他页面再回来）gridMode 不再还原成横条（用户实测反馈"要有这个记忆"）；
@@ -60,6 +62,10 @@ export struct WordBankPage {
   wordBank: WordBankStore = connectWordBank(); // isolated PersistenceV2 instance
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.149：TTS config for pronunciation
   viewMode: WordViewModeStore = connectWordViewMode(); // ★ 0.219.2：视图模式跨页面记忆
+  // ── ★ 0.222.19：文件夹体系（对标知识库 anything）状态 ──
+  //   folderId 迁 WordFolderNavStore（AppStorageV2 共享 @Trace）——边栏文件夹树与页内视图同源同步
+  @Local wbFolderNav: WordFolderNavStore = connectWordFolderNav(); // 挂 @Local（@ObservedV2 实例须挂 @Local 才可靠响应 @Trace）
+  @Local sidebarVisible: boolean = false; // 手机单词库页边栏抽屉开关
 
   // ★ 0.148: search / sort state
   @Local searchKeyword: string = '';
@@ -101,6 +107,16 @@ export struct WordBankPage {
 
   // ★ 0.148: batch-delete confirm dialog state (always shown, no no-remind)
   @Local batchConfirmVisible: boolean = false;
+
+  // ── ★ 0.222.19：文件夹弹窗态（对标知识库 KnowledgeBankPage）──
+  @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
+  @Local createMenuVisible: boolean = false;    // PC 右键/Pad 长按创建菜单开关
+  @Local folderDialogIsRename: boolean = false;
+  @Local folderDialogTargetId: string = '';
+  @Local folderDialogName: string = '';
+  @Local folderPickerVisible: boolean = false;  // 移动/复制目标选择弹窗
+  @Local moveOrCopyMode: string = 'move';       // 'move' | 'copy'
+  @Local pickerCollapsedFolderIds: string[] = []; // 目标选择器文件夹折叠状态
 
   // ★ 0.161: learn-count settings dialog state (top-bar ⚙ button, left of "+")
   learnCountStore: LearnCountStore = connectLearnCount(); // persisted learn count (default 2, range 1~20)
@@ -157,7 +173,8 @@ export struct WordBankPage {
     const kw = this.searchKeyword.trim().toLowerCase();
     let list: WordItem[] = [];
     if (kw.length === 0) {
-      list = [...this.wordBank.words];
+      // ★ 0.222.19：目录视图——无关键字只看当前文件夹（跨库找词走搜索）
+      list = this.wordBank.words.filter((w: WordItem) => w.folderId === this.wbFolderNav.folderId);
     } else {
       list = this.wordBank.words.filter((w: WordItem) => {
         return w.word.toLowerCase().includes(kw)
@@ -390,6 +407,257 @@ export struct WordBankPage {
     this.editorVisible = false;
   }
 
+  // ============================================================
+  // ★ 0.222.19：手机边栏抽屉（复刻知识库 kbMobileDrawerLayer 范式）
+  // ============================================================
+  openSidebar(): void {
+    if (this.sidebarVisible) {
+      return;
+    }
+    this.sidebarVisible = true; // 直接赋值——animateTo 闭包内赋值真机不通知观察
+  }
+
+  closeSidebar(): void {
+    if (!this.sidebarVisible) {
+      return;
+    }
+    this.sidebarVisible = false; // 直接赋值（同 openSidebar 根因）
+  }
+
+  /** 手机抽屉导航（点导航项跳转+收抽屉；kind=''/wordbank/settings=只收抽屉） */
+  onSidebarNav(kind: string): void {
+    this.closeSidebar();
+    if (kind === '' || kind === 'wordbank' || kind === 'settings') {
+      return;
+    }
+    if (kind === 'canvas') {
+      this.pathStack.replacePath({ name: 'BBTreeCanvas' });
+      return;
+    }
+    const target = kind === 'knowledge' ? 'KnowledgeBankPage' : kind === 'review' ? 'ReviewPage' : kind === 'statistics' ? 'StatisticsPage' : kind === 'billing' ? 'BillingPage' : '';
+    if (target !== '') {
+      this.pathStack.pushPath({ name: target });
+    }
+  }
+
+  // ============================================================
+  // ★ 0.222.19：文件夹 / 移动复制 —— 方法集（对标知识库 anything 体系）
+  // ============================================================
+
+  /** 当前目录的子文件夹（新在前） */
+  @Computed
+  get currentFolders(): WordFolder[] {
+    return this.wordBank.folders
+      .filter((f: WordFolder): boolean => f.parentId === this.wbFolderNav.folderId)
+      .sort((a: WordFolder, b: WordFolder) => b.createdAt - a.createdAt);
+  }
+
+  /** 当前目录名链（根→…→当前）——面包屑/导出命名用 */
+  @Computed
+  get currentChain(): WordFolder[] {
+    return wordFolderChain(this.wordBank, this.wbFolderNav.folderId);
+  }
+
+  folderParentId(): string {
+    const ch = this.currentChain;
+    return ch.length > 0 ? ch[ch.length - 1].parentId : '';
+  }
+
+  openFolderRename(f: WordFolder): void {
+    this.folderDialogIsRename = true;
+    this.folderDialogTargetId = f.id;
+    this.folderDialogName = f.name;
+    this.folderDialogVisible = true;
+  }
+
+  confirmFolderDialog(): void {
+    const nm = this.folderDialogName.trim();
+    if (nm.length === 0) {
+      this.showToast('名称不能为空');
+      return;
+    }
+    // 边栏树右键「新建文件夹」——父级=右键的文件夹（folderActionId）
+    if (this.wbFolderNav.folderAction === 'newfolder') {
+      addWordFolder(this.wordBank, nm, this.wbFolderNav.folderActionId);
+      this.wbFolderNav.folderAction = '';
+      this.wbFolderNav.folderActionId = '';
+      this.folderDialogVisible = false;
+      return;
+    }
+    if (this.folderDialogIsRename) {
+      renameWordFolder(this.wordBank, this.folderDialogTargetId, nm);
+    } else {
+      addWordFolder(this.wordBank, nm, this.wbFolderNav.folderId);
+      const tp: Record<string, string> = {};
+      track(this.getUIContext().getHostContext() as Context, 'folder_create', tp);
+    }
+    this.folderDialogVisible = false;
+  }
+
+  requestDeleteFolder(f: WordFolder): void {
+    deleteWordFolder(this.wordBank, f.id);
+    if (this.wbFolderNav.folderId === f.id) {
+      this.wbFolderNav.folderId = this.folderParentId();
+    }
+    this.showToast(`已删除「${f.name}」——单词已移到上一级`);
+  }
+
+  /** folderPicker 标题（文件夹移动/复制 与 单词移动/复制 分流） */
+  folderPickerTitle(): string {
+    if (this.wbFolderNav.folderAction === 'move') {
+      return '移动文件夹到…';
+    }
+    if (this.wbFolderNav.folderAction === 'copy') {
+      return this.wbFolderNav.folderActionId === '' ? '复制根目录全部内容到…' : '复制文件夹到…';
+    }
+    return this.moveOrCopyMode === 'copy' ? `复制 ${this.selectedIds.length} 个到…` : `移动 ${this.selectedIds.length} 个到…`;
+  }
+
+  /** 按 id 取文件夹名 */
+  folderNameById(folderId: string): string {
+    const f = this.wordBank.folders.find((x: WordFolder): boolean => x.id === folderId);
+    return f === undefined ? '' : f.name;
+  }
+
+  /** 移动/复制目标选择器的树形目录（DFS 层级 + 折叠 + 排除源文件夹） */
+  folderPickerTreeItems(): WordFolderTreeItem[] {
+    const out: WordFolderTreeItem[] = [];
+    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
+      const all = this.wordBank.folders
+        .filter((f: WordFolder): boolean => f.parentId === parentId)
+        .sort((a: WordFolder, b: WordFolder): number => b.createdAt - a.createdAt);
+      // 仅「移动」排除源文件夹自身（避免移到自己下面形成环）；「复制」全显示（含源自身/子孙）
+      const kids = all.filter((f: WordFolder): boolean => !(this.wbFolderNav.folderAction === 'move' && f.id === this.wbFolderNav.folderActionId));
+      for (let i = 0; i < kids.length; i++) {
+        const isLast = i === kids.length - 1;
+        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
+        if (!this.isPickerCollapsed(kids[i].id)) {
+          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
+        }
+      }
+    };
+    walk('', 0, [], []);
+    return out;
+  }
+
+  /** 目标选择器里文件夹是否有子文件夹 */
+  pickerHasChildren(folderId: string): boolean {
+    for (let i = 0; i < this.wordBank.folders.length; i++) {
+      if (this.wordBank.folders[i].parentId === folderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 目标选择器文件夹是否折叠 */
+  isPickerCollapsed(folderId: string): boolean {
+    return this.pickerCollapsedFolderIds.indexOf(folderId) >= 0;
+  }
+
+  /** 切换目标选择器文件夹折叠（string[] 替换引用触发重渲染） */
+  togglePickerCollapse(folderId: string): void {
+    if (this.isPickerCollapsed(folderId)) {
+      this.pickerCollapsedFolderIds = this.pickerCollapsedFolderIds.filter((id: string): boolean => id !== folderId);
+    } else {
+      this.pickerCollapsedFolderIds = [...this.pickerCollapsedFolderIds, folderId];
+    }
+  }
+
+  /** 确认级联删除文件夹 */
+  confirmFolderDelete(): void {
+    const fid = this.wbFolderNav.folderActionId;
+    const deleted = deleteWordFolderCascade(this.wordBank, fid);
+    if (this.wbFolderNav.folderId === fid) {
+      this.wbFolderNav.folderId = this.folderParentId();
+    }
+    this.wbFolderNav.folderAction = '';
+    this.wbFolderNav.folderActionId = '';
+    this.showToast(`已删除文件夹及 ${deleted} 个单词`);
+  }
+
+  /** 清空根目录（全部单词+全部文件夹；根目录「全部单词」入口保留） */
+  confirmRootDelete(): void {
+    const n = clearRootWordFolder(this.wordBank);
+    this.wbFolderNav.folderAction = '';
+    this.wbFolderNav.folderActionId = '';
+    this.wbFolderNav.folderId = '';
+    this.showToast(`已清空全部 ${n} 个单词与全部文件夹`);
+  }
+
+  /** 取消文件夹操作（关闭弹窗 + 清请求） */
+  cancelFolderAction(): void {
+    this.wbFolderNav.folderAction = '';
+    this.wbFolderNav.folderActionId = '';
+    this.wbFolderNav.folderActionName = '';
+  }
+
+  /** 确认重命名文件夹（边栏树触发） */
+  confirmFolderRename(): void {
+    const nm = this.wbFolderNav.folderActionName.trim();
+    if (nm.length === 0) {
+      this.showToast('名称不能为空');
+      return;
+    }
+    renameWordFolder(this.wordBank, this.wbFolderNav.folderActionId, nm);
+    this.wbFolderNav.folderAction = '';
+    this.wbFolderNav.folderActionId = '';
+    this.wbFolderNav.folderActionName = '';
+  }
+
+  /** 移动/复制确认（folderPicker 行点击） */
+  confirmFolderTarget(folderId: string): void {
+    // 文件夹移动/复制（边栏树右键触发）——与单词移动/复制分流
+    if (this.wbFolderNav.folderAction === 'move' || this.wbFolderNav.folderAction === 'copy') {
+      const fid = this.wbFolderNav.folderActionId;
+      if (this.wbFolderNav.folderAction === 'copy') {
+        let n = 0;
+        if (fid === '') {
+          if (folderId === '') {
+            this.showToast('不能复制根目录到根目录');
+            this.wbFolderNav.folderAction = '';
+            this.wbFolderNav.folderActionId = '';
+            this.folderPickerVisible = false;
+            return;
+          }
+          n = copyRootWordFolder(this.wordBank, folderId);
+          this.showToast(`已复制根目录全部内容（含 ${n} 个单词）`);
+        } else {
+          n = copyWordFolder(this.wordBank, fid, folderId);
+          this.showToast(`已复制文件夹（含 ${n} 个单词）`);
+        }
+      } else {
+        const ok = moveWordFolder(this.wordBank, fid, folderId);
+        if (!ok) {
+          this.showToast('不能移动到自身或其子文件夹');
+          this.wbFolderNav.folderAction = '';
+          this.wbFolderNav.folderActionId = '';
+          this.folderPickerVisible = false;
+          return;
+        }
+        this.showToast('已移动文件夹');
+      }
+      this.wbFolderNav.folderAction = '';
+      this.wbFolderNav.folderActionId = '';
+      this.folderPickerVisible = false;
+      return;
+    }
+    const ids = [...this.selectedIds];
+    if (this.moveOrCopyMode === 'copy') {
+      const n = copyWords(this.wordBank, ids, folderId);
+      const tp: Record<string, string> = {}; tp['count'] = `${n}`;
+      track(this.getUIContext().getHostContext() as Context, 'word_copy', tp);
+      this.showToast(`已复制 ${n} 个（新词从零复习）`);
+    } else {
+      moveWords(this.wordBank, ids, folderId);
+      const tp: Record<string, string> = {}; tp['count'] = `${ids.length}`;
+      track(this.getUIContext().getHostContext() as Context, 'word_move', tp);
+      this.showToast(`已移动 ${ids.length} 个`);
+    }
+    this.folderPickerVisible = false;
+    this.exitMultiSelect();
+  }
+
   // ---- single delete (session-level no-remind) ----
 
   // ★ 0.218.3：「排序」按钮文字=当前模式名+方向箭头（合并三按钮后保留一眼可读性）
@@ -570,20 +838,37 @@ export struct WordBankPage {
   topBar() {
     Row() {
       // ★ 0.195.0：返回箭头删除（用户拍板：侧滑返回即可）——左上角改两库互切 ⇄（replacePath 不叠栈）
-      Text('⇄')
-        .fontSize(16)
-        .fontColor(TEXT_TERTIARY)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
-          this.pathStack.replacePath({ name: 'KnowledgeBankPage' });
-        })
+      // ★ 0.222.19：手机端 ⇄ 改边栏图标（sidebar.svg，点击切出边栏抽屉）；宽屏保持 ⇄ 切知识库
+      if (this.windowMode.isTablet) {
+        Text('⇄')
+          .fontSize(16)
+          .fontColor(TEXT_TERTIARY)
+          .padding({ left: 4, right: 4 })
+          .margin({ right: 4 })
+          .onClick(() => {
+            this.pathStack.replacePath({ name: 'KnowledgeBankPage' });
+          })
+      } else {
+        Image($r('app.media.sidebar'))
+          .width(24)
+          .height(24)
+          .objectFit(ImageFit.Contain)
+          .padding({ left: 4, right: 4 })
+          .margin({ right: 4 })
+          .onClick(() => {
+            this.openSidebar();
+          })
+      }
       Text('单词库')
         .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
         .fontWeight(600)
         .fontColor(TEXT_PRIMARY)
         .onClick(() => {
-          this.pathStack.replacePath({ name: 'KnowledgeBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
+          if (this.windowMode.isTablet) {
+            this.pathStack.replacePath({ name: 'KnowledgeBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
+          } else {
+            this.openSidebar(); // ★ 0.222.19：手机点标题也切边栏（与边栏图标同款）
+          }
         })
       Blank()
         .layoutWeight(1)
@@ -1146,6 +1431,337 @@ export struct WordBankPage {
     .backgroundColor(OVERLAY)
   }
 
+  // ★ 0.222.19：PC 右键/Pad 长按创建菜单（两项：新单词/新文件夹）——无参 @Builder 直读状态
+  @Builder
+  wbCreateMenuBuilder() {
+    if (!this.multiSelectMode) {
+      Column() {
+        Text('创建新单词')
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.createMenuVisible = false;
+            this.openAddEditor();
+          })
+        Divider().color(STROKE_CARD)
+        Text('创建新文件夹')
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .onClick(() => {
+            this.createMenuVisible = false;
+            this.folderDialogVisible = true;
+            this.folderDialogIsRename = false;
+          })
+      }
+      .width(160)
+    }
+  }
+
+  @Builder
+  folderDialog() {
+    Column() {
+      Column() {
+        Text(this.folderDialogIsRename ? '重命名文件夹' : '新建文件夹')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        TextInput({ text: this.folderDialogName, placeholder: '文件夹名称' })
+          .fontSize(14)
+          .height(40)
+          .margin({ top: 12 })
+          .padding({ left: 10, right: 10 })
+          .backgroundColor(SURFACE_SOFT)
+          .borderRadius(8)
+          .onChange((v: string) => {
+            this.folderDialogName = v;
+          })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.folderDialogVisible = false;
+              this.cancelFolderAction();
+            })
+          Button('确定')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmFolderDialog();
+            })
+        }
+        .margin({ top: 14 })
+      }
+      .width(this.isTablet ? 520 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.folderDialogVisible = false;
+      this.cancelFolderAction();
+    })
+  }
+
+  // ★ 0.222.19：文件夹删除确认弹窗（边栏树右键「删除」）
+  @Builder
+  folderDeleteConfirmDialog() {
+    Column() {
+      Column() {
+        Text(this.wbFolderNav.folderActionId === '' ? '清空根目录「全部单词」' : `删除「${this.folderNameById(this.wbFolderNav.folderActionId)}」`)
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(this.wbFolderNav.folderActionId === '' ? '将清空根目录下所有单词和文件夹，根目录入口将保留。不可恢复。' : '将删除该文件夹及其中所有单词和子文件夹，不可恢复。')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 10 })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.cancelFolderAction();
+            })
+          Button('删除')
+            .layoutWeight(1)
+            .backgroundColor(DANGER)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.wbFolderNav.folderActionId === '' ? this.confirmRootDelete() : this.confirmFolderDelete();
+            })
+        }
+        .margin({ top: 16 })
+      }
+      .width(this.isTablet ? 400 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.cancelFolderAction();
+    })
+  }
+
+  // ★ 0.222.19：文件夹重命名弹窗（边栏树右键「重命名」）
+  @Builder
+  renameFolderDialog() {
+    Column() {
+      Column() {
+        Text('重命名文件夹')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        TextInput({ text: this.wbFolderNav.folderActionName, placeholder: '文件夹名称' })
+          .fontSize(14)
+          .height(40)
+          .margin({ top: 12 })
+          .padding({ left: 10, right: 10 })
+          .backgroundColor(SURFACE_SOFT)
+          .borderRadius(8)
+          .onChange((v: string) => {
+            this.wbFolderNav.folderActionName = v;
+          })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.cancelFolderAction();
+            })
+          Button('确定')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmFolderRename();
+            })
+        }
+        .margin({ top: 14 })
+      }
+      .width(this.isTablet ? 520 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.cancelFolderAction();
+    })
+  }
+
+  @Builder
+  folderPickerDialog() {
+    Column() {
+      Column() {
+        Text(this.folderPickerTitle())
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Scroll() {
+          Column() {
+            Row() {
+              Text('根目录')
+                .fontSize(13)
+                .fontColor(TEXT_PRIMARY)
+                .layoutWeight(1)
+              Text(`${this.wordBank.words.length}`)
+                .fontSize(10)
+                .fontColor(TEXT_TERTIARY)
+            }
+            .width('100%')
+            .height(32)
+            .padding({ left: 8, right: 8 })
+            .borderRadius(RADIUS_NAV)
+            .onClick(() => {
+              this.confirmFolderTarget('');
+            })
+            ForEach(this.folderPickerTreeItems(), (item: WordFolderTreeItem) => {
+              Row({ space: 6 }) {
+                // 静态经典树形连接线（与边栏同款，弹窗无路径高亮）
+                Row() {
+                  ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
+                    Stack({ alignContent: Alignment.Top }) {
+                      if (cont) {
+                        Column()
+                          .width(1)
+                          .height('100%')
+                          .backgroundColor(STROKE_CARD)
+                      }
+                    }
+                    .width(TREE_CELL)
+                    .height('100%')
+                  }, (cont: boolean, k: number) => `${k}_${cont}`)
+                  Row() {
+                    Stack({ alignContent: Alignment.TopEnd }) {
+                      Column()
+                        .width(1)
+                        .height(item.isLast ? '50%' : '100%')
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                    Stack({ alignContent: Alignment.Center }) {
+                      Row()
+                        .width('100%')
+                        .height(1)
+                        .backgroundColor(STROKE_CARD)
+                    }
+                    .width('50%')
+                    .height('100%')
+                  }
+                  .width(TREE_CELL)
+                  .height('100%')
+                }
+                .height('100%')
+                Text(this.pickerHasChildren(item.folder.id) ? (this.isPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
+                  .fontSize(16)
+                  .fontColor(TEXT_TERTIARY)
+                  .width(22)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => {
+                    this.togglePickerCollapse(item.folder.id);
+                  })
+                Text(item.folder.name)
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .height(32)
+              .padding({ left: 8, right: 8 })
+              .borderRadius(RADIUS_NAV)
+              .onClick(() => {
+                this.confirmFolderTarget(item.folder.id);
+              })
+            }, (item: WordFolderTreeItem) => item.folder.id)
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 320 })
+        Text('取消')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 10 })
+          .onClick(() => {
+            this.folderPickerVisible = false;
+            this.cancelFolderAction();
+          })
+      }
+      .width(this.isTablet ? 520 : '86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.folderPickerVisible = false;
+      this.cancelFolderAction();
+    })
+  }
+
+  // ★ 0.222.19：手机单词库页边栏抽屉（条件渲染+transition，复刻知识库 kbMobileDrawerLayer）
+  @Builder
+  wbMobileDrawerLayer() {
+    if (!this.windowMode.isTablet && this.sidebarVisible) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.45)')
+          .onClick(() => {
+            this.closeSidebar();
+          })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
+        Column() {
+          AppSideBar({
+            currentRoute: 'WordBankPage',
+            onNavClick: (kind: string) => {
+              this.onSidebarNav(kind);
+            },
+            onFolderClick: (folderId: string) => {
+              this.closeSidebar();
+            }
+          })
+        }
+        .width(208)
+        .height('100%')
+        .transition(TransitionEffect.translate({ x: -208 }).animation({ duration: 220, curve: Curve.EaseOut }))
+      }
+      .width('100%')
+      .height('100%')
+    }
+  }
+
   build() {
     NavDestination() {
       Stack() {
@@ -1194,6 +1810,34 @@ export struct WordBankPage {
               Text(`已选 ${this.selectedIds.length} 项`)
                 .fontSize(13)
                 .fontColor(TEXT_TERTIARY)
+              // ★ 0.222.19：批量移动/复制到文件夹（对齐知识库，单张=多选 1 张，交互统一）
+              Button('移动')
+                .fontSize(13)
+                .fontColor(BRAND_SECONDARY)
+                .backgroundColor(Color.Transparent)
+                .padding({ left: 6, right: 6 })
+                .margin({ left: 4 })
+                .onClick(() => {
+                  if (this.selectedIds.length === 0) {
+                    this.showToast('先选中单词');
+                    return;
+                  }
+                  this.moveOrCopyMode = 'move';
+                  this.folderPickerVisible = true;
+                })
+              Button('复制')
+                .fontSize(13)
+                .fontColor(BRAND_SECONDARY)
+                .backgroundColor(Color.Transparent)
+                .padding({ left: 6, right: 6 })
+                .onClick(() => {
+                  if (this.selectedIds.length === 0) {
+                    this.showToast('先选中单词');
+                    return;
+                  }
+                  this.moveOrCopyMode = 'copy';
+                  this.folderPickerVisible = true;
+                })
               Button('取消')
                 .fontSize(13)
                 .fontColor(TEXT_SECONDARY)
@@ -1222,13 +1866,13 @@ export struct WordBankPage {
             .width('100%')
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
-          } else if (this.filteredWords.length === 0) {
-            // ★ 0.148: search matched nothing — distinct from the empty bank
+          } else if (this.filteredWords.length === 0 && this.currentFolders.length === 0) {
+            // ★ 0.222.19：目录空态（搜索无结果 / 空文件夹二合一文案）
             Column() {
-              Text('无匹配结果')
+              Text(this.searchKeyword.length > 0 ? '无匹配结果' : '此文件夹为空')
                 .fontSize(16)
                 .fontColor(TEXT_TERTIARY)
-              Text('换个关键词试试')
+              Text(this.searchKeyword.length > 0 ? '换个关键词试试' : '点右上角 + 导入或新建')
                 .fontSize(12)
                 .fontColor(TEXT_TERTIARY)
                 .margin({ top: 8 })
@@ -1464,13 +2108,62 @@ export struct WordBankPage {
         if (this.phoneticConfirmVisible) {
           this.phoneticConfirmDialog()
         }
+        // ★ 0.222.19：文件夹/移动复制弹窗（最顶层，对标知识库）
+        if (this.folderDialogVisible || this.wbFolderNav.folderAction === 'newfolder') {
+          this.folderDialog()
+        }
+        if (this.wbFolderNav.folderAction === 'newcard') {
+          Column()
+            .width(0)
+            .height(0)
+            .onAppear(() => {
+              this.wbFolderNav.folderAction = '';
+              this.wbFolderNav.folderActionId = '';
+              this.openAddEditor();
+            })
+        }
+        if (this.folderPickerVisible || this.wbFolderNav.folderAction === 'move' || this.wbFolderNav.folderAction === 'copy') {
+          this.folderPickerDialog()
+        }
+        if (this.wbFolderNav.folderAction === 'delete') {
+          this.folderDeleteConfirmDialog()
+        }
+        if (this.wbFolderNav.folderAction === 'rename') {
+          this.renameFolderDialog()
+        }
+        // ★ 0.222.19：抽屉移入主 Column children 末尾（与正常工作的弹窗块同层）
+        this.wbMobileDrawerLayer()
       }
       .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
+      // ★ 0.222.19：PC 右键 / Pad 长按空白 → 弹「创建新单词 / 创建新文件夹」菜单
+      //   （bindContextMenu 跟随鼠标右键；bindPopup 供长按唤起；触屏设备 RightClick 响应=长按，双通道等效冗余）
+      .bindContextMenu(this.wbCreateMenuBuilder, ResponseType.RightClick)
+      .bindPopup(this.createMenuVisible, {
+        builder: this.wbCreateMenuBuilder(),
+        placement: Placement.Bottom,
+        popupColor: SURFACE_NODE,
+        radius: 12,
+        mask: { color: 'rgba(0,0,0,0.3)' },
+        onStateChange: (e: PopupStateChangeParam) => {
+          this.createMenuVisible = e.isVisible;
+        }
+      })
+      .gesture(
+        LongPressGesture({ duration: 500 })
+          .onAction(() => {
+            if (deviceInfo.deviceType !== 'phone') { this.createMenuVisible = true; }
+          })
+      )
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
+      // ★ 0.222.19：手机边栏抽屉开着时返回键先收抽屉
+      if (this.sidebarVisible) {
+        this.closeSidebar();
+        return true;
+      }
       if (this.editorVisible) {
         this.editorVisible = false;
         return true;
@@ -1493,8 +2186,26 @@ export struct WordBankPage {
         this.learnSettingsVisible = false;
         return true;
       }
+      // ★ 0.222.19：文件夹操作弹窗（移动/复制/删除/重命名）——返回键先关
+      if (this.wbFolderNav.folderAction !== '') {
+        this.cancelFolderAction();
+        return true;
+      }
+      if (this.folderPickerVisible) {
+        this.folderPickerVisible = false;
+        return true;
+      }
+      if (this.folderDialogVisible) {
+        this.folderDialogVisible = false;
+        return true;
+      }
       if (this.multiSelectMode) {
         this.exitMultiSelect();
+        return true;
+      }
+      // ★ 0.222.19：非根目录时返回=回上一级（最后才退出页面）
+      if (this.wbFolderNav.folderId.length > 0) {
+        this.wbFolderNav.folderId = this.folderParentId();
         return true;
       }
       return false;

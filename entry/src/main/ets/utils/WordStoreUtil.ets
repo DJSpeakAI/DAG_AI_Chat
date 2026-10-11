@@ -19,7 +19,7 @@
 // ============================================================
 
 import { PersistenceV2 } from '@kit.ArkUI';
-import { WordItem, WordBankStore } from '../common/WordModel';
+import { WordItem, WordBankStore, WordFolder } from '../common/WordModel';
 
 // Dedicated PersistenceV2 key, isolated from bubble tree / api config keys
 const WORD_BANK_KEY = 'word-bank';
@@ -142,17 +142,23 @@ function normalizeMemoryFields(store: WordBankStore): void {
     if (typeof w.nextReviewAt !== 'number' || !isFinite(w.nextReviewAt)) {
       w.nextReviewAt = 0;
     }
+    if (typeof w.folderId !== 'string') {
+      w.folderId = ''; // ★ 0.222.19：存量词条补 folderId 兜底（旧快照缺失 → 根目录）
+    }
+  }
+  if (!(store.folders instanceof Array)) {
+    store.folders = []; // ★ 0.222.19：旧快照无 folders 字段兜底
   }
 }
 
-// Add a word to the bank. Returns false when the word already exists
-// (case-insensitive) so the caller can show the "already exists" tip.
+// Add a word to the bank (★ 0.222.19：完全放开，允许任意同名——彻底对标知识库无去重；
+// 用户拍板随文件夹体系一起取消同名词拒绝，故「单词已存在」提示不再触发）。
 // New words are inserted at the head so the newest entry shows first.
 // ★ 0.148: auto-fills id/createTime when absent — legacy 4-arg call sites
 // (ChatPage translate popup) keep working without any change there.
+// Returns false ONLY for a blank word (empty text is still rejected).
 export function addWordToBank(store: WordBankStore, item: WordItem): boolean {
-  const lower = item.word.trim().toLowerCase();
-  if (lower.length === 0) {
+  if (item.word.trim().length === 0) {
     return false;
   }
   if (item.id.length === 0) {
@@ -161,27 +167,16 @@ export function addWordToBank(store: WordBankStore, item: WordItem): boolean {
   if (item.createTime === 0) {
     item.createTime = Date.now();
   }
-  for (let i = 0; i < store.words.length; i++) {
-    if (store.words[i].word.trim().toLowerCase() === lower) {
-      return false; // duplicate — caller shows "word already exists"
-    }
-  }
   store.words = [item, ...store.words];
   return true;
 }
 
 // ★ 0.148: edit an entry by id. Word text may change, so id is the key.
-// Returns false when the NEW word duplicates another entry (excluding self).
+// ★ 0.222.19：取消同名冲突检查（与 addWordToBank 同步放开），仅空文本拒绝。
 export function updateWordInBank(store: WordBankStore, wordId: string,
   word: string, fullName: string, usPhonetic: string, explain: string): boolean {
-  const lower = word.trim().toLowerCase();
-  if (lower.length === 0) {
+  if (word.trim().length === 0) {
     return false;
-  }
-  for (let i = 0; i < store.words.length; i++) {
-    if (store.words[i].word.trim().toLowerCase() === lower && store.words[i].id !== wordId) {
-      return false; // new word collides with another entry
-    }
   }
   for (let i = 0; i < store.words.length; i++) {
     if (store.words[i].id === wordId) {
@@ -216,4 +211,287 @@ export function clearAllPhonetics(store: WordBankStore): void {
   for (let i = 0; i < store.words.length; i++) {
     store.words[i].usPhonetic = '';
   }
+}
+
+// ============================================================
+// ★ 0.222.19：单词库文件夹 CRUD + 单词移动/复制（对标知识库 anything 体系）
+// ============================================================
+
+/** 单词库文件夹 id 生成（'wf' 前缀，与词条 id 区分） */
+export function genWordFolderId(): string {
+  return 'wf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/** 新建文件夹（同名允许——id 唯一即可；返回新文件夹 id） */
+export function addWordFolder(store: WordBankStore, name: string, parentId: string): string {
+  const nm = name.trim();
+  if (nm.length === 0) {
+    return '';
+  }
+  const f = new WordFolder(genWordFolderId(), nm, parentId, Date.now());
+  store.folders = [...store.folders, f];
+  return f.id;
+}
+
+/** 重命名文件夹 */
+export function renameWordFolder(store: WordBankStore, folderId: string, name: string): void {
+  const nm = name.trim();
+  if (nm.length === 0) {
+    return;
+  }
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].id === folderId) {
+      store.folders[i].name = nm;
+      return;
+    }
+  }
+}
+
+/**
+ * 删除文件夹——单词与子文件夹一律**上移到被删文件夹的父级**（绝不删词，数据安全红线）。
+ */
+export function deleteWordFolder(store: WordBankStore, folderId: string): void {
+  const target = store.folders.find((f: WordFolder): boolean => f.id === folderId);
+  if (target === undefined) {
+    return;
+  }
+  const upParent = target.parentId;
+  for (let i = 0; i < store.words.length; i++) {
+    if (store.words[i].folderId === folderId) {
+      store.words[i].folderId = upParent;
+    }
+  }
+  const newFolders: WordFolder[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].id === folderId) {
+      continue;
+    }
+    if (store.folders[i].parentId === folderId) {
+      store.folders[i].parentId = upParent;
+    }
+    newFolders.push(store.folders[i]);
+  }
+  store.folders = newFolders;
+}
+
+/** 同级是否已存在同名文件夹（excludeId 排除自身——重命名/移动时用） */
+export function wordFolderNameExists(store: WordBankStore, name: string, parentId: string, excludeId: string = ''): boolean {
+  for (let i = 0; i < store.folders.length; i++) {
+    const f = store.folders[i];
+    if (f.id !== excludeId && f.parentId === parentId && f.name === name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 生成不重名的文件夹名（重名自动加「副本」后缀） */
+export function genUniqueWordFolderName(store: WordBankStore, name: string, parentId: string): string {
+  if (!wordFolderNameExists(store, name, parentId)) {
+    return name;
+  }
+  let i = 1;
+  let candidate = `${name} 副本`;
+  while (wordFolderNameExists(store, candidate, parentId)) {
+    i++;
+    candidate = `${name} 副本${i}`;
+  }
+  return candidate;
+}
+
+/** 移动文件夹到目标父级（防环：目标不能是自己或自己的子孙）——返回是否成功 */
+export function moveWordFolder(store: WordBankStore, folderId: string, targetParentId: string): boolean {
+  // 防环：从目标沿 parentId 上溯，若命中自身则说明目标是自己的子孙
+  let cur = targetParentId;
+  let guard = 0;
+  while (cur !== '' && guard < 64) {
+    if (cur === folderId) {
+      return false;
+    }
+    const p = store.folders.find((f: WordFolder): boolean => f.id === cur);
+    if (p === undefined) {
+      break;
+    }
+    cur = p.parentId;
+    guard++;
+  }
+  const f = store.folders.find((x: WordFolder): boolean => x.id === folderId);
+  if (f === undefined) {
+    return false;
+  }
+  f.parentId = targetParentId;
+  return true;
+}
+
+/** 递归复制整个文件夹子树（文件夹+单词+子文件夹全部新 id；记忆字段清零）——返回复制单词数
+ *  复制到自身/子孙全部放开（对标知识库：复制自己=把自己复制一份变成自己的子文件夹）。
+ *  children 快照务必在 addWordFolder 之前取（防复制到自身时无限递归）。 */
+export function copyWordFolder(store: WordBankStore, folderId: string, targetParentId: string): number {
+  const src = store.folders.find((f: WordFolder): boolean => f.id === folderId);
+  if (src === undefined) {
+    return 0;
+  }
+  // 先快照源子树直属 children（在 addWordFolder 之前）
+  const childIds: string[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].parentId === folderId) {
+      childIds.push(store.folders[i].id);
+    }
+  }
+  const newName = genUniqueWordFolderName(store, src.name, targetParentId);
+  const newId = addWordFolder(store, newName, targetParentId);
+  let wordCount = 0;
+  const now = Date.now();
+  const copies: WordItem[] = [];
+  for (let i = 0; i < store.words.length; i++) {
+    const w = store.words[i];
+    if (w.folderId !== folderId) {
+      continue;
+    }
+    copies.push(new WordItem(w.word, w.fullName, w.usPhonetic, w.explain, genWordId(), now + wordCount,
+      0, 0, 0, 0, newId));
+    wordCount++;
+  }
+  if (copies.length > 0) {
+    store.words = [...copies, ...store.words];
+  }
+  // 递归复制子文件夹（基于前置快照，新增副本永不进遍历）
+  for (let j = 0; j < childIds.length; j++) {
+    wordCount += copyWordFolder(store, childIds[j], newId);
+  }
+  return wordCount;
+}
+
+/** 复制根目录全部内容（所有文件夹子树 + 直属根单词）到目标文件夹——返回复制单词数；目标==根拒绝 */
+export function copyRootWordFolder(store: WordBankStore, targetParentId: string): number {
+  if (targetParentId === '') {
+    return -1;
+  }
+  let wordCount = 0;
+  const topFolders: string[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    if (store.folders[i].parentId === '') {
+      topFolders.push(store.folders[i].id);
+    }
+  }
+  for (let j = 0; j < topFolders.length; j++) {
+    const n = copyWordFolder(store, topFolders[j], targetParentId);
+    if (n > 0) {
+      wordCount += n;
+    }
+  }
+  const now = Date.now();
+  const copies: WordItem[] = [];
+  let k = 0;
+  for (let m = 0; m < store.words.length; m++) {
+    const w = store.words[m];
+    if (w.folderId !== '') {
+      continue;
+    }
+    copies.push(new WordItem(w.word, w.fullName, w.usPhonetic, w.explain, genWordId(), now + k,
+      0, 0, 0, 0, targetParentId));
+    k++;
+  }
+  if (copies.length > 0) {
+    store.words = [...copies, ...store.words];
+  }
+  wordCount += k;
+  return wordCount;
+}
+
+/** 清空根目录全部内容（单词+文件夹全删，根目录「全部单词」入口概念保留）——返回删除单词数 */
+export function clearRootWordFolder(store: WordBankStore): number {
+  const n = store.words.length;
+  store.words = [];
+  store.folders = [];
+  return n;
+}
+
+/** 级联删除文件夹（自身+子孙文件夹+其中所有单词）——返回删除的单词数 */
+export function deleteWordFolderCascade(store: WordBankStore, folderId: string): number {
+  const toDelete: string[] = [folderId];
+  let guard = 0;
+  for (let i = 0; i < toDelete.length && guard < 1000; i++) {
+    const pid = toDelete[i];
+    const children = store.folders.filter((f: WordFolder): boolean => f.parentId === pid);
+    for (let j = 0; j < children.length; j++) {
+      if (!toDelete.includes(children[j].id)) {
+        toDelete.push(children[j].id);
+      }
+    }
+    guard++;
+  }
+  let wordCount = 0;
+  const keep: WordItem[] = [];
+  for (let k = 0; k < store.words.length; k++) {
+    if (toDelete.includes(store.words[k].folderId)) {
+      wordCount++;
+    } else {
+      keep.push(store.words[k]);
+    }
+  }
+  store.words = keep;
+  store.folders = store.folders.filter((f: WordFolder): boolean => !toDelete.includes(f.id));
+  return wordCount;
+}
+
+/** 移动单词（批量）到目标文件夹（folderId='' 即根目录） */
+export function moveWords(store: WordBankStore, wordIds: string[], folderId: string): void {
+  for (let i = 0; i < store.words.length; i++) {
+    if (wordIds.includes(store.words[i].id)) {
+      store.words[i].folderId = folderId;
+    }
+  }
+}
+
+/** 复制单词（批量）到目标文件夹——新 id / 新 createTime，记忆字段清零；返回新增条数 */
+export function copyWords(store: WordBankStore, wordIds: string[], folderId: string): number {
+  let n = 0;
+  const now = Date.now();
+  const copies: WordItem[] = [];
+  for (let i = 0; i < store.words.length; i++) {
+    const src = store.words[i];
+    if (!wordIds.includes(src.id)) {
+      continue;
+    }
+    copies.push(new WordItem(src.word, src.fullName, src.usPhonetic, src.explain, genWordId(), now + n,
+      0, 0, 0, 0, folderId));
+    n++;
+  }
+  if (copies.length > 0) {
+    store.words = [...copies, ...store.words];
+  }
+  return n;
+}
+
+/** 取文件夹名链（根→…→当前）——面包屑用 */
+export function wordFolderChain(store: WordBankStore, folderId: string): WordFolder[] {
+  const chain: WordFolder[] = [];
+  let cur = store.folders.find((f: WordFolder): boolean => f.id === folderId);
+  let guard = 0;
+  while (cur !== undefined && guard < 32) {
+    chain.unshift(cur);
+    const pid: string = cur.parentId;
+    cur = pid.length === 0 ? undefined : store.folders.find((f: WordFolder): boolean => f.id === pid);
+    guard++;
+  }
+  return chain;
+}
+
+/** 逐级找/建文件夹路径（导入用，幂等）——返回最深层 folderId */
+export function ensureWordFolderPath(store: WordBankStore, names: string[], parentId: string): string {
+  let pid = parentId;
+  for (let i = 0; i < names.length; i++) {
+    const nm = names[i].trim();
+    if (nm.length === 0) {
+      continue;
+    }
+    const exist = store.folders.find((f: WordFolder): boolean => f.parentId === pid && f.name === nm);
+    if (exist !== undefined) {
+      pid = exist.id;
+    } else {
+      pid = addWordFolder(store, nm, pid);
+    }
+  }
+  return pid;
 }

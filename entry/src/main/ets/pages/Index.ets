@@ -27,6 +27,7 @@ import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识�
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
+import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
@@ -84,6 +85,7 @@ struct Index {
   // ★ 0.220.0：边栏折叠态+文件夹导航（AppSideBar 与本页共享——点知识库折叠六大模块出文件夹树）
   kbSection: SidebarSectionState = connectSidebarSection();
   folderNav: KbFolderNavStore = connectKbFolderNav();
+  wbSection: WordSidebarSectionState = connectWordSidebarSection(); // ★ 0.222.19：单词库边栏折叠态
   // ★ 0.195.0 bugfix：边栏选中态跟踪——didShow 拦截拿目标页名（'navBar'=首页 → 清空无高亮；
   //   用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」，原画布项硬编码永久高亮已废）
   @Local currentRoute: string = '';
@@ -182,6 +184,12 @@ struct Index {
   //   其余项 pushPath（页面在边栏右侧 Navigation 区域平移，边栏恒在——用户定稿）
   sideBarNav(kind: string): void {
     if (kind === 'wordbank') {
+      // ★ 0.222.19：进单词库=首次自动配置默认态（导航收起+文件夹展开）；用户手动改动后 autoConfigured=true 不再自动干预
+      if (!this.wbSection.autoConfigured) {
+        this.wbSection.navExpanded = false;
+        this.wbSection.folderExpanded = true;
+        this.wbSection.autoConfigured = true;
+      }
       this.pathStack.pushPath({ name: 'WordBankPage' });
     } else if (kind === 'knowledge') {
       // ★ 0.220.1 用户拍板终版：进知识库=首次自动配置默认态（导航收起+文件夹展开）；用户手动改动后 autoConfigured=true 不再自动干预（"用户自己选择+记忆"）
@@ -355,10 +363,12 @@ struct Index {
               },
               onFolderClick: (folderId: string) => {
                 // ★ 0.220.0：文件夹树点击——视图切换已由共享 store（folderNav.folderId）生效，
-                //   此处只需确保路由在知识库页（树仅在知识库页显示，正常恒在；兜底 pushPath）
+                //   此处只需确保路由在当前库页（树仅在库页显示，正常恒在；兜底 pushPath）
+                // ★ 0.222.19：按当前路由区分知识库/单词库
+                const target = this.currentRoute === 'WordBankPage' ? 'WordBankPage' : 'KnowledgeBankPage';
                 const names = this.pathStack.getAllPathName();
-                if (names.indexOf('KnowledgeBankPage') < 0) {
-                  this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
+                if (names.indexOf(target) < 0) {
+                  this.pathStack.pushPath({ name: target });
                 }
               }
             })
@@ -511,7 +521,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.222.18') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
+        Text('v0.222.19') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
