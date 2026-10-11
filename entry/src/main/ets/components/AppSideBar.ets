@@ -37,6 +37,7 @@ export struct AppSideBar {
   folderNav: KbFolderNavStore = connectKbFolderNav();
   kbStore: KnowledgeBankStore = connectKnowledgeBank();
   @Local selFolderId: string = ''; // 树内选中文件夹（新建子文件夹的父级）
+  @Local collapsedFolders: Record<string, boolean> = {}; // ★ 0.222.1 文件夹树折叠状态（id → 是否折叠）
 
   /** ★ 0.220.0：文件夹树顺序（DFS：根('')→子层级；同层新在前）——产 {folder, depth} 平铺数组供边栏树渲染 */
   kbFolderTreeItems(): KFolderTreeItem[] {
@@ -47,13 +48,29 @@ export struct AppSideBar {
         .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
       for (let i = 0; i < kids.length; i++) {
         out.push({ folder: kids[i], depth: depth });
-        walk(kids[i].id, depth + 1);
+        if (!this.collapsedFolders[kids[i].id]) {
+          walk(kids[i].id, depth + 1);
+        }
       }
     };
     walk('', 0);
     return out;
   }
 
+  /** ★ 0.222.1：文件夹是否有子文件夹（决定折叠三角显隐） */
+  hasChildren(folderId: string): boolean {
+    for (let i = 0; i < this.kbStore.folders.length; i++) {
+      if (this.kbStore.folders[i].parentId === folderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** ★ 0.222.1：切换文件夹折叠状态 */
+  toggleFolderCollapse(folderId: string): void {
+    this.collapsedFolders[folderId] = !this.collapsedFolders[folderId];
+  }
   /** ★ 0.220.0：树内新建文件夹（父级=树内选中项；未选中=根）。空名忽略；成功后选中新文件夹 */
 
   /** ★ 0.220.0：树内卡片计数（直算，与页内 folderCardCount 同口径） */
@@ -326,9 +343,14 @@ export struct AppSideBar {
         // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮）
         ForEach(this.kbFolderTreeItems(), (item: KFolderTreeItem) => {
           Row({ space: 6 }) {
-            Text('›')
-              .fontSize(12)
+            Text(this.hasChildren(item.folder.id) ? (this.collapsedFolders[item.folder.id] ? '▸' : '▾') : '')
+              .fontSize(10)
               .fontColor(TEXT_TERTIARY)
+              .width(14)
+              .textAlign(TextAlign.Center)
+              .onClick(() => {
+                this.toggleFolderCollapse(item.folder.id);
+              })
             Text(item.folder.name)
               .fontSize(13)
               .fontColor(this.folderNav.folderId === item.folder.id ? TEXT_PRIMARY : TEXT_SECONDARY)

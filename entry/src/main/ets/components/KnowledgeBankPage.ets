@@ -37,7 +37,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
-import { KFolder } from '../common/KnowledgeModel';
+import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade } from '../utils/KnowledgeStoreUtil';
 import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, readXlsxRows } from '../utils/ImportUtil';
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
@@ -109,7 +109,7 @@ export struct KnowledgeBankPage {
 
   // ★ 0.195.0：大屏断点（≥600vp）——顶栏左间距对齐气泡树信息条（28/14 双分支）
   // ★ 0.196.4：改读窗口宽度共享真相源（WindowMode）——分屏/悬浮窗实时切手机布局
-  windowMode: WindowMode = connectWindowMode();
+  @Local windowMode: WindowMode = connectWindowMode(); // ★ 0.222.1 挂 @Local（@ObservedV2 实例须挂 @Local 才可靠响应 @Trace，isTablet @Computed 依赖链真机不可靠）
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
   }
@@ -172,6 +172,7 @@ export struct KnowledgeBankPage {
   @Local folderDialogName: string = '';
   @Local folderPickerVisible: boolean = false;  // 移动/复制目标选择弹窗
   @Local moveOrCopyMode: string = 'move';       // 'move' | 'copy'（folderPicker 确认时分流）
+  @Local pickerCollapsedFolders: Record<string, boolean> = {}; // ★ 0.222.1 目标选择器文件夹折叠状态
   @Local importPreviewVisible: boolean = false; // 批量导入预览弹窗
   @Local importRows: ImportRow[] = [];
   @Local importFileName: string = '';
@@ -602,11 +603,13 @@ export struct KnowledgeBankPage {
 
   // ★ 0.222.0：手机知识库页边栏抽屉（复刻气泡树 MobileDrawerLayer——遮罩点按收 + translate 滑入滑出）
   openSidebar(): void {
+    console.error('DAGAI-SIDEBAR openSidebar isTablet=' + this.isTablet);
     if (this.sidebarVisible) {
       return;
     }
     this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
       this.sidebarVisible = true;
+      console.error('DAGAI-SIDEBAR visible=true');
     });
   }
 
@@ -649,8 +652,8 @@ export struct KnowledgeBankPage {
           })
       } else {
         Image($r('app.media.sidebar'))
-          .width(20)
-          .height(20)
+          .width(24)
+          .height(24)
           .objectFit(ImageFit.Contain)
           .padding({ left: 4, right: 4 })
           .margin({ right: 4 })
@@ -1456,7 +1459,42 @@ export struct KnowledgeBankPage {
     const f = this.knowledgeBank.folders.find((x: KFolder): boolean => x.id === folderId);
     return f === undefined ? '' : f.name;
   }
+  /** ★ 0.222.1：移动/复制目标选择器的树形目录（DFS 层级 + 折叠 + 排除源文件夹） */
+  folderPickerTreeItems(): KFolderTreeItem[] {
+    const out: KFolderTreeItem[] = [];
+    const walk = (parentId: string, depth: number): void => {
+      const kids = this.knowledgeBank.folders
+        .filter((f: KFolder): boolean => f.parentId === parentId)
+        .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
+      for (let i = 0; i < kids.length; i++) {
+        const f = kids[i];
+        if (f.id === this.folderNav.folderActionId) {
+          continue;
+        }
+        out.push({ folder: f, depth: depth });
+        if (!this.pickerCollapsedFolders[f.id]) {
+          walk(f.id, depth + 1);
+        }
+      }
+    };
+    walk('', 0);
+    return out;
+  }
 
+  /** ★ 0.222.1：目标选择器里文件夹是否有子文件夹 */
+  pickerHasChildren(folderId: string): boolean {
+    for (let i = 0; i < this.knowledgeBank.folders.length; i++) {
+      if (this.knowledgeBank.folders[i].parentId === folderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** ★ 0.222.1：切换目标选择器文件夹折叠 */
+  togglePickerCollapse(folderId: string): void {
+    this.pickerCollapsedFolders[folderId] = !this.pickerCollapsedFolders[folderId];
+  }
   /** ★ 0.221.0：确认级联删除文件夹 */
   confirmFolderDelete(): void {
     const fid = this.folderNav.folderActionId;
@@ -1950,9 +1988,17 @@ export struct KnowledgeBankPage {
             .onClick(() => {
               this.confirmFolderTarget('');
             })
-            ForEach(this.knowledgeBank.folders, (f: KFolder) => {
+            ForEach(this.folderPickerTreeItems(), (item: KFolderTreeItem) => {
               Row() {
-                Text('📁 ' + this.folderFullPath(f))
+                Text(this.pickerHasChildren(item.folder.id) ? (this.pickerCollapsedFolders[item.folder.id] ? '▸' : '▾') : '')
+                  .fontSize(10)
+                  .fontColor(TEXT_TERTIARY)
+                  .width(14)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => {
+                    this.togglePickerCollapse(item.folder.id);
+                  })
+                Text('📁 ' + item.folder.name)
                   .fontSize(13)
                   .fontColor(TEXT_PRIMARY)
                   .layoutWeight(1)
@@ -1963,15 +2009,14 @@ export struct KnowledgeBankPage {
                   .fontColor(BRAND_SECONDARY)
               }
               .width('100%')
-              .padding(12)
+              .padding({ left: 8 + item.depth * 14, right: 12 })
               .borderRadius(8)
               .backgroundColor(SURFACE_SOFT)
               .margin({ top: 6 })
               .onClick(() => {
-                this.confirmFolderTarget(f.id);
+                this.confirmFolderTarget(item.folder.id);
               })
-            }, (f: KFolder) => f.id)
-          }
+            }, (item: KFolderTreeItem) => item.folder.id)          }
           .width('100%')
         }
         .layoutWeight(1)
