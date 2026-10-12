@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000241, // ★ 0.226.0：用户协议与隐私政策同意机制（首启自动弹 + 首页勾选(PC/Pad) + 边栏/云同步登录拦截 + 关于页法律条款卡与撤回同意 + 体验改进计划引导）；0.225.2：PC 端弹窗宽度收敛；更早历史见 MEMORY.md
+    "versionCode": 1000243, // ★ 0.227.1：导入卡标题换行展平+宽屏两行+临时诊断清理；0.227.0：新版 apkg 导入（Anki 24.11+ zstd）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

@@ -2922,7 +2922,7 @@ export struct KnowledgeBankPage {
                               .fontSize(16)
                               .fontWeight(600)
                               .fontColor(TEXT_PRIMARY)
-                              .maxLines(1)
+                              .maxLines(2) // ★ 0.227.1：宽屏长标题两行（导入卡标题多行文本，单行只显首段不够看；Stack 居中不受影响）
                               .textOverflow({ overflow: TextOverflow.Ellipsis })
                               .textAlign(TextAlign.Center)
                               .constraintSize({ maxWidth: '60%' })
