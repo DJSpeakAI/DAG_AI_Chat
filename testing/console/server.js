@@ -1,6 +1,10 @@
 // ============================================================
-// testing/console/server.js — 0.229.17 版本核验期望值自动跟读 + 用例级超时保护（★ 2026-10-13 用户拍板）
+// testing/console/server.js — 0.229.18 修「全新安装没卸载」假成功（★ 2026-10-13 用户实锤：全新安装后登录态还在）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.18 修复三层：①bmUninstall 假成功（旧正则 /successfully|Uninstall/ 把 "Uninstall failed" 也判成功）→
+//   改「有成功标志且无失败标志」+ 卸载前 force-stop；②/api/prep 卸载失败→中止安装（防旧数据残留假成功）；
+//   ③（前端）开始测试时 fresh 模式自动先全新安装（模式下拉此前只对【装机】按钮生效，"从零"用例没真正从零）
 //
 // 0.229.17 新增：①readAppVersionCode()+EXPECTED_VC——装机版本核验期望值从 app.json5 自动跟读（JSON5 注释容忍正则），
 //   读不到回退 config.expectedVersionCode；APP 发版自动跟上、永不误报（落实"版本跟 APP 走"）
@@ -330,8 +334,12 @@ function serverBuild() {
   });
 }
 async function bmUninstall(serial) {
+  // ★ 0.229.18 修「全新安装没卸载」假成功：①卸载前先 force-stop（app 运行中时部分版本卸载会失败）
+  //   ②旧成功正则 /successfully|Uninstall/ 会把含 "Uninstall failed" 的失败输出也判成成功——改为「有成功标志且无失败标志」
+  await sh(serial, `aa force-stop ${CFG.bundle}`, 10000);
   const r = await sh(serial, `bm uninstall -n ${CFG.bundle}`, 60000);
-  return { ok: /successfully|Uninstall/.test(r), detail: r.trim().slice(0, 200) };
+  const ok = /(successfully|finish)/i.test(r) && !/(failure|failed|error)/i.test(r);
+  return { ok, detail: r.trim().slice(0, 200) };
 }
 
 // ---------- artifacts 证据留存 ----------
@@ -723,8 +731,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.17</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.17 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.18</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.18 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -748,7 +756,7 @@ let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.17', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.18', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -841,7 +849,11 @@ async function handler(req, res) {
         if (!dev) return json(res, 400, { error: '设备不存在' });
         const mode = p.mode === 'fresh' ? 'fresh' : 'overwrite'; // 默认覆盖安装（用户需求 6）
         let un = null;
-        if (mode === 'fresh') un = await bmUninstall(dev.serial);
+        if (mode === 'fresh') {
+          un = await bmUninstall(dev.serial);
+          // ★ 0.229.18：卸载失败→中止安装（防「未卸载却报装机成功」假成功——用户实测 PC 全新安装后登录态还在即此因）
+          if (!un.ok) return json(res, 200, { mode, uninstall: un, install: null, coldStart: null, aborted: true, error: '卸载失败——已中止安装（防旧数据残留的假成功；原始输出见 uninstall.detail）' });
+        }
         const ins = await bmInstall(dev.serial, mode === 'overwrite');
         const cold = await coldStart(dev.serial, 10000);
         json(res, 200, { mode, uninstall: un, install: ins, coldStart: cold });
@@ -960,7 +972,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.17] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.18] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -983,7 +995,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.17] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.18] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);

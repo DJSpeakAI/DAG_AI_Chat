@@ -434,13 +434,30 @@ async function ensureDevicesConnected() {
 async function startRun() {
   if (!CASESEL.size || !DEVSEL.size) { alert('至少勾选一个用例和一台设备'); return; }
   if (!(await ensureDevicesConnected())) return;
-  if (!confirm('将跑「' + CASESEL.size + ' 个用例 × ' + DEVSEL.size + ' 台设备」矩阵。执行期间请勿操作 PC。开始？')) return;
+  // ★ 0.229.18：模式下拉对「开始测试」同样生效——选「全新安装」时测试前自动先卸载重装
+  //   （"从零开始"类用例（登录/协议/云同步）必须真清数据才成立；此前模式下拉只对【装机】按钮生效=用户踩坑根源）
+  const mode = $('instMode').value;
+  if (mode === 'fresh') {
+    if (!confirm('将跑「' + CASESEL.size + ' 个用例 × ' + DEVSEL.size + ' 台设备」矩阵，且先按「全新安装」自动卸载→装→冷启（清掉登录态/协议同意等本地数据，"从零"用例才成立）。\n执行期间请勿操作 PC。开始？')) return;
+    lastAct = Date.now(); switchTab('run'); $('stream').innerHTML = '';
+    for (const id of DEVSEL) {
+      addLn('⓪ 全新安装 ' + id + '（卸载→装→冷启）', 'info', '');
+      try {
+        const r = await api('/api/prep', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device: id, mode: 'fresh' }) });
+        if (r.uninstall) addLn('⓪ 卸载 ' + id, r.uninstall.ok ? 'pass' : 'fail', r.uninstall.detail || '（无输出）');
+        if (r.aborted || !r.install) { addLn('⓪ 全新安装 ' + id + ' 失败——已中止本次测试', 'fail', r.error || JSON.stringify(r)); return; }
+        addLn('⓪ 安装 ' + id, r.install && r.install.ok ? 'pass' : 'fail', (r.install && r.install.detail) || '');
+      } catch (e) { addLn('⓪ 全新安装 ' + id + ' 失败——已中止本次测试', 'fail', e.message); return; }
+    }
+  } else {
+    if (!confirm('将跑「' + CASESEL.size + ' 个用例 × ' + DEVSEL.size + ' 台设备」矩阵（覆盖安装模式：不卸载、保留本地数据）。执行期间请勿操作 PC。开始？')) return;
+  }
   try {
     const r = await api('/api/run', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ devices: [...DEVSEL], cases: [...CASESEL] }) });
     if (r.error) { alert(r.error); return; }
     RUNNING = true; syncRunBtn();
     lastRunId = r.runId; lastResults = []; lastSummary = null; $('sumCard').style.display = 'none';
-    resetStats(); $('stream').innerHTML = '';
+    resetStats();
     lastAct = Date.now(); switchTab('run');
     addLn('— run ' + r.runId + ' 启动 · ' + new Date().toLocaleTimeString() + ' —', 'info', '');
   } catch (e) { alert('启动失败：' + e.message); }
@@ -466,7 +483,10 @@ async function prepDevices() {
     addLn('② 装机 ' + id + '（' + modeName + '）', 'info', '');
     try {
       const r = await api('/api/prep', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device: id, mode }) });
-      addLn('② 装机 ' + id, r.install && r.install.ok ? 'pass' : 'fail', (r.install && r.install.detail) || JSON.stringify(r));
+      // ★ 0.229.18：卸载结果也如实显示（此前只看 install.ok，卸载失败被完全掩盖）
+      if (r.uninstall) addLn('② 卸载 ' + id, r.uninstall.ok ? 'pass' : 'fail', r.uninstall.detail || '（无输出）');
+      if (r.aborted || !r.install) { addLn('② 装机 ' + id + ' 失败（已中止，未安装）', 'fail', r.error || JSON.stringify(r)); continue; }
+      addLn('② 装机 ' + id, r.install && r.install.ok ? 'pass' : 'fail', (r.install && r.install.detail) || '');
       addLn('冷启动 ' + id, r.coldStart ? 'pass' : 'warn', r.coldStart ? 'force-stop → aa start 成功' : '冷启动未确认成功');
     } catch (e) { addLn('② 装机 ' + id, 'fail', e.message); }
   }
@@ -542,7 +562,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.17 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.18 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
   for (const r of lastResults) {
