@@ -130,6 +130,7 @@
       <div class="ttl" id="sumTtl"></div>
       <div class="row">
         <button class="btn sm primary" id="sumCopyBtn" onclick="copyReport()">复制问题报告给 AI</button>
+        <button class="btn sm ghost" id="sumDlBtn" onclick="downloadReport()" title="把报告存成 .txt 文件——给 DevEco 终端里的 AI 读文件用（终端收不了大段粘贴文本）">下载报告</button>
         <span class="stat" id="sumStat"></span>
       </div>
     </div>
@@ -499,11 +500,12 @@ function showSummary(s) {
   else { ttl.textContent = '✗ ' + fail + ' 项失败' + (warn ? ' / ' + warn + ' 项警告' : '') + ' / ' + pass + ' 项通过'; ttl.style.color = 'var(--fail)'; }
   $('sumStat').textContent = 'run ' + (lastRunId || '') + ' · ' + new Date().toLocaleTimeString();
   $('sumCopyBtn').style.display = (fail || warn) ? 'inline-block' : 'none';
+  $('sumDlBtn').style.display = (fail || warn) ? 'inline-block' : 'none';
 }
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.12 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.14 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
   for (const r of lastResults) {
@@ -519,6 +521,16 @@ function buildReport() {
   return L.join('\n');
 }
 function copyReport() { copyText(buildReport(), '问题报告已复制——粘贴到 AI 对话即可接管排查'); }
+// ★ 0.229.14：下载报告为 .txt 文件（DevEco 终端里的 AI 收不了大段粘贴文本，让它读文件）
+function downloadReport() {
+  const blob = new Blob([buildReport()], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '测试报告_' + (lastRunId || new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')) + '.txt';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  toast('报告已下载——在浏览器下载目录（可把浏览器默认下载位置设为桌面）');
+}
 
 // ---------- 人工检查点卡片 ----------
 function onCheckpoint(cp) {
@@ -599,6 +611,11 @@ function closeDetail() { $('modalBg').style.display = 'none'; $('detail').style.
 
 boot();
 setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') refreshDevices(); }, 30000);
+// ★ 0.229.14：关页签自动停后台（用户拍板选 B）——pagehide 仅在关页签/导航离开时触发，最小化不触发（服务照常跑）；
+// 跑测中服务端会拒绝关闭（安全）；刷新页面也会触发停服务（用户已知悉，重新起服务即可）
+window.addEventListener('pagehide', () => {
+  try { navigator.sendBeacon(base() + '/api/shutdown'); } catch (_) { /* 尽力发 */ }
+});
 </script>
 </body>
 </html>

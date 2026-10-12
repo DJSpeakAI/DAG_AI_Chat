@@ -1,6 +1,9 @@
 // ============================================================
-// testing/console/server.js — 0.229.12 连接自动连接 + 页面加载自动出诊断报告（★ 2026-10-13 用户要"整条流程自动化"）
+// testing/console/server.js — 0.229.14 修 ArkUI Test 假失败解析 + 关页签自动停服务 + 下载报告（★ 2026-10-13 用户拍板）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.14 新增：①summarizeAaTest 重写——ResultCode 硬判 + [fail] 精确行 + 统计数值化（根除"failure: 0 被关键词误判成失败"的假失败）
+//   ②（前端）pagehide + sendBeacon 关页签自动停后台（用户拍板 B；最小化不触发）③（前端）【下载报告】.txt（DevEco 终端 AI 读文件）
 //
 // 0.229.12 新增：①hdcTconn + autoConnectTcpDevices——对 ip:port 形态（PC 本机调试口/手机 WiFi）未在线设备自动 tconn，落实"线连优先→IP 兜底"
 //   ②（前端）页面一进来若设备未全连，自动弹出可复制的连接诊断报告——用户点「复制报告给 AI」即可，无需每次靠对话口述
@@ -272,11 +275,19 @@ async function aaTestRun(serial) {
 }
 function summarizeAaTest(out) {
   const t = String(out || '');
-  const stripped = t.replace(/(total|passed|pass|failed|fail)\s*[:=]?\s*\d+/gi, '');
-  if (/failure|\[fail\]|\bfail\b|assert.*fail|error[:\s]/i.test(stripped)) return { level: 'fail', note: '输出含失败/错误标记（详见原始日志尾）' };
+  // ★ 0.229.14 修「假失败」：旧逻辑剥离统计时正则没剥净（failure/failures 残留）再拿 /failure/i 关键词判失败，
+  //   "failure: 0"（0 个失败）被误判成失败。改为三层判据：ResultCode 硬判 → [fail] 精确行 → 统计数值化（N>0 才失败）
+  const rc = t.match(/TestFinished-ResultCode\s*[:=]\s*(\d+)/i);
+  if (rc && parseInt(rc[1], 10) !== 0) return { level: 'fail', note: '测试框架 ResultCode=' + rc[1] + '（非 0=异常结束，详见原始日志）' };
+  const failLines = (t.match(/\[fail\]/gi) || []).length;
+  if (failLines > 0) return { level: 'fail', note: 'hypium 有 ' + failLines + ' 条用例失败（详见原始日志）' };
+  const f = t.match(/fail(?:ures?|ed)?\s*[:=]\s*(\d+)/i) || t.match(/(\d+)\s+failures?/i);
+  if (f && parseInt(f[1], 10) > 0) return { level: 'fail', note: '统计 failure=' + f[1] + '（有用例失败，详见原始日志）' };
+  const finished = /your test finished/i.test(t) || (!!rc && rc[1] === '0');
   const hasA = /app_context_ready/.test(t); const hasB = /bundle_versioncode_valid/.test(t);
-  if (hasA && hasB) return { level: 'pass', note: '2 条真断言均执行（app_context_ready + bundle_versioncode_valid）' };
-  if (hasA || hasB) return { level: 'warn', note: '仅命中部分用例名（可能提前中断）' };
+  if (finished && hasA && hasB) return { level: 'pass', note: '测试框架正常结束（ResultCode 0）+ 2 条真断言均执行（app_context_ready + bundle_versioncode_valid）' };
+  if (finished && (hasA || hasB)) return { level: 'warn', note: '框架正常结束但仅命中部分用例名（可能提前中断）' };
+  if (finished) return { level: 'warn', note: '框架正常结束但未识别到用例名（附原始日志尾供核对）' };
   return { level: 'warn', note: '未能从输出识别结果（附原始日志尾供核对）' };
 }
 function serverBuild() {
@@ -678,8 +689,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.12</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.12 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.14</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.14 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -702,7 +713,7 @@ function json(res, code, obj) { res.writeHead(code, { 'content-type': 'applicati
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.12', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.14', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -894,7 +905,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.12] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.14] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -917,7 +928,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.12] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.14] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);
