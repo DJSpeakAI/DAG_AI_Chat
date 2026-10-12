@@ -47,3 +47,7 @@ q[0-9]*.json
 pcshot*.jpeg
 r[0-9]*.json
 b[0-9]*.json
+
+# 0.227.1: API/AGC 配置不入 git（历史重写净化后防再犯——GitHub Push Protection）
+entry/src/main/resources/rawfile/config.json
+entry/src/main/resources/rawfile/agconnect-services.json
