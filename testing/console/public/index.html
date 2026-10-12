@@ -542,7 +542,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.16 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.17 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
   for (const r of lastResults) {

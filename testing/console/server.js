@@ -1,6 +1,10 @@
 // ============================================================
-// testing/console/server.js — 0.229.16（本轮纯前端：实时执行/结果双 Tab + 活动指示；server.js 仅同步版本号）
+// testing/console/server.js — 0.229.17 版本核验期望值自动跟读 + 用例级超时保护（★ 2026-10-13 用户拍板）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.17 新增：①readAppVersionCode()+EXPECTED_VC——装机版本核验期望值从 app.json5 自动跟读（JSON5 注释容忍正则），
+//   读不到回退 config.expectedVersionCode；APP 发版自动跟上、永不误报（落实"版本跟 APP 走"）
+//   ②runCase 用例级超时（config.caseTimeoutMs 默认 300s）——超时自动标失败、写明"超时中止已跳过"、继续后续用例（防傻等）
 //
 // 0.229.16 新增：前端「▶ 实时执行 / ✓ 结果」双 Tab（switchTab）+「● 执行中·最近活动 Xs 前」活动指示（>10s 黄、>30s 红）；跑测自动切实时、跑完自动切结果并加「新」徽章；server.js 无功能改动
 //
@@ -72,6 +76,17 @@ function readAppVersionName() {
     return m ? 'v' + m[1] : null;
   } catch (_) { return null; }
 }
+// ★ 0.229.17：装机版本核验期望值自动跟读——从 AppScope/app.json5 正则提 versionCode（JSON5 带注释、不能 JSON.parse），
+//   读不到回退 config.expectedVersionCode；APP 发版只动 app.json5，期望值自动跟上、永不因写死而误报（落实"版本跟 APP 走"）
+const APP_JSON5 = path.join(PROJECT, 'AppScope', 'app.json5');
+function readAppVersionCode() {
+  try {
+    const src = fs.readFileSync(APP_JSON5, 'utf8');
+    const m = src.match(/"versionCode"\s*:\s*(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  } catch (_) { return null; }
+}
+const EXPECTED_VC = readAppVersionCode() ?? (CFG.expectedVersionCode || 0);
 
 const RUN_ID = () => 'R' + new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -375,10 +390,23 @@ async function runCase(devices, caseDef) {
   const log = (name, status, detail, ms) => { const s = STEP(name, status, detail, ms); steps.push(s); sseSend({ type: 'step', runId: curRun.runId, case: caseDef.id, step: s }); return s; };
   const t0 = Date.now();
   let status = 'pass';
+  // ★ 0.229.17：用例级超时保护（用户"停止了不可能一直等、卡住要有反馈"）——超时自动标失败并写明原因、跳过继续后续用例
+  const timeoutMs = CFG.caseTimeoutMs || 300000;
+  let timer = null;
   try {
-    await caseDef.run({ devices, log, checkpoint, art: { save: artSave, dump: artDump } });
+    await Promise.race([
+      caseDef.run({ devices, log, checkpoint, art: { save: artSave, dump: artDump } }),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          log('用例超时中止', 'fail', `本条用例超过 ${Math.round(timeoutMs / 1000)}s 未完成——已自动中止并跳过，继续跑后续用例（防傻等；底层命令会在其自身超时后释放）`);
+          resolve();
+        }, timeoutMs);
+      }),
+    ]);
   } catch (e) {
     log('执行异常', 'fail', String(e));
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   for (const s of steps) {
     if (s.status === 'fail') { status = 'fail'; break; }
@@ -412,8 +440,9 @@ const CASES = [
     run: async (ctx) => {
       const dev = ctx.devices[0];
       const v = await bmVersionCode(dev.serial);
-      ctx.log(`${dev.label} versionCode`, v.ok ? (v.code === CFG.expectedVersionCode ? 'pass' : 'fail') : 'fail',
-        v.ok ? `实际=${v.code} 期望=${CFG.expectedVersionCode}` : `bm dump 失败：${v.raw}`);
+      // ★ 0.229.17：期望值=EXPECTED_VC（app.json5 自动跟读，回退 config）——APP 发版自动跟上，永不误报
+      ctx.log(`${dev.label} versionCode`, v.ok ? (v.code === EXPECTED_VC ? 'pass' : 'fail') : 'fail',
+        v.ok ? `实际=${v.code} 期望=${EXPECTED_VC}（跟读 app.json5）` : `bm dump 失败：${v.raw}`);
     } },
 
   // ---------- 功能① 账号登录（每设备各跑一遍） ----------
@@ -632,7 +661,7 @@ function startRun(deviceIds, caseIds) {
   if (running) return { error: '已有测试在跑' };
   const devs = CFG.devices.filter((d) => deviceIds.includes(d.id));
   const cases = CASES.filter((c) => c.builtin || caseIds.includes(c.id));
-  curRun = { runId: RUN_ID(), startedAt: now(), env: { versionCode: CFG.expectedVersionCode, node: process.version },
+  curRun = { runId: RUN_ID(), startedAt: now(), env: { versionCode: EXPECTED_VC, node: process.version },
     plan: { devices: devs.map((d) => d.id), cases: cases.map((c) => c.id) }, runs: [], summary: {} };
   running = true;
   // 后台执行（HTTP 立即返回 runId，进度走 SSE——检查点等待不阻塞请求）
@@ -694,8 +723,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.16</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.16 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.17</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.17 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -719,7 +748,7 @@ let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.16', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.17', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -765,14 +794,14 @@ async function handler(req, res) {
     const suites = {};
     const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（从零开始）', sync: '云同步四域数据链', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
-    return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: CFG.expectedVersionCode, appVersionName: readAppVersionName(), hap: CFG.hap } });
+    return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }
   if (u.pathname === '/api/version') {
     const devs = await probeDevices();
     const dev = devs.find((d) => d.online) || null;
-    if (!dev) return json(res, 200, { ok: false, expected: CFG.expectedVersionCode, actual: null, device: null, reason: '无在线设备（PC/Pad 未连接）' });
+    if (!dev) return json(res, 200, { ok: false, expected: EXPECTED_VC, actual: null, device: null, reason: '无在线设备（PC/Pad 未连接）' });
     const v = await bmVersionCode(dev.serial);
-    return json(res, 200, { ok: v.ok && v.code === CFG.expectedVersionCode, expected: CFG.expectedVersionCode, actual: v.code, device: dev.id, label: dev.label, raw: v.raw });
+    return json(res, 200, { ok: v.ok && v.code === EXPECTED_VC, expected: EXPECTED_VC, actual: v.code, device: dev.id, label: dev.label, raw: v.raw });
   }
   if (u.pathname === '/api/devices') { await autoConnectTcpDevices(); const targets = await listTargets(); return json(res, 200, { devices: await probeDevices(), running, targets }); }
   if (u.pathname === '/api/results') return json(res, 200, loadResults());
@@ -931,7 +960,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.16] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.17] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -954,7 +983,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.16] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.17] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);
