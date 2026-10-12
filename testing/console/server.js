@@ -1,6 +1,12 @@
 // ============================================================
-// testing/console/server.js — 0.229.19 登录套件流程自动化重构（★ 2026-10-13 用户拍板"能不让我点就不点"）
+// testing/console/server.js — 0.229.20 停止测试+删关闭服务按钮+登录入口隔离收尾+报告判别框架（★ 2026-10-13 用户拍板）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.20 新增：①「停止测试」——/api/stop 设 abortRequested，executeMatrix 每条用例前检查、当前步骤跑完即停、
+//   summary 标 aborted（"打开即执行中"根因=上一轮还在后台跑+无停止手段失控，非自动开跑——前端 startRun 仅挂在按钮上已实证）
+//   ②autoLogout 入口隔离收尾：三入口用例末尾自动退出登录（用户"测完一条入口必须先退出才能测下一条"）
+//   ③（前端）删【关闭服务】按钮（关页签 30s 自动停=主关闭路径，按钮冗余——用户拍板删）；打开页面若 running=知情 toast
+//   ④（前端）问题报告头部加「接手 AI 判别框架」（先分清 app 代码问题 vs 测试台流程问题再动手）
 //
 // 0.229.19 新增：①uiClickText/findNodeBounds/agreeDialogIfAny UI 自动点击原语（dumpLayout 找文本控件 bounds→uitest uiInput click）
 //   ②login 套件重构：协议模态自动同意+首页协议勾选/登录按钮自动点+协议门禁全自动+退出登录尽力自动；
@@ -235,6 +241,24 @@ async function agreeDialogIfAny(serial, log) {
   const c = await uiClickText(serial, '同意并继续', { waitMs: 1800 });
   if (log) log('协议弹窗·自动点「同意并继续」', c.ok ? 'pass' : 'fail', c.ok ? `已点击 (${c.x},${c.y})「${c.text}」` : (c.err || c.raw || '点击失败'));
   return { agreed: true, ok: c.ok };
+}
+// ★ 0.229.20 入口隔离收尾：自动退出登录（用户拍板"测完一条入口必须先退出，才能测下一条入口"——否则登录态互相污染）
+async function autoLogout(ctx, serial, dev) {
+  if (!canUiDump(dev)) { ctx.log('收尾·退出登录', 'skip', 'PC 无 UI 通道，跳过（下一条入口用例的 ensureLoggedOut 会兜底提示）'); return; }
+  const n0 = (await dumpCountText(serial, '已登录')).n;
+  if (n0 === 0) { ctx.log('收尾·退出登录', 'pass', '当前已处于未登录（入口隔离已满足）'); return; }
+  const a1 = await uiClickText(serial, '退出登录', { waitMs: 1800 });
+  if (a1.ok) {
+    ctx.log('收尾·自动点「退出登录」', 'pass', `已点击 (${a1.x},${a1.y})`);
+    let a2 = await uiClickText(serial, '确认', { waitMs: 1500 });
+    if (!a2.ok) a2 = await uiClickText(serial, '确定', { waitMs: 1500 });
+    ctx.log('收尾·自动点确认弹窗', a2.ok ? 'pass' : 'warn', a2.ok ? `已点击 (${a2.x},${a2.y})` : (a2.err || '未找到确认按钮（可能无二次确认）'));
+    await sleep(1800);
+    const n = (await dumpCountText(serial, '已登录')).n;
+    ctx.log('★收尾·已退出（下一入口从未登录基线开始）', n === 0 ? 'pass' : 'fail', n === 0 ? '退出成功——入口隔离达成' : `已登录×${n}（未退出，将污染下一入口用例）`);
+    return;
+  }
+  ctx.log('收尾·退出登录', 'warn', '当前页未找到「退出登录」按钮（可能需先进入账号页）——请人工退出，否则污染下一入口用例');
 }
 async function bmVersionCode(serial) {
   const out = await sh(serial, `bm dump -n ${CFG.bundle}`);
@@ -547,6 +571,7 @@ const CASES = [
       ctx.log('登录态落盘（尽力确认）', g.found ? 'pass' : 'warn', g.found ? `${g.path} → ${g.sample}` : '候选路径未命中（UI 断言已兜底，登录后文件才生成）');
       const h = await hilogErrors(serial);
       ctx.log('登录链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'fail') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+      await autoLogout(ctx, serial, dev); // ★ 0.229.20 入口隔离收尾：测完本入口自动退出，下一条入口从未登录基线开始
     } },
   { id: 'LOGIN-SIDEBAR', suite: 'login', name: '边栏入口登录（0.217.2 同族位）', semi: true, scope: 'each',
     run: async (ctx) => {
@@ -563,6 +588,7 @@ const CASES = [
       ctx.log('★边栏自身转已登录', logged >= 1 ? 'pass' : 'fail', `已登录×${logged}（0.217.2 同族 bug 位：边栏入口登录后边栏自身必须翻转）`);
       const h = await hilogErrors(serial);
       ctx.log('登录链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'fail') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+      await autoLogout(ctx, serial, dev); // ★ 0.229.20 入口隔离收尾：测完本入口自动退出，下一条入口从未登录基线开始
     } },
   { id: 'LOGIN-SYNC', suite: 'login', name: '设置→云同步入口登录（红灯位：开关不自动落盘）', semi: true, scope: 'each',
     run: async (ctx) => {
@@ -580,6 +606,7 @@ const CASES = [
       ctx.log('★cloud-sync-switch 落盘（尽力确认）', g.found ? 'pass' : 'warn', g.found ? `${g.path} → ${g.sample}` : '候选路径未命中（RDB 行数断言已兜底）');
       const h = await hilogErrors(serial);
       ctx.log('同步链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'fail') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+      await autoLogout(ctx, serial, dev); // ★ 0.229.20 入口隔离收尾：测完本入口自动退出，下一条入口从未登录基线开始
     } },
   { id: 'LOGIN-LOGOUT', suite: 'login', name: '退出登录（自动尽力：自动找「退出登录」点+确认）', semi: true, scope: 'each',
     run: async (ctx) => {
@@ -741,8 +768,9 @@ const CASES = [
 
 // ---------- 矩阵执行（设备主序串行：同一设备用例有先后依赖） ----------
 let running = false;
+let abortRequested = false; // ★ 0.229.20「停止测试」请求——当前步骤跑完即停（不硬杀正在执行的 hdc 命令）
 function startRun(deviceIds, caseIds) {
-  if (running) return { error: '已有测试在跑' };
+  if (running) return { error: '已有测试在跑（页面刷新/重开不会中断后台执行——等它跑完，或点【停止测试】）' };
   const devs = CFG.devices.filter((d) => deviceIds.includes(d.id));
   const cases = CASES.filter((c) => c.builtin || caseIds.includes(c.id));
   curRun = { runId: RUN_ID(), startedAt: now(), env: { versionCode: EXPECTED_VC, node: process.version },
@@ -758,9 +786,10 @@ function startRun(deviceIds, caseIds) {
 async function executeMatrix(devs, cases) {
   try {
     sseSend({ type: 'run-start', runId: curRun.runId, plan: curRun.plan });
-    for (const dev of devs) {
+    outer: for (const dev of devs) {
       const devCases = cases.filter((c) => c.scope === 'each');
       for (const c of devCases) {
+        if (abortRequested) { sseSend({ type: 'step', runId: curRun.runId, case: c.id, step: { name: '用户请求中止', status: 'skip', detail: '用户点了【停止测试】——剩余用例全部跳过', ms: 0 } }); break outer; }
         sseSend({ type: 'case-start', runId: curRun.runId, device: dev.id, case: c.id, name: c.name });
         const r = await runCase([dev], c);
         r.device = dev.id;
@@ -769,6 +798,7 @@ async function executeMatrix(devs, cases) {
       }
     }
     for (const c of cases.filter((x) => x.scope === 'cross')) {
+      if (abortRequested) break;
       sseSend({ type: 'case-start', runId: curRun.runId, device: '跨端', case: c.id, name: c.name });
       const r = await runCase(devs, c);
       r.device = 'cross';
@@ -778,10 +808,11 @@ async function executeMatrix(devs, cases) {
   } finally {
     curRun.endedAt = now();
     const cnt = (s) => curRun.runs.filter((r) => r.status === s).length;
-    curRun.summary = { pass: cnt('pass'), fail: cnt('fail'), warn: cnt('warn'), skip: cnt('skip'), total: curRun.runs.length };
+    curRun.summary = { pass: cnt('pass'), fail: cnt('fail'), warn: cnt('warn'), skip: cnt('skip'), total: curRun.runs.length, aborted: abortRequested };
     saveResults(curRun);
     sseSend({ type: 'run-end', runId: curRun.runId, summary: curRun.summary });
     running = false;
+    abortRequested = false;
   }
   return { runId: curRun.runId };
 }
@@ -807,8 +838,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.19</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.19 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.20</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.20 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -832,7 +863,7 @@ let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.19', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.20', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -889,8 +920,14 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/devices') { await autoConnectTcpDevices(); const targets = await listTargets(); return json(res, 200, { devices: await probeDevices(), running, targets }); }
   if (u.pathname === '/api/results') return json(res, 200, loadResults());
+  // ★ 0.229.20 停止测试：用户拍板"打开不能是失控的执行中"——后台在跑的那轮可随时请求中止
+  if (u.pathname === '/api/stop' && req.method === 'POST') {
+    if (!running) return json(res, 200, { ok: true, note: '当前没有在跑的测试' });
+    abortRequested = true;
+    return json(res, 200, { ok: true, note: '已请求中止——当前步骤跑完即停（不硬杀正在执行的命令），稍等片刻' });
+  }
   if (u.pathname === '/api/run' && req.method === 'POST') {
-    if (running) return json(res, 409, { error: '已有测试在跑，等它结束' });
+    if (running) return json(res, 409, { error: '已有测试在跑（页面刷新/重开不会中断后台执行——等它跑完，或点【停止测试】）' });
     let body = '';
     req.on('data', (d) => { body += d; });
     req.on('end', async () => {
@@ -1048,7 +1085,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.19] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.20] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -1071,7 +1108,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.19] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.20] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);

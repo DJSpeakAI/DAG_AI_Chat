@@ -111,7 +111,7 @@
   <div class="spacer"></div>
   <span id="srvState" class="sub"></span>
   <button class="btn ghost sm" onclick="refreshDevices()">刷新设备</button>
-  <button class="btn ghost sm" onclick="shutdownServer()" title="关闭测试台后台服务——不常驻，测完点它">关闭服务</button>
+
 </header>
 <div id="app" class="wrap" style="display:none">
   <div class="panel" id="casePanel">
@@ -128,6 +128,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" id="runBtn" onclick="startRun()">开始测试</button>
+      <button class="btn ghost" id="stopBtn" onclick="stopRun()" style="display:none" title="中止后台正在执行的那轮测试（当前步骤跑完即停、剩余用例跳过）；关掉本页面 30 秒后服务也会自动停">■ 停止测试</button>
 
       <select id="instMode" title="装机模式（需求6）"><option value="overwrite">覆盖安装（默认·不卸载）</option><option value="fresh">全新安装（卸载→装→冷启）</option></select>
       <button class="btn ghost" onclick="prepDevices()" title="点一下自动：先编译最新 HAP → 再安装到所选设备">装机</button>
@@ -208,6 +209,8 @@ async function boot() {
   try {
     const d = await api('/api/suites');
     SUITES = d.suites; RUNNING = d.running; APP_CFG = d.config || {};
+    // ★ 0.229.20 知情提示：打开页面若见"执行中"=你之前点的那轮还在后台跑（非自动开跑），可中止
+    if (RUNNING) setTimeout(() => toast('后台有一轮测试正在执行——这是你之前点「开始测试」启动的那轮（页面刷新/重开不会中断它）。去「实时执行」看进度，或点「■ 停止测试」中止'), 600);
     try { await api('/api/shutdown/cancel', { method: 'POST' }); } catch (_) { /* 无待关闭则忽略 */ }
     $('guide').style.display = 'none'; $('app').style.display = 'grid';
     renderTree(); await refreshDevices(); await loadHistory(); loadVersion();
@@ -364,7 +367,11 @@ function renderDevices(devices) {
   }
   DEVSEL_INITED = true;
 }
-function syncRunBtn() { $('runBtn').disabled = RUNNING; $('runningTip').textContent = RUNNING ? '测试进行中…' : ''; }
+function syncRunBtn() {
+  $('runBtn').disabled = RUNNING;
+  $('stopBtn').style.display = RUNNING ? 'inline-block' : 'none';
+  $('runningTip').textContent = RUNNING ? '测试执行中（后台跑，刷新页面不中断）——可点「■ 停止测试」中止' : '';
+}
 
 // ---------- 连接诊断报告（A+B：可复制，供用户丢给 AI；失败自动出报告，不需用户在对话里口述） ----------
 function buildConnReport(devices) {
@@ -562,9 +569,18 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.19 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.20 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
-  L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
+  L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : '') + (s.aborted ? ' / 已中止' : ''));
+  // ★ 0.229.20 接手 AI 判别框架：先分清「app 代码问题」还是「测试台流程问题」再动手（用户要求正向循环）
+  L.push('');
+  L.push('▶ 接手 AI 判别框架（先定性再修，勿上来就改代码）：');
+  L.push('  · 步骤含「未登录/已登录/基线/前置/收尾」且失败 → 先核对当时设备实际登录态：与用例前置不符=测试台流程问题（改用例前置/顺序/退出收尾）；相符仍失败=app 登录 UI/逻辑问题');
+  L.push('  · 含「versionCode」→ 装机或版本号问题（装机链路/app 三处版本号，非用例问题）');
+  L.push('  · 含「自动点/勾选」失败 → 页面文案或控件变了（dump 定位不到）——对 dump-artifacts 截图核对文案后改 keyword 或改 app UI');
+  L.push('  · 含「人工/授权/超时」→ 人工未及时操作或华为授权页变化（流程容忍度，非代码 bug）');
+  L.push('  · 含「ArkUI Test」→ 归 DevEco 侧排查（责任边界约定）');
+  L.push('  · 人工检查点步骤=半自动用例，其结论掺杂人为因素，判别时降权');
   for (const r of lastResults) {
     if (r.status === 'pass' || r.status === 'skip') continue;
     L.push('');
@@ -574,7 +590,7 @@ function buildReport() {
     }
   }
   L.push('');
-  L.push('（由测试台「复制问题报告」生成——请直接根据以上失败步骤排查）');
+  L.push('（由测试台「复制问题报告」生成——按上面判别框架定性后处置；改测试台流程请改正本 testing/console/，改完须重启服务）');
   return L.join('\n');
 }
 function copyReport() { copyText(buildReport(), '问题报告已复制——粘贴到 AI 对话即可接管排查'); }
@@ -638,15 +654,12 @@ async function loadHistory() {
     if (!r.history.length) el.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:4px 8px">暂无记录</div>';
   } catch (e) { }
 }
-// ---------- 关闭服务 ----------
-async function shutdownServer() {
-  if (!confirm('确定关闭测试台后台服务吗？\n\n关闭后本页面会失效，需要时再双击桌面上的「启动测试台.sh」重新开启。')) return;
-  try { await api('/api/shutdown', { method: 'POST' }); } catch (e) { /* 服务退出时连接可能中断，属正常 */ }
-  document.body.innerHTML = '<div class="guide">'
-    + '<div class="logo" style="width:52px;height:52px;font-size:22px;border-radius:14px;margin:0 auto 16px">测</div>'
-    + '<h1 style="font-size:19px;margin-bottom:12px">测试台服务已关闭</h1>'
-    + '<p style="color:var(--dim);line-height:2">后台服务已退出，本页面可以关闭了。<br>下次要用，双击桌面上的「启动测试台.sh」重新开启即可。</p>'
-    + '</div>';
+// ---------- ★ 0.229.20 停止测试（【关闭服务】按钮已删：关页签 30s 自动停服务为主关闭路径，本按钮只管中止在跑的测试） ----------
+async function stopRun() {
+  try {
+    const r = await api('/api/stop', { method: 'POST' });
+    toast(r.note || '已请求中止');
+  } catch (e) { toast('停止请求失败：' + e.message); }
 }
 // ---------- 顶栏版本（0.229.12：只显 APP 首页版本 vX.Y.Z；先前那个 versionCode 期望值已拿掉） ----------
 function loadVersion() {
