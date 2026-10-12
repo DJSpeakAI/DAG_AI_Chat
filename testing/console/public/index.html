@@ -192,6 +192,7 @@ async function boot() {
   try {
     const d = await api('/api/suites');
     SUITES = d.suites; RUNNING = d.running; APP_CFG = d.config || {};
+    try { await api('/api/shutdown/cancel', { method: 'POST' }); } catch (_) { /* 无待关闭则忽略 */ }
     $('guide').style.display = 'none'; $('app').style.display = 'grid';
     renderTree(); await refreshDevices(); await loadHistory(); loadVersion();
     $('srvState').textContent = '服务在线 · ' + (d.config ? d.config.bundle + ' · 期望 versionCode ' + d.config.expectedVersionCode : '');
@@ -505,7 +506,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.14 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.15 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
   for (const r of lastResults) {
@@ -611,10 +612,10 @@ function closeDetail() { $('modalBg').style.display = 'none'; $('detail').style.
 
 boot();
 setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') refreshDevices(); }, 30000);
-// ★ 0.229.14：关页签自动停后台（用户拍板选 B）——pagehide 仅在关页签/导航离开时触发，最小化不触发（服务照常跑）；
-// 跑测中服务端会拒绝关闭（安全）；刷新页面也会触发停服务（用户已知悉，重新起服务即可）
+// ★ 0.229.15：关页签自动停后台（用户拍板 B）——延迟 30s 关闭 + 页面回来自动取消：
+// 最小化不触发 pagehide（服务照常跑）；刷新后 boot 成功即取消关闭（刷新不再误停）；跑测中服务端拒绝（安全）
 window.addEventListener('pagehide', () => {
-  try { navigator.sendBeacon(base() + '/api/shutdown'); } catch (_) { /* 尽力发 */ }
+  try { navigator.sendBeacon(base() + '/api/shutdown?delay=30000'); } catch (_) { /* 尽力发 */ }
 });
 </script>
 </body>

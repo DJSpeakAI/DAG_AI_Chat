@@ -1,6 +1,9 @@
 // ============================================================
-// testing/console/server.js — 0.229.14 修 ArkUI Test 假失败解析 + 关页签自动停服务 + 下载报告（★ 2026-10-13 用户拍板）
+// testing/console/server.js — 0.229.15 关页签自动停服务（延迟关闭+回来自动取消）（★ 2026-10-13 用户拍板 B）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.15 新增：shutdown 支持 ?delay=ms（延迟关闭）+ /api/shutdown/cancel（页面回来取消）——
+//   根除 0.229.14 首版"刷新也触发 pagehide→立即停服务"的误停：刷新后 boot 成功即取消，只有真关页签才 30s 后停
 //
 // 0.229.14 新增：①summarizeAaTest 重写——ResultCode 硬判 + [fail] 精确行 + 统计数值化（根除"failure: 0 被关键词误判成失败"的假失败）
 //   ②（前端）pagehide + sendBeacon 关页签自动停后台（用户拍板 B；最小化不触发）③（前端）【下载报告】.txt（DevEco 终端 AI 读文件）
@@ -689,8 +692,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.14</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.14 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.15</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.15 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -710,10 +713,11 @@ function apiGuard(req) {
 }
 function json(res, code, obj) { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(obj)); }
 
+let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.14', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.15', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -725,8 +729,24 @@ async function handler(req, res) {
     return;
   }
   if (!apiGuard(req)) return json(res, 403, { error: 'Origin 不在白名单' });
+  // ★ 0.229.15 延迟关闭+取消：pagehide 带 ?delay=ms → 延迟执行；页面回来 /api/shutdown/cancel 取消
+  //   解决"刷新也触发 pagehide"的误停——刷新后 boot 成功即取消，只有真关页签才延迟后停
   if (u.pathname === '/api/shutdown' && req.method === 'POST') {
     if (running) return json(res, 409, { error: '测试正在运行，请等它结束后再关闭' });
+    const delay = parseInt(u.searchParams.get('delay') || '0', 10);
+    if (delay > 0) {
+      if (pendingShutdown) clearTimeout(pendingShutdown);
+      json(res, 200, { ok: true, delayed: delay });
+      console.log(`[关闭] 页面离开——${delay / 1000}s 后自动关闭（页面回来会自动取消）`);
+      pendingShutdown = setTimeout(() => {
+        pendingShutdown = null;
+        if (running) { console.log('[关闭] 延迟到期但测试在跑——取消，不关'); return; }
+        try { fs.unlinkSync(PID_FILE); } catch (_) { /* 无 pid 文件 */ }
+        console.log(`[关闭] 延迟到期，测试台服务 ${process.pid} 退出`);
+        process.exit(0);
+      }, delay);
+      return;
+    }
     json(res, 200, { ok: true, pid: process.pid });
     console.log(`[关闭] 收到前端关闭指令，测试台服务 ${process.pid} 即将退出`);
     setTimeout(() => {
@@ -734,6 +754,10 @@ async function handler(req, res) {
       process.exit(0);
     }, 300);
     return;
+  }
+  if (u.pathname === '/api/shutdown/cancel' && req.method === 'POST') {
+    if (pendingShutdown) { clearTimeout(pendingShutdown); pendingShutdown = null; console.log('[关闭] 页面已回来——自动关闭已取消'); }
+    return json(res, 200, { ok: true, cancelled: true });
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
@@ -905,7 +929,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.14] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.15] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -928,7 +952,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.14] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.15] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);
