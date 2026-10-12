@@ -14,9 +14,8 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 机制（真机日志实证：进程存活时 call 走 Callee onRemoteMessageRequest 而非 onNewWant）
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
-import { loadBuiltinApiConfig, setupCloudDownlink } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
-import { initCloudDb, forceCloudSyncNow, upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB（建库建表+设分布式表）；★ 0.223.0：回前台强制端云同步（手机掉队根治）+ 退后台池快照上行
-import { initCloudSyncBridge, snapshotWordPool, snapshotKnowledgePool } from '../utils/CloudSyncBridge'; // ★ 0.223.0：词/卡池桥（提供者注入防环）+ 退后台快照上行
+import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flushCloudRowsNow } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
+import { initCloudDb, forceCloudSyncNow, wipeCloudRows } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.228.4 临时清洗钩子（验证后删）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
 import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
 import { buildBackupPayload, writeInternalBackup } from '../utils/BackupUtil'; // 0.205.0 三道防线：退后台自动内部备份
@@ -53,6 +52,17 @@ export default class EntryAbility extends UIAbility {
     this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（冷启动路径——method/params 在 want.parameters）
     this.registerWidgetCallee(); // ★ 0.204.1：桌面卡片 call（热路径——进程存活/解冻后走 Callee，onCreate 时注册一次）
     this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
+    // ★ 0.228.4 临时清洗入口（aa start --ps wipeCloud 1 驱动；20s 等 RDB+激活；验证后删）
+    try {
+      const wp = want.parameters;
+      if (wp !== undefined && wp !== null && String(wp['wipeCloud'] ?? '') === '1') {
+        setTimeout(() => {
+          wipeCloudRows();
+        }, 20000);
+      }
+    } catch (_e) {
+      // 静默
+    }
   }
 
   // ★ 0.206.0：初始化 AGC 核心（异步不阻塞启动；失败静默——埋点通道降级为仅 hiAppEvent 本地）
@@ -176,7 +186,7 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.223.0：词/卡池桥提供者注入（防循环依赖——StoreUtil import Bridge 挂变更钩子，
     //   Bridge 不能反向 import StoreUtil 取 connect 函数，由本入口注入）
     try {
-      initCloudSyncBridge(connectWordBank, connectKnowledgeBank);
+      initRowBridgeProviders(connectWordBank, connectKnowledgeBank);
     } catch (err) {
       // 注入失败静默（词/卡池上行降级，气泡树池不受影响）
     }
@@ -244,11 +254,10 @@ export default class EntryAbility extends UIAbility {
     // 鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）
     const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
     lifecycle.isBackground = true;
-    // ★ 0.223.0：词/卡池快照上行（本地 RDB 写入不受后台网络限制——推云交给 autoSync 轮/
-    //   下次前台 forceCloudSyncNow；评分 3 秒防抖未到点的残余变更由本快照兜底收口）
+    // ★ 0.228.0：行模式全量 flush 上行（本地 RDB 写入不受后台网络限制——推云交给 autoSync 轮/
+    //   下次前台 forceCloudSyncNow；3 秒防抖未到点的残余变更由本 flush 兜底收口）
     try {
-      upsertCloudData('word_pool', snapshotWordPool());
-      upsertCloudData('knowledge_pool', snapshotKnowledgePool());
+      flushCloudRowsNow();
     } catch (_e) {
       // 静默（下次启动/前台重试）
     }

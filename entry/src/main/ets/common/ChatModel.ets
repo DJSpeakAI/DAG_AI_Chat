@@ -15,10 +15,14 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
+import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.228.1 临时诊断（定位后删）
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
- import { upsertCloudData, registerCloudDataHandler, connectCloudSyncArbiter } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接（写池后快照上云）；★ 0.165.2 下行处理器注册；★ 0.218.0 仲裁器（写冲突止血）
-import { mergeWordPoolFromCloud, mergeKnowledgePoolFromCloud } from '../utils/CloudSyncBridge'; // ★ 0.223.0 词/卡池下行条目级合并（无循环依赖：Bridge 不反向 import 本文件）
+import { CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）
+import { WordItem, WordFolder, WordBankStore } from './WordModel'; // ★ 0.228.0 行桥接（词池序列化/复活）
+import { KnowledgeCard, KFolder, KnowledgeBankStore } from './KnowledgeModel'; // ★ 0.228.0 行桥接
+import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, reviveFolder } from '../utils/BackupUtil'; // ★ 0.228.0 plain 流水线复用（0.205.4 纪律）
+import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
@@ -1254,111 +1258,1058 @@ export function migrateLegacyPoolsIfNeeded(canvasMode: CanvasMode): void {
 }
 
 // ============================================================
-// ★ 0.165.2：云端下行刷新（dataChange 事件 → 写回池 → 重建工作区）
+// ★ 0.228.0 行桥接（rowBridge）——细粒度行模式：上行 flush / 下行 reconcile / 旧池迁移
 // ============================================================
-// 链路：CloudSyncUtil 订阅 SUBSCRIBE_TYPE_CLOUD → 云端数据下行到本地 RDB →
-//   pullAndNotify 拉快照 → 此处 handler 写回 PersistenceV2 池 → 重建工作区
-// 设计约束：
-//   - 【绝不 upsert】下行写池后不能再调 upsertCloudData——否则 A 写→云→B 下行→
-//     B 再 upsert→云→A 下行……无限回环。PersistenceV2 赋值自动落盘，无需手动上云
-//   - 【值比较挡回声】本机 upsert 上云的回声事件：RDB 值 == 池值 → 不写回，天然幂等
-//   - 【竞态窗口】本机池已更新但 upsert 尚未落 RDB 的毫秒级窗口内恰逢下行，可能用
-//     旧值覆盖新编辑（last-write-wins 语义，快照行模式固有，概率极低，MVP 接受）
-//   - 【打断风险】下行重建工作区会打断进行中的流式回复/输入（nodeList 整体替换）——
-//     触发条件是另一台设备刚改过数据，属用户预期内的多端一致，MVP 接受
+// 行键：node:<id> / tab:<id> / word:<id> / card:<id> / wfolder:<id> / kfolder:<id> /
+//   cfg:<name>（api-config/ai-pref/face-mode 三枚账号级设置） / del:<id>（删除标记行）
+// 探针实证约束（docs/0.165+/0.228.0 §四）：物理删行不传播→删除=del 标记行；
+//   超限行毒化批次→CloudSyncUtil 512KB 分块；TIME_FIRST 行级 LWW 框架已裁决行版本。
+// 语义仲裁（cache 规则，统一全类型）：本地序列化==云端行值→跳过；不等时——本地值==cache
+//   （本端自上次上行后未改）或 cache 缺失（本端从未上行，含全新安装种子）→云端胜；本地值
+//   !=cache（有未上行编辑）→本地胜（flush 上行）。种子 mtime=now 顶掉云端进度的事故路径
+//   被「cache 缺失→云端胜」结构性封死（0.223.1 同源防线升级）。
+// 回环纪律：reconcile 只写 PersistenceV2 不 upsert 行；flush 只在值变时写行（diff-cache）。
 // ============================================================
-export function setupCloudDownlink(): void {
-  registerCloudDataHandler((key: string, value: string, updatedAt: number): void => {
-    // ★ 0.218.0 时间戳仲裁（写冲突止血核心）：云端行时间戳不新于本地最后编辑/写回时间 → 丢弃。
-    //   根除 0.165 快照行固有缺陷——他端旧树/空树下行整池覆盖本地（PC 清零事故机制）；
-    //   本机上行回声（updatedAt == 本地 mtime）亦被此条件天然挡住，接替旧"值比较挡回声"。
-    //   个人用户场景语义：最新编辑者胜（用户拍板 2026-10-10）。
-    const arbiter = connectCloudSyncArbiter();
-    const localMtime = key === 'flat_pool' ? arbiter.mtimeFlat : arbiter.mtimeTabs;
-    if (updatedAt <= localMtime) {
-      return;
+
+// 提供者注入（防循环依赖：WordStoreUtil/KnowledgeStoreUtil import 本文件挂钩子，本文件不反向 import 它们）
+let wordBankProvider: (() => WordBankStore) | null = null;
+let knowledgeBankProvider: (() => KnowledgeBankStore) | null = null;
+
+export function initRowBridgeProviders(wordProvider: () => WordBankStore, klgProvider: () => KnowledgeBankStore): void {
+  wordBankProvider = wordProvider;
+  knowledgeBankProvider = klgProvider;
+}
+
+// diff-cache：key → 本端最后上行值（杀行时间戳 churn + reconcile 语义仲裁基石；重启由
+//   首轮 reconcile 的「云端值==本地值→set cache」与 flush 重建，无需持久化）
+const rowCache = new Map<string, string>();
+
+// ---- 序列化（0.205.4 纪律：@ObservedV2 一律手写 plain 映射） ----
+function nodeToJson(node: BubbleNode): string {
+  const msgs: SerializedMessage[] = node.messages.map((msg: ChatMessage): SerializedMessage => {
+    return {
+      messageId: msg.messageId, role: msg.role, content: msg.content, imageUrl: msg.imageUrl,
+      inputTokens: msg.inputTokens, outputTokens: msg.outputTokens,
+      isPodcastMode: msg.isPodcastMode, model: msg.model
+    };
+  });
+  const n: SerializedNode = {
+    nodeID: node.nodeID, parentID: node.parentID, messages: msgs, x: node.x, y: node.y,
+    parentX: node.parentX, parentY: node.parentY, historySummary: node.historySummary,
+    historySummaryCount: node.historySummaryCount, nodeTitle: node.nodeTitle,
+    draftText: node.draftText, draftImages: node.draftImages
+  };
+  return JSON.stringify(n);
+}
+
+function nodeFromJson(v: string): BubbleNode | null {
+  try {
+    const n = JSON.parse(v) as SerializedNode;
+    const messages: ChatMessage[] = (n.messages ?? []).map((m: SerializedMessage): ChatMessage => {
+      return new ChatMessage(m.messageId, m.role as ChatRole, m.content, m.imageUrl ?? [],
+        m.inputTokens ?? 0, m.outputTokens ?? 0, m.isPodcastMode ?? false, m.model ?? '');
+    });
+    return new BubbleNode(n.nodeID, n.parentID, messages, n.x ?? 0, n.y ?? 0, n.parentX ?? 0, n.parentY ?? 0,
+      n.historySummary ?? '', n.historySummaryCount ?? 0, n.nodeTitle ?? '', n.draftText ?? '', n.draftImages ?? '');
+  } catch (_e) {
+    return null;
+  }
+}
+
+function wordFolderToJson(f: WordFolder): string {
+  const o: Record<string, Object> = {};
+  o['id'] = f.id;
+  o['name'] = f.name;
+  o['parentId'] = f.parentId;
+  o['createdAt'] = f.createdAt;
+  o['mtime'] = f.mtime;
+  return JSON.stringify(o);
+}
+
+function wordFolderFromJson(v: string): WordFolder | null {
+  try {
+    const r = JSON.parse(v) as Record<string, Object>;
+    const f = new WordFolder();
+    f.id = String(r['id'] ?? '');
+    f.name = String(r['name'] ?? '');
+    f.parentId = String(r['parentId'] ?? '');
+    f.createdAt = Number(r['createdAt'] ?? 0);
+    f.mtime = Number(r['mtime'] ?? 0);
+    return f.id.length > 0 ? f : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+function cfgApiToJson(): string {
+  const c = connectApiConfig();
+  const o: Record<string, Object> = {};
+  o['apiKey'] = c.apiKey;
+  o['endpoint'] = c.endpoint;
+  o['model'] = c.model;
+  o['provider'] = c.provider;
+  o['audioModel'] = c.audioModel;
+  o['audioVoice'] = c.audioVoice;
+  o['audioEndpoint'] = c.audioEndpoint;
+  o['audioKey'] = c.audioKey;
+  return JSON.stringify(o);
+}
+
+function cfgApiApply(v: string): boolean {
+  try {
+    const r = JSON.parse(v) as Record<string, Object>;
+    const c = connectApiConfig();
+    const g = (k: string, cur: string): string => {
+      return String(r[k] ?? cur);
+    };
+    c.apiKey = g('apiKey', c.apiKey);
+    c.endpoint = g('endpoint', c.endpoint);
+    c.model = g('model', c.model);
+    c.provider = g('provider', c.provider);
+    c.audioModel = g('audioModel', c.audioModel);
+    c.audioVoice = g('audioVoice', c.audioVoice);
+    c.audioEndpoint = g('audioEndpoint', c.audioEndpoint);
+    c.audioKey = g('audioKey', c.audioKey);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function cfgAiPrefToJson(): string {
+  const p = connectAiPreference();
+  const o: Record<string, Object> = {};
+  o['aiNickname'] = p.aiNickname;
+  o['encourageMode'] = p.encourageMode;
+  return JSON.stringify(o);
+}
+
+function cfgAiPrefApply(v: string): boolean {
+  try {
+    const r = JSON.parse(v) as Record<string, Object>;
+    const p = connectAiPreference();
+    const n = String(r['aiNickname'] ?? p.aiNickname);
+    p.aiNickname = n;
+    const m = String(r['encourageMode'] ?? p.encourageMode);
+    if (m === 'off' || m === 'light' || m === 'heavy') {
+      p.encourageMode = m;
     }
-    if (key === 'flat_pool') {
-      const persist = PersistenceV2.connect(PersistData, 'persist-data',
-        () => new PersistData()) as PersistData;
-      if (persist.bubbleTreeJson !== value) {
-        // ★ 0.218.1 节点级 union 合并替代整池替换（局部视图覆盖根治）：两棵树按 nodeID 并集，
-        //   双端各自的气泡都保留；合并树写回本地并上行（成为云端最新，对端再下行时同款合并收敛）。
-        //   根治场景：新设备未拉到云端就编辑上行（局部小树合法覆盖云端，时间戳挡不住）——
-        //   union 后双端节点全量保留，永不再"擦除"。
-        const merged = unionMergeFlatPool(persist.bubbleTreeJson, value);
-        if (merged !== null && merged !== persist.bubbleTreeJson) {
-          arbiter.backupFlat = persist.bubbleTreeJson; // ★ 0.218.0 写回前整池备份（数据安全兜底）
-          persist.bubbleTreeJson = merged;
-          arbiter.mtimeFlat = updatedAt; // 写回即推进本地水位（后续更旧的下行同样被挡）
-          refreshWorkspaceFromPools();
-          // 合并结果上行：若合并树与云端下行值不同（本地有云端缺的节点），上行让对端也收敛
-          if (merged !== value) {
-            upsertCloudData('flat_pool', merged);
-          }
-        }
-      }
-    } else if (key === 'tabs_pool') {
-      const forest = connectTabForest();
-      if (forest.tabsJson !== value) {
-        arbiter.backupTabs = forest.tabsJson;
-        forest.tabsJson = value;
-        arbiter.mtimeTabs = updatedAt;
-        refreshWorkspaceFromPools();
-      }
-    } else if (key === 'word_pool') {
-      // ★ 0.223.0：词池下行——池级时间戳仲裁（挡回声/整池旧数据）+ Bridge 条目级合并
-      //   （同 id 最后编辑者胜、双端各改各条全保留、墓碑传播删除）。下行写池绝不 upsert（防回环）。
-      if (updatedAt > arbiter.mtimeWord) {
-        if (mergeWordPoolFromCloud(value)) {
-          arbiter.mtimeWord = updatedAt; // 写回即推进水位（echo 由 updatedAt==mtime 天然挡）
-        }
-      }
-    } else if (key === 'knowledge_pool') {
-      if (updatedAt > arbiter.mtimeKnowledge) {
-        if (mergeKnowledgePoolFromCloud(value)) {
-          arbiter.mtimeKnowledge = updatedAt;
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function cfgFaceModeToJson(): string {
+  const f = connectFaceMode();
+  const o: Record<string, Object> = {};
+  o['mode'] = f.mode;
+  return JSON.stringify(o);
+}
+
+function cfgFaceModeApply(v: string): boolean {
+  try {
+    const r = JSON.parse(v) as Record<string, Object>;
+    const m = String(r['mode'] ?? '');
+    if (m === 'single' || m === 'double') {
+      connectFaceMode().mode = m;
+    }
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+// ---- 上行 flush（防抖 3s；onBackground/闸门开后立即版 flushCloudRowsNow） ----
+let flushTimerId: number = -1;
+
+function scheduleRowFlush(): void {
+  if (flushTimerId >= 0) {
+    clearTimeout(flushTimerId);
+  }
+  flushTimerId = setTimeout(() => {
+    flushTimerId = -1;
+    flushCloudRowsNow();
+  }, 3000);
+}
+
+// ★ 0.228.1：模式感知节点真相（saveTree 只写当前模式的池——非活动池必然 stale；
+//   flush 必须从活动模式取活集，否则 tabs 模式下删除被 stale flat 池判为存活→del 行永不产生）
+function activeTreeNodes(): BubbleNode[] {
+  const modeStore = connectCanvasMode();
+  if (modeStore.mode === 'tabs') {
+    const forest = connectTabForest();
+    const out: BubbleNode[] = [];
+    for (const t of parseTabs(forest.tabsJson)) {
+      const tree = deserializeBubbleTree(t.treeJson);
+      if (tree !== null) {
+        for (const n of tree.nodeList) {
+          out.push(n);
         }
       }
     }
+    return out;
+  }
+  const persist = PersistenceV2.connect(PersistData, 'persist-data',
+    () => new PersistData()) as PersistData;
+  const tree = deserializeBubbleTree(persist.bubbleTreeJson);
+  return tree !== null ? tree.nodeList : [];
+}
+
+// ★ 0.228.1：flat 池坐标快照（layout:flat 原子行——整套坐标单行 LWW，杜绝并发重排
+//   每节点独立裁决导致的混排汤；tab 树天然整树一行本就原子，仅 flat 视图需要）
+function localLayoutJson(): string {
+  const persist = PersistenceV2.connect(PersistData, 'persist-data',
+    () => new PersistData()) as PersistData;
+  const tree = deserializeBubbleTree(persist.bubbleTreeJson);
+  const o: Record<string, Object> = {};
+  if (tree !== null) {
+    for (const n of tree.nodeList) {
+      const a: number[] = [n.x, n.y, n.parentX, n.parentY];
+      o[n.nodeID] = a;
+    }
+  }
+  return JSON.stringify(o);
+}
+
+function applyCloudLayout(v: string | undefined): boolean {
+  if (v === undefined) {
+    return false;
+  }
+  const local = localLayoutJson();
+  if (v === local) {
+    rowCache.set('layout:flat', v);
+    return false;
+  }
+  if (!cloudWins('layout:flat', local)) {
+    return false; // 本地未上行布局胜（flush 收口）
+  }
+  try {
+    const r = JSON.parse(v) as Record<string, Object>;
+    const persist = PersistenceV2.connect(PersistData, 'persist-data',
+      () => new PersistData()) as PersistData;
+    const tree = deserializeBubbleTree(persist.bubbleTreeJson);
+    if (tree === null) {
+      return false;
+    }
+    let hit = false;
+    for (const n of tree.nodeList) {
+      const a = r[n.nodeID];
+      if (Array.isArray(a) && (a as Array<number>).length >= 4) {
+        const q = a as Array<number>;
+        n.x = q[0];
+        n.y = q[1];
+        n.parentX = q[2];
+        n.parentY = q[3];
+        hit = true;
+      }
+    }
+    if (!hit) {
+      return false;
+    }
+    persist.bubbleTreeJson = serializeBubbleTree(tree);
+    rowCache.set('layout:flat', v);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+// ★ 0.228.1：del 行双池清理（tab 树删除盲区修复——mergeNodes 只清 flat 池，
+//   非活动模式的 tab 树留僵尸，切模式即还魂；云端有实体行的 id 跳过=复活语义保留）
+function propagateDelsToPools(dels: Map<string, number>, cloudNodes: Map<string, string>): boolean {
+  if (dels.size === 0) {
+    return false;
+  }
+  let changed = false;
+  const persist = PersistenceV2.connect(PersistData, 'persist-data',
+    () => new PersistData()) as PersistData;
+  const flatTree = deserializeBubbleTree(persist.bubbleTreeJson);
+  if (flatTree !== null && flatTree.nodeList.length > 0) {
+    const kept = flatTree.nodeList.filter((n: BubbleNode): boolean => {
+      return !dels.has(n.nodeID) || cloudNodes.has('node:' + n.nodeID);
+    });
+    if (kept.length !== flatTree.nodeList.length) {
+      persist.bubbleTreeJson = serializeBubbleTree(new BubbleTree(kept));
+      changed = true;
+    }
+  }
+  const forest = connectTabForest();
+  const tabs = parseTabs(forest.tabsJson);
+  let tabsChanged = false;
+  for (const t of tabs) {
+    const tr = deserializeBubbleTree(t.treeJson);
+    if (tr !== null && tr.nodeList.length > 0) {
+      const kept = tr.nodeList.filter((n: BubbleNode): boolean => {
+        return !dels.has(n.nodeID) || cloudNodes.has('node:' + n.nodeID);
+      });
+      if (kept.length !== tr.nodeList.length) {
+        t.treeJson = serializeBubbleTree(new BubbleTree(kept));
+        tabsChanged = true;
+      }
+    }
+  }
+  if (tabsChanged) {
+    forest.tabsJson = serializeTabs(tabs);
+    changed = true;
+  }
+  return changed;
+}
+
+// ★ 0.228.5：两池互转（0.151「两池互通」语义在行模式的落地）——nodeSet=内容唯一真相
+//   （flat 池∪tab 树、同 id 取 flat=node 行最新、剔 dels），Tab=派生视图：每根必有 Tab、
+//   现有 Tab 保名保序、根亡 Tab 除、新根生 Tab（id='tab_'+根id后缀=跨端确定性，杜绝 ID 错乱）；
+//   幂等（确定性排序+稳定序列化），收敛后零写入零 churn
+function interconvertPools(dels: Map<string, number>): boolean {
+  const persist = PersistenceV2.connect(PersistData, 'persist-data',
+    () => new PersistData()) as PersistData;
+  const forest = connectTabForest();
+  const byId = new Map<string, BubbleNode>();
+  const flatTree = deserializeBubbleTree(persist.bubbleTreeJson);
+  if (flatTree !== null) {
+    for (const n of flatTree.nodeList) {
+      if (!dels.has(n.nodeID)) {
+        byId.set(n.nodeID, n);
+      }
+    }
+  }
+  const tabs = parseTabs(forest.tabsJson);
+  const tabRootIds: string[] = [];
+  for (const t of tabs) {
+    const tr = deserializeBubbleTree(t.treeJson);
+    if (tr === null) {
+      tabRootIds.push('');
+      continue;
+    }
+    const root = tr.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+    tabRootIds.push(root !== undefined ? root.nodeID : '');
+    for (const n of tr.nodeList) {
+      if (!dels.has(n.nodeID) && !byId.has(n.nodeID)) {
+        byId.set(n.nodeID, n);
+      }
+    }
+  }
+  let changed = false;
+  const all: BubbleNode[] = [];
+  byId.forEach((n: BubbleNode): void => {
+    all.push(n);
+  });
+  all.sort((a: BubbleNode, b: BubbleNode): number => {
+    return idCreateTime(a.nodeID) - idCreateTime(b.nodeID);
+  });
+  const newFlatJson = serializeBubbleTree(new BubbleTree(all));
+  if (newFlatJson !== persist.bubbleTreeJson) {
+    persist.bubbleTreeJson = newFlatJson;
+    changed = true;
+  }
+  const children = new Map<string, BubbleNode[]>();
+  byId.forEach((n: BubbleNode): void => {
+    if (n.parentID !== null) {
+      const list = children.get(n.parentID) ?? [];
+      list.push(n);
+      children.set(n.parentID, list);
+    }
+  });
+  const newTabs: TabMeta[] = [];
+  const covered = new Set<string>();
+  for (let i = 0; i < tabs.length; i++) {
+    const rootId = tabRootIds[i];
+    const rn = byId.get(rootId);
+    if (rootId.length === 0 || rn === undefined || covered.has(rootId)) {
+      changed = true; // 坏树/根已删/重复 → Tab 移除
+      continue;
+    }
+    covered.add(rootId);
+    const subtree: BubbleNode[] = [];
+    collectSubtree(rn, children, subtree, new Set<string>());
+    newTabs.push({
+      id: tabs[i].id,
+      name: tabs[i].name.length > 0 ? tabs[i].name : getRootDisplayName(rn),
+      treeJson: serializeBubbleTree(new BubbleTree(subtree))
+    });
+  }
+  byId.forEach((n: BubbleNode): void => {
+    if (n.parentID === null && !covered.has(n.nodeID)) {
+      covered.add(n.nodeID);
+      const subtree: BubbleNode[] = [];
+      collectSubtree(n, children, subtree, new Set<string>());
+      newTabs.push({
+        id: 'tab_' + n.nodeID.substring('bubble_'.length),
+        name: getRootDisplayName(n),
+        treeJson: serializeBubbleTree(new BubbleTree(subtree))
+      });
+      changed = true;
+    }
+  });
+  newTabs.sort((a: TabMeta, b: TabMeta): number => {
+    return idCreateTime(a.id) - idCreateTime(b.id);
+  });
+  const newTabsJson = serializeTabs(newTabs);
+  if (newTabsJson !== forest.tabsJson) {
+    forest.tabsJson = newTabsJson;
+    changed = true;
+  }
+  return changed;
+}
+
+function collectSubtree(root: BubbleNode, children: Map<string, BubbleNode[]>, out: BubbleNode[], seen: Set<string>): void {
+  if (seen.has(root.nodeID)) {
+    return;
+  }
+  seen.add(root.nodeID);
+  out.push(root);
+  const kids = children.get(root.nodeID) ?? [];
+  kids.sort((a: BubbleNode, b: BubbleNode): number => {
+    return idCreateTime(a.nodeID) - idCreateTime(b.nodeID);
+  });
+  for (const k of kids) {
+    collectSubtree(k, children, out, seen);
+  }
+}
+
+export async function flushCloudRowsNow(): Promise<void> {
+  rbLog(`F0 flush-start gate=${connectCloudSyncArbiter().rowInitDone}`);
+  if (!connectCloudSyncArbiter().rowInitDone) {
+    return; // 首拉闸门未开（0.223.1 种子事故防线——闸开后的首轮 flush 补写一切）
+  }
+  // ★ 0.228.3：cache 冷启播种——cache 为空（新进程）时从 RDB 现有行播种：
+  //   未变值零重写=时间戳不被冷启集体刷新（否则开着的对端给已删条目盖新戳→压过
+  //   del 行→复活循环，用户实测「马上回复」根因）；顺带杀全量 churn
+  if (rowCache.size === 0) {
+    const seedRows = await queryAllRows();
+    for (const r of seedRows) {
+      if (r.key.startsWith('cfg:') || r.key.startsWith('node:') || r.key.startsWith('tab:') ||
+        r.key.startsWith('word:') || r.key.startsWith('card:') || r.key.startsWith('wfolder:') ||
+        r.key.startsWith('kfolder:') || r.key.startsWith('layout:')) {
+        rowCache.set(r.key, r.value);
+      }
+    }
+  }
+  try {
+    // 气泡树（★ 0.228.1 活动模式真相——非活动池 stale 不得作为活集/写行来源）
+    const liveNodes = new Set<string>();
+    for (const node of activeTreeNodes()) {
+      liveNodes.add(node.nodeID);
+      upsertIfChanged('node:' + node.nodeID, nodeToJson(node));
+    }
+    flushDeletions('node:', liveNodes);
+    // Tab 森林
+    const forest = connectTabForest();
+    const tabs = parseTabs(forest.tabsJson);
+    const liveTabs = new Set<string>();
+    for (const t of tabs) {
+      liveTabs.add(t.id);
+      upsertIfChanged('tab:' + t.id, JSON.stringify(t));
+    }
+    flushDeletions('tab:', liveTabs);
+    // 单词库 + 文件夹
+    if (wordBankProvider !== null) {
+      const ws = wordBankProvider();
+      const liveWords = new Set<string>();
+      for (const w of ws.words) {
+        liveWords.add(w.id);
+        upsertIfChanged('word:' + w.id, JSON.stringify(wordToPlain(w)));
+      }
+      flushDeletions('word:', liveWords);
+      const liveWf = new Set<string>();
+      for (const f of ws.folders) {
+        liveWf.add(f.id);
+        upsertIfChanged('wfolder:' + f.id, wordFolderToJson(f));
+      }
+      flushDeletions('wfolder:', liveWf);
+    }
+    // 知识库 + 文件夹
+    if (knowledgeBankProvider !== null) {
+      const ks = knowledgeBankProvider();
+      const liveCards = new Set<string>();
+      for (const c of ks.cards) {
+        liveCards.add(c.id);
+        upsertIfChanged('card:' + c.id, JSON.stringify(cardToPlain(c)));
+      }
+      flushDeletions('card:', liveCards);
+      const liveKf = new Set<string>();
+      for (const f of ks.folders) {
+        liveKf.add(f.id);
+        upsertIfChanged('kfolder:' + f.id, JSON.stringify(folderToPlain(f)));
+      }
+      flushDeletions('kfolder:', liveKf);
+    }
+    // 账号级设置三枚
+    upsertIfChanged('cfg:api-config', cfgApiToJson());
+    upsertIfChanged('cfg:ai-pref', cfgAiPrefToJson());
+    upsertIfChanged('cfg:face-mode', cfgFaceModeToJson());
+    // ★ 0.228.1：flat 模式写 layout 原子行（整套坐标单行——并发重排不再混排）
+    if (connectCanvasMode().mode === 'flat') {
+      upsertIfChanged('layout:flat', localLayoutJson());
+    }
+    rbLog('F1 flush-ok');
+  } catch (_e) {
+    rbLog(`F2 flush-threw ${String(_e)}`);
+  }
+}
+
+function upsertIfChanged(key: string, value: string): void {
+  if (rowCache.get(key) === value) {
+    return; // diff-cache 挡（值变才写行——杀 churn）
+  }
+  upsertRow(key, value);
+  rowCache.set(key, value);
+}
+
+// ★ 0.228.2：删除检测改 RDB 行键差集（cache 无关——冷启缓存空时删除曾零 del 行出生，
+//   云端实体行在→对端复活=用户实测卡片复活根因；RDB 行是上行事实，永不失忆）
+function flushDeletions(prefix: string, live: Set<string>): void {
+  queryAllRows().then((rows: CloudRow[]) => {
+    const now = Date.now();
+    for (const r of rows) {
+      if (!r.key.startsWith(prefix) || r.key.indexOf('~') >= 0) {
+        continue;
+      }
+      const id = r.key.substring(prefix.length);
+      if (live.has(id)) {
+        continue;
+      }
+      const o: Record<string, Object> = {};
+      o['t'] = now;
+      upsertRow('del:' + id, JSON.stringify(o)); // 删除标记行（探针实证：物理删行不传播）
+      deleteRowLocal(r.key); // 本地清理（云端残留由 del 行语义压制）
+      rowCache.delete(r.key);
+    }
+  }).catch(() => {
+    // 静默（下次 flush 重试）
   });
 }
 
-// ★ 0.218.1：平铺池节点级 union 合并——两棵树 nodeList 按 nodeID 取并集；
-//   同 id 冲突时云端版本胜（能走到下行分支=云端行时间戳已胜出，本地旧版无理由保留）。
-//   合并产物序列化返回；任一侧解析失败返回 null（调用方放弃合并、不写回，保守保数据）。
-//   ★ 0.223.1 fix：本地空串=全新安装（PersistData 默认 ''，deserialize 必 null）——云端即真相
-//   直接采纳（此前 null 保守分支把「新设备从云恢复整棵树」拦死了，Pad 实测 0 个气泡）。
-//   非空的坏 JSON（真实损坏）仍走 null 保守——不碰本地数据。
-function unionMergeFlatPool(localJson: string, cloudJson: string): string | null {
-  if (localJson.trim().length === 0) {
-    return cloudJson; // 全新安装空池——云端树直接落地
+// ---- 下行 reconcile（dataChange/forceSync 后触发；全表 query=同步完成后的单点快照） ----
+let reconcileBusy = false;
+let reconcileQueued = false;
+
+function reconcileCloudRows(): void {
+  if (reconcileBusy) {
+    reconcileQueued = true;
+    return;
   }
-  const local = deserializeBubbleTree(localJson);
-  const cloud = deserializeBubbleTree(cloudJson);
-  if (local === null || cloud === null) {
-    return null;
-  }
-  const byId = new Map<string, BubbleNode>();
-  local.nodeList.forEach((n: BubbleNode): void => {
-    byId.set(n.nodeID, n);
-  });
-  let hasNewFromCloud = false;
-  cloud.nodeList.forEach((n: BubbleNode): void => {
-    const id = n.nodeID;
-    if (!byId.has(id)) {
-      hasNewFromCloud = true;
+  reconcileBusy = true;
+  rbLog('R0 reconcile-start');
+  queryAllRows().then((rows: CloudRow[]) => {
+    rbLog(`R1 rows=${rows.length}`);
+    try {
+      reconcileWithRows(rows);
+      rbLog('R2 reconcile-ok');
+    } catch (_e) {
+      rbLog(`R3 reconcile-threw ${String(_e)}`);
+    } finally {
+      reconcileBusy = false;
+      if (reconcileQueued) {
+        reconcileQueued = false;
+        reconcileCloudRows();
+      }
     }
-    byId.set(id, n); // 云端同 id 覆盖本地（下行已过时间戳仲裁=云端胜出）
+  }).catch(() => {
+    rbLog('R4 query-failed');
+    reconcileBusy = false;
   });
-  const mergedList: BubbleNode[] = [];
-  byId.forEach((n: BubbleNode): void => {
-    mergedList.push(n);
-  });
-  if (!hasNewFromCloud && mergedList.length === local.nodeList.length && mergedList.length === cloud.nodeList.length) {
-    return cloudJson; // 完全同集合，直接用云端串（幂等）
+}
+
+// ★ 0.228.1 临时诊断（MEMORY 0.228.1 入档；定位后整段删除）
+
+function rbLog(msg: string): void {
+  hilog.info(0x0D20, 'DAGAI_RB', '%{public}s', msg);
+}
+
+interface ChunkedMarker {
+  __chunks?: number;
+}
+
+function reconcileWithRows(rows: CloudRow[]): void {
+  const raw = new Map<string, string>();
+  const ts = new Map<string, number>();
+  for (const r of rows) {
+    raw.set(r.key, r.value);
+    ts.set(r.key, r.updatedAt);
   }
-  return serializeBubbleTree(new BubbleTree(mergedList));
+  // chunk 重组（主行 {"__chunks":N} + <key>~<i> 片段行；缺片=坏行丢弃自愈）
+  const entity = new Map<string, string>();
+  raw.forEach((v: string, k: string): void => {
+    if (k.indexOf('~') >= 0) {
+      return;
+    }
+    let chunked = false;
+    try {
+      const m = JSON.parse(v) as ChunkedMarker;
+      if (typeof m.__chunks === 'number' && m.__chunks > 0) {
+        chunked = true;
+        let full = '';
+        let ok = true;
+        for (let i = 0; i < m.__chunks; i++) {
+          const seg = raw.get(`${k}~${i}`);
+          if (seg === undefined) {
+            ok = false;
+            break;
+          }
+          full += seg;
+        }
+        if (ok) {
+          entity.set(k, full);
+        }
+      }
+    } catch (_e) {
+      // 非 JSON 值按原文处理
+    }
+    if (!chunked) {
+      entity.set(k, v);
+    }
+  });
+  // 域收集
+  const cloudNodes = new Map<string, string>();
+  const cloudTabs = new Map<string, string>();
+  const cloudWords = new Map<string, string>();
+  const cloudCards = new Map<string, string>();
+  const cloudWf = new Map<string, string>();
+  const cloudKf = new Map<string, string>();
+  const cloudCfg = new Map<string, string>();
+  const dels = new Map<string, number>();
+  entity.forEach((v: string, k: string): void => {
+    if (k.startsWith('node:')) {
+      cloudNodes.set(k, v);
+    } else if (k.startsWith('tab:')) {
+      cloudTabs.set(k, v);
+    } else if (k.startsWith('word:')) {
+      cloudWords.set(k, v);
+    } else if (k.startsWith('card:')) {
+      cloudCards.set(k, v);
+    } else if (k.startsWith('wfolder:')) {
+      cloudWf.set(k, v);
+    } else if (k.startsWith('kfolder:')) {
+      cloudKf.set(k, v);
+    } else if (k.startsWith('cfg:')) {
+      cloudCfg.set(k, v);
+    } else if (k.startsWith('del:')) {
+      try {
+        const r = JSON.parse(v) as Record<string, Object>;
+        const t = Number(r['t'] ?? 0);
+        if (t > 0) {
+          dels.set(k.substring('del:'.length), t);
+        }
+      } catch (_e) {
+        // 坏墓碑忽略
+      }
+    }
+  });
+  // ★ 旧池迁移（一次性）：四池行内容吸收进各域 map（走同款合并=幂等；本地/云端池行删除）
+  const arb = connectCloudSyncArbiter();
+  let justMigrated = false;
+  if (!arb.legacyMigrated) {
+    absorbLegacyPools(entity, cloudNodes, cloudTabs, cloudWords, cloudCards, cloudWf, cloudKf);
+    arb.legacyMigrated = true;
+    justMigrated = true;
+    deleteRowLocal('flat_pool');
+    deleteRowLocal('tabs_pool');
+    deleteRowLocal('word_pool');
+    deleteRowLocal('knowledge_pool');
+  }
+  // 各域合并
+  const nodesChanged = mergeNodes(cloudNodes, dels, ts);
+  const tabsChanged = mergeTabs(cloudTabs, dels, ts);
+  mergeWords(cloudWords, cloudWf, dels, ts);
+  mergeKnowledge(cloudCards, cloudKf, dels, ts);
+  mergeCfgs(cloudCfg);
+  // ★ 0.228.1：布局原子行下发 + del 行双池清理（tab 树删除盲区修复）
+  const layoutChanged = applyCloudLayout(entity.get('layout:flat'));
+  const delsPropagated = propagateDelsToPools(dels, cloudNodes);
+  const interChanged = interconvertPools(dels); // ★ 0.228.5：两池绑定（每根必有 Tab）
+  if (nodesChanged || tabsChanged || layoutChanged || delsPropagated || interChanged) {
+    refreshWorkspaceFromPools(); // 重建工作区 + needsCloudRedraw（保坐标重绘，0.223.0 机制原样）
+  }
+  // 首拉闸门开启
+  arb.rowInitDone = true;
+  // 迁移物化：吸收值只存在于内存 map（reconcile 已把它们播进 cache 令 flush 误判「未变」）——
+  //   必须显式落行，否则实体行永远不出生、行模式云端为空（实测实锤：仅 cfg 3 行）
+  if (justMigrated) {
+    materializeRows(cloudNodes, 'node:');
+    materializeRows(cloudTabs, 'tab:');
+    materializeRows(cloudWords, 'word:');
+    materializeRows(cloudCards, 'card:');
+    materializeRows(cloudWf, 'wfolder:');
+    materializeRows(cloudKf, 'kfolder:');
+  }
+  // 无条件 flush：diff-cache 消化成本（全等=零写行）；同时兜底「已迁移但行缺失」设备的
+  //   恢复路径（本地条目=云端无行 → cache 未播种 → 此处落行）
+  flushCloudRowsNow();
+}
+
+function materializeRows(m: Map<string, string>, _prefix: string): void {
+  m.forEach((v: string, k: string): void => {
+    upsertRow(k, v);
+    rowCache.set(k, v);
+  });
+}
+
+function absorbLegacyPools(entity: Map<string, string>, cloudNodes: Map<string, string>, cloudTabs: Map<string, string>,
+  cloudWords: Map<string, string>, cloudCards: Map<string, string>, cloudWf: Map<string, string>, cloudKf: Map<string, string>): void {
+  // flat_pool → node 行
+  const flat = entity.get('flat_pool');
+  if (flat !== undefined) {
+    const tree = deserializeBubbleTree(flat);
+    if (tree !== null) {
+      for (const node of tree.nodeList) {
+        cloudNodes.set('node:' + node.nodeID, nodeToJson(node));
+      }
+    }
+  }
+  // tabs_pool → tab 行
+  const tabsJson = entity.get('tabs_pool');
+  if (tabsJson !== undefined) {
+    const tabs = parseTabs(tabsJson);
+    for (const t of tabs) {
+      cloudTabs.set('tab:' + t.id, JSON.stringify(t));
+    }
+  }
+  // word_pool / knowledge_pool → 条目行（payload 沿用 0.223.0 BankPoolPayload 结构）
+  absorbBankPool(entity.get('word_pool'), cloudWords, cloudWf, true);
+  absorbBankPool(entity.get('knowledge_pool'), cloudCards, cloudKf, false);
+}
+
+function absorbBankPool(poolJson: string | undefined, items: Map<string, string>, folders: Map<string, string>, isWord: boolean): void {
+  if (poolJson === undefined) {
+    return;
+  }
+  try {
+    const p = JSON.parse(poolJson) as Record<string, Object>;
+    const words = p['words'];
+    if (Array.isArray(words)) {
+      for (const w of words as Array<Record<string, Object>>) {
+        const id = String(w['id'] ?? '');
+        if (id.length > 0) {
+          items.set((isWord ? 'word:' : 'card:') + id, JSON.stringify(w));
+        }
+      }
+    }
+    const cards = p['cards'];
+    if (Array.isArray(cards)) {
+      for (const c of cards as Array<Record<string, Object>>) {
+        const id = String(c['id'] ?? '');
+        if (id.length > 0) {
+          items.set((isWord ? 'word:' : 'card:') + id, JSON.stringify(c));
+        }
+      }
+    }
+    const fs = p['folders'];
+    if (Array.isArray(fs)) {
+      for (const f of fs as Array<Record<string, Object>>) {
+        const id = String(f['id'] ?? '');
+        if (id.length > 0) {
+          folders.set((isWord ? 'wfolder:' : 'kfolder:') + id, JSON.stringify(f));
+        }
+      }
+    }
+  } catch (_e) {
+    // 坏池静默（旧池数据保留在本地 PersistenceV2，无损）
+  }
+}
+
+// cache 语义仲裁核心：true=云端胜（本地未改或从未上行） / false=本地胜（有未上行编辑）
+function cloudWins(key: string, localSer: string): boolean {
+  const cached = rowCache.get(key);
+  return cached === undefined || cached === localSer;
+}
+
+function mergeNodes(cloud: Map<string, string>, dels: Map<string, number>, ts: Map<string, number>): boolean {
+  const persist = PersistenceV2.connect(PersistData, 'persist-data',
+    () => new PersistData()) as PersistData;
+  const tree = deserializeBubbleTree(persist.bubbleTreeJson);
+  const local = tree !== null ? tree.nodeList : [];
+  const byId = new Map<string, BubbleNode>();
+  for (const n of local) {
+    byId.set(n.nodeID, n);
+  }
+  const merged: BubbleNode[] = [];
+  let changed = false;
+  cloud.forEach((v: string, k: string): void => {
+    const id = k.substring('node:'.length);
+    const delT = dels.get(id);
+    if (delT !== undefined && delT >= (ts.get(k) ?? 0)) {
+      return; // 云端删除（del 行新于实体行）
+    }
+    const localNode = byId.get(id);
+    const localSer = localNode !== undefined ? nodeToJson(localNode) : '';
+    if (localNode !== undefined && localSer === v) {
+      rowCache.set(k, v);
+      merged.push(localNode);
+      return;
+    }
+    if (localNode === undefined || cloudWins(k, localSer)) {
+      const revived = nodeFromJson(v);
+      if (revived !== null) {
+        changed = true;
+        rowCache.set(k, v);
+        merged.push(revived);
+      }
+    } else if (localNode !== undefined) {
+      merged.push(localNode); // 本地未上行编辑胜（flush 收口）
+    }
+  });
+  byId.forEach((node: BubbleNode, id: string): void => {
+    if (!cloud.has('node:' + id)) {
+      if (dels.has(id)) {
+        changed = true; // 云端墓碑：本地删除传播
+        rowCache.delete('node:' + id);
+        deleteRowLocal('node:' + id);
+      } else {
+        merged.push(node); // 本端独有（离线新建/云端未达）
+      }
+    }
+  });
+  // ★ 0.228.4：合并结果按 id 内嵌创建时间戳排序（nodeID= bubble_<ts>_rand）——
+  //   合并数组顺序曾= SQLite 返回序+本地补尾（两端不同）→ autoLayout 各排各的→
+  //   坐标/连线双端漂移=用户定位的「根节点顺序不一样」根因；排序后顺序全局确定
+  merged.sort((a: BubbleNode, b: BubbleNode): number => {
+    return idCreateTime(a.nodeID) - idCreateTime(b.nodeID);
+  });
+  const sortedJson = serializeBubbleTree(new BubbleTree(merged));
+  if (sortedJson !== (tree !== null ? persist.bubbleTreeJson : '')) {
+    persist.bubbleTreeJson = sortedJson;
+    return true;
+  }
+  return changed;
+}
+
+// ★ 0.228.4：从 id 提取创建时间戳（bubble_1791741572440_2091 / tab_1791742001857_0_2089 同构）
+function idCreateTime(id: string): number {
+  const parts = id.split('_');
+  if (parts.length >= 2) {
+    const t = Number(parts[1]);
+    if (!Number.isNaN(t) && t > 0) {
+      return t;
+    }
+  }
+  return 0;
+}
+
+function mergeTabs(cloud: Map<string, string>, dels: Map<string, number>, ts: Map<string, number>): boolean {
+  const forest = connectTabForest();
+  const local = parseTabs(forest.tabsJson);
+  const byId = new Map<string, TabMeta>();
+  for (const t of local) {
+    byId.set(t.id, t);
+  }
+  const merged: TabMeta[] = [];
+  let changed = false;
+  cloud.forEach((v: string, k: string): void => {
+    const id = k.substring('tab:'.length);
+    const delT = dels.get(id);
+    if (delT !== undefined && delT >= (ts.get(k) ?? 0)) {
+      return;
+    }
+    try {
+      const ct = JSON.parse(v) as TabMeta;
+      if (ct.id === undefined || ct.id.length === 0) {
+        return;
+      }
+      const localTab = byId.get(id);
+      const localSer = localTab !== undefined ? JSON.stringify(localTab) : '';
+      if (localTab !== undefined && localSer === v) {
+        rowCache.set(k, v);
+        merged.push(localTab);
+        return;
+      }
+      if (localTab === undefined || cloudWins(k, localSer)) {
+        changed = true;
+        rowCache.set(k, v);
+        merged.push(ct);
+      } else {
+        merged.push(localTab);
+      }
+    } catch (_e) {
+      // 坏行丢弃
+    }
+  });
+  byId.forEach((t: TabMeta, id: string): void => {
+    if (!cloud.has('tab:' + id)) {
+      if (dels.has(id)) {
+        changed = true;
+        rowCache.delete('tab:' + id);
+        deleteRowLocal('tab:' + id);
+      } else {
+        merged.push(t);
+      }
+    }
+  });
+  // ★ 0.228.4：Tab 同款确定性排序（防各端 Tab 序漂移）
+  merged.sort((a: TabMeta, b: TabMeta): number => {
+    return idCreateTime(a.id) - idCreateTime(b.id);
+  });
+  if (changed) {
+    forest.tabsJson = serializeTabs(merged);
+  }
+  return changed;
+}
+
+function mergePlainItems(prefix: string, cloud: Map<string, string>, localSers: Map<string, string>, dels: Map<string, number>, ts: Map<string, number>): Map<string, string> {
+  // 通用条目合并（词/卡/夹）：返回 id → 胜出值（云端串或本地串）
+  const out = new Map<string, string>();
+  cloud.forEach((v: string, k: string): void => {
+    const id = k.substring(prefix.length);
+    const delT = dels.get(id);
+    if (delT !== undefined && delT >= (ts.get(k) ?? 0)) {
+      return; // 云端删除胜
+    }
+    const localSer = localSers.get(id);
+    if (localSer !== undefined && localSer === v) {
+      rowCache.set(k, v);
+      out.set(id, v);
+      return;
+    }
+    if (localSer === undefined || cloudWins(k, localSer)) {
+      rowCache.set(k, v);
+      out.set(id, v);
+    } else {
+      out.set(id, localSer); // 本地未上行编辑胜（flush 收口）
+    }
+  });
+  localSers.forEach((v: string, id: string): void => {
+    if (!out.has(id)) {
+      if (dels.has(id)) {
+        rowCache.delete(prefix + id); // 云端墓碑：本地删除传播
+        deleteRowLocal(prefix + id);
+      } else {
+        out.set(id, v); // 本端独有（离线新建/云端未达）
+      }
+    }
+  });
+  return out;
+}
+
+function mergeWords(cloudWords: Map<string, string>, cloudWf: Map<string, string>, dels: Map<string, number>, ts: Map<string, number>): void {
+  if (wordBankProvider === null) {
+    return;
+  }
+  const store = wordBankProvider();
+  const localWords = new Map<string, string>();
+  for (const w of store.words) {
+    localWords.set(w.id, JSON.stringify(wordToPlain(w)));
+  }
+  const mergedWords = mergePlainItems('word:', cloudWords, localWords, dels, ts);
+  const localWf = new Map<string, string>();
+  for (const f of store.folders) {
+    localWf.set(f.id, wordFolderToJson(f));
+  }
+  const mergedWf = mergePlainItems('wfolder:', cloudWf, localWf, dels, ts);
+  // 复活 + 数组整体替换（@Trace 可靠刷新定式）
+  const revivedWords: WordItem[] = [];
+  mergedWords.forEach((v: string, _id: string): void => {
+    const w = reviveWord(jsonToRecord(v));
+    if (w.id.length > 0) {
+      revivedWords.push(w);
+    }
+  });
+  if (revivedWords.length !== store.words.length || itemsOverridden(store.words.map((w: WordItem): string => w.id), localWords, mergedWords)) {
+    store.words = revivedWords;
+  }
+  const revivedFolders: WordFolder[] = [];
+  mergedWf.forEach((v: string, _id: string): void => {
+    const f = wordFolderFromJson(v);
+    if (f !== null) {
+      revivedFolders.push(f);
+    }
+  });
+  if (revivedFolders.length !== store.folders.length) {
+    store.folders = revivedFolders;
+  }
+}
+
+function itemsOverridden(ids: string[], localSers: Map<string, string>, merged: Map<string, string>): boolean {
+  for (const id of ids) {
+    const m = merged.get(id);
+    if (m !== undefined && m !== localSers.get(id)) {
+      return true; // 存在云端胜出覆盖本地的条目
+    }
+  }
+  return false;
+}
+
+function mergeKnowledge(cloudCards: Map<string, string>, cloudKf: Map<string, string>, dels: Map<string, number>, ts: Map<string, number>): void {
+  if (knowledgeBankProvider === null) {
+    return;
+  }
+  const store = knowledgeBankProvider();
+  const localCards = new Map<string, string>();
+  for (const c of store.cards) {
+    localCards.set(c.id, JSON.stringify(cardToPlain(c)));
+  }
+  const mergedCards = mergePlainItems('card:', cloudCards, localCards, dels, ts);
+  const localKf = new Map<string, string>();
+  for (const f of store.folders) {
+    localKf.set(f.id, JSON.stringify(folderToPlain(f)));
+  }
+  const mergedKf = mergePlainItems('kfolder:', cloudKf, localKf, dels, ts);
+  const revivedCards: KnowledgeCard[] = [];
+  mergedCards.forEach((v: string, _id: string): void => {
+    const c = reviveCard(jsonToRecord(v));
+    if (c.id.length > 0) {
+      revivedCards.push(c);
+    }
+  });
+  if (revivedCards.length !== store.cards.length || itemsOverridden(store.cards.map((c: KnowledgeCard): string => c.id), localCards, mergedCards)) {
+    store.cards = revivedCards;
+  }
+  const revivedFolders: KFolder[] = [];
+  mergedKf.forEach((v: string, _id: string): void => {
+    const f = reviveFolder(jsonToRecord(v));
+    if (f !== undefined) {
+      revivedFolders.push(f);
+    }
+  });
+  if (revivedFolders.length !== store.folders.length) {
+    store.folders = revivedFolders;
+  }
+}
+
+function jsonToRecord(v: string): Record<string, Object> {
+  try {
+    return JSON.parse(v) as Record<string, Object>;
+  } catch (_e) {
+    return {};
+  }
+}
+
+function mergeCfgs(cloudCfg: Map<string, string>): void {
+  const apply = (key: string, fn: (v: string) => boolean, localSer: string): void => {
+    const v = cloudCfg.get(key);
+    if (v === undefined) {
+      return;
+    }
+    if (v === localSer) {
+      rowCache.set(key, v);
+      return;
+    }
+    if (cloudWins(key, localSer)) {
+      fn(v);
+      rowCache.set(key, v);
+    }
+  };
+  apply('cfg:api-config', cfgApiApply, cfgApiToJson());
+  apply('cfg:ai-pref', cfgAiPrefApply, cfgAiPrefToJson());
+  apply('cfg:face-mode', cfgFaceModeApply, cfgFaceModeToJson());
+}
+
+// ---- 旧接口兼容 shim（WordStoreUtil/KnowledgeStoreUtil 既有 import 零改动迁移） ----
+export function noteBankMutation(): void {
+  scheduleRowFlush();
+}
+
+export function recordWordTomb(_ids: string[]): void {
+  scheduleRowFlush(); // 删除由 flush 的 cache 差集推导（del 标记行自动生成）
+}
+
+export function recordKnowledgeTomb(_ids: string[]): void {
+  scheduleRowFlush();
+}
+
+// ---- 启动接线（EntryAbility.onWindowStageCreate 调用） ----
+export function setupCloudDownlink(): void {
+  registerCloudRowsReady(reconcileCloudRows);
+  registerRowFlush(scheduleRowFlush);
 }
 
 // ★ 0.165.2：按当前模式的权威池重建工作区（复用 0.151 applyCanvasModeSwitch 的搬移模式）——

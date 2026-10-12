@@ -20,7 +20,7 @@
 
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WordItem, WordBankStore, WordFolder } from '../common/WordModel';
-import { noteBankMutation, recordWordTomb } from './CloudSyncBridge'; // ★ 0.223.0：云同步变更钩子（增删改/文件夹操作统一挂——单向依赖，Bridge 经提供者注入反向取 store 防环）
+import { noteBankMutation, recordWordTomb } from '../common/ChatModel'; // ★ 0.223.0：云同步变更钩子（增删改/文件夹操作统一挂——单向依赖，Bridge 经提供者注入反向取 store 防环）
 
 // Dedicated PersistenceV2 key, isolated from bubble tree / api config keys
 const WORD_BANK_KEY = 'word-bank';

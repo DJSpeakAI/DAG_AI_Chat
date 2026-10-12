@@ -20,7 +20,7 @@ import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正
 import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
 import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面模式变更即时推桌面卡片
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
-import { noteBankMutation } from '../utils/CloudSyncBridge'; // ★ 0.223.0：评分进度上云钩子（3 秒防抖）
+import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分进度上云钩子（3 秒防抖）
 import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）

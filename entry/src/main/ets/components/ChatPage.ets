@@ -40,7 +40,7 @@ import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamC
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：司忆区跟随全局卡面模式（单面/双面）
-import { noteBankMutation } from '../utils/CloudSyncBridge'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）
+import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用

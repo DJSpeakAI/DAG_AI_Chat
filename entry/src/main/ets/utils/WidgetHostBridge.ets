@@ -14,7 +14,7 @@ import { connectWordBank } from './WordStoreUtil';
 import { connectKnowledgeBank } from './KnowledgeStoreUtil';
 import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds } from './WidgetReviewUtil';
 import { track } from './TrackUtil'; // 0.206.0 埋点
-import { noteBankMutation } from './CloudSyncBridge'; // ★ 0.223.0：卡片评分进度上云钩子
+import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：卡片评分进度上云钩子
 import { connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：快照注入卡面模式（主进程安全；卡片进程经 face 字段读）
 
 const DEF_MAX = 200; // 释义截断长度（防爆 preferences 快照）

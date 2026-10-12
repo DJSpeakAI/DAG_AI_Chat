@@ -18,7 +18,7 @@
 
 import { PersistenceV2 } from '@kit.ArkUI';
 import { KnowledgeCard, KnowledgeBankStore, KFolder } from '../common/KnowledgeModel';
-import { noteBankMutation, recordKnowledgeTomb } from './CloudSyncBridge'; // ★ 0.223.0：云同步变更钩子（单向依赖，Bridge 经提供者注入反向取 store 防环）
+import { noteBankMutation, recordKnowledgeTomb } from '../common/ChatModel'; // ★ 0.223.0：云同步变更钩子（单向依赖，Bridge 经提供者注入反向取 store 防环）
 
 // Dedicated PersistenceV2 key, isolated from bubble tree / word bank keys
 const KNOWLEDGE_BANK_KEY = 'knowledge-bank';
