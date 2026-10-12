@@ -1,0 +1,80 @@
+{
+  "port": 8766,
+  "bundle": "com.dagaichat.app",
+  "ability": "EntryAbility",
+  "hap": "entry/build/default/outputs/default/entry-default-signed.hap",
+  "expectedVersionCode": 1000252,
+  "rdb": "/data/app/el2/100/database/com.dagaichat.app/entry/rdb/dag_chat_cloud.db",
+  "sandboxBase": "/data/app/el2/100/base/com.dagaichat.app",
+  "dumpRemote": "/data/local/tmp/dagtest_dump.json",
+  "hilogTags": [
+    "DAGAI_RB",
+    "DAGAI_TE"
+  ],
+  "devices": [
+    {
+      "id": "pc",
+      "label": "鸿蒙 PC（本机）",
+      "serial": "127.0.0.1:35247",
+      "conn": "本机调试口",
+      "caps": {
+        "uiDump": false,
+        "note": "实测 dumpLayout 只抓桌面树、-b 定向空壳——UI 断言走 Pad，本机走数据断言"
+      }
+    },
+    {
+      "id": "pad",
+      "label": "Pad（USB 连线）",
+      "serial": "7HZUN26330G02209",
+      "conn": "USB",
+      "caps": {
+        "uiDump": true
+      }
+    },
+    {
+      "id": "phone",
+      "label": "手机（WiFi，注册后入列）",
+      "serial": "192.168.2.16:38611",
+      "conn": "WiFi",
+      "optional": true,
+      "caps": {
+        "uiDump": true
+      }
+    }
+  ],
+  "buildServer": "http://192.168.2.15:8765",
+  "localBuild": {
+    "hvigorw": "/data/service/hnp/hmos-clt.org/hmos-clt_1.0.0/hvigor/bin/hvigorw",
+    "sdkHome": "/data/service/hnp/hmos-clt.org/hmos-clt_1.0.0/sdk",
+    "nodeBin": "/data/service/hnp/hmos-clt.org/hmos-clt_1.0.0/node/bin",
+    "toolchains": "/data/service/hnp/hmos-clt.org/hmos-clt_1.0.0/sdk/default/openharmony/toolchains"
+  },
+  "domains": {
+    "单词库": [
+      "word:",
+      "wfolder:"
+    ],
+    "知识库": [
+      "card:",
+      "kfolder:"
+    ],
+    "气泡树+聊天内容": [
+      "node:",
+      "tab:",
+      "layout:"
+    ],
+    "删除墓碑": [
+      "del:"
+    ]
+  },
+  "poll": {
+    "intervalMs": 5000,
+    "loginTimeoutMs": 180000,
+    "syncTimeoutMs": 90000
+  },
+  "checkpoint": {
+    "timeoutMs": 180000
+  },
+  "desktopDir": "/storage/Users/currentUser/Desktop/DAG AI Chat",
+  "historyCap": 30
+}

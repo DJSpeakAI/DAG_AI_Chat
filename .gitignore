@@ -51,3 +51,9 @@ b[0-9]*.json
 # 0.227.1: API/AGC 配置不入 git（历史重写净化后防再犯——GitHub Push Protection）
 entry/src/main/resources/rawfile/config.json
 entry/src/main/resources/rawfile/agconnect-services.json
+
+# 0.229.1 测试台产物（不入库：运行结果/证据快照/运行日志与进程号）
+testing/console/results.json
+testing/console/artifacts/
+testing/console/server.log
+testing/console/server.pid

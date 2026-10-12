@@ -1,35 +1,22 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
-import { describe, beforeAll, beforeEach, afterEach, afterAll, it, expect } from '@ohos/hypium';
+import { describe, it, expect, beforeEach, afterEach } from '@ohos/hypium';
+import { abilityDelegatorRegistry } from '@kit.TestKit';
+import { bundleManager } from '@kit.AbilityKit';
 
 export default function abilityTest() {
-  describe('ActsAbilityTest', () => {
-    // Defines a test suite. Two parameters are supported: test suite name and test suite function.
-    beforeAll(() => {
-      // Presets an action, which is performed only once before all test cases of the test suite start.
-      // This API supports only one parameter: preset action function.
-    })
+  describe('DAGAI_ArkUITest', () => {
     beforeEach(() => {
-      // Presets an action, which is performed before each unit test case starts.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: preset action function.
     })
     afterEach(() => {
-      // Presets a clear action, which is performed after each unit test case ends.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: clear action function.
     })
-    afterAll(() => {
-      // Presets a clear action, which is performed after all test cases of the test suite end.
-      // This API supports only one parameter: clear action function.
+    it('app_context_ready', 0, () => {
+      const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+      expect(delegator !== null && delegator !== undefined).assertTrue();
     })
-    it('assertContain', 0, () => {
-      // Defines a test case. This API supports three parameters: test case name, filter parameter, and test case function.
-      hilog.info(0x0000, 'testTag', '%{public}s', 'it begin');
-      let a = 'abc';
-      let b = 'b';
-      // Defines a variety of assertion methods, which are used to declare expected boolean conditions.
-      expect(a).assertContain(b);
-      expect(a).assertEqual(a);
+    it('bundle_versioncode_valid', 0, async (done: Function) => {
+      const info = await bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      expect(info.name).assertEqual('com.dagaichat.app');
+      expect(info.versionCode).assertLarger(0);
+      done();
     })
   })
 }

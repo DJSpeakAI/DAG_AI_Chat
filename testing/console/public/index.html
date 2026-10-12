@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAG AI Chat 测试台</title>
+<style>
+  :root { --bg:#160D26; --bg2:#1E1436; --panel:#221743; --line:#372766; --txt:#E7E2F7; --dim:#9C92C9; --acc:#7C5CFF; --acc2:#9F87FF; --ok:#3ECF8E; --fail:#FF5D7A; --warn:#FFC24B; --skip:#8A80B8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--txt); font: 13px/1.6 -apple-system,'HarmonyOS Sans SC','Microsoft YaHei',sans-serif; min-height: 100vh; }
+  header { display:flex; align-items:center; gap:14px; padding: 14px 22px; border-bottom:1px solid var(--line); background: linear-gradient(180deg,#1B1130,#160D26); position:sticky; top:0; z-index:5; }
+  header .logo { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--acc),#B48CFF); display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; }
+  header h1 { font-size:16px; font-weight:600; }
+  header .sub { color:var(--dim); font-size:12px; }
+  header .spacer { flex:1; }
+
+  .wrap { display:grid; grid-template-columns: 300px 1fr 240px; gap:14px; padding:14px 22px; max-width:1280px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .panel h2 { font-size:13px; color:var(--acc2); font-weight:600; margin-bottom:10px; letter-spacing:.5px; }
+  .case-group { margin-bottom:10px; }
+  .case-group .gh { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; background:var(--bg2); margin-bottom:6px; cursor:pointer; user-select:none; }
+  .case-group .gh b { font-size:12.5px; flex:1; }
+  .case-group .gh .fold { color:var(--dim); font-size:11px; width:12px; flex:none; text-align:center; }
+  .actions select { background:var(--bg2); color:var(--txt); border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:12.5px; cursor:pointer; }
+  .case-item { display:flex; align-items:flex-start; gap:8px; padding:5px 8px 5px 26px; border-radius:8px; cursor:pointer; }
+  .case-item:hover { background:var(--bg2); }
+  .case-item .nm { flex:1; font-size:12.5px; }
+  .badge { font-size:10px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); color:var(--dim); white-space:nowrap; }
+  .badge.semi { color:var(--warn); border-color:#5a4a1e; }
+  .badge.cross { color:var(--acc2); border-color:#43348a; }
+  input[type=checkbox] { accent-color: var(--acc); width:15px; height:15px; cursor:pointer; }
+  .dev { border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px; transition:.15s; }
+  .dev.on { border-color:var(--acc); background:#251A4E; }
+  .dev.off { border-style:dashed; background:var(--bg2); }
+  .dev.off .nm, .dev.off .dot { opacity:.7; }
+  .dev .t { display:flex; align-items:center; gap:8px; }
+  .dev .nm { font-size:12.5px; font-weight:600; flex:1; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#555; flex:none; }
+  .dot.online { background:var(--ok); box-shadow:0 0 6px var(--ok); }
+  .dev .conn { font-size:11.5px; font-weight:600; margin-top:5px; padding-left:23px; }
+  .dev .conn.ok { color:var(--ok); }
+  .dev .conn.bad { color:var(--warn); }
+  .dev .addr { color:var(--dim); font-size:11px; margin-top:2px; padding-left:23px; word-break:break-all; }
+  .dev .hint { color:var(--dim); font-size:11px; margin-top:3px; padding-left:23px; line-height:1.5; }
+  .dev .editbtn { background:var(--bg2); border:1px solid var(--line); color:var(--acc2); cursor:pointer; font-size:12px; font-weight:600; padding:3px 10px; border-radius:7px; white-space:nowrap; }
+  .dev .editbtn:hover { border-color:var(--acc2); color:#fff; }
+  .dev.off .editbtn { background:linear-gradient(135deg,var(--acc),#A78BFF); border-color:transparent; color:#fff; }
+  .devedit { display:none; margin-top:8px; }
+  .devedit input { background:var(--bg); border:1px solid var(--acc); color:var(--txt); border-radius:7px; padding:5px 8px; font-size:12px; width:100%; margin-bottom:6px; }
+  .devedit .row { display:flex; gap:6px; }
+  .btn { border:none; border-radius:9px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; transition:.15s; }
+  .btn.primary { background:linear-gradient(135deg,var(--acc),#A78BFF); color:#fff; }
+  .btn.primary:disabled { opacity:.4; cursor:not-allowed; }
+  .btn.ghost { background:var(--bg2); color:var(--txt); border:1px solid var(--line); }
+  .btn.sm { padding:5px 10px; font-size:12px; border-radius:7px; }
+  .actions { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .bar { height:8px; background:var(--bg2); border-radius:4px; overflow:hidden; margin:10px 0 8px; }
+  .bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--acc),#B48CFF); transition:width .4s; }
+  .stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .chip { font-size:11.5px; padding:3px 10px; border-radius:20px; background:var(--bg2); border:1px solid var(--line); }
+  .chip b { margin-right:2px; }
+  .chip.ok b{color:var(--ok)} .chip.fail b{color:var(--fail)} .chip.warn b{color:var(--warn)} .chip.skip b{color:var(--skip)} .chip.tot b{color:var(--acc2)}
+  #stream { background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; height:420px; overflow-y:auto; font:12px/1.7 'JetBrains Mono',Consolas,monospace; }
+  .ln { padding:1px 0; word-break:break-all; }
+  .ln .s { display:inline-block; width:34px; }
+  .s.pass{color:var(--ok)} .s.fail{color:var(--fail)} .s.warn{color:var(--warn)} .s.skip{color:var(--skip)} .s.info{color:var(--dim)}
+  .hd { color:var(--acc2); font-weight:600; margin:8px 0 3px; border-top:1px dashed var(--line); padding-top:8px; }
+  .hd.fail{color:var(--fail)} .hd.pass{color:var(--ok)} .hd.warn{color:var(--warn)}
+  #sumCard { display:none; margin-top:12px; border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--bg2); }
+  #sumCard .ttl { font-size:14px; font-weight:600; margin-bottom:8px; }
+  #sumCard .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  #sumCard .stat { color:var(--dim); font-size:12px; }
+  #cpCard { position:fixed; left:50%; top:70px; transform:translateX(-50%); width:520px; max-width:92vw; background:linear-gradient(180deg,#2A1B58,#221743); border:1px solid var(--acc); border-radius:14px; padding:18px; box-shadow:0 12px 40px rgba(0,0,0,.5); z-index:50; display:none; }
+  #cpCard .tag { font-size:11px; color:var(--warn); letter-spacing:1px; }
+  #cpCard .lbl { font-size:14px; font-weight:600; margin:6px 0; }
+  #cpCard .cnt { font-size:12px; color:var(--dim); margin-bottom:12px; }
+  #cpCard .row { display:flex; gap:8px; flex-wrap:wrap; }
+  #cpCard.done { border-color:var(--ok); }
+  #cpCard.timeout { border-color:var(--fail); }
+  .guide { max-width:560px; margin:60px auto; text-align:center; }
+  .spinner { width:34px; height:34px; border:3px solid var(--line); border-top-color:var(--acc); border-radius:50%; margin:18px auto; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .hist { margin-top:12px; }
+  .hist .it { display:flex; gap:10px; align-items:center; padding:7px 9px; border-radius:8px; cursor:pointer; font-size:12px; }
+  .hist .it:hover { background:var(--bg2); }
+  .hist .it .hl { font-style:normal; font-size:10px; opacity:.7; margin-left:2px; }
+  .hist .it > span { white-space:nowrap; }
+  .footer-note { color:var(--dim); font-size:11px; margin-top:10px; padding:8px; border-top:1px dashed var(--line); }
+  .modal-bg { position:fixed; inset:0; background:rgba(10,6,20,.7); z-index:40; display:none; }
+  #detail { position:fixed; left:50%; top:60px; transform:translateX(-50%); width:680px; max-width:94vw; max-height:80vh; overflow-y:auto; background:var(--panel); border:1px solid var(--acc); border-radius:14px; padding:18px; z-index:45; display:none; }
+  #detail h3 { color:var(--acc2); margin-bottom:10px; font-size:14px; }
+  #detail pre { background:var(--bg2); padding:8px; border-radius:8px; font-size:11.5px; overflow-x:auto; margin:4px 0; }
+  #connCard { position:fixed; left:50%; top:56px; transform:translateX(-50%); width:600px; max-width:94vw; max-height:82vh; overflow-y:auto; background:var(--panel); border:1px solid var(--acc); border-radius:14px; padding:18px; z-index:55; display:none; }
+  #connCard .cttl { color:var(--acc2); font-weight:600; font-size:14px; margin-bottom:10px; }
+  #connCard pre { background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--txt); max-height:52vh; overflow:auto; margin:0; line-height:1.6; }
+  #connCard .crow { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:var(--panel); border:1px solid var(--acc); color:var(--txt); padding:8px 18px; border-radius:10px; font-size:12.5px; display:none; z-index:60; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">测</div>
+  <h1>DAG AI Chat 测试台</h1>
+  <span class="sub">应用版本 <b id="appVer" style="color:var(--acc2)">读取中…</b></span>
+  <div class="spacer"></div>
+  <span id="srvState" class="sub"></span>
+  <button class="btn ghost sm" onclick="refreshDevices()">刷新设备</button>
+  <button class="btn ghost sm" onclick="shutdownServer()" title="关闭测试台后台服务——不常驻，测完点它">关闭服务</button>
+</header>
+<div id="app" class="wrap" style="display:none">
+  <div class="panel" id="casePanel">
+    <h2>① 测试内容</h2>
+    <label style="display:flex;gap:8px;align-items:center;padding:4px 8px;cursor:pointer"><input type="checkbox" id="allBox" onchange="toggleAll()"><b style="font-size:12.5px">全选 / 全不选</b><span id="caseSelCnt" style="color:var(--dim);font-size:11px"></span></label>
+    <div id="caseTree"></div>
+    <div class="footer-note">★=登录 bug 红灯断言位 · 半自动=含人工授权检查点 · 跨端=多设备联合用例</div>
+  </div>
+  <div class="panel">
+    <h2>③ 执行矩阵</h2>
+    <div class="actions">
+      <button class="btn primary" id="runBtn" onclick="startRun()">开始测试</button>
+
+      <select id="instMode" title="装机模式（需求6）"><option value="overwrite">覆盖安装（默认·不卸载）</option><option value="fresh">全新安装（卸载→装→冷启）</option></select>
+      <button class="btn ghost" onclick="prepDevices()" title="点一下自动：先编译最新 HAP → 再安装到所选设备">装机</button>
+      <span class="sub" id="runningTip" style="color:var(--warn);font-size:12px"></span>
+    </div>
+    <div class="bar"><i id="pbar"></i></div>
+    <div class="stats" id="stats"></div>
+    <div id="stream"></div>
+    <div id="sumCard">
+      <div class="ttl" id="sumTtl"></div>
+      <div class="row">
+        <button class="btn sm primary" id="sumCopyBtn" onclick="copyReport()">复制问题报告给 AI</button>
+        <span class="stat" id="sumStat"></span>
+      </div>
+    </div>
+    <div class="hist"><h2 style="color:var(--acc2);font-size:13px;margin:12px 0 8px">历史记录 <span style="color:var(--dim);font-size:11px;font-weight:400">（数字依次：<span style="color:var(--ok)">通过</span> / <span style="color:var(--fail)">失败</span> / <span style="color:var(--warn)">警告</span> / <span style="color:var(--skip)">跳过</span>）</span></h2><div id="histList"></div></div>
+  </div>
+  <div class="panel">
+    <h2>② 设备 <button class="btn sm ghost" style="float:right;margin-top:-3px" onclick="openConnDiagNow()" title="生成当前所有设备的连接诊断报告（可一键复制给 AI）">连接诊断</button></h2>
+    <div id="devList"></div>
+    <div class="footer-note">设备顺序：鸿蒙PC → Pad → 手机 · PC 本机需开 DevEco Studio 才现调试口（不需填地址）· Pad/手机点「填写IP连接」填地址（WiFi 调试 ip:5555，保存后自动连）；手机默认入列，未注册/占线自动跳过只跑 PC+Pad</div>
+  </div>
+</div>
+
+<div id="guide" class="guide" style="display:none">
+  <div class="logo" style="width:44px;height:44px;border-radius:12px;margin:0 auto 14px;background:linear-gradient(135deg,var(--acc),#B48CFF);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:20px">测</div>
+  <h2 style="font-size:17px" id="guideTitle">正在启动后台服务…</h2>
+  <div class="spinner"></div>
+  <p style="color:var(--dim);margin-top:4px">自动进行中，无需任何操作（<span id="guideSecs">0</span> 秒）</p>
+  <p style="color:var(--dim);margin-top:14px;display:none" id="guideHint">等太久？<b style="color:var(--acc2)">双击桌面「DAG AI Chat / 启动测试台.sh」</b>可一键拉起——服务起来后本页会自动进入，无需刷新</p>
+
+</div>
+
+<div id="cpCard">
+  <div class="tag">人工检查点 · 需要你在设备上操作（华为授权=系统安全红线，仅此处无法自动化）</div>
+  <div class="lbl" id="cpLabel"></div>
+  <div class="cnt" id="cpCount"></div>
+  <div class="row" id="cpBtns"></div>
+</div>
+<div class="modal-bg" id="modalBg" onclick="closeDetail()"></div>
+<div id="detail"></div>
+<div class="modal-bg" id="connBg" onclick="closeConnResolve(null)"></div>
+<div id="connCard">
+  <div class="cttl">🔌 设备连接诊断报告</div>
+  <pre id="connReport"></pre>
+  <div class="crow" id="connBtns"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+let SUITES = null, APP_CFG = {}, DEVSEL = new Set(), CASESEL = new Set(), DEVLIST = [], DEVSEL_INITED = false, RUNNING = false, cpTimer = null, cpCur = null, es = null;
+let DEV_TARGETS = [], CONN_RESOLVE = null, CONN_AUTOSHOWN = false;
+let lastRunId = null, lastResults = [], lastSummary = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
+const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
+const base = () => LOCAL_BASE;
+
+async function api(path, opt) {
+  const r = await fetch(base() + path, opt);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+  return r.json();
+}
+
+// ---------- 启动：服务在线直接进；本地未起→自动等待（guide 轮询，零点击零命令） ----------
+let guidePoll = null, guideSecs = 0;
+async function boot() {
+  stopGuidePoll();
+  try {
+    const d = await api('/api/suites');
+    SUITES = d.suites; RUNNING = d.running; APP_CFG = d.config || {};
+    $('guide').style.display = 'none'; $('app').style.display = 'grid';
+    renderTree(); await refreshDevices(); await loadHistory(); loadVersion();
+    $('srvState').textContent = '服务在线 · ' + (d.config ? d.config.bundle + ' · 期望 versionCode ' + d.config.expectedVersionCode : '');
+    resetStats(); initStreamTip();
+    openEvents();
+    if (!CONN_AUTOSHOWN) { CONN_AUTOSHOWN = true; setTimeout(autoShowConnDiag, 800); }
+  } catch (e) {
+    showGuideWait();
+  }
+}
+function showGuideWait() {
+  $('guide').style.display = 'block'; $('app').style.display = 'none';
+  $('guideTitle').textContent = '正在启动后台服务…';
+  $('guide').querySelector('.spinner').style.display = 'block';
+
+  guideSecs = 0; $('guideSecs').textContent = '0'; $('guideHint').style.display = 'none';
+  if (guidePoll) return;
+  guidePoll = setInterval(async () => {
+    guideSecs++; $('guideSecs').textContent = guideSecs;
+    if (guideSecs >= 8) $('guideHint').style.display = 'block';
+    try {
+      const r = await fetch(LOCAL_BASE + '/api/health', { signal: AbortSignal.timeout(2000) });
+      if (r.ok) { const j = await r.json(); if (j.ok) boot(); }
+    } catch (_) { /* 继续等 */ }
+  }, 1500);
+}
+function stopGuidePoll() { if (guidePoll) { clearInterval(guidePoll); guidePoll = null; } }
+function initStreamTip() {
+  $('stream').innerHTML = '';
+  addLn('① 左侧勾测试内容 → ② 右侧勾设备 → ③ 点「开始测试」', 'info', '');
+  addLn('华为授权弹窗需要在设备上点一下（系统安全红线——全流程唯一人工环节）', 'info', '');
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2600); }
+function copyText(txt, okMsg) {
+  const done = () => toast(okMsg || '已复制');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(done).catch(() => fallbackCopy(txt, done));
+  } else fallbackCopy(txt, done);
+}
+function fallbackCopy(txt, done) {
+  const ta = document.createElement('textarea');
+  ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch (_) { toast('复制失败——请手动选中文本'); }
+  document.body.removeChild(ta);
+}
+
+// ---------- 用例树（折叠 + 勾选态始终由 CASESEL 单一真相源整树重绘——修复需求4「组勾选不翻转」） ----------
+let COLLAPSED = new Set();
+function renderTree() {
+  const el = $('caseTree'); el.innerHTML = '';
+  if (!SUITES) return;
+  for (const [sid, s] of Object.entries(SUITES)) {
+    const collapsed = COLLAPSED.has(sid);
+    const g = document.createElement('div'); g.className = 'case-group';
+    const gh = document.createElement('div'); gh.className = 'gh';
+    const fold = document.createElement('span'); fold.className = 'fold'; fold.textContent = collapsed ? '▸' : '▾';
+    gh.appendChild(fold);
+    const gb = document.createElement('input'); gb.type = 'checkbox'; gb.checked = s.cases.length > 0 && s.cases.every(c => CASESEL.has(c.id));
+    gb.onclick = (e) => e.stopPropagation();
+    gb.onchange = () => { s.cases.forEach(c => gb.checked ? CASESEL.add(c.id) : CASESEL.delete(c.id)); renderTree(); };
+    gh.appendChild(gb);
+    const b = document.createElement('b'); b.textContent = s.name; gh.appendChild(b);
+    const cnt = document.createElement('span'); cnt.className = 'badge'; cnt.textContent = s.cases.length + ' 项'; gh.appendChild(cnt);
+    gh.onclick = (e) => { if (e.target === gb) return; collapsed ? COLLAPSED.delete(sid) : COLLAPSED.add(sid); renderTree(); };
+    g.appendChild(gh); el.appendChild(g);
+    if (collapsed) continue;
+    for (const c of s.cases) {
+      const it = document.createElement('div'); it.className = 'case-item';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = CASESEL.has(c.id);
+      it.appendChild(cb);
+      const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = c.name; it.appendChild(nm);
+      if (c.semi) { const x = document.createElement('span'); x.className = 'badge semi'; x.textContent = '半自动'; it.appendChild(x); }
+      if (c.scope === 'cross') { const x = document.createElement('span'); x.className = 'badge cross'; x.textContent = '跨端'; it.appendChild(x); }
+      it.onclick = () => { CASESEL.has(c.id) ? CASESEL.delete(c.id) : CASESEL.add(c.id); renderTree(); };
+      g.appendChild(it);
+    }
+  }
+  const _total = Object.values(SUITES).reduce((n, s) => n + s.cases.length, 0);
+  $('allBox').checked = _total > 0 && CASESEL.size === _total;
+  $('caseSelCnt').textContent = CASESEL.size ? '已选 ' + CASESEL.size + ' / ' + _total + ' 项' : '未选（共 ' + _total + ' 项）';
+}
+function toggleAll() { const on = $('allBox').checked; CASESEL = on ? new Set(Object.values(SUITES).flatMap(s => s.cases.map(c => c.id))) : new Set(); renderTree(); }
+
+// ---------- 设备离线排查提示（设备卡 + 连接诊断报告共用） ----------
+function connHint(dev) {
+  if (dev.id === 'pc') return '本机调试口未出现——请打开 DevEco Studio（它会让本机调试口 127.0.0.1:35247 现身，hdc 才认得到本机）';
+  if (dev.id === 'pad') return '插 USB 线后需在 Pad 上开「设置 → 开发者选项 → USB 调试」并在设备上点「允许调试」；或点「填写IP连接」走 WiFi（ip:5555）';
+  return '确认手机已开 WiFi 调试（端口与填写的 ip:5555 一致）、且与电脑在同一局域网';
+}
+// ---------- 设备（含「填写IP连接/改地址」行内编辑，保存后服务端自动 hdc tconn） ----------
+async function refreshDevices() {
+  try {
+    const d = await api('/api/devices');
+    DEV_TARGETS = d.targets || [];
+    renderDevices(d.devices);
+    RUNNING = d.running; syncRunBtn();
+  } catch (e) { $('srvState').textContent = '设备探测失败'; }
+}
+function renderDevices(devices) {
+  DEVLIST = devices;
+  const el = $('devList'); el.innerHTML = '';
+  for (const dev of devices) {
+    const box = document.createElement('div');
+    box.className = 'dev' + (dev.online ? (DEVSEL.has(dev.id) ? ' on' : '') : ' off');
+    const t = document.createElement('div'); t.className = 't';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = DEVSEL.has(dev.id); cb.title = dev.online ? '勾选 = 参与测试/装机' : '离线也可勾选——连上后生效';
+    cb.onclick = (e) => e.stopPropagation();
+    cb.onchange = () => { cb.checked ? DEVSEL.add(dev.id) : DEVSEL.delete(dev.id); box.className = 'dev' + (cb.checked ? ' on' : (dev.online ? '' : ' off')); };
+    t.appendChild(cb);
+    const dot = document.createElement('span'); dot.className = 'dot' + (dev.online ? ' online' : ''); t.appendChild(dot);
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = dev.label; t.appendChild(nm);
+    const isPc = dev.id === 'pc';
+    if (!isPc) {
+      const eb = document.createElement('button'); eb.className = 'editbtn';
+      eb.textContent = dev.online ? '改地址' : '填写IP连接';
+      eb.title = dev.online ? '修改设备地址' : '填 IP 地址连接设备（WiFi 调试：192.168.x.x:5555）';
+      eb.onclick = (e) => { e.stopPropagation(); const ed = box.querySelector('.devedit'); ed.style.display = ed.style.display === 'block' ? 'none' : 'block'; };
+      t.appendChild(eb);
+    }
+    box.appendChild(t);
+    const st = document.createElement('div'); st.className = 'conn ' + (dev.online ? 'ok' : 'bad');
+    st.textContent = dev.online ? '连接状态：已连接 ✅' : '连接状态：未连接 ⚠️' + (dev.reason ? ' · ' + dev.reason : '');
+    box.appendChild(st);
+    const ad = document.createElement('div'); ad.className = 'addr';
+    ad.textContent = '已保存地址：' + (dev.serial ? dev.serial : '未填写') + (isPc ? '（本机调试口）' : (dev.conn ? '（' + dev.conn + '）' : ''));
+    box.appendChild(ad);
+    if (!dev.online) { const hp = document.createElement('div'); hp.className = 'hint'; hp.textContent = '排查：' + connHint(dev); box.appendChild(hp); }
+    if (!isPc) {
+      const ed = document.createElement('div'); ed.className = 'devedit'; ed.onclick = (e) => e.stopPropagation();
+      const inp = document.createElement('input'); inp.value = dev.serial; inp.placeholder = '如 192.168.2.31:5555（WiFi 调试地址）';
+      inp.onkeydown = (ev) => { if (ev.key === 'Enter') doSave(); };
+      ed.appendChild(inp);
+      const row = document.createElement('div'); row.className = 'row';
+      const save = document.createElement('button'); save.className = 'btn sm primary'; save.textContent = '保存并自动连接';
+      const cancel = document.createElement('button'); cancel.className = 'btn sm ghost'; cancel.textContent = '取消';
+      save.onclick = () => doSave();
+      cancel.onclick = () => { ed.style.display = 'none'; };
+      row.appendChild(save); row.appendChild(cancel); ed.appendChild(row);
+      box.appendChild(ed);
+    }
+    async function doSave() {
+      try {
+        const r = await api('/api/devices/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: dev.id, serial: inp.value.trim() }) });
+        renderDevices(r.devices);
+        addLn('设备地址更新 ' + dev.id, 'pass', inp.value.trim() || '（清空）' + (r.connect ? ' · hdc tconn：' + r.connect : ''));
+        toast('已保存' + (r.connect ? '，连接结果：' + r.connect.slice(0, 60) : ''));
+      } catch (e) { toast('保存失败：' + e.message); }
+    }
+    box.onclick = () => { cb.checked = !cb.checked; cb.onchange(); };
+    el.appendChild(box);
+    if (!DEVSEL_INITED && dev.online && !DEVSEL.has(dev.id)) { DEVSEL.add(dev.id); box.classList.add('on'); cb.checked = true; }
+  }
+  DEVSEL_INITED = true;
+}
+function syncRunBtn() { $('runBtn').disabled = RUNNING; $('runningTip').textContent = RUNNING ? '测试进行中…' : ''; }
+
+// ---------- 连接诊断报告（A+B：可复制，供用户丢给 AI；失败自动出报告，不需用户在对话里口述） ----------
+function buildConnReport(devices) {
+  const L = [];
+  L.push('【测试台 · 设备连接诊断报告】' + new Date().toLocaleString());
+  L.push('被测应用：' + ((APP_CFG && APP_CFG.appVersionName) || '?') + '（bundle ' + ((APP_CFG && APP_CFG.bundle) || '?') + '）');
+  L.push('');
+  for (const d of devices) {
+    L.push('● ' + d.label + ' — ' + (d.online ? '已连接 ✅' : '未连接 ⚠️'));
+    L.push('  连接方式：' + (d.conn || '—') + '　配置地址：' + (d.serial || '未填写'));
+    if (!d.online) { L.push('  原因：' + (d.reason || 'hdc 未发现')); L.push('  排查：' + connHint(d)); }
+    L.push('');
+  }
+  L.push('hdc list targets 原始结果：' + (DEV_TARGETS.length ? DEV_TARGETS.join(', ') : '（空 —— hdc 一台设备都没发现）'));
+  L.push('');
+  L.push('▶ 请把本报告整段复制，粘贴给你的 AI（CodeArts / DevEco 里的 AI）即可自动排查。');
+  L.push('  PC 本机未连→开 DevEco Studio 让其调试口现身；Pad 未连→插线并在设备上授权 USB 调试，或点「填写IP连接」走 WiFi。');
+  return L.join('\n');
+}
+function diagButtons(continuous) {
+  const row = $('connBtns'); row.innerHTML = '';
+  const copy = document.createElement('button'); copy.className = 'btn sm primary'; copy.textContent = '复制报告给 AI';
+  copy.onclick = () => copyText($('connReport').textContent, '诊断报告已复制，粘贴给 AI 即可');
+  if (continuous) {
+    const go = document.createElement('button'); go.className = 'btn sm ghost'; go.textContent = '继续（跳过未连的）';
+    go.onclick = () => closeConnResolve('continue');
+    const cancel = document.createElement('button'); cancel.className = 'btn sm ghost'; cancel.textContent = '取消（先去连）';
+    cancel.onclick = () => closeConnResolve('cancel');
+    row.appendChild(go); row.appendChild(copy); row.appendChild(cancel);
+  } else {
+    const close = document.createElement('button'); close.className = 'btn sm ghost'; close.textContent = '关闭';
+    close.onclick = () => closeConnResolve(null);
+    row.appendChild(copy); row.appendChild(close);
+  }
+}
+function closeConnResolve(val) {
+  $('connBg').style.display = 'none'; $('connCard').style.display = 'none';
+  const r = CONN_RESOLVE; CONN_RESOLVE = null; if (r) r(val);
+}
+function openConnDiag(devices, continuous) {
+  $('connReport').textContent = buildConnReport(devices);
+  diagButtons(continuous);
+  $('connBg').style.display = 'block'; $('connCard').style.display = 'block';
+}
+function openConnDiagNow() { openConnDiag(DEVLIST, false); }
+// ★ 0.229.12：页面加载自动诊断——进页面若设备未全连，自动弹出可复制报告（用户点「复制报告给 AI」即可，无需每次靠对话口述）
+function autoShowConnDiag() {
+  const offline = DEVLIST.filter((d) => !d.online);
+  if (!offline.length) return;
+  openConnDiag(offline, false);
+}
+
+// ---------- 执行前：连线校验（勾了却没连上的设备 → 诊断报告弹窗，继续则自动跳过） ----------
+function offlineDevices() { return [...DEVSEL].filter((id) => { const d = DEVLIST.find((x) => x.id === id); return !d || !d.online; }); }
+async function ensureDevicesConnected() {
+  const offline = offlineDevices();
+  if (!offline.length) return true;
+  const actual = offline.map((id) => DEVLIST.find((x) => x.id === id) || { id, label: id, online: false, reason: '设备不存在', serial: '', conn: '' });
+  const choice = await new Promise((resolve) => { CONN_RESOLVE = resolve; openConnDiag(actual, true); });
+  if (choice !== 'continue') return false;
+  offline.forEach((id) => DEVSEL.delete(id));
+  renderDevices(DEVLIST);
+  if (!DEVSEL.size) { toast('没有可用设备了——诊断报告已生成，可复制给 AI'); return false; }
+  return true;
+}
+// ---------- 执行 ----------
+async function startRun() {
+  if (!CASESEL.size || !DEVSEL.size) { alert('至少勾选一个用例和一台设备'); return; }
+  if (!(await ensureDevicesConnected())) return;
+  if (!confirm('将跑「' + CASESEL.size + ' 个用例 × ' + DEVSEL.size + ' 台设备」矩阵。执行期间请勿操作 PC。开始？')) return;
+  try {
+    const r = await api('/api/run', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ devices: [...DEVSEL], cases: [...CASESEL] }) });
+    if (r.error) { alert(r.error); return; }
+    RUNNING = true; syncRunBtn();
+    lastRunId = r.runId; lastResults = []; lastSummary = null; $('sumCard').style.display = 'none';
+    resetStats(); $('stream').innerHTML = '';
+    addLn('— run ' + r.runId + ' 启动 · ' + new Date().toLocaleTimeString() + ' —', 'info', '');
+  } catch (e) { alert('启动失败：' + e.message); }
+}
+async function prepDevices() {
+  if (!DEVSEL.size) { alert('先勾选设备'); return; }
+  if (!(await ensureDevicesConnected())) return;
+  const mode = $('instMode').value;
+  const modeName = mode === 'fresh' ? '全新安装（卸载→装→冷启）' : '覆盖安装（默认·不卸载）';
+  if (!confirm('一键装机：自动编译最新 HAP（本地优先，失败自动转服务器），再对所选 ' + DEVSEL.size + ' 台设备执行「' + modeName + '」。\n（编译/装机期间请勿操作 PC）继续？')) return;
+  addLn('① 编译开始 · 自动（本地优先）', 'info', '');
+  try {
+    const r = await api('/api/build', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'auto' }) });
+    if (r.ok) addLn('① 编译完成', 'pass', (r.hap ? String(r.hap).split('/').pop() : '') + (r.bytes ? ' · ' + Math.round(r.bytes / 1024) + 'KB' : '') + (r.via ? ' · 来源：' + (r.via === 'local' ? '本地' : '服务器') : ''));
+    else {
+      addLn('① 编译失败', 'fail', r.err || '未知错误');
+      const log = r.log ? String(r.log).trim().split('\n').slice(-5).join(' | ') : '';
+      if (log) addLn('编译日志(尾)', 'warn', log);
+      return;
+    }
+  } catch (e) { addLn('① 编译失败', 'fail', e.message); return; }
+  for (const id of DEVSEL) {
+    addLn('② 装机 ' + id + '（' + modeName + '）', 'info', '');
+    try {
+      const r = await api('/api/prep', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device: id, mode }) });
+      addLn('② 装机 ' + id, r.install && r.install.ok ? 'pass' : 'fail', (r.install && r.install.detail) || JSON.stringify(r));
+      addLn('冷启动 ' + id, r.coldStart ? 'pass' : 'warn', r.coldStart ? 'force-stop → aa start 成功' : '冷启动未确认成功');
+    } catch (e) { addLn('② 装机 ' + id, 'fail', e.message); }
+  }
+  loadVersion();
+}
+
+// ---------- SSE 实时流 ----------
+function openEvents() {
+  if (es) es.close();
+  es = new EventSource(base() + '/api/events');
+  es.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.type === 'step') addStep(e.step);
+    else if (e.type === 'case-start') addCase(e.device, e.name);
+    else if (e.type === 'case-end') { lastResults.push(e.result); addCaseEnd(e.result); }
+    else if (e.type === 'run-end') { RUNNING = false; syncRunBtn(); loadHistory(); showSummary(e.summary || {}); }
+    else if (e.type === 'checkpoint') onCheckpoint(e.cp);
+    else if (e.type === 'run-start') { }
+  };
+  es.onerror = () => { /* 断流：30 秒设备刷新兜底 + 下一轮操作会重连 */ };
+}
+function addLn(text, st, detail) {
+  const el = document.createElement('div'); el.className = 'ln';
+  el.innerHTML = '<span class="s ' + (st || 'info') + '">' + (st === 'pass' ? '✓' : st === 'fail' ? '✗' : st === 'warn' ? '⚠' : st === 'skip' ? '−' : '·') + '</span>' + esc(text) + (detail ? ' <span style="color:var(--dim)">— ' + esc(detail) + '</span>' : '');
+  $('stream').appendChild(el); $('stream').scrollTop = 1e9;
+  return el;
+}
+function addCase(dev, name) { const el = document.createElement('div'); el.className = 'hd'; el.textContent = '▶ [' + dev + '] ' + name; $('stream').appendChild(el); $('stream').scrollTop = 1e9; }
+function addCaseEnd(r) {
+  const el = document.createElement('div'); el.className = 'hd ' + r.status;
+  el.textContent = '■ [' + (r.device || '') + '] ' + r.name + ' → ' + (r.status === 'pass' ? '通过' : r.status === 'fail' ? '失败' : r.status === 'warn' ? '警告' : '跳过') + '（' + r.steps.length + ' 步 · ' + r.ms + 'ms）';
+  $('stream').appendChild(el); $('stream').scrollTop = 1e9; updateStats(r);
+}
+function addStep(s) { addLn(s.name, s.status, s.detail); }
+let statCnt = { pass:0, fail:0, warn:0, skip:0, tot:0 };
+function updateStats(r) { statCnt[r.status] = (statCnt[r.status]||0)+1; statCnt.tot++;
+  $('stats').innerHTML = ['pass','fail','warn','skip','tot'].map(k => '<span class="chip ' + k + '"><b>' + statCnt[k] + '</b>' + (k==='tot'?'总':k==='pass'?'通过':k==='fail'?'失败':k==='warn'?'警告':'跳过') + '</span>').join('');
+  $('pbar').style.width = Math.round(statCnt.tot / (CASESEL.size || 1) * 100) + '%';
+}
+function resetStats() { statCnt = { pass:0, fail:0, warn:0, skip:0, tot:0 }; $('stats').innerHTML=''; $('pbar').style.width='0'; }
+
+// ---------- 跑完汇总 + 一键复制问题报告（粘给 AI 即接管排查） ----------
+function showSummary(s) {
+  lastSummary = s;
+  const fail = s.fail || 0, warn = s.warn || 0, pass = s.pass || 0, skip = s.skip || 0;
+  const card = $('sumCard'); card.style.display = 'block';
+  const ttl = $('sumTtl');
+  if (!fail) { ttl.textContent = '✅ 本轮 ' + pass + ' 项全部通过' + (skip ? '（另跳过 ' + skip + ' 项）' : ''); ttl.style.color = 'var(--ok)'; }
+  else { ttl.textContent = '✗ ' + fail + ' 项失败' + (warn ? ' / ' + warn + ' 项警告' : '') + ' / ' + pass + ' 项通过'; ttl.style.color = 'var(--fail)'; }
+  $('sumStat').textContent = 'run ' + (lastRunId || '') + ' · ' + new Date().toLocaleTimeString();
+  $('sumCopyBtn').style.display = (fail || warn) ? 'inline-block' : 'none';
+}
+function buildReport() {
+  const s = lastSummary || {};
+  const L = [];
+  L.push('【测试台 0.229.12 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('设备：' + [...DEVSEL].join('、'));
+  L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
+  for (const r of lastResults) {
+    if (r.status === 'pass' || r.status === 'skip') continue;
+    L.push('');
+    L.push((r.status === 'fail' ? '✗ ' : '⚠ ') + '[' + r.name + '] ' + (r.device === 'cross' ? '跨端' : r.device));
+    for (const st of (r.steps || [])) {
+      if (st.status === 'fail' || st.status === 'warn') L.push('  - ' + st.name + '：' + (st.detail || ''));
+    }
+  }
+  L.push('');
+  L.push('（由测试台「复制问题报告」生成——请直接根据以上失败步骤排查）');
+  return L.join('\n');
+}
+function copyReport() { copyText(buildReport(), '问题报告已复制——粘贴到 AI 对话即可接管排查'); }
+
+// ---------- 人工检查点卡片 ----------
+function onCheckpoint(cp) {
+  const card = $('cpCard');
+  if (cp.state === 'waiting') {
+    cpCur = cp; card.style.display = 'block'; card.className = '';
+    $('cpLabel').textContent = cp.label + (cp.device ? '（' + cp.device + '）' : '');
+    const btns = $('cpBtns'); btns.innerHTML = '';
+    if (cp.hasVerdict) {
+      mkBtn('✓ 已被拦截', 'primary', () => cpAction('verdict', 'pass'));
+      mkBtn('✗ 未被拦截', 'ghost', () => cpAction('verdict', 'fail'));
+    } else {
+      mkBtn('我已完成，继续', 'primary', () => cpAction('ack'));
+    }
+    mkBtn('跳过', 'ghost', () => cpAction('skip'));
+    mkBtn('延长 2 分钟', 'ghost', () => cpAction('extend'));
+    clearInterval(cpTimer);
+    cpTimer = setInterval(() => { const left = Math.max(0, Math.round((cp.timeoutMs - (Date.now() - cp.startedAt)) / 1000));
+      $('cpCount').textContent = '已等待 ' + Math.round((Date.now() - cp.startedAt) / 1000) + 's · 剩余 ' + left + 's（超时自动记失败）'; }, 1000);
+  } else {
+    clearInterval(cpTimer);
+    card.className = cp.state === 'done' ? 'done' : cp.state === 'timeout' ? 'timeout' : '';
+    $('cpCount').textContent = '— ' + (cp.state === 'done' ? (cp.auto ? '已自动检测完成 ✓' : '已确认完成 ✓') : cp.state === 'timeout' ? '等待超时 ✗（记失败）' : '已跳过') + ' —';
+    setTimeout(() => { card.style.display = 'none'; }, 1800);
+  }
+  function mkBtn(t, cls, fn) { const b = document.createElement('button'); b.className = 'btn sm ' + cls; b.textContent = t; b.onclick = fn; $('cpBtns').appendChild(b); }
+}
+async function cpAction(action, v) {
+  try { await api('/api/checkpoint/' + cpCur.id + '?action=' + action + (v ? '&v=' + v : ''), { method: 'POST' }); } catch (e) { }
+}
+
+// ---------- 历史 ----------
+async function loadHistory() {
+  try {
+    const r = await api('/api/results');
+    const el = $('histList'); el.innerHTML = '';
+    for (const run of [...r.history].reverse().slice(0, 10)) {
+      const it = document.createElement('div'); it.className = 'it';
+      const s = run.summary || {};
+      it.innerHTML = '<span style="color:var(--dim)">' + run.runId + '</span><span style="color:var(--dim);font-size:11px">' + run.startedAt + '</span>'
+        + '<span style="color:var(--ok)">' + (s.pass||0) + '</span>'
+        + '<span style="color:var(--fail)">' + (s.fail||0) + '</span>'
+        + '<span style="color:var(--warn)">' + (s.warn||0) + '</span>'
+        + '<span style="color:var(--skip)">' + (s.skip||0) + '</span>';
+      it.onclick = () => showDetail(run);
+      el.appendChild(it);
+    }
+    if (!r.history.length) el.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:4px 8px">暂无记录</div>';
+  } catch (e) { }
+}
+// ---------- 关闭服务 ----------
+async function shutdownServer() {
+  if (!confirm('确定关闭测试台后台服务吗？\n\n关闭后本页面会失效，需要时再双击桌面上的「启动测试台.sh」重新开启。')) return;
+  try { await api('/api/shutdown', { method: 'POST' }); } catch (e) { /* 服务退出时连接可能中断，属正常 */ }
+  document.body.innerHTML = '<div class="guide">'
+    + '<div class="logo" style="width:52px;height:52px;font-size:22px;border-radius:14px;margin:0 auto 16px">测</div>'
+    + '<h1 style="font-size:19px;margin-bottom:12px">测试台服务已关闭</h1>'
+    + '<p style="color:var(--dim);line-height:2">后台服务已退出，本页面可以关闭了。<br>下次要用，双击桌面上的「启动测试台.sh」重新开启即可。</p>'
+    + '</div>';
+}
+// ---------- 顶栏版本（0.229.12：只显 APP 首页版本 vX.Y.Z；先前那个 versionCode 期望值已拿掉） ----------
+function loadVersion() {
+  const el = $('appVer');
+  const name = APP_CFG && APP_CFG.appVersionName;
+  el.innerHTML = name ? esc(name) : '<span style="color:var(--dim)">（读不到 Index.ets 版本）</span>';
+}
+function showDetail(run) {
+  $('modalBg').style.display = 'block'; $('detail').style.display = 'block';
+  let h = '<h3>' + run.runId + ' · ' + run.startedAt + ' → ' + (run.endedAt || '') + '</h3>';
+  for (const r of run.runs || []) {
+    h += '<div class="hd ' + r.status + '">' + r.device + ' · ' + r.name + ' → ' + r.status + '</div>';
+    for (const s of r.steps) h += '<pre>[' + s.status + '] ' + s.name + (s.detail ? '\n' + s.detail : '') + '</pre>';
+  }
+  $('detail').innerHTML = h;
+}
+function closeDetail() { $('modalBg').style.display = 'none'; $('detail').style.display = 'none'; }
+
+
+boot();
+setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') refreshDevices(); }, 30000);
+</script>
+</body>
+</html>
