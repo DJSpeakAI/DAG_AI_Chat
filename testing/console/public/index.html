@@ -86,6 +86,12 @@
   .hist .it .hl { font-style:normal; font-size:10px; opacity:.7; margin-left:2px; }
   .hist .it > span { white-space:nowrap; }
   .footer-note { color:var(--dim); font-size:11px; margin-top:10px; padding:8px; border-top:1px dashed var(--line); }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; border-bottom:1px solid var(--line); }
+  .tab { background:none; border:none; color:var(--dim); cursor:pointer; font-size:12.5px; font-weight:600; padding:6px 12px; border-bottom:2px solid transparent; }
+  .tab.on { color:var(--acc2); border-bottom-color:var(--acc); }
+  .dotbadge { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--fail); margin-left:5px; vertical-align:middle; }
+  .actline { font-size:11.5px; font-weight:600; margin-bottom:8px; padding:4px 8px; border-radius:6px; background:var(--bg2); }
+  .actline.ok { color:var(--ok); } .actline.warn { color:var(--warn); } .actline.bad { color:var(--fail); }
   .modal-bg { position:fixed; inset:0; background:rgba(10,6,20,.7); z-index:40; display:none; }
   #detail { position:fixed; left:50%; top:60px; transform:translateX(-50%); width:680px; max-width:94vw; max-height:80vh; overflow-y:auto; background:var(--panel); border:1px solid var(--acc); border-radius:14px; padding:18px; z-index:45; display:none; }
   #detail h3 { color:var(--acc2); margin-bottom:10px; font-size:14px; }
@@ -116,6 +122,10 @@
   </div>
   <div class="panel">
     <h2>③ 执行矩阵</h2>
+    <div class="tabs">
+      <button class="tab on" id="tabRun" onclick="switchTab('run')">▶ 实时执行</button>
+      <button class="tab" id="tabRes" onclick="switchTab('res')">✓ 结果 / 报告<span class="dotbadge" id="resDot" style="display:none"></span></button>
+    </div>
     <div class="actions">
       <button class="btn primary" id="runBtn" onclick="startRun()">开始测试</button>
 
@@ -123,18 +133,23 @@
       <button class="btn ghost" onclick="prepDevices()" title="点一下自动：先编译最新 HAP → 再安装到所选设备">装机</button>
       <span class="sub" id="runningTip" style="color:var(--warn);font-size:12px"></span>
     </div>
-    <div class="bar"><i id="pbar"></i></div>
-    <div class="stats" id="stats"></div>
-    <div id="stream"></div>
-    <div id="sumCard">
-      <div class="ttl" id="sumTtl"></div>
-      <div class="row">
-        <button class="btn sm primary" id="sumCopyBtn" onclick="copyReport()">复制问题报告给 AI</button>
-        <button class="btn sm ghost" id="sumDlBtn" onclick="downloadReport()" title="把报告存成 .txt 文件——给 DevEco 终端里的 AI 读文件用（终端收不了大段粘贴文本）">下载报告</button>
-        <span class="stat" id="sumStat"></span>
-      </div>
+    <div id="paneRun">
+      <div id="actLine" class="actline" style="display:none">● 执行中 · 最近活动 <b id="actSecs">0</b> 秒前</div>
+      <div class="bar"><i id="pbar"></i></div>
+      <div class="stats" id="stats"></div>
+      <div id="stream"></div>
     </div>
-    <div class="hist"><h2 style="color:var(--acc2);font-size:13px;margin:12px 0 8px">历史记录 <span style="color:var(--dim);font-size:11px;font-weight:400">（数字依次：<span style="color:var(--ok)">通过</span> / <span style="color:var(--fail)">失败</span> / <span style="color:var(--warn)">警告</span> / <span style="color:var(--skip)">跳过</span>）</span></h2><div id="histList"></div></div>
+    <div id="paneRes" style="display:none">
+      <div id="sumCard">
+        <div class="ttl" id="sumTtl"></div>
+        <div class="row">
+          <button class="btn sm primary" id="sumCopyBtn" onclick="copyReport()">复制问题报告给 AI</button>
+          <button class="btn sm ghost" id="sumDlBtn" onclick="downloadReport()" title="把报告存成 .txt 文件——给 DevEco 终端里的 AI 读文件用（终端收不了大段粘贴文本）">下载报告</button>
+          <span class="stat" id="sumStat"></span>
+        </div>
+      </div>
+      <div class="hist"><h2 style="color:var(--acc2);font-size:13px;margin:12px 0 8px">历史记录 <span style="color:var(--dim);font-size:11px;font-weight:400">（数字依次：<span style="color:var(--ok)">通过</span> / <span style="color:var(--fail)">失败</span> / <span style="color:var(--warn)">警告</span> / <span style="color:var(--skip)">跳过</span>）</span></h2><div id="histList"></div></div>
+    </div>
   </div>
   <div class="panel">
     <h2>② 设备 <button class="btn sm ghost" style="float:right;margin-top:-3px" onclick="openConnDiagNow()" title="生成当前所有设备的连接诊断报告（可一键复制给 AI）">连接诊断</button></h2>
@@ -171,6 +186,7 @@
 <script>
 let SUITES = null, APP_CFG = {}, DEVSEL = new Set(), CASESEL = new Set(), DEVLIST = [], DEVSEL_INITED = false, RUNNING = false, cpTimer = null, cpCur = null, es = null;
 let DEV_TARGETS = [], CONN_RESOLVE = null, CONN_AUTOSHOWN = false;
+let lastAct = 0; // 最近一次 SSE 活动时间（活动指示用）
 let lastRunId = null, lastResults = [], lastSummary = null;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -425,6 +441,7 @@ async function startRun() {
     RUNNING = true; syncRunBtn();
     lastRunId = r.runId; lastResults = []; lastSummary = null; $('sumCard').style.display = 'none';
     resetStats(); $('stream').innerHTML = '';
+    lastAct = Date.now(); switchTab('run');
     addLn('— run ' + r.runId + ' 启动 · ' + new Date().toLocaleTimeString() + ' —', 'info', '');
   } catch (e) { alert('启动失败：' + e.message); }
 }
@@ -461,11 +478,12 @@ function openEvents() {
   if (es) es.close();
   es = new EventSource(base() + '/api/events');
   es.onmessage = (m) => {
+    lastAct = Date.now();
     const e = JSON.parse(m.data);
     if (e.type === 'step') addStep(e.step);
     else if (e.type === 'case-start') addCase(e.device, e.name);
     else if (e.type === 'case-end') { lastResults.push(e.result); addCaseEnd(e.result); }
-    else if (e.type === 'run-end') { RUNNING = false; syncRunBtn(); loadHistory(); showSummary(e.summary || {}); }
+    else if (e.type === 'run-end') { RUNNING = false; syncRunBtn(); loadHistory(); showSummary(e.summary || {}); $('resDot').style.display = 'inline-block'; switchTab('res'); }
     else if (e.type === 'checkpoint') onCheckpoint(e.cp);
     else if (e.type === 'run-start') { }
   };
@@ -490,6 +508,24 @@ function updateStats(r) { statCnt[r.status] = (statCnt[r.status]||0)+1; statCnt.
   $('pbar').style.width = Math.round(statCnt.tot / (CASESEL.size || 1) * 100) + '%';
 }
 function resetStats() { statCnt = { pass:0, fail:0, warn:0, skip:0, tot:0 }; $('stats').innerHTML=''; $('pbar').style.width='0'; }
+// ★ 0.229.16：实时执行 / 结果 双 Tab 切换（用户要"自己切换、看后台在干嘛、看结果"）
+function switchTab(t) {
+  const run = t === 'run';
+  $('tabRun').className = 'tab' + (run ? ' on' : '');
+  $('tabRes').className = 'tab' + (!run ? ' on' : '');
+  $('paneRun').style.display = run ? 'block' : 'none';
+  $('paneRes').style.display = run ? 'none' : 'block';
+  if (!run) $('resDot').style.display = 'none';
+}
+// ★ 0.229.16：活动指示——执行中「最近活动 Xs 前」；>10s 黄、>30s 红（可能卡住）
+setInterval(() => {
+  const line = $('actLine'); if (!line) return;
+  if (!RUNNING) { line.style.display = 'none'; return; }
+  line.style.display = 'block';
+  const secs = Math.floor((Date.now() - lastAct) / 1000);
+  $('actSecs').textContent = secs;
+  line.className = 'actline ' + (secs < 10 ? 'ok' : secs < 30 ? 'warn' : 'bad');
+}, 1000);
 
 // ---------- 跑完汇总 + 一键复制问题报告（粘给 AI 即接管排查） ----------
 function showSummary(s) {
@@ -506,7 +542,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.15 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.16 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : ''));
   for (const r of lastResults) {
