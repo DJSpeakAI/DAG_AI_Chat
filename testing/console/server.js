@@ -1,6 +1,11 @@
 // ============================================================
-// testing/console/server.js — 0.229.18 修「全新安装没卸载」假成功（★ 2026-10-13 用户实锤：全新安装后登录态还在）
+// testing/console/server.js — 0.229.19 登录套件流程自动化重构（★ 2026-10-13 用户拍板"能不让我点就不点"）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.19 新增：①uiClickText/findNodeBounds/agreeDialogIfAny UI 自动点击原语（dumpLayout 找文本控件 bounds→uitest uiInput click）
+//   ②login 套件重构：协议模态自动同意+首页协议勾选/登录按钮自动点+协议门禁全自动+退出登录尽力自动；
+//   人工仅保留华为系统授权页（系统级无法自动化）、边栏头像（无文字坐标不可靠）、设置多步导航（暂留）
+//   ③新增 LOGIN-KEEP 覆盖安装登录态保留用例（覆盖模式专属）
 //
 // 0.229.18 修复三层：①bmUninstall 假成功（旧正则 /successfully|Uninstall/ 把 "Uninstall failed" 也判成功）→
 //   改「有成功标志且无失败标志」+ 卸载前 force-stop；②/api/prep 卸载失败→中止安装（防旧数据残留假成功）；
@@ -196,6 +201,40 @@ async function dumpCountText(serial, word) {
   const d = await dumpLayout(serial);
   const n = (d.text.match(new RegExp(word, 'g')) || []).length;
   return { ok: d.ok, n, text: d.text };
+}
+// ---------- ★ 0.229.19 UI 自动点击原语（用户拍板"能不让我点就不点"：app 内一切有文本的按钮自动点，仅华为系统授权页保留人工） ----------
+function findNodeBounds(jsonText, keyword) {
+  let hit = null;
+  const walk = (node) => {
+    if (!node || typeof node !== 'object' || hit) return;
+    if (node.attributes) {
+      const t = String(node.attributes.text || '');
+      if (t && t.includes(keyword)) {
+        const m = String(node.attributes.bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        if (m) { hit = { x: Math.round((+m[1] + +m[3]) / 2), y: Math.round((+m[2] + +m[4]) / 2), text: t.slice(0, 30) }; return; }
+      }
+    }
+    for (const k of Object.keys(node)) if (node[k] && typeof node[k] === 'object') walk(node[k]);
+  };
+  try { walk(JSON.parse(jsonText)); } catch (_) { /* dump 非 JSON 则放弃定位 */ }
+  return hit;
+}
+async function uiClickText(serial, keyword, opts = {}) {
+  const d = await dumpLayout(serial);
+  if (!d.ok) return { ok: false, err: 'dumpLayout 失败（无法定位控件）' };
+  const b = findNodeBounds(d.text, keyword);
+  if (!b) return { ok: false, err: `页面未找到含「${keyword}」的控件` };
+  const r = await sh(serial, `uitest uiInput click ${b.x} ${b.y}`, 15000);
+  await sleep(opts.waitMs || 1200);
+  return { ok: !SH_ERR_RE.test(r), x: b.x, y: b.y, text: b.text, raw: r.trim().slice(0, 120) };
+}
+// 协议模态弹窗自动同意（fresh 全新安装后首启必弹「阅读并同意」模态，0.226.0）
+async function agreeDialogIfAny(serial, log) {
+  const d = await dumpLayout(serial);
+  if (!d.ok || !d.text.includes('同意并继续')) return { agreed: false };
+  const c = await uiClickText(serial, '同意并继续', { waitMs: 1800 });
+  if (log) log('协议弹窗·自动点「同意并继续」', c.ok ? 'pass' : 'fail', c.ok ? `已点击 (${c.x},${c.y})「${c.text}」` : (c.err || c.raw || '点击失败'));
+  return { agreed: true, ok: c.ok };
 }
 async function bmVersionCode(serial) {
   const out = await sh(serial, `bm dump -n ${CFG.bundle}`);
@@ -461,6 +500,8 @@ const CASES = [
       ctx.log('冷启动', started ? 'pass' : 'fail', started ? 'aa start 成功' : 'aa start 失败');
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '三入口未登录基线'); }
       else {
+        const ag = await agreeDialogIfAny(serial, ctx.log); // ★ 0.229.19 fresh 首启必弹协议模态——自动点「同意并继续」
+        if (ag.agreed && !ag.ok) ctx.log('协议自动同意失败', 'warn', '自动点击未确认成功，后续基线可能失真');
         const d = await ctx.art.dump(`LOGIN-STATE-${dev.id}`, 'dump-cold.json', serial);
         const nLogin = (d.text.match(/未登录/g) || []).length;
         ctx.log('边栏/首页「未登录」基线', nLogin >= 1 ? 'pass' : 'fail', `dumpLayout 命中未登录×${nLogin}`);
@@ -468,24 +509,32 @@ const CASES = [
       const h = await hilogErrors(serial);
       ctx.log('启动 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'fail') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
     } },
-  { id: 'LOGIN-AGREE', suite: 'login', name: '协议门禁（未勾选点登录须拦截）', semi: true, scope: 'each',
+  { id: 'LOGIN-AGREE', suite: 'login', name: '协议门禁（全自动：不勾选自动点登录→断言被拦截）', semi: false, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
-      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '协议门禁（需观察拦截弹窗）'); return; }
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '协议门禁（UI 断言专属，PC 无 UI 通道）'); return; }
       await coldStart(serial);
-      const r = await ctx.checkpoint({ label: '请【不勾选协议】直接点登录按钮，观察是否弹出同意协议提示', deviceId: dev.id,
-        verdict: ['pass', 'fail'], timeoutMs: 120000 });
-      await ctx.art.dump(`LOGIN-AGREE-${dev.id}`, 'dump-after.json', serial);
-      if (r.state === 'timeout') { ctx.log('人工确认', 'fail', '等待超时（120s）未确认'); return; }
-      if (r.state === 'skipped') { ctx.log('人工确认', 'skip', '用户跳过'); return; }
-      ctx.log('协议拦截（用户判定）', r.verdict === 'pass' ? 'pass' : 'fail', r.verdict === 'pass' ? '未勾选被拦截 ✓（0.226.0 门禁生效）' : '未勾选未被拦截 ✗');
+      await agreeDialogIfAny(serial, ctx.log); // fresh 首启的协议模态先自动同意；本用例测的是首页勾选门禁
+      const btn = await uiClickText(serial, '登录华为账号', { waitMs: 2500 }); // ★ 不勾选协议直接自动点登录
+      if (!btn.ok) { ctx.log('自动点「登录华为账号」', 'fail', btn.err || '定位失败（页面无该按钮？可能已在别的页面）'); return; }
+      ctx.log('自动点「登录华为账号」（未勾选协议）', 'pass', `已点击 (${btn.x},${btn.y})`);
+      const d = await ctx.art.dump(`LOGIN-AGREE-${dev.id}`, 'dump-after.json', serial);
+      const logged = (d.text.match(/已登录/g) || []).length;
+      ctx.log('★未勾选被拦截（0.226.0 门禁）', logged === 0 ? 'pass' : 'fail', logged === 0 ? '点击后仍停在未登录=被协议门禁拦截 ✓' : '未勾选却出现已登录/跳授权 ✗（门禁失效）');
     } },
-  { id: 'LOGIN-HOME', suite: 'login', name: '首页入口登录（红灯位：边栏仍灰）', semi: true, scope: 'each',
+  { id: 'LOGIN-HOME', suite: 'login', name: '首页入口登录（协议+登录按钮全自动，人工仅华为授权）', semi: true, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
       await ensureLoggedOut(ctx, serial, dev.id, dev);
       await coldStart(serial);
-      const r = await ctx.checkpoint({ label: '请【勾选协议】后从【首页登录按钮】完成华为账号授权', deviceId: dev.id,
+      if (canUiDump(dev)) {
+        await agreeDialogIfAny(serial, ctx.log); // 首启协议模态自动同意
+        const chk = await uiClickText(serial, '我已阅读并同意'); // ★ 自动勾选协议（0.226.0 门禁要求勾选后才放行登录）
+        ctx.log('自动勾选协议', chk.ok ? 'pass' : 'warn', chk.ok ? `已点击 (${chk.x},${chk.y})「${chk.text}」` : (chk.err || '定位失败——请人工勾选'));
+        const btn = await uiClickText(serial, '登录华为账号'); // ★ 自动点首页登录按钮
+        ctx.log('自动点「登录华为账号」', btn.ok ? 'pass' : 'warn', btn.ok ? `已点击 (${btn.x},${btn.y})` : (btn.err || '定位失败——请人工点'));
+      }
+      const r = await ctx.checkpoint({ label: '【唯一人工】华为授权页点「同意并继续」完成授权（协议/登录按钮已自动点完）', deviceId: dev.id,
         detect: canUiDump(dev) ? (async () => (await dumpCountText(serial, '已登录')).n >= 1) : null });
       if (r.state === 'timeout') { ctx.log('人工授权', 'fail', '180s 内未完成授权'); return; }
       if (canUiDump(dev)) {
@@ -505,7 +554,8 @@ const CASES = [
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '边栏入口登录（核心断言为边栏 UI 翻转）'); return; }
       await ensureLoggedOut(ctx, serial, dev.id, dev);
       await coldStart(serial);
-      const r = await ctx.checkpoint({ label: '请点击【边栏底部账号头像】（未登录点头像直接拉起登录）完成华为账号授权', deviceId: dev.id,
+      await agreeDialogIfAny(serial, ctx.log);
+      const r = await ctx.checkpoint({ label: '【人工两步】点【边栏底部账号头像】→ 华为授权页点「同意」（头像无文字、坐标定位不可靠，暂留人工）', deviceId: dev.id,
         detect: async () => (await dumpCountText(serial, '已登录')).n >= 1 });
       if (r.state === 'timeout') { ctx.log('人工授权', 'fail', '180s 内未完成授权'); return; }
       const d = await ctx.art.dump(`LOGIN-SIDEBAR-${dev.id}`, 'dump-login.json', serial);
@@ -519,7 +569,8 @@ const CASES = [
       const dev = ctx.devices[0]; const serial = dev.serial;
       await ensureLoggedOut(ctx, serial, dev.id);
       await coldStart(serial);
-      const r = await ctx.checkpoint({ label: '请从【设置 → 云同步入口】登录（fromSyncEntry：登录成功应直接开启云同步，不再弹询问）', deviceId: dev.id,
+      await agreeDialogIfAny(serial, ctx.log);
+      const r = await ctx.checkpoint({ label: '【人工导航】设置 → 云同步入口 → 华为授权页点「同意」（多步导航暂留人工；fromSyncEntry 登录成功应直接开启云同步，不再弹询问）', deviceId: dev.id,
         detect: async () => { const c = await dbCount(serial, null); return c.ok && c.n > 0; } });
       if (r.state === 'timeout') { ctx.log('人工授权', 'fail', '180s 内未完成授权/云端未见数据'); return; }
       ctx.log('人工授权完成', 'pass', r.auto ? 'cloud_data 行数>0 自动确认' : '用户点击完成');
@@ -530,13 +581,27 @@ const CASES = [
       const h = await hilogErrors(serial);
       ctx.log('同步链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'fail') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
     } },
-  { id: 'LOGIN-LOGOUT', suite: 'login', name: '退出登录（三入口复位+开关强制关）', semi: true, scope: 'each',
+  { id: 'LOGIN-LOGOUT', suite: 'login', name: '退出登录（自动尽力：自动找「退出登录」点+确认）', semi: true, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '退出登录（前后态均为 UI 断言）'); return; }
       const d0 = await dumpCountText(serial, '已登录');
       if (d0.n === 0) { ctx.log('前置：已登录态', 'skip', '当前未登录——请先跑任一登录用例或手动登录后再跑本用例'); return; }
-      const r = await ctx.checkpoint({ label: '请点击【头像 → 退出登录 → 确认】', deviceId: dev.id,
+      // ★ 0.229.19 尽力自动：当前页出现「退出登录」就自动点，确认弹窗也自动点；点不到才回退人工
+      const a1 = await uiClickText(serial, '退出登录', { waitMs: 1800 });
+      if (a1.ok) {
+        ctx.log('自动点「退出登录」', 'pass', `已点击 (${a1.x},${a1.y})`);
+        let a2 = await uiClickText(serial, '确认', { waitMs: 1500 });
+        if (!a2.ok) a2 = await uiClickText(serial, '确定', { waitMs: 1500 });
+        ctx.log('自动点确认弹窗', a2.ok ? 'pass' : 'warn', a2.ok ? `已点击 (${a2.x},${a2.y})` : (a2.err || '未找到确认按钮（可能无二次确认）'));
+        await sleep(1800);
+        const n = (await dumpCountText(serial, '已登录')).n;
+        ctx.log('★退出后回到未登录', n === 0 ? 'pass' : 'fail', `已登录×${n}${n > 0 ? '（退出未生效）' : ''}`);
+        const g = await grepPref(serial, 'cloud-sync-switch');
+        ctx.log('cloud-sync-switch 强制关（尽力确认）', g.found ? 'pass' : 'warn', g.found ? `${g.path} → ${g.sample}` : '候选路径未命中');
+        return;
+      }
+      const r = await ctx.checkpoint({ label: '【人工】头像 → 退出登录 → 确认（当前页未自动找到「退出登录」按钮，可能需先进入账号页）', deviceId: dev.id,
         detect: async () => (await dumpCountText(serial, '已登录')).n === 0 });
       if (r.state === 'timeout') { ctx.log('退出操作', 'fail', '180s 内未完成退出'); return; }
       const d = await ctx.art.dump(`LOGIN-LOGOUT-${dev.id}`, 'dump-logout.json', serial);
@@ -544,6 +609,17 @@ const CASES = [
       ctx.log('三入口复位未登录', unlogged >= 1 ? 'pass' : 'fail', `未登录×${unlogged}`);
       const g = await grepPref(serial, 'cloud-sync-switch');
       ctx.log('cloud-sync-switch 强制关（尽力确认）', g.found ? 'pass' : 'warn', g.found ? `${g.path} → ${g.sample}` : '候选路径未命中');
+    } },
+  { id: 'LOGIN-KEEP', suite: 'login', name: '覆盖安装登录态保留（须覆盖安装模式下跑）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '覆盖安装登录态保留（UI 断言）'); return; }
+      await coldStart(serial);
+      const d = await ctx.art.dump(`LOGIN-KEEP-${dev.id}`, 'dump-keep.json', serial);
+      if (d.text.includes('同意并继续')) { ctx.log('★覆盖安装不应弹协议', 'fail', '出现协议模态=agreement-v1 被清（覆盖安装应保留同意状态）'); return; }
+      const logged = (d.text.match(/已登录/g) || []).length;
+      if (logged === 0) { ctx.log('登录态保留', 'skip', '当前未登录——本用例须【覆盖安装】模式且此前已登录时跑（fresh 模式必清）'); return; }
+      ctx.log('★覆盖安装登录态保留', 'pass', `已登录×${logged}（覆盖安装不清沙箱，华为登录态与协议同意均保留）`);
     } },
 
   // ---------- 功能② 云同步四域数据链 ----------
@@ -731,8 +807,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.18</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.18 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.19</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.19 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -756,7 +832,7 @@ let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.18', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.19', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -972,7 +1048,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.18] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.19] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -995,7 +1071,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.18] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.19] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);
