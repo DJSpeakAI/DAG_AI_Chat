@@ -194,7 +194,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-const PAGE_VER = '0.229.21'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）
+const PAGE_VER = '0.229.22'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）
 const base = () => LOCAL_BASE;
 
 async function api(path, opt) {
@@ -504,7 +504,9 @@ async function prepDevices() {
       if (r.uninstall) addLn('② 卸载 ' + id, r.uninstall.ok ? 'pass' : 'fail', r.uninstall.detail || '（无输出）');
       if (r.aborted || !r.install) { addLn('② 装机 ' + id + ' 失败（已中止，未安装）', 'fail', r.error || JSON.stringify(r)); continue; }
       addLn('② 装机 ' + id, r.install && r.install.ok ? 'pass' : 'fail', (r.install && r.install.detail) || '');
-      addLn('冷启动 ' + id, r.coldStart ? 'pass' : 'warn', r.coldStart ? 'force-stop → aa start 成功' : '冷启动未确认成功');
+      // ★ 0.229.22（用户拍板 A）：装机不再自动冷启（少弹一次）——coldStart=null 显示说明；旧服务返回真值时仍按旧口径显示
+      if (r.coldStart) addLn('冷启动 ' + id, 'pass', 'force-stop → aa start 成功');
+      else addLn('冷启动 ' + id, 'pass', r.coldNote || '（0.229.22：装机不自动冷启，首次启动交给第一条用例——少弹一次）');
     } catch (e) { addLn('② 装机 ' + id, 'fail', e.message); }
   }
   loadVersion();
@@ -579,7 +581,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.21 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.22 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : '') + (s.aborted ? ' / 已中止' : ''));
   // ★ 0.229.20 接手 AI 判别框架：先分清「app 代码问题」还是「测试台流程问题」再动手（用户要求正向循环）

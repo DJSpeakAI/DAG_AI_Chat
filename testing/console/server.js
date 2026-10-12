@@ -1,6 +1,9 @@
 // ============================================================
-// testing/console/server.js — 0.229.21 协议弹窗先勾选再同意 + 404 友好提示 + 服务版本守卫（★ 2026-10-13 用户实锤三假象）
+// testing/console/server.js — 0.229.22 装机后不再自动冷启（用户拍板 A：首次启动交给第一条用例，少弹一次）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.22 新增：/api/prep 装机链路删掉 coldStart 步骤——"装完弹一次（验收）+ 第一条用例又弹一次（隔离）"
+//   连续两次弹合并为一次（首次启动由第一条用例完成）；单独【装机】不跑测试时想验证就手动点开 app。
 //
 // 0.229.21 新增：①agreeDialogIfAny 先点「我已阅读并同意」勾选再点「同意并继续」（用户截图实锤：未勾选时同意按钮禁用点不动——
 //   0.229.19 直点灰按钮=真缺陷）②（前端）stopRun 404 时明确提示"服务是旧版本请重启"（用户撞 /api/stop 404 即因服务停在旧版未重启）
@@ -846,8 +849,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.21</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.21 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.22</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.22 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -871,7 +874,7 @@ let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.21', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.22', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -976,8 +979,8 @@ async function handler(req, res) {
           if (!un.ok) return json(res, 200, { mode, uninstall: un, install: null, coldStart: null, aborted: true, error: '卸载失败——已中止安装（防旧数据残留的假成功；原始输出见 uninstall.detail）' });
         }
         const ins = await bmInstall(dev.serial, mode === 'overwrite');
-        const cold = await coldStart(dev.serial, 10000);
-        json(res, 200, { mode, uninstall: un, install: ins, coldStart: cold });
+        // ★ 0.229.22（用户拍板 A）：装机后不再自动冷启——首次启动交给第一条用例的 coldStart 完成（"装完弹一次+用例又弹一次"→只弹一次）；单独装机想验证就手动点开 app
+        json(res, 200, { mode, uninstall: un, install: ins, coldStart: null, coldNote: '装机后不冷启（首次启动交给第一条用例，少弹一次）' });
       } catch (e) { json(res, 400, { error: String(e) }); }
     });
     return;
@@ -1093,7 +1096,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.21] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.22] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -1116,7 +1119,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.21] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.22] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);
