@@ -44,6 +44,10 @@ import { buildWidgetState } from '../utils/WidgetHostBridge'; // ★ 0.204.0：�
 import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3：卸载重装后残留卡片推送自愈
 import { connectDailyReviewCount } from '../components/ReviewPage'; // ★ 0.204.0：每日量（快照按量截断；ReviewPage 不反向 import Index，无循环）
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
+import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：阅读并同意弹窗（首启/边栏/云同步三入口共用）
+import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
+import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, AGREEMENT_CHECK_PREFIX } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案
+import { setTrackingEnabled } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -91,6 +95,10 @@ struct Index {
   @Local currentRoute: string = '';
   @Local globalSettingsVisible: boolean = false;
   confirmDialog: ConfirmDialogStore = connectConfirmDialog(); // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——根 Stack 挂载消费）
+  // ★ 0.226.0：阅读并同意——运行时桥（弹窗可见性 / 待执行动作 / 体验改进引导）+ 首页勾选框本地态
+  agreementBridge: AgreementBridge = connectAgreementBridge();
+  @Local homeAgreed: boolean = false; // 首页（仅 PC/Pad）常驻勾选框本地态（勾选后点登录=同意）
+  @Local homeShakeX: number = 0;      // 未勾选点登录的抖动偏移（负反馈）
 
   // ★ 0.164：点击华为账号登录
   // ★ 0.196.11：fromSyncEntry 参数——登录来源分流（用户实测反馈：从设置页「开启云同步」
@@ -98,6 +106,13 @@ struct Index {
   //   主页/边栏/账单页等普通登录路径保持询问弹窗）
   doLogin(fromSyncEntry: boolean) {
     if (this.isProcessing) {
+      return;
+    }
+    // ★ 0.226.0：未同意协议 → 先弹同意弹窗（记待执行动作，同意后由 onAgreementAgree 续跑登录）
+    //   首页 PC/Pad 勾选路径已先 markAgreed，不会再进此分支
+    if (needsAgreement()) {
+      this.agreementBridge.pendingAction = fromSyncEntry ? 'sync' : 'login';
+      this.agreementBridge.promptVisible = true;
       return;
     }
     this.isProcessing = true;
@@ -319,6 +334,87 @@ struct Index {
     }
     // PersistenceV2：API 配置持久化，跨重启保存
     PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());
+    // ★ 0.226.0：首次启动（未同意 / 协议版本落后）自动弹同意弹窗（全端，弹一次；同意后不再弹）
+    //   延迟 300ms 等 PersistenceV2 磁盘水合完成，避免已同意用户冷启动误弹
+    setTimeout(() => {
+      if (needsAgreement() && !this.agreementBridge.promptVisible) {
+        this.agreementBridge.pendingAction = '';
+        this.agreementBridge.promptVisible = true;
+      }
+    }, 300);
+  }
+
+  // ============================================================
+  // ★ 0.226.0：阅读并同意机制（三入口共用同一弹窗 + 一份全局同意状态）
+  // ============================================================
+
+  // 同意弹窗——同意并继续（先落全局同意态，再按 pendingAction 续跑登录/云同步）
+  onAgreementAgree(): void {
+    this.agreementBridge.promptVisible = false;
+    markAgreed();
+    const action = this.agreementBridge.pendingAction;
+    this.agreementBridge.pendingAction = '';
+    if (action === 'login') {
+      this.doLogin(false);
+    } else if (action === 'sync') {
+      this.doLogin(true);
+    }
+    // 同意协议后**首次**引导体验改进计划（单独、非捆绑、默认关——合规红线）
+    if (!connectAgreement().improvePromptShown) {
+      this.agreementBridge.improveVisible = true;
+    }
+  }
+
+  // 同意弹窗——暂不同意（返回原页面，不退出应用；本地功能照常可用）
+  onAgreementReject(): void {
+    this.agreementBridge.promptVisible = false;
+    this.agreementBridge.pendingAction = '';
+  }
+
+  // 体验改进计划——加入（开启匿名埋点上报）
+  onImproveJoin(): void {
+    this.agreementBridge.improveVisible = false;
+    connectAgreement().improvePromptShown = true;
+    setTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext, true);
+  }
+
+  // 体验改进计划——暂不加入（保持关闭；仅记账，此后不再弹）
+  onImproveSkip(): void {
+    this.agreementBridge.improveVisible = false;
+    connectAgreement().improvePromptShown = true;
+  }
+
+  // 首页未勾选点登录的抖动负反馈（逐帧 setTimeout 偏移，末尾归零）
+  shakeHome(): void {
+    const seq: number[] = [8, -8, 6, -6, 3, -3, 0];
+    for (let i = 0; i < seq.length; i++) {
+      setTimeout(() => {
+        this.homeShakeX = seq[i];
+      }, 40 * i);
+    }
+  }
+
+  // 首页账号行点击（未登录态分流）：PC/Pad=勾选放行或抖动提示；手机=弹同意弹窗→登录
+  onHomeAccountClick(): void {
+    if (this.getHuaweiAccount().isLoggedIn) {
+      return;
+    }
+    if (needsAgreement()) {
+      if (this.isTablet) {
+        if (this.homeAgreed) {
+          markAgreed();
+          this.doLogin(false);
+        } else {
+          this.loginTip = '请先阅读并勾选同意下方协议';
+          this.shakeHome();
+        }
+      } else {
+        this.agreementBridge.pendingAction = 'login';
+        this.agreementBridge.promptVisible = true;
+      }
+      return;
+    }
+    this.doLogin(false);
   }
 
   @Builder
@@ -506,9 +602,39 @@ struct Index {
           .backgroundColor(SURFACE_SOFT)
           .alignItems(VerticalAlign.Center)
           .enabled(!this.isProcessing)
+          .translate({ x: this.homeShakeX }) // ★ 0.226.0：未勾选点登录时的抖动负反馈
           .onClick(() => {
-            this.doLogin(false); // ★ 0.196.11：普通登录路径——成功后询问是否开云同步
+            this.onHomeAccountClick(); // ★ 0.226.0：未登录分流（PC/Pad 勾选放行或抖动提示；手机弹同意弹窗）
           })
+        }
+        // ★ 0.226.0：首页底部阅读并同意勾选框（仅 PC/Pad 常驻；未登录且未同意时显示）
+        if (this.isTablet && !this.getHuaweiAccount().isLoggedIn && needsAgreement()) {
+          Row({ space: 8 }) {
+            if (this.homeAgreed) {
+              Image($r('app.media.checkbox_on'))
+                .width(16)
+                .height(16)
+                .onClick(() => {
+                  this.homeAgreed = false;
+                })
+            } else {
+              Image($r('app.media.checkbox_off'))
+                .width(16)
+                .height(16)
+                .onClick(() => {
+                  this.homeAgreed = true;
+                })
+            }
+            Text(AGREEMENT_CHECK_PREFIX + '《用户协议》《隐私政策》《华为账号用户认证协议》')
+              .fontSize(FONT_SIZE_CAPTION)
+              .lineHeight(18)
+              .fontColor(TEXT_TERTIARY)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: 360 })
+          .margin({ top: 10 })
+          .alignItems(VerticalAlign.Top)
         }
         // ★ 0.164：登录/退出结果提示（错误时显示，深浅色适配）
         if (this.loginTip !== '') {
@@ -521,7 +647,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.225.2') // ★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
+        Text('v0.226.0') // ★ 0.226.0：阅读并同意机制；★ v0.217.0：新包名 com.dagaichat.app；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -650,6 +776,26 @@ struct Index {
       },
       onCancel: () => {
         this.confirmDialog.loginPromptVisible = false;
+      }
+    })
+    // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）
+    AgreementDialog({
+      visible: this.agreementBridge.promptVisible,
+      onAgree: () => {
+        this.onAgreementAgree();
+      },
+      onReject: () => {
+        this.onAgreementReject();
+      }
+    })
+    // ★ 0.226.0：体验改进计划引导（同意协议后首次弹一次；单独、非捆绑、默认关）
+    ImproveDataDialog({
+      visible: this.agreementBridge.improveVisible,
+      onJoin: () => {
+        this.onImproveJoin();
+      },
+      onSkip: () => {
+        this.onImproveSkip();
       }
     })
     }

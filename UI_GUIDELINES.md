@@ -168,6 +168,16 @@
 - 结构：标题 16/600（TEXT_PRIMARY）→ 正文 FONT_SIZE_BODY/lineHeight 22（TEXT_SECONDARY）→ 按钮行；内边距 20，圆角 RADIUS_NAV，底色 SURFACE_NODE，描边 1px STROKE_CARD，遮罩 `rgba(0,0,0,0.5)`
 - 按钮：单按钮通栏「知道了」= BRAND_PRIMARY 底白字高 48 圆角 RADIUS_CONTROL；双按钮 = `Row({ space: 10 })` + 各 `layoutWeight(1)` 等宽
 
+**12b. 协议同意区 / 法律条款卡（★ 0.226.0 入规则——合规刚需：处理个人信息前须告知并取得同意）**
+- **适用组件**：首启「阅读并同意」弹窗 `AgreementDialog`、体验改进计划引导 `ImproveDataDialog`、首页底部勾选行（仅 PC/Pad）、关于页「法律条款」卡——文案统一取自 `utils/Agreement.ets`（协议正文 + 版本号 `AGREEMENT_VERSION`，单一来源）
+- **弹窗宽度断点制（同第 12/12a 条）**：`.width(this.isTablet ? 400 : '88%')`（同意弹窗手机 88% 略宽于确认弹窗 86%，因含三协议勾选行正文）
+- 结构：标题「阅读并同意」16/600（TEXT_PRIMARY）→ 说明正文 FONT_SIZE_BODY/TEXT_SECONDARY → **勾选行**（`checkbox_on`/`checkbox_off` 18 + 前缀「我已阅读并同意」+ 三协议名 BRAND_PRIMARY 可点）→ 双按钮行（「暂不同意」SURFACE_SOFT+STROKE_CARD 描边 / 「同意并继续」BRAND_PRIMARY，且**未勾选时置灰 `enabled(false)`**）
+- **勾选行点击归属**：勾选框图标 + 前缀文字 = 切换勾选；三个协议名 = 查看正文 / 外链，各自消费点击**互不干扰**（避免 `Span.onClick` 冒泡到整行导致误切换勾选）
+- 协议正文查看：弹窗内切换（`viewing`：-1=主面板 / 0=用户协议 / 1=隐私政策），标题行右侧「返回」BRAND_PRIMARY；正文 Scroll 高 400（平板）/320（手机）
+- **法律条款卡（关于页）**：标题「法律条款」+ 三行入口（用户协议 / 隐私政策 / 华为账号用户认证协议「↗」外链）+「撤回同意」按钮；入口行高 40、圆角 RADIUS_CONTROL、底色 SURFACE_SOFT、右侧 chevron「›」
+- **合规红线**：勾选项**默认未勾选**；禁「登录即代表同意」式隐式同意；体验改进计划必须**单独、非捆绑、默认关**；不同意**不得**禁用本地功能（只 gate 登录 / 云同步）
+- 华为账号用户认证协议走**系统浏览器** `openLink`（不在应用内自撰正文）
+
 ## 七、图标资源
 
 `PixsoUI/*/arkui/entry/src/main/resources/base/media/` 下 svg 可直接拷入工程 media/（描边风格 1.5px）：

@@ -42,6 +42,8 @@ import {
 import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件）
 import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面变更即时推桌面卡片
+
+import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
 
@@ -121,20 +123,13 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.225.2';
+const APP_VERSION: string = 'v0.226.0';
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
-// ★ 0.190.8：隐私政策正文分段（自定义暗紫弹窗渲染；华为只要求应用内有便捷查看入口+内容合规，
-// 不规定 UI 样式——系统 AlertDialog 灰色弹窗按用户指示换成应用设计语言）
-const PRIVACY_SECTIONS: string[] = [
-  'DAGAI 尊重并保护你的隐私。本应用不收集、不上传任何个人信息。',
-  '1. 本地存储：对话、单词库、知识库及 AI 配置（含 API Key）全部存储在设备本地，卸载即清除。',
-  '2. AI 服务：对话内容仅在你主动发送时，按你配置的 AI 服务商（火山方舟 / 华为云 MaaS / DeepSeek / 自定义）接口直接传输，用于生成回复，本应用不经手留存。',
-  '3. 云同步：如你开启云同步，数据经华为云空间加密，仅在你登录的华为账号设备间同步。',
-  '4. 权限：仅在你主动选择图片时访问相册，无其他敏感权限。',
-  '5. 联系我们：' + '1725912449@qq.com'
-];
+// ★ 0.226.0：隐私政策 / 用户协议正文改由 utils/Agreement.ets 单一来源提供
+// （原 0.190.8 本地 PRIVACY_SECTIONS「本应用不收集、不上传任何个人信息」与体验改进埋点矛盾，
+//  已随本次同意机制统一改写并迁移；关于页正文弹窗按 legalViewing 选择展示哪一份）
 
 // ★ 0.190.1：旧版模型 ID → 新清单映射（火山 260910 预览版已被 260731 正式版替代，
 // 用户明确「改成我用那个 Flash 正式版」——回显时自动落新模型，保存即生效）
@@ -228,8 +223,8 @@ export struct GlobalSettingsDialog {
   //   Tab 交互统一）；快速项/输入确定只写副本，底部「保存」统一落 store（saveAll）
   @Local editReviewLearn: number = 0;
   @Local editReviewKnowledge: number = 0;
-  // ★ 0.190.8：隐私政策自定义弹窗显隐（替代系统 AlertDialog 灰弹窗，按应用设计语言）
-  @Local privacyVisible: boolean = false;
+  // ★ 0.226.0：法律条款正文弹窗（-1=关闭 / 0=用户协议 / 1=隐私政策；替代系统 AlertDialog 灰弹窗）
+  @Local legalViewing: number = -1;
 
   // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
@@ -1152,6 +1147,12 @@ export struct GlobalSettingsDialog {
           .onClick(() => {
             // 未登录：登录引导弹窗（Index 根挂载；登录成功直接开云同步——入口即意图 0.196.11）
             if (!this.account.isLoggedIn) {
+              // ★ 0.226.0：未同意协议 → 先弹同意弹窗（Index 根挂载），同意后由 Index 续跑云同步登录
+              if (needsAgreement()) {
+                connectAgreementBridge().pendingAction = 'sync';
+                connectAgreementBridge().promptVisible = true;
+                return;
+              }
               connectConfirmDialog().loginPromptVisible = true;
               return;
             }
@@ -1247,10 +1248,28 @@ export struct GlobalSettingsDialog {
     }
   }
 
-  // ★ 0.190.6：隐私政策入口；★ 0.190.8：AlertDialog 系统灰弹窗 → 自定义暗紫弹窗
-  // （privacyVisible 驱动 build Stack 顶层渲染；华为不强制样式，按应用设计语言走）
-  showPrivacyPolicy(): void {
-    this.privacyVisible = true;
+  // ★ 0.226.0：法律条款正文入口（0=用户协议 / 1=隐私政策）；
+  // ★ 0.190.8：AlertDialog 系统灰弹窗 → 自定义暗紫弹窗（legalViewing 驱动 build Stack 顶层渲染）
+  openLegal(idx: number): void {
+    this.legalViewing = idx;
+  }
+
+  // ★ 0.226.0：华为账号用户认证协议——系统浏览器打开（不自行撰写；与 AgreementDialog 一致）
+  openHuaweiAgreement(): void {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      ctx.openLink(HUAWEI_ACCOUNT_AGREEMENT_URL).catch(() => {
+        // 打开失败静默
+      });
+    } catch (_e) {
+      // 静默
+    }
+  }
+
+  // ★ 0.226.0：撤回同意——回到未同意态（重新 gate 登录/云同步），本地功能不受影响
+  revokeAgreementNow(): void {
+    revokeAgreement();
+    this.showToastSafe('已撤回同意，登录/云同步将重新要求同意');
   }
 
   // ============================================================
@@ -1635,31 +1654,87 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .alignItems(HorizontalAlign.Start)
 
-      // 隐私政策
+      // 法律条款（★ 0.226.0：原「隐私政策」卡扩为三协议入口 + 撤回同意）
       Column({ space: 10 }) {
-        Text('隐私政策')
+        Text('法律条款')
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontWeight(FontWeight.Medium)
           .fontColor(TEXT_SECONDARY)
           .width('100%')
 
-        Button('查看隐私政策')
-          .width('100%')
-          .height(40)
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .fontWeight(FontWeight.Medium)
-          .backgroundColor(SURFACE_SOFT)
-          .fontColor(TEXT_SECONDARY)
-          .borderRadius(RADIUS_CONTROL)
-          .onClick(() => {
-            this.showPrivacyPolicy();
-          })
+        Row() {
+          Text(AGREEMENT_USER_NAME)
+            .fontSize(13)
+            .fontColor(TEXT_PRIMARY)
+            .layoutWeight(1)
+          Text('›')
+            .fontSize(14)
+            .fontColor(TEXT_TERTIARY)
+        }
+        .width('100%')
+        .height(40)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.openLegal(0);
+        })
 
-        Text('💡 本应用不收集任何个人信息，数据全部存储在设备本地。')
+        Row() {
+          Text('隐私政策')
+            .fontSize(13)
+            .fontColor(TEXT_PRIMARY)
+            .layoutWeight(1)
+          Text('›')
+            .fontSize(14)
+            .fontColor(TEXT_TERTIARY)
+        }
+        .width('100%')
+        .height(40)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.openLegal(1);
+        })
+
+        Row() {
+          Text(AGREEMENT_HUAWEI_NAME)
+            .fontSize(13)
+            .fontColor(TEXT_PRIMARY)
+            .layoutWeight(1)
+          Text('↗')
+            .fontSize(13)
+            .fontColor(TEXT_TERTIARY)
+        }
+        .width('100%')
+        .height(40)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SURFACE_SOFT)
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.openHuaweiAgreement();
+        })
+
+        Text('💡 协议内容与首次启动的同意弹窗一致；数据默认存储在设备本地，登录后才可能云同步。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
           .width('100%')
+
+        Button('撤回同意')
+          .width('100%')
+          .height(36)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .backgroundColor(SURFACE_SOFT)
+          .fontColor(TEXT_SECONDARY)
+          .borderRadius(RADIUS_CONTROL)
+          .onClick(() => {
+            this.revokeAgreementNow();
+          })
       }
       .width('100%')
       .padding(14)
@@ -1873,8 +1948,9 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // ★ 0.190.8：隐私政策自定义弹窗（Stack 顶层，暗紫设计语言替代系统 AlertDialog 灰弹窗）
-      if (this.privacyVisible) {
+      // ★ 0.226.0：法律条款正文弹窗（用户协议/隐私政策共用；legalViewing 驱动）
+      // ★ 0.190.8：原隐私政策自定义弹窗（Stack 顶层，暗紫设计语言替代系统 AlertDialog 灰弹窗）
+      if (this.legalViewing >= 0) {
         // 遮罩（点击关闭——纯阅读无输入，不怕误触）
         Column() {
           Blank()
@@ -1883,12 +1959,12 @@ export struct GlobalSettingsDialog {
         .height('100%')
         .backgroundColor('rgba(0,0,0,0.5)')
         .onClick(() => {
-          this.privacyVisible = false;
+          this.legalViewing = -1;
         })
 
         // 面板
         Column() {
-          Text('隐私政策')
+          Text(this.legalViewing === 0 ? AGREEMENT_USER_NAME : '隐私政策')
             .fontSize(FONT_SIZE_SCREEN_TITLE)
             .fontWeight(600)
             .fontColor(TEXT_PRIMARY)
@@ -1897,7 +1973,7 @@ export struct GlobalSettingsDialog {
 
           Scroll() {
             Column() {
-              ForEach(PRIVACY_SECTIONS, (section: string, idx: number) => {
+              ForEach(this.legalViewing === 0 ? USER_AGREEMENT_SECTIONS : PRIVACY_SECTIONS, (section: string, idx: number) => {
                 Text(section)
                   .fontSize(13)
                   .lineHeight(20)
@@ -1905,7 +1981,7 @@ export struct GlobalSettingsDialog {
                   .fontWeight(idx === 0 ? FontWeight.Medium : FontWeight.Normal)
                   .margin({ bottom: 10 })
                   .width('100%')
-              }, (section: string) => section)
+              }, (section: string, idx: number) => `${idx}`)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
@@ -1926,7 +2002,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .margin({ top: 12 })
             .onClick(() => {
-              this.privacyVisible = false;
+              this.legalViewing = -1;
             })
         }
         .width('88%')

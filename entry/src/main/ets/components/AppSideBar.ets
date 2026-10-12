@@ -12,6 +12,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确�
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
+import { needsAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.226.0：登录前同意拦截（弹窗 Index 根挂载）
 import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, SURFACE_NODE, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.222.12: SURFACE_NODE 增补（长按菜单浮层用）
 
 import { connectKnowledgeBank, deleteFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
@@ -907,6 +908,12 @@ export struct AppSideBar {
         // ★ 0.196.2 用户拍板：点头像=华为账号退出确认弹窗（原跳统计页废弃——统计已有边栏独立入口）
         // ★ 0.196.3 bugfix（用户实测「退出后再点没反应」）：未登录点头像=直接拉起登录
         if (!this.account.isLoggedIn) {
+          // ★ 0.226.0：未同意协议 → 先弹同意弹窗（Index 根挂载），同意后由 Index 续跑登录；同意前不埋点
+          if (needsAgreement()) {
+            connectAgreementBridge().pendingAction = 'login';
+            connectAgreementBridge().promptVisible = true;
+            return;
+          }
           track(this.getUIContext().getHostContext() as common.Context, 'login_huawei'); // 0.206.0 埋点：登录入口点击
           const loginContext = this.getUIContext().getHostContext() as common.Context;
           // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（云同步与账号绑定，用户拍板流程）
