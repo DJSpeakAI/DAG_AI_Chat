@@ -1,6 +1,11 @@
 // ============================================================
-// testing/console/server.js — 0.229.20 停止测试+删关闭服务按钮+登录入口隔离收尾+报告判别框架（★ 2026-10-13 用户拍板）
+// testing/console/server.js — 0.229.21 协议弹窗先勾选再同意 + 404 友好提示 + 服务版本守卫（★ 2026-10-13 用户实锤三假象）
 // 架构：桌面/浏览器 HTML → 本服务(127.0.0.1:8766) → spawn hdc → Pad/PC/手机
+//
+// 0.229.21 新增：①agreeDialogIfAny 先点「我已阅读并同意」勾选再点「同意并继续」（用户截图实锤：未勾选时同意按钮禁用点不动——
+//   0.229.19 直点灰按钮=真缺陷）②（前端）stopRun 404 时明确提示"服务是旧版本请重启"（用户撞 /api/stop 404 即因服务停在旧版未重启）
+//   ③（前端）boot 比对 /api/health 服务版本 vs PAGE_VER，旧于页面立即提示重启——治本"旧服务跑新页面"全面错位
+//   ④（前端）srvState 顶栏显示服务版本号；弹两次现象澄清=装机验收冷启+每用例隔离冷启各司其职（非 bug，连续两次属可优化冗余待用户拍板）
 //
 // 0.229.20 新增：①「停止测试」——/api/stop 设 abortRequested，executeMatrix 每条用例前检查、当前步骤跑完即停、
 //   summary 标 aborted（"打开即执行中"根因=上一轮还在后台跑+无停止手段失控，非自动开跑——前端 startRun 仅挂在按钮上已实证）
@@ -235,9 +240,12 @@ async function uiClickText(serial, keyword, opts = {}) {
   return { ok: !SH_ERR_RE.test(r), x: b.x, y: b.y, text: b.text, raw: r.trim().slice(0, 120) };
 }
 // 协议模态弹窗自动同意（fresh 全新安装后首启必弹「阅读并同意」模态，0.226.0）
+// ★ 0.229.21 真缺陷修复（用户截图实锤）：未勾选复选框时「同意并继续」是禁用态、点不动——必须先点「我已阅读并同意」勾选、再点同意（100% 复刻 app 真实交互序列）
 async function agreeDialogIfAny(serial, log) {
   const d = await dumpLayout(serial);
   if (!d.ok || !d.text.includes('同意并继续')) return { agreed: false };
+  const chk = await uiClickText(serial, '我已阅读并同意', { waitMs: 900 });
+  if (log) log('协议弹窗·自动勾选「我已阅读并同意」', chk.ok ? 'pass' : 'warn', chk.ok ? `已点击 (${chk.x},${chk.y})「${chk.text}」` : (chk.err || '勾选框定位失败——继续尝试直接点同意'));
   const c = await uiClickText(serial, '同意并继续', { waitMs: 1800 });
   if (log) log('协议弹窗·自动点「同意并继续」', c.ok ? 'pass' : 'fail', c.ok ? `已点击 (${c.x},${c.y})「${c.text}」` : (c.err || c.raw || '点击失败'));
   return { agreed: true, ok: c.ok };
@@ -838,8 +846,8 @@ function syncDesktop() {
   try {
     if (!fs.existsSync(CFG.desktopDir)) return { ok: false, reason: '桌面目录不存在' };
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    const stamped = html.replace('</title>', ` · 0.229.20</title>`)
-      .replace('</body>', `\n<!-- testing-console 0.229.20 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
+    const stamped = html.replace('</title>', ` · 0.229.21</title>`)
+      .replace('</body>', `\n<!-- testing-console 0.229.21 同源副本 ${now()} 生成，正本 testing/console/public/index.html，勿直接改本副本 -->\n</body>`);
     fs.writeFileSync(path.join(CFG.desktopDir, '测试台.html'), stamped);
     const launcher = path.join(ROOT, '启动测试台.sh');
     if (fs.existsSync(launcher)) {
@@ -863,7 +871,7 @@ let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); return res.end(); }
-  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.20', running });
+  if (u.pathname === '/api/health') return json(res, 200, { ok: true, pid: process.pid, version: '0.229.21', running });
   if (u.pathname === '/' ) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(path.join(ROOT, 'public', 'index.html')));
@@ -1085,7 +1093,7 @@ function probeSelf() {
 }
 async function startListen(attempt) {
   if (attempt === 0 && await probeSelf()) {
-    console.log(`[测试台 0.229.20] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
+    console.log(`[测试台 0.229.21] 服务已在线（http://127.0.0.1:${CFG.port}）——自动复用，本进程退出，无需重复启动`);
     process.exit(0);
   }
   const srv = http.createServer(handler);
@@ -1108,7 +1116,7 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
-    console.log(`[测试台 0.229.20] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
+    console.log(`[测试台 0.229.21] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);
     setTimeout(() => autoConnectTcpDevices().catch(() => { /* 尽力连，失败不影响服务 */ }), 3000);

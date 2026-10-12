@@ -194,6 +194,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
+const PAGE_VER = '0.229.21'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）
 const base = () => LOCAL_BASE;
 
 async function api(path, opt) {
@@ -214,7 +215,16 @@ async function boot() {
     try { await api('/api/shutdown/cancel', { method: 'POST' }); } catch (_) { /* 无待关闭则忽略 */ }
     $('guide').style.display = 'none'; $('app').style.display = 'grid';
     renderTree(); await refreshDevices(); await loadHistory(); loadVersion();
-    $('srvState').textContent = '服务在线 · ' + (d.config ? d.config.bundle + ' · 期望 versionCode ' + d.config.expectedVersionCode : '');
+    // ★ 0.229.21 服务版本守卫（治本"旧服务跑新页面"全面错位——用户曾连撞三假象皆因服务停在旧版未重启）
+    try {
+      const hres = await fetch(LOCAL_BASE + '/api/health', { signal: AbortSignal.timeout(2000) });
+      const hv = await hres.json();
+      const sv = hv.version || '?';
+      $('srvState').textContent = '服务在线 v' + sv + (sv !== PAGE_VER ? '（旧于页面 ' + PAGE_VER + '，需重启）' : '') + ' · ' + (d.config ? d.config.bundle : '');
+      if (sv !== PAGE_VER) toast('⚠ 后台服务 v' + sv + ' 落后于页面 ' + PAGE_VER + '——新功能未生效！请在 DevEco Terminal 重启服务（Ctrl+C → ↑ → 回车）');
+    } catch (_) {
+      $('srvState').textContent = '服务在线 · ' + (d.config ? d.config.bundle : '');
+    }
     resetStats(); initStreamTip();
     openEvents();
     if (!CONN_AUTOSHOWN) { CONN_AUTOSHOWN = true; setTimeout(autoShowConnDiag, 800); }
@@ -569,7 +579,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.20 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 0.229.21 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : '') + (s.aborted ? ' / 已中止' : ''));
   // ★ 0.229.20 接手 AI 判别框架：先分清「app 代码问题」还是「测试台流程问题」再动手（用户要求正向循环）
@@ -659,7 +669,11 @@ async function stopRun() {
   try {
     const r = await api('/api/stop', { method: 'POST' });
     toast(r.note || '已请求中止');
-  } catch (e) { toast('停止请求失败：' + e.message); }
+  } catch (e) {
+    // ★ 0.229.21：404=后台服务是旧版本（没有 /api/stop 路由）——直接点破根因，别让用户猜
+    if (String(e.message).includes('404')) toast('停止失败 404：后台服务是旧版本——请在 DevEco Terminal 重启服务（Ctrl+C → ↑ → 回车）加载新版后重试');
+    else toast('停止请求失败：' + e.message);
+  }
 }
 // ---------- 顶栏版本（0.229.12：只显 APP 首页版本 vX.Y.Z；先前那个 versionCode 期望值已拿掉） ----------
 function loadVersion() {
