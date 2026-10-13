@@ -94,6 +94,11 @@
 -   局部小功能、延续迭代、单文件 Bug 修复：当前对话继续做完
 -   全局清理、项目优化、大重构、跨模块大功能：必须新开对话框
 -   新开对话第一步：强制读取根目录 [MEMORY.md](http://MEMORY.md) + project\_rule.md，对齐项目基线
+-   **★ 一任务一会话 + 收尾四件套（2026-10-14 用户定稿——32G 内存跑 CI+DevEco+大模型同会话膨胀卡死，一个任务一个窗口）**：
+    -   一个开发任务完成（含 AI 自测）即收尾，不在同一会话无限续接；**用户自测出的 bug 一律新开对话修复**
+    -   新会话续接机制 = 三文档（project\_rule.md + MEMORY.md + docs/CONTEXT\_MANAGEMENT.md）+ 用户口述 bug：AI 从 MEMORY 最近版本条目定位上下文，禁止凭空猜测
+    -   **收尾四件套（缺一不算收官）**：①本轮全部改动记入 MEMORY.md「迭代记录」（含遗留/已知问题——这是新会话唯一的上下文来源）②桌面清理（123.txt 等交接文件删除）③git push 双远端（codearts + github）④版本号三处同步（app.json5 versionCode / Index.ets / GlobalSettingsDialog APP\_VERSION）
+    -   MEMORY.md 条目须自包含：新会话只读该条目即可了解「改了什么、怎么改的、还差什么」，不依赖旧对话记忆
 
 * * *
 

@@ -46,7 +46,8 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
-import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, headerFontSize } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）
+import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）
+import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
@@ -1374,11 +1375,40 @@ export struct ChatPage {
     this.stopTTS();
     // ★ 0.149：与单词发音互斥——消息朗读开始前停掉单词 TTS
     wordSpeaker.stop();
-    // ★ 0.189.0：本地引擎播报（CoreSpeechKit 免费离线）——分段/排队/会话失效
-    // 全在 LocalTtsEngine 内部管理；云端火山管线已按用户指示移除
+    // ★ 0.232.0：朗读文本清洗——**粗**/#标题/代码围栏/表格竖线等 Markdown 符号不进 TTS
+    //   （用户痛点锚点：本地语音「连星号星号都要读进去」，云端本地双引擎共用清洗）
+    const speakText = mdToSpeakableText(msg.content);
+    if (speakText.length === 0) {
+      this.showToastSafe('该消息没有可朗读的文本（代码/符号内容已跳过）');
+      return;
+    }
     this.playingMessageId = msg.messageId;
     this.ttsLoadingMessageId = msg.messageId;
-    localTts.speakText(msg.content, {
+    // ★ 0.232.0：云端优先（audioKey+audioModel 已配置）→ 失败回退本地 CoreSpeechKit（用户规则）
+    const ctx = this.getUIContext().getHostContext();
+    const cacheDir = ctx !== undefined && ctx !== null ? ctx.cacheDir : '';
+    const cloudStarted = cloudTts.speak(speakText, cacheDir, {
+      onStart: () => {
+        this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
+      },
+      onComplete: () => {
+        this.stopTTS(); // 全部段播完——恢复正常态
+      },
+      onError: (message: string) => {
+        // 云端失败（网络/Key/资源）——本机语音兜底 + 轻提示（友好中文，规则#4）
+        this.showToastSafe(`云端朗读失败，已切换本机语音（${message.substring(0, 60)}）`);
+        this.startLocalTts(speakText);
+      }
+    });
+    if (!cloudStarted) {
+      // 未配置云端（audioKey/audioModel 空）——静默直落本地（用户规则：没配置就用本地）
+      this.startLocalTts(speakText);
+    }
+  }
+
+  // ★ 0.232.0：本地引擎朗读（云端未配置/失败的双路径汇入；0.189.0 管线原样）
+  startLocalTts(speakText: string): void {
+    localTts.speakText(speakText, {
       onStart: () => {
         this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
       },
@@ -1397,8 +1427,9 @@ export struct ChatPage {
     });
   }
 
-  // 停止整个朗读会话（★ 0.189.0：本地引擎版——停引擎+清状态，幂等，可安全重复调用）
+  // 停止整个朗读会话（★ 0.232.0：云端+本地双引擎一起停，幂等，可安全重复调用）
   stopTTS(): void {
+    cloudTts.stop();
     localTts.stop();
     this.playingMessageId = '';
     this.ttsLoadingMessageId = '';
@@ -3567,13 +3598,17 @@ export struct ChatPage {
                                         .onTextSelectionChange((start: number, end: number) => {
                                           this.handleSelectionChange(`${msg.messageId}|rw${idx}`, '📚 ' + w.word, start, end);
                                         })
-                                      if (w.usPhonetic.length > 0) {
-                                        // Phonetic right beside the word — same line, never ellipsized (user rule)
-                                        Text(w.usPhonetic)
-                                          .fontSize(this.fs(12))
-                                          .fontColor(TEXT_TERTIARY)
-                                          .maxLines(1)
-                                          .margin({ left: 6 })
+                                       if (w.usPhonetic.length > 0) {
+                                         // Phonetic right beside the word — same line, never ellipsized (user rule)
+                                         // ★ 0.232.1：音标可点=展开评分（用户需求：点击区扩大到整个词条——词条短时只点左上角单词很难受）
+                                         Text(w.usPhonetic)
+                                           .fontSize(this.fs(12))
+                                           .fontColor(TEXT_TERTIARY)
+                                           .maxLines(1)
+                                           .margin({ left: 6 })
+                                           .onClick(() => {
+                                             this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                           })
                                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                                         // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                                         // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
@@ -3590,15 +3625,19 @@ export struct ChatPage {
                                    }
                                      // ★ 0.224.2：全称行=反面内容（用户拍板：双面正面只显词+音标——缩写全称/中译英
                                      //   英文都是「答案」，与释义一同隐藏到点词条展开；单面恒显=现状零回归）
-                                     if (w.fullName.length > 0 && (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${w.id}`)) {
-                                       // ★ 0.169.1：全称行划词（缩略词全称/中译英答案）
-                                       Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
-                                         .fontSize(this.fs(12))
-                                         .fontColor(BRAND_SECONDARY)
-                                         .maxLines(1)
-                                         .margin({ top: 1 })
-                                         .copyOption(CopyOptions.LocalDevice)
-                                         .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
+                                      if (w.fullName.length > 0 && (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${w.id}`)) {
+                                        // ★ 0.169.1：全称行划词（缩略词全称/中译英答案）
+                                        // ★ 0.232.1：全称可点=展开评分（点击区扩大——与音标/释义同规）
+                                        Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
+                                          .fontSize(this.fs(12))
+                                          .fontColor(BRAND_SECONDARY)
+                                          .maxLines(1)
+                                          .margin({ top: 1 })
+                                          .copyOption(CopyOptions.LocalDevice)
+                                          .onClick(() => {
+                                            this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                          })
+                                          .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                          .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                            onAppear: () => {
                                              this.selKey = `${msg.messageId}|rwf${idx}`;
@@ -3613,15 +3652,19 @@ export struct ChatPage {
                                      }
                                      // ★ 0.224.0：双面模式释义=反面内容——隐藏到点词条展开（展开=翻面，释义+评分按钮齐出；
                                      //   单面恒显=现状零回归）
-                                    if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${w.id}`) {
-                                      // ★ 0.169.1：释义行划词
-                                      Text(w.explain, { controller: this.getOrCreateTextController(`${msg.messageId}|rwe${idx}`) })
-                                        .fontSize(this.fs(12))
-                                        .fontColor(TEXT_SECONDARY)
-                                        .maxLines(1)
-                                        .margin({ top: 2 })
-                                        .copyOption(CopyOptions.LocalDevice)
-                                        .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
+                                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${w.id}`) {
+                                       // ★ 0.169.1：释义行划词
+                                       // ★ 0.232.1：释义可点=展开评分（用户需求锚点：点翻译内容也要出「生疏/尚可/熟知」）
+                                       Text(w.explain, { controller: this.getOrCreateTextController(`${msg.messageId}|rwe${idx}`) })
+                                         .fontSize(this.fs(12))
+                                         .fontColor(TEXT_SECONDARY)
+                                         .maxLines(1)
+                                         .margin({ top: 2 })
+                                         .copyOption(CopyOptions.LocalDevice)
+                                         .onClick(() => {
+                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                         })
+                                         .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rwe${idx}`;
@@ -3665,93 +3708,110 @@ export struct ChatPage {
                               .margin({ top: 6, bottom: 6 })
                             Column() {
                               ForEach(this.getKnowledgeCards(msg.messageId), (card: KnowledgeCard, idx: number) => {
-                                Scroll() {
-                                  Column() {
-                                     Row() {
-                                       // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
-                                       // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
-                                       // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
-                                       Text(this.reviewExpandKey === `${msg.messageId}|${card.id}` ? '▲' : '▼')
-                                         .fontSize(this.fs(10))
-                                         .fontColor(BRAND_SECONDARY)
-                                         .margin({ right: 4 })
-                                         .onClick(() => {
-                                           this.onReviewWordTap(`${msg.messageId}|${card.id}`);
-                                         })
-                                       Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
-                                         .fontSize(this.fs(13))
-                                         .fontWeight(600)
-                                         .fontColor(TEXT_SECONDARY)
-                                         .maxLines(1)
-                                         .copyOption(CopyOptions.LocalDevice)
-                                         .onClick(() => {
-                                           this.onReviewWordTap(`${msg.messageId}|${card.id}`);
-                                         })
-                                         .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
-                                          onAppear: () => {
-                                            this.selKey = `${msg.messageId}|rk${idx}`;
-                                          },
-                                          onDisappear: () => {
-                                            this.clearSelectionState();
-                                          }
-                                        })
-                                         .onTextSelectionChange((start: number, end: number) => {
-                                           this.handleSelectionChange(`${msg.messageId}|rk${idx}`, card.title, start, end);
-                                         })
-                                      if (card.imageUri.length > 0) {
-                                        // Image indicator icon — only shown when the card has an image (user rule)
-                                        // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
-                                        // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
-                                        // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
-                                        Image($r('app.media.image'))
-                                          .width(14)
-                                          .height(14)
-                                          .objectFit(ImageFit.Contain)
-                                          .margin({ left: 6 })
+                                // ★ 0.232.1 标题/内容行分离（用户需求锚点：定义很长横滑时标题跟着滑走被覆盖——
+                                //   拆开=标题行常驻不动，仅定义行独立横滑，看内容时标题始终可见）
+                                Column() {
+                                      Row() {
+                                        // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
+                                        // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
+                                        // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
+                                        Text(this.reviewExpandKey === `${msg.messageId}|${card.id}` ? '▲' : '▼')
+                                          .fontSize(this.fs(10))
+                                          .fontColor(BRAND_SECONDARY)
+                                          .margin({ right: 4 })
                                           .onClick(() => {
-                                            if (card.imageUri.length > 0) {
-                                              this.imageViewerImages = [card.imageUri];
-                                              this.imageViewerIndex = 0;
-                                              this.imageViewerVisible = true;
-                                            }
+                                            this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                           })
+                                        Scroll() {
+                                          Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
+                                            .fontSize(this.fs(13))
+                                            .fontWeight(600)
+                                            .fontColor(TEXT_SECONDARY)
+                                            .maxLines(1)
+                                            .copyOption(CopyOptions.LocalDevice)
+                                            .onClick(() => {
+                                              this.onReviewWordTap(`${msg.messageId}|${card.id}`);
+                                            })
+                                            .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
+                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                              onAppear: () => {
+                                                this.selKey = `${msg.messageId}|rk${idx}`;
+                                              },
+                                              onDisappear: () => {
+                                                this.clearSelectionState();
+                                              }
+                                            })
+                                            .onTextSelectionChange((start: number, end: number) => {
+                                              this.handleSelectionChange(`${msg.messageId}|rk${idx}`, card.title, start, end);
+                                            })
+                                        }
+                                        // ★ 0.232.2：align(Start) 必须显式——Scroll 内容默认居中（用户实锤「标题跑中间了」）
+                                        .scrollable(ScrollDirection.Horizontal)
+                                        .scrollBar(BarState.Off)
+                                        .align(Alignment.Start)
+                                        .layoutWeight(1)
+                                       if (card.imageUri.length > 0) {
+                                         // Image indicator icon — only shown when the card has an image (user rule)
+                                         // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
+                                         // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
+                                         // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
+                                         Image($r('app.media.image'))
+                                           .width(14)
+                                           .height(14)
+                                           .objectFit(ImageFit.Contain)
+                                           .margin({ left: 6 })
+                                           .onClick(() => {
+                                             if (card.imageUri.length > 0) {
+                                               this.imageViewerImages = [card.imageUri];
+                                               this.imageViewerIndex = 0;
+                                               this.imageViewerVisible = true;
+                                             }
+                                           })
+                                       }
+                                     }
+                                     .width('100%')
+                                     // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
+                                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${card.id}`) {
+                                       // ★ 0.169.1：定义行划词
+                                       // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
+                                       Scroll() {
+                                         Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
+                                           .fontSize(this.fs(12))
+                                           .fontColor(TEXT_SECONDARY)
+                                           .maxLines(1)
+                                           .copyOption(CopyOptions.LocalDevice)
+                                           .onClick(() => {
+                                             this.onReviewWordTap(`${msg.messageId}|${card.id}`);
+                                           })
+                                           .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
+                                           .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                             onAppear: () => {
+                                               this.selKey = `${msg.messageId}|rkd${idx}`;
+                                             },
+                                             onDisappear: () => {
+                                               this.clearSelectionState();
+                                             }
+                                           })
+                                           .onTextSelectionChange((start: number, end: number) => {
+                                             this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
+                                           })
+                                        }
+                                        .scrollable(ScrollDirection.Horizontal)
+                                        .scrollBar(BarState.Off)
+                                        .align(Alignment.Start)
+                                        .width('100%')
+                                        // ★ 0.232.2：定义行容器与标题行文字对齐（用户实锤「下面容器多出去了」——
+                                        //   左缘缩进=三角+间距 18，与标题起点同轴；右缘同容器边）
+                                        .margin({ top: 2, left: 18 })
                                       }
-                                    }
-                                    // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
-                                    if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${card.id}`) {
-                                      // ★ 0.169.1：定义行划词
-                                      Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
-                                        .fontSize(this.fs(12))
-                                        .fontColor(TEXT_SECONDARY)
-                                        .maxLines(1)
-                                        .margin({ top: 2 })
-                                        .copyOption(CopyOptions.LocalDevice)
-                                        .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
-                                          onAppear: () => {
-                                            this.selKey = `${msg.messageId}|rkd${idx}`;
-                                          },
-                                          onDisappear: () => {
-                                            this.clearSelectionState();
-                                          }
-                                        })
-                                          .onTextSelectionChange((start: number, end: number) => {
-                                            this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
-                                          })
-                                    }
-                                    }
-                                    .alignItems(HorizontalAlign.Start)
-                                 }
-                                 .scrollable(ScrollDirection.Horizontal)
-                                 .scrollBar(BarState.Off)
-                                 .align(Alignment.Start)
-                                 .width('100%')
-                                 .margin({ top: idx > 0 ? 6 : 0 })
-                                 // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
-                                 // ★ 0.198.3 评分区移出横向 Scroll（同生词区根因——Scroll 内宽度约束失效）
-                                 this.ratingArea(`${msg.messageId}|${card.id}`, card)
-                               }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
+                                   }
+                                   .alignItems(HorizontalAlign.Start)
+                                   .width('100%')
+                                   .margin({ top: idx > 0 ? 6 : 0 })
+                                   // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
+                                   // ★ 0.198.3 评分区移出横向 Scroll（同生词区根因——Scroll 内宽度约束失效）
+                                   this.ratingArea(`${msg.messageId}|${card.id}`, card)
+                                }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
                             }
                             .alignItems(HorizontalAlign.Start)
                           }
@@ -4257,12 +4317,16 @@ export struct ChatPage {
                          .onClick(() => {
                            this.onReviewWordTap(`edit|${w.id}`);
                          })
-                      if (w.usPhonetic.length > 0) {
-                        Text(w.usPhonetic)
-                          .fontSize(12)
-                          .fontColor(TEXT_TERTIARY)
-                          .maxLines(1)
-                          .margin({ left: 6 })
+                       if (w.usPhonetic.length > 0) {
+                         // ★ 0.232.1：音标可点=展开评分（点击区扩大——与气泡复习区同规）
+                         Text(w.usPhonetic)
+                           .fontSize(12)
+                           .fontColor(TEXT_TERTIARY)
+                           .maxLines(1)
+                           .margin({ left: 6 })
+                           .onClick(() => {
+                             this.onReviewWordTap(`edit|${w.id}`);
+                           })
                         // 发音按钮（与气泡复习区同款三态；缩略词播全称）
                         // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
                         Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
@@ -4279,19 +4343,27 @@ export struct ChatPage {
                     }
                     // ★ 0.224.2：全称行=反面内容（双面正面只显词+音标——与释义一同隐藏到展开；单面恒显）
                     if (w.fullName.length > 0 && (this.faceMode.mode !== 'double' || this.reviewExpandKey === `edit|${w.id}`)) {
+                      // ★ 0.232.1：全称可点=展开评分（点击区扩大）
                       Text(w.fullName)
                         .fontSize(12)
                         .fontColor(BRAND_SECONDARY)
                         .maxLines(1)
                         .margin({ top: 1 })
+                        .onClick(() => {
+                          this.onReviewWordTap(`edit|${w.id}`);
+                        })
                     }
                     // ★ 0.224.0：双面模式释义=反面内容——隐藏到点词条展开（单面恒显=现状零回归）
                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `edit|${w.id}`) {
+                      // ★ 0.232.1：释义可点=展开评分（点击区扩大）
                       Text(w.explain)
                         .fontSize(12)
                         .fontColor(TEXT_SECONDARY)
                         .maxLines(1)
                         .margin({ top: 2 })
+                        .onClick(() => {
+                          this.onReviewWordTap(`edit|${w.id}`);
+                        })
                     }
                   }
                   .alignItems(HorizontalAlign.Start)
@@ -4314,57 +4386,71 @@ export struct ChatPage {
                 // long title/definition could not be swiped and overflowed the dialog (user report)
                 // ★ 0.161.2: single card → ForEach over N cards (knowledge-count setting drives N)
                 ForEach(this.editReviewCards, (card: KnowledgeCard, idx: number) => {
-                Scroll() {
+                // ★ 0.232.1 标题/内容行分离（与气泡复习区同规——定义独立横滑，标题常驻）
                 Column() {
                    Row() {
-                     // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
-                     Text(this.reviewExpandKey === `editcard|${card.id}` ? '▲' : '▼')
-                       .fontSize(10)
-                       .fontColor(BRAND_SECONDARY)
-                       .margin({ right: 4 })
-                       .onClick(() => {
-                         this.onReviewWordTap(`editcard|${card.id}`);
-                       })
-                     Text(card.title)
-                       .fontSize(13)
-                       .fontWeight(600)
-                       .fontColor(TEXT_SECONDARY)
-                       .maxLines(1)
-                       .onClick(() => {
-                         this.onReviewWordTap(`editcard|${card.id}`);
-                       })
-                     if (card.imageUri.length > 0) {
-                       // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
-                       Image($r('app.media.image'))
-                         .width(14)
-                         .height(14)
-                         .objectFit(ImageFit.Contain)
-                         .margin({ left: 6 })
-                         .onClick(() => {
-                           this.imageViewerImages = [card.imageUri];
-                           this.imageViewerIndex = 0;
-                           this.imageViewerVisible = true;
-                         })
-                     }
-                  }
-                    // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
-                    if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `editcard|${card.id}`) {
-                      Text(card.definition)
-                        .fontSize(12)
-                        .fontColor(TEXT_SECONDARY)
-                        .maxLines(1)
-                        .margin({ top: 2 })
+                      // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
+                      Text(this.reviewExpandKey === `editcard|${card.id}` ? '▲' : '▼')
+                        .fontSize(10)
+                        .fontColor(BRAND_SECONDARY)
+                        .margin({ right: 4 })
+                        .onClick(() => {
+                          this.onReviewWordTap(`editcard|${card.id}`);
+                        })
+                      Scroll() {
+                        Text(card.title)
+                          .fontSize(13)
+                          .fontWeight(600)
+                          .fontColor(TEXT_SECONDARY)
+                          .maxLines(1)
+                          .onClick(() => {
+                            this.onReviewWordTap(`editcard|${card.id}`);
+                          })
+                       }
+                       // ★ 0.232.2：align(Start) 必须显式——Scroll 内容默认居中（标题左对齐铁律）
+                       .scrollable(ScrollDirection.Horizontal)
+                       .scrollBar(BarState.Off)
+                       .align(Alignment.Start)
+                       .layoutWeight(1)
+                      if (card.imageUri.length > 0) {
+                        // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
+                        Image($r('app.media.image'))
+                          .width(14)
+                          .height(14)
+                          .objectFit(ImageFit.Contain)
+                          .margin({ left: 6 })
+                          .onClick(() => {
+                            this.imageViewerImages = [card.imageUri];
+                            this.imageViewerIndex = 0;
+                            this.imageViewerVisible = true;
+                          })
+                      }
+                   }
+                   .width('100%')
+                     // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
+                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `editcard|${card.id}`) {
+                       // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
+                       Scroll() {
+                         Text(card.definition)
+                           .fontSize(12)
+                           .fontColor(TEXT_SECONDARY)
+                           .maxLines(1)
+                           .onClick(() => {
+                             this.onReviewWordTap(`editcard|${card.id}`);
+                           })
+                        }
+                        .scrollable(ScrollDirection.Horizontal)
+                        .scrollBar(BarState.Off)
+                        .align(Alignment.Start)
+                        .width('100%')
+                        .margin({ top: 2, left: 18 }) // ★ 0.232.2：定义行容器与标题行文字对齐（左缘缩进 18=三角+间距）
+                      }
                     }
-                  }
-                  .alignItems(HorizontalAlign.Start)
-                  }
-                 .scrollable(ScrollDirection.Horizontal)
-                 .scrollBar(BarState.Off)
-                 .align(Alignment.Start)
-                 .width('100%')
-                 .margin({ top: idx > 0 ? 6 : 0, bottom: idx === this.editReviewCards.length - 1 ? 12 : 0 })
-                 // ★ 0.188.0：评分区 / ★ 0.198.3 移出横向 Scroll（同气泡复习区根因——Scroll 内宽度约束失效）
-                 this.ratingArea(`editcard|${card.id}`, card)
+                    .alignItems(HorizontalAlign.Start)
+                    .width('100%')
+                    .margin({ bottom: idx === this.editReviewCards.length - 1 ? 0 : 6 })
+                   // ★ 0.187.0：评分区 / ★ 0.198.3 移出横向 Scroll（同气泡复习区根因——Scroll 内宽度约束失效）
+                   this.ratingArea(`editcard|${card.id}`, card)
                  }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
               }
 

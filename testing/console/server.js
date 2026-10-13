@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.231.0.1'; // ★ 四段制（0.230.0 起）：前三段跟 APP（0.231.0=云同步四连环修复+Markdown 行内渲染）、第四段=测试台工具版本 // ★ 0.231.0.1：SYNC-GUARD 墓碑纪律回归用例（§12.13 军令配套）
+const VERSION = '0.232.1.1'; // ★ 四段制：前三段跟 APP（0.232.1=TTS双预设+弹窗断点制+司忆区交互）、第四段=测试台工具版本 // ★ 0.232.1.1：跟 APP 0.232.1（CHAT-KEEP/TTS-API 用例沿用）
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -819,6 +819,67 @@ async function navTo(serial, text, log) {
     if (exp.ok) r = await uiClickText(serial, text, { waitMs: 2200, exact: true });
   }
   return r;
+}
+
+// ★ 0.232.0 双击原语（画布气泡双击=进入对话页——0.173 单双击并存判定；uiInput doubleClick）
+async function uiDoubleClick(serial, x, y, waitMs = 2400) {
+  const r = await sh(serial, `uitest uiInput doubleClick ${x} ${y}`, 15000);
+  await sleep(waitMs);
+  return { ok: !SH_ERR_RE.test(r), raw: r.trim().slice(0, 120) };
+}
+
+// ★ 0.232.0 读持久化字段值（persistent_storage 实为 XML <preferences>：值内嵌 JSON 且 HTML 实体转义
+//   \&quot; ——2026-10-14 手机实测格式；grep 宽窗多行 → 逐行去实体转义后正则提值，取首个 ≥8 长真值
+//   （v2/v3 两代 key 块并存，旧块空值跳过）；与 grepPref 同通道，返回 value 供 TTS-API 用）
+async function prefField(serial, field) {
+  for (const p of PREF_CANDIDATES) {
+    const full = `${CFG.sandboxBase}/${p}`;
+    const out = await sh(serial, `grep -o '${field}'.\\{0,120\\}' '${full}' 2>/dev/null | head -4`, 15000);
+    if (out.trim() !== '') {
+      for (const lineRaw of out.split('\n')) {
+        const line = lineRaw.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\\\\/g, '');
+        const m = line.match(new RegExp(field + '[\\\\": ]+([A-Za-z0-9_\\-./]+)'));
+        if (m && m[1].length >= 8) return { found: true, value: m[1], raw: lineRaw.trim().slice(0, 300) };
+      }
+      return { found: true, value: '', raw: out.trim().slice(0, 300) };
+    }
+  }
+  return { found: false, value: '' };
+}
+
+// ★ 0.232.0 服务端直打 openspeech 云端 TTS（与 App CloudTtsEngine 同协议——含 55000000
+//   合成音色资源未开通→官方音色回退；2026-10-13 本机 curl 实证协议）
+async function probeCloudTts(key, model, voice) {
+  const https = require('https');
+  const endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+  const call = (spk) => new Promise((resolve) => {
+    const body = JSON.stringify({ req_params: { text: '测试朗读。', speaker: spk, audio_params: { format: 'mp3', sample_rate: 24000 } } });
+    const u = new URL(endpoint);
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname, method: 'POST', timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json', 'X-Api-Key': key, 'X-Api-Resource-Id': model,
+        'X-Api-Request-Id': 'test-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
+      }
+    }, (res) => {
+      let buf = '';
+      res.on('data', (c) => { buf += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body: buf }));
+    });
+    req.on('error', (e) => resolve({ status: 0, body: String(e.message) }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: 0, body: 'timeout' }); });
+    req.write(body); req.end();
+  });
+  const okBody = (r) => r.status === 200 && /"code"\s*:\s*0/.test(r.body) && /"data"\s*:/.test(r.body);
+  let r = await call(voice);
+  let usedVoice = voice, fallback = false, first = '';
+  const code = Number((r.body.match(/"code"\s*:\s*(-?\d+)/) || [])[1]);
+  if (r.status === 200 && code === 55000000 && voice.startsWith('S_')) {
+    first = r.body.slice(0, 150);
+    const r2 = await call('zh_female_vv_uranus_bigtts');
+    return { ok: okBody(r2), fallback: true, usedVoice: 'zh_female_vv_uranus_bigtts', first, body: r2.body.slice(0, 150) };
+  }
+  return { ok: okBody(r), fallback, usedVoice, first, body: r.body.slice(0, 150) };
 }
 const CASES = [
   // ---------- 功能⓪ 版本核验（用户需求 1/2：移到最上面，最先可见、可单独秒跑） ----------
@@ -1604,6 +1665,78 @@ const CASES = [
       if (agreed) ctx.log('B3/B7/B16 协议族弹窗', 'skip', '协议已同意态（非 fresh）——宽度/门禁/首启弹窗链须「全新安装」模式跑（fresh 轮覆盖，如实跳过不虚构断言）');
     } },
 
+  // ---------- 功能④ 对话稳定性（★ 0.232.0 bug 回归：切后台开别的 APP 再回来对话清零修复） ----------
+  // 复刻用户真实路径：画布双击气泡进对话 → 起浏览器（=打开另一个 APP）→ aa start 热回 → 对话必须原样保留。
+  // 修复前实锤链路：onForeground forceCloudSyncNow → reconcile 重建工作区 → refreshWorkspaceFromPools
+  // 无条件清 current.nodeID → ChatPage 消息绑定变空（0.232.0 保留仍存在的选中=根治）。
+  { id: 'CHAT-KEEP', suite: 'chat', name: '对话保留·压后台开别的APP再回来消息不丢（0.232.0 修复回归）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '对话保留（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      ctx.log('前置状态', 'info', '已装机真实数据态——须存在一个「有 AI 回复」的气泡（画布气泡卡带「N条对话」标记）');
+      // ⓪ 先进画布（★ 0.232.1 修：冷启停在首页——大屏点边栏「气泡树」/手机点「进入气泡树」主按钮）
+      let nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+      if (!nav.ok) {
+        nav = await uiClickText(serial, '进入气泡树', { waitMs: 2600 });
+      }
+      ctx.log('⓪ 进入气泡树画布', nav.ok ? 'pass' : 'fail',
+        nav.ok ? `已点击 (${nav.x},${nav.y})——冷启首页→画布（找对话气泡的前提）` : '「气泡树」与「进入气泡树」均未命中（可能已在画布或首页改版）');
+      // ① 定位有对话的气泡（取最后一个命中=最新上层）
+      const d = await dumpLayout(serial);
+      const hits = findNodeBoundsAll(d.text, '条对话');
+      if (!hits.length) { ctx.log('① 定位有对话的气泡', 'fail', '画布未见「N条对话」标记——先在某气泡发一条消息再跑本用例'); return; }
+      const target = hits[hits.length - 1];
+      ctx.log('① 定位有对话的气泡', 'pass', `(${target.x},${target.y})「${String(target.text).slice(0, 24)}」`);
+      // ② 双击进对话页（0.173 双击语义）
+      await uiDoubleClick(serial, target.x, target.y);
+      const dc = await ctx.art.dump(`CHAT-KEEP-${dev.id}`, 'dump-chat.json', serial);
+      const speak0 = (dc.text.match(/🔊|🔈/g) || []).length;
+      const enterOk = speak0 >= 1;
+      ctx.log('② 双击进入对话页', enterOk ? 'pass' : 'fail',
+        enterOk ? `AI 消息喇叭标记×${speak0}（对话内容在屏）` : '未见消息标记（双击未生效/该气泡无 AI 回复——换气泡或先发消息）');
+      if (!enterOk) return;
+      // ③ 压后台：起浏览器（复刻「打开另一个APP」；华为冻结即时生效）
+      const bg = await sh(serial, `aa start -b com.huawei.hmos.browser -U`, 15000);
+      ctx.log('③ 打开浏览器压后台', /error:|fail/i.test(bg) ? 'warn' : 'pass', bg.trim().slice(0, 100) || 'aa start 已发（复刻用户开别的 APP）');
+      await sleep(5000);
+      // ④ 热回（aa start 已有实例拉回前台——非冷启，等同用户滑回来）
+      await sh(serial, `aa start -a ${CFG.ability} -b ${CFG.bundle}`, 15000);
+      await sleep(4500);
+      // ⑤ 断言：仍在对话页且消息保留（0.232.0 修复点——云同步重建工作区不再清空 current）
+      const dw = await ctx.art.dump(`CHAT-KEEP-${dev.id}`, 'dump-warm.json', serial);
+      const speak1 = (dw.text.match(/🔊|🔈/g) || []).length;
+      ctx.log('★热回后对话保留', speak1 >= speak0 ? 'pass' : 'fail',
+        speak1 >= speak0 ? `喇叭标记 ${speak0}→${speak1}——对话原样保留（0.232.0 修复生效）`
+          : `喇叭标记 ${speak0}→${speak1}——对话被清零/丢失（0.232.0 前旧病：refreshWorkspaceFromPools 清空 current.nodeID 复发）`);
+      const h = await hilogErrors(serial);
+      ctx.log('链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'warn') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+    } },
+
+  // ---------- 功能⑤ 云端语音朗读 API（★ 0.232.0；用户规则：没填 Key 的设备不测） ----------
+  { id: 'TTS-API', suite: 'tts', name: '云端TTS·openspeech 直打验证（读设备已填配置；未填 Key=skip；55000000 自动官方音色回退）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      // ① 读设备持久化 TTS 配置（api-config-v3 内嵌 JSON）
+      const key = await prefField(serial, 'audioKey');
+      const model = await prefField(serial, 'audioModel');
+      const voice = await prefField(serial, 'audioVoice');
+      if (!key.found || key.value.length < 8) {
+        ctx.log('★云端 TTS', 'skip', '设备未填写音频 API Key——按用户规则不测（填过 Key 的设备才验证云端链路；未配置时 App 自动走本机语音）');
+        return;
+      }
+      ctx.log('① 设备配置读取', 'pass', `audioKey=${key.value.slice(0, 6)}…（raw：${key.raw.slice(0, 80)}）audioModel=${model.value || '(空)'} audioVoice=${voice.value || '(空)'}`);
+      if (model.value.length === 0) {
+        ctx.log('★云端 TTS', 'skip', 'audioModel 未填——App configured() 判未配置（朗读走本机语音），无云端链路可测');
+        return;
+      }
+      // ② 服务端直打 openspeech（与 App CloudTtsEngine 同协议同回退——2026-10-13 curl 实证）
+      const r = await probeCloudTts(key.value, model.value, voice.value.length > 0 ? voice.value : 'S_bv8H32Sg2');
+      ctx.log(`★云端合成${r.fallback ? '（合成音色资源未开通→自动回退官方音色——控制台开通后自动启用）' : ''}`,
+        r.ok ? 'pass' : 'fail',
+        `voice=${r.usedVoice} ${r.ok ? 'HTTP 200 + code=0 + 音频数据（App 朗读云端链路可用）' : '响应：' + String(r.body).slice(0, 140)}`);
+    } },
+
   // ---------- 功能③ ArkUI Test（设备内真断言，hypium；工程 entry/src/ohosTest） ----------
   { id: 'ARKUI-TEST', suite: 'arkui', name: 'ArkUI Test 设备内真断言（hypium 2 条）', semi: false, scope: 'each', builtin: true,
     run: async (ctx) => {
@@ -1784,7 +1917,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性（压后台热回保留；0.232.0 新增）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }

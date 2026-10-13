@@ -221,8 +221,8 @@ export class ApiConfig {
   @Trace endpoint: string = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
   @Trace model: string = 'deepseek-v4-flash-ga-260731'; // ★ 0.190.1：默认模型换 V4-Flash 正式版（用户指定；旧 260910 预览版已被替代，设置页回显时 mapLegacyModel 自动映射）
   @Trace provider: string = 'volcano'; // ★ 0.190.0：模型提供商（huawei/volcano/deepseek/custom；预设端点+模型清单见 GlobalSettingsDialog PROVIDER_PRESETS，ApiClient 不感知——端点/模型/Key 全走本类字段）
-  @Trace audioModel: string = 'seed-tts-2.0'; // ★ 0.139：音频模型资源 ID（语音合成-2.0，openspeech HTTP 单向流端点，官方文档实证）
-  @Trace audioVoice: string = 'zh_female_vv_uranus_bigtts'; // ★ 0.139：TTS 音色 ID（2.0 格式；2.0 模型只能用 2.0 音色，设置页不显示音色框）
+  @Trace audioModel: string = 'seed-icl-2.0'; // ★ 0.232.1：默认音频模型=声音复刻 2.0（用户拍板；2026-10-14 实证 seed-icl-2.0+S_ 音色 code=0 直连）；seed-tts-2.0=豆包语音合成 2.0（官方音色体系）
+  @Trace audioVoice: string = 'S_bv8H32Sg2'; // ★ 0.232.0：默认音色=用户合成音色（声音复刻体系 S_ 前缀，用户提供）；未开通复刻资源时引擎自动回退官方音色 zh_female_vv_uranus_bigtts（55000000 重试）
   @Trace audioEndpoint: string = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'; // ★ 0.139：TTS 端点（openspeech HTTP 单向流，与 LLM endpoint 相互独立）
   // ★ 0.161.3：TTS 专用 Key 同样改 rawfile/config.json 读取（与方舟对话 Key 相互独立——两套体系
   // Key 不通用，0.139 拿方舟 Key 实测 401 Invalid X-Api-Key）
@@ -279,10 +279,18 @@ export function connectApiConfig(): ApiConfig {
 export interface BuiltinConfig {
   apiKey: string;
   audioKey: string;
+  audioModel?: string; // ★ 0.232.1：内置音频模型（可选——缺省不动 audioModel）
+  audioVoice?: string; // ★ 0.232.0：内置合成音色（可选——缺省不动 audioVoice）
 }
 
 // ★ 0.161.3：从 rawfile/config.json 读取内置 Key，填充持久化配置的空位。
 // 仅填空位——用户在设置页自定义过的 Key（持久化非空）优先，不被内置值覆盖。
+// ★ 0.232.0：audioVoice 旧默认值迁移——该字段自 0.139 起从未开放编辑（0.139 注释「设置页
+// 不显示音色框」），存量持久化值必为旧类默认 zh_female_vv_uranus_bigtts；按值等价迁移到
+// 内置合成音色（幂等：用户在新设置页改过音色后值≠旧默认，永不再覆盖）。
+// ★ 0.232.1：audioModel 同款迁移——旧默认 seed-tts-2.0（豆包语音合成2.0）→ 内置
+// seed-icl-2.0（声音复刻2.0，用户拍板默认；2026-10-14 实证 seed-icl-2.0+S_bv8H32Sg2
+// code=0 直连可用）。字段 0.232.0 才开放编辑且用户未改过（值=旧默认）才迁移，改过不动。
 export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
   try {
     const raw = context.resourceManager.getRawFileContentSync('config.json');
@@ -294,6 +302,16 @@ export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
     }
     if (cfg.audioKey.length === 0 && obj.audioKey.length > 0) {
       cfg.audioKey = obj.audioKey;
+    }
+    const builtinModel = obj.audioModel ?? '';
+    if (builtinModel.length > 0 &&
+      (cfg.audioModel.length === 0 || cfg.audioModel === 'seed-tts-2.0')) {
+      cfg.audioModel = builtinModel;
+    }
+    const builtinVoice = obj.audioVoice ?? '';
+    if (builtinVoice.length > 0 &&
+      (cfg.audioVoice.length === 0 || cfg.audioVoice === 'zh_female_vv_uranus_bigtts')) {
+      cfg.audioVoice = builtinVoice;
     }
   } catch (err) {
     // config.json 不存在或解析失败——保持空默认，设置页自填
@@ -343,6 +361,17 @@ export class AiPreference {
 // ★ 0.191.0：连接 AI 偏好持久化实例（key v2——encourageMode 字段类型变化，见类注释）
 export function connectAiPreference(): AiPreference {
   return PersistenceV2.connect(AiPreference, 'ai-preference-v2', () => new AiPreference()) as AiPreference;
+}
+
+// ★ 0.232.0：云端语音朗读首次配置提示 flag（用户要求：第一次填写音频配置时提示一次，
+// 之后不再提示；独立全新 key——0.143 教训：不往旧快照类尾追字段）
+@ObservedV2
+export class TtsHintStore {
+  @Trace cloudHintShown: boolean = false;
+}
+
+export function connectTtsHint(): TtsHintStore {
+  return PersistenceV2.connect(TtsHintStore, 'tts-cloud-hint-v1', () => new TtsHintStore()) as TtsHintStore;
 }
 
 // ============================================================
@@ -2364,6 +2393,10 @@ function refreshWorkspaceFromPools(): void {
   const current = AppStorageV2.connect(CurrentBubble, 'current-bubble',
     () => new CurrentBubble()) as CurrentBubble;
   const modeStore = connectCanvasMode();
+  // ★ 0.232.0：记录重建前的选中（云同步下行重建工作区不得打断正在浏览的对话）
+  const prevId = current.nodeID;
+  const prevX = current.bubbleX;
+  const prevY = current.bubbleY;
   if (modeStore.mode === 'flat') {
     const persist = PersistenceV2.connect(PersistData, 'persist-data',
       () => new PersistData()) as PersistData;
@@ -2376,8 +2409,27 @@ function refreshWorkspaceFromPools(): void {
     const tree = active !== undefined ? deserializeBubbleTree(active.treeJson) : null;
     store.nodeList = tree !== null ? tree.nodeList : [];
   }
-  current.nodeID = '';
-  current.bubbleX = 0;
-  current.bubbleY = 0;
+  // ★ 0.232.0：旧实现无条件清空 current.nodeID——手机回前台拉同步（0.223.0 onForeground
+  // forceCloudSyncNow）触发重建 → 正开着的 ChatPage 消息绑定瞬间清零，用户必须退回画布
+  // 重进（用户实测硬伤）。修正：节点在新工作区仍存在则保留选中+坐标（bubbleX/Y 是创建
+  // 子气泡的画布坐标基准，一并保留）；真被远端删除/不在池中才清空。
+  let kept = false;
+  if (prevId.length > 0) {
+    for (let i = 0; i < store.nodeList.length; i++) {
+      if (store.nodeList[i].nodeID === prevId) {
+        kept = true;
+        break;
+      }
+    }
+  }
+  if (kept) {
+    current.nodeID = prevId;
+    current.bubbleX = prevX;
+    current.bubbleY = prevY;
+  } else {
+    current.nodeID = '';
+    current.bubbleX = 0;
+    current.bubbleY = 0;
+  }
   store.needsCloudRedraw = true;
 }

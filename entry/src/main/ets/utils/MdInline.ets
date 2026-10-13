@@ -343,3 +343,82 @@ export function headerFontSize(kind: string): number {
       return 15;
   }
 }
+
+// 表格分隔行（|---|---| 形态，仅 |、-、:、空格组成）
+function isTableSeparatorLine(line: string): boolean {
+  const t = line.trim();
+  if (t.length === 0 || t.charAt(0) !== '|') {
+    return false;
+  }
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charAt(i);
+    if (c !== '|' && c !== '-' && c !== ':' && c !== ' ') {
+      return false;
+    }
+  }
+  return t.indexOf('-') >= 0;
+}
+
+// ★ 0.232.0：Markdown → 可朗读纯文本（TTS 专用——云端/本地引擎共用）。
+// 用户痛点锚点：「本地语音连星号星号都要读进去」。规则：
+//   - 代码围栏（``` 整段）跳过（读代码=纯噪音）
+//   - 表格分隔行 / 分割线（hr）跳过；表格数据行 → 单元格以「，」连接
+//   - 块级结构走 parseBlockMd（标题#、列表符号、引用> 由块分类天然剥离——blockPlainText
+//     不含这些符号）；行内标记（**粗**/*斜*/~~删~~/`码`）走 parseInlineMd 取 span 文本拼接，
+//     链接保留锚文本、丢弃 url
+//   - 纯文本原样通过（非 Markdown 内容零损耗）
+export function mdToSpeakableText(content: string): string {
+  const lines = content.split('\n');
+  const kept: string[] = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // 代码围栏开关（``` 或 ```lang）
+    if (trimmed.length >= 3 && trimmed.substring(0, 3) === '```') {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue; // 围栏内代码不朗读
+    }
+    if (trimmed.length === 0) {
+      kept.push('');
+      continue;
+    }
+    // 表格行：分隔行丢弃，数据行单元格以「，」连接
+    if (trimmed.charAt(0) === '|') {
+      if (!isTableSeparatorLine(line)) {
+        const cells: string[] = [];
+        const parts = trimmed.split('|');
+        for (let j = 0; j < parts.length; j++) {
+          const cell = parts[j].trim();
+          if (cell.length > 0) {
+            cells.push(cell);
+          }
+        }
+        kept.push(cells.join('，'));
+      }
+      continue;
+    }
+    kept.push(line);
+  }
+  // 块级+行内双解析剥标记
+  const blocks = parseBlockMd(kept);
+  const out: string[] = [];
+  for (let b = 0; b < blocks.length; b++) {
+    const block = blocks[b];
+    if (block.kind === 'hr') {
+      continue; // 分割线无声
+    }
+    for (let l = 0; l < block.lines.length; l++) {
+      const spans = parseInlineMd(block.lines[l]);
+      let lineText = '';
+      for (let s = 0; s < spans.length; s++) {
+        lineText += spans[s].text;
+      }
+      out.push(lineText);
+    }
+  }
+  return out.join('\n').trim();
+}

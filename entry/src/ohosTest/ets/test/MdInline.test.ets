@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize } from '../../../main/ets/utils/MdInline';
+import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText } from '../../../main/ets/utils/MdInline';
 
 // ★ 0.231.0：Markdown 行内/块级解析器单元断言（project_rule §12.13 测试覆盖军令——
 //   新功能必须带测试项；纯函数模块=ChatPage 渲染与本断言双消费）
@@ -93,6 +93,36 @@ export default function mdInlineTest() {
       expect(blocks[0].kind).assertEqual('p');
       const spans = parseInlineMd('**要点说明** 正文');
       expect(spans[0].bold).assertTrue();
+    })
+    // ---- ★ 0.232.0：mdToSpeakableText（TTS 朗读文本清洗——「星号都读进去」根治） ----
+    it('speak_strips_inline_markers', 0, () => {
+      // **粗**/*斜*/~~删~~/`码` 剥标记；链接保锚文本丢 url
+      const out = mdToSpeakableText('# 标题\n\n这**加粗**和*斜体*还有~~删除~~以及`code`，见[文档](https://example.com)详解。');
+      expect(out.includes('标题')).assertTrue();
+      expect(out.includes('**')).assertFalse();
+      expect(out.includes('加粗和斜体还有删除以及code')).assertTrue();
+      expect(out.includes('见文档详解')).assertTrue();
+      expect(out.includes('http')).assertFalse(); // url 不进朗读
+      expect(out.includes('#')).assertFalse();   // 标题井号不进朗读
+    })
+    it('speak_skips_code_fence_and_hr', 0, () => {
+      const out = mdToSpeakableText('前文\n\n```ts\nconst a = 1;\n```\n\n---\n\n后文');
+      expect(out.includes('const a')).assertFalse(); // 围栏代码不朗读
+      expect(out.includes('---')).assertFalse();     // 分割线无声
+      expect(out.includes('前文')).assertTrue();
+      expect(out.includes('后文')).assertTrue();
+    })
+    it('speak_table_cells_joined', 0, () => {
+      const out = mdToSpeakableText('| 列A | 列B |\n| --- | --- |\n| 值1 | 值2 |');
+      expect(out.includes('列A，列B')).assertTrue();  // 数据行单元格以「，」连接
+      expect(out.includes('---')).assertFalse();     // 分隔行丢弃
+      expect(out.includes('|')).assertFalse();       // 竖线不进朗读
+      expect(out.includes('值1，值2')).assertTrue();
+    })
+    it('speak_plain_text_passthrough', 0, () => {
+      // 非 Markdown 纯文本零损耗（3*4*5 数学表达保持字面）
+      const out = mdToSpeakableText('3*4*5 等于 60，普通中文句子。');
+      expect(out).assertEqual('3*4*5 等于 60，普通中文句子。');
     })
   })
 }
