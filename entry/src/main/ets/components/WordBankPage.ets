@@ -42,6 +42,7 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档�
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.19：手机单词库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
+import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 const TREE_CELL: number = 14; // ★ 0.222.19：树形连接线每层缩进宽度（vp，与知识库同款）
 
 // ★ 0.219.2：单词库视图模式（AppStorageV2 共享 @Trace grid）——gridMode 从 @Local 改挂共享 store：
@@ -967,10 +968,14 @@ export struct WordBankPage {
   }
 
   // ★ 0.148: editor dialog — add & edit share it; tap the mask to dismiss
+  // ★ 0.230.0 B11 键盘适配：键盘触发系统级窗口 RESIZE（实测 app 高度 1840→1000px），弹窗下半+保存行
+  //   整段出局渲染树=不可达——弹窗外包 Scroll+maxHeight 约束：窗口被压矮时弹窗收缩为可滚，保存滚动可达
+  //   （固定底部版待弹窗体系统一迭代；0.229.26 审计 B11 实锤闭环）
   @Builder
   editorDialog() {
     Column() {
-      Column() {
+      Scroll() {
+        Column() {
         Text(this.editorIsAdd ? '新增单词' : '编辑单词')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
@@ -1019,7 +1024,7 @@ export struct WordBankPage {
           .onChange((value: string) => {
             this.editorExplain = value;
           })
-        Row() {
+        Row({ space: 12 }) { // ★ 0.230.0：等宽铁律姿势（0.197.3——margin 参与 layoutWeight 分配会把保存挤窄 12vp，审计实锤差 29px；间隙一律 Row space）
           Button('取消')
             .fontSize(14)
             .fontColor(TEXT_SECONDARY)
@@ -1034,7 +1039,6 @@ export struct WordBankPage {
             .backgroundColor(BRAND_PRIMARY)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
-            .margin({ left: 12 })
             .onClick(() => {
               this.saveEditor();
             })
@@ -1042,10 +1046,12 @@ export struct WordBankPage {
         .width('100%')
         .margin({ top: 20 })
       }
-      .width('86%')
+      .width(this.isTablet ? 520 : '86%') // ★ 0.230.0：断点制对齐（原裸 86%——0.201.2 改造漏网，0.229.26 审计实锤 784vp 超宽）
       .borderRadius(RADIUS_NAV)
       .backgroundColor(SURFACE_NODE)
       .padding(20)
+      }
+      .constraintSize({ maxHeight: '96%' })
     }
     .width('100%')
     .height('100%')
@@ -2161,6 +2167,12 @@ export struct WordBankPage {
     .hideTitleBar(true)
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
+      // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——修复仅画布页拦截的盲区，0.229.26 审计 B9 实锤）
+      const gsShared = connectGlobalSettingsShared();
+      if (gsShared.visible) {
+        gsShared.closeReq++;
+        return true;
+      }
       // ★ 0.222.19：手机边栏抽屉开着时返回键先收抽屉
       if (this.sidebarVisible) {
         this.closeSidebar();

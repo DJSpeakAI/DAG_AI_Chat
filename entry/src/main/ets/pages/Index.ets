@@ -32,7 +32,7 @@ import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOn
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
-import { GlobalSettingsDialog } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）
+import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）；★ 0.230.0：加共享开态 store
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
@@ -93,7 +93,9 @@ struct Index {
   // ★ 0.195.0 bugfix：边栏选中态跟踪——didShow 拦截拿目标页名（'navBar'=首页 → 清空无高亮；
   //   用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」，原画布项硬编码永久高亮已废）
   @Local currentRoute: string = '';
-  @Local globalSettingsVisible: boolean = false;
+  // ★ 0.230.0：设置弹窗开态升共享真相源（原 @Local——返回键事件只达栈顶 NavDestination，
+  //   词库/知识库等页 onBackPressed 不知弹窗开态→返回键不关弹窗；共享后任何页可拦，见 GlobalSettingsDialog.ets）
+  gsShared: GlobalSettingsSharedStore = connectGlobalSettingsShared();
   confirmDialog: ConfirmDialogStore = connectConfirmDialog(); // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——根 Stack 挂载消费）
   // ★ 0.226.0：阅读并同意——运行时桥（弹窗可见性 / 待执行动作 / 体验改进引导）+ 首页勾选框本地态
   agreementBridge: AgreementBridge = connectAgreementBridge();
@@ -221,7 +223,7 @@ struct Index {
     } else if (kind === 'billing') {
       this.pathStack.pushPath({ name: 'BillingPage' });
     } else if (kind === 'settings') {
-      this.globalSettingsVisible = true;
+      this.gsShared.visible = true; // ★ 0.230.0：共享开态（跨页返回键拦截）
     } else if (kind === 'canvas') {
       // ★ 0.195.0 bugfix：回画布四态（用户实测「单词库点气泡树跳不回去」——原 length>1 误判：
       //   [WordBankPage] 单页栈走了 pushPath 把画布叠在词库上，再点变 no-op）——
@@ -453,7 +455,7 @@ struct Index {
             AppSideBar({
               currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
 
-              settingsOpen: this.globalSettingsVisible,
+              settingsOpen: this.gsShared.visible, // ★ 0.230.0
               onNavClick: (kind: string) => {
                 this.sideBarNav(kind);
               },
@@ -647,7 +649,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.228.0') // ★ 0.228.0：云同步细粒度行模式重构；更早历史见 MEMORY.md
+        Text('v0.231.0') // ★ 0.231.0：云同步数据安全修复+Markdown 行内渲染；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -685,10 +687,10 @@ struct Index {
           })
       }
       // ★ 0.195.0：全局设置弹窗（常驻边栏「设置」入口；实例与画布/对话页共用 PersistenceV2 数据）
-      if (this.globalSettingsVisible) {
+      if (this.gsShared.visible) { // ★ 0.230.0
         GlobalSettingsDialog({
           onClose: () => {
-            this.globalSettingsVisible = false;
+            this.gsShared.visible = false;
           }
         })
       }

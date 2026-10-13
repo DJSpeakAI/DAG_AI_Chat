@@ -14,6 +14,8 @@ import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { streamChat } from '../utils/ApiClient';
 import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.202.3：测试数据 seed marker
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY } from '../common/DesignTokens';
+import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
+import { BG_CANVAS } from '../common/DesignTokens'; // ★ 0.230.0
 
 // 柱状图桶（一个周期一根柱）
 class StatBucket {
@@ -591,6 +593,16 @@ export struct StatisticsPage {
       .expandSafeArea([SafeAreaType.SYSTEM])
     }
     .hideTitleBar(true)
+    .onBackPressed(() => {
+      // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——本页原无任何返回键拦截，0.229.26 审计 B9 补全)
+      const gsShared = connectGlobalSettingsShared();
+      if (gsShared.visible) {
+        gsShared.closeReq++;
+        return true;
+      }
+      return false;
+    })
+    .backgroundColor(BG_CANVAS) // ★ 0.230.0：页面根底色对齐四主页面（0.196.5 补全——0.229.26 审计 A1 覆盖度缺口）
   }
 
   // 统计行（label + 值）

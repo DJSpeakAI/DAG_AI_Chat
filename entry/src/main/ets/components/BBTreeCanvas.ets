@@ -16,9 +16,9 @@
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.196.4：display 移除（isTablet 改读 WindowMode）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局） ★ 0.168：display 屏宽断点（平板/手机边栏形态）
-import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）
+import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat, recordNodeTomb, recordTabTomb } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.230.1：recordNodeTomb/recordTabTomb（节点/Tab 显式墓碑——自动差集墓碑已废）
 import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token；★ 0.173.1：删「工作区」标签后 FONT_SIZE_LABEL 无使用处，移出 import
-import { GlobalSettingsDialog } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
+import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件（手机抽屉用；平板常驻边栏已升 Index 级）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
@@ -54,8 +54,8 @@ export struct BBTreeCanvas {
   @Local titleEditText: string = '';
 
   // ★ 0.150：全局设置弹窗状态（画布右上角 ⚙ 唤起；与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步）
-  @Local globalSettingsVisible: boolean = false;
-  @Local globalSettingsCloseReq: number = 0; // 外部请求关闭计数器（onBackPressed 递增 → 弹窗 @Monitor 触发 requestClose）
+  // ★ 0.230.0：设置弹窗开态/关闭请求升共享真相源（跨页返回键拦截，见 GlobalSettingsDialog.ets）
+  gsShared: GlobalSettingsSharedStore = connectGlobalSettingsShared();
 
   // ★ 0.151：画布多树模式状态（两池隔离：平铺池 bubbleTreeJson / Tab 池 tabsJson，工作区='bubble-tree' 单例）
   canvasModeStore: CanvasModeStore = connectCanvasMode(); // 'flat' 平铺 / 'tabs' 选项卡
@@ -483,6 +483,7 @@ export struct BBTreeCanvas {
             }
           }
           this.store.nodeList = newList;
+          recordNodeTomb(idsToDelete); // ★ 0.230.1：显式墓碑（节点+子树全集——del 行唯一合法出生通道）
           this.saveTree(); // ★ 0.151：按模式分池保存
           this.redrawEdges(); // ★ 0.167.2：节点删除后连线重绘（此路径不重排，需手动刷新）
         }
@@ -761,6 +762,16 @@ export struct BBTreeCanvas {
           if (idx < 0) return;
           current.splice(idx, 1);
           this.tabForest.tabsJson = serializeTabs(current);
+          // ★ 0.230.1：显式墓碑——Tab 本身 + 其树内全部节点（del 行唯一合法出生通道）
+          const tombNodeIds: string[] = [];
+          const deadTree = deserializeBubbleTree(target.treeJson);
+          if (deadTree !== null) {
+            for (const dn of deadTree.nodeList) {
+              tombNodeIds.push(dn.nodeID);
+            }
+          }
+          recordTabTomb([tabId]);
+          recordNodeTomb(tombNodeIds);
           upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（删 Tab 后 Tab 池上云）
           if (tabId === this.tabForest.activeTabId) {
             // 删的是当前 Tab：切到相邻 Tab（优先原位置右侧，否则左边；全空 = 空树）
@@ -856,7 +867,7 @@ export struct BBTreeCanvas {
       this.pathStack.pushPath({ name: 'BillingPage' });
     } else if (kind === 'settings') {
       this.closeSidebar();
-      this.globalSettingsVisible = true;
+      this.gsShared.visible = true;
     } else if (kind === '') {
       // ★ 0.195.0：点边栏空白（AppSideBar 根 onClick）——手机收抽屉
       this.closeSidebar();
@@ -1615,10 +1626,10 @@ export struct BBTreeCanvas {
       }
 
       // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起；遮罩点击不关闭，✕/返回键走弹窗内未保存确认）
-      if (this.globalSettingsVisible) {
+      if (this.gsShared.visible) {
         GlobalSettingsDialog({
           onClose: () => {
-            this.globalSettingsVisible = false;
+            this.gsShared.visible = false;
             // ★ 0.151：画布前台切模式后关弹窗——工作区内容已换（applyCanvasModeSwitch），
             // 立即重布局 + 适配视口（onShown 只在从 ChatPage 返回时触发，覆盖不了此场景）
             if (this.store.needsRelayout) {
@@ -1627,7 +1638,7 @@ export struct BBTreeCanvas {
               this.store.needsRelayout = false;
             }
           },
-          closeReq: this.globalSettingsCloseReq
+          closeReq: this.gsShared.closeReq
         })
       }
 
@@ -1866,8 +1877,8 @@ export struct BBTreeCanvas {
       }
       // ★ 0.150：全局设置弹窗打开时拦截返回键——递增计数器触发弹窗内 requestClose
       // （有未保存修改时二次确认，不直接丢弃）；无弹窗返回 false 走默认行为（退出应用）
-      if (this.globalSettingsVisible) {
-        this.globalSettingsCloseReq++;
+      if (this.gsShared.visible) {
+        this.gsShared.closeReq++;
         return true;
       }
       // ★ 0.168：手机抽屉打开时返回键先收抽屉（回画布），不直接退出

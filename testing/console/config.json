@@ -19,7 +19,8 @@
       "conn": "本机调试口",
       "caps": {
         "uiDump": false,
-        "note": "实测 dumpLayout 只抓桌面树、-b 定向空壳——UI 断言走 Pad，本机走数据断言"
+        "auditDisplay": 15,
+        "note": "0.229.25 已推翻「无 UI 通道」旧论：dumpLayout -d <displayId> 多屏可用（app 常驻外接屏 15）；uiDump=false 指 uiClickText 导航原语无 displayId 支持——UI 巡检一期 Pad 专属，PC 走 auditDisplay 定向 dump"
       }
     },
     {
@@ -77,5 +78,12 @@
     "timeoutMs": 180000
   },
   "desktopDir": "/storage/Users/currentUser/Desktop/DAG AI Chat",
-  "historyCap": 30
+  "historyCap": 30,
+  "audit": {
+    "tokenAnchor": {
+      "count": 30,
+      "hash": "recompute",
+      "note": "★0.230.0 更新：24→30（评分三档色 REVIEW_HARD/GOOD/EASY+BG 变体 token 化——0.229.26 审计 A11 warn 池人工裁决=纳入白名单）"
+    }
+  }
 }

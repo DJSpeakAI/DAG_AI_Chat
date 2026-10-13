@@ -24,8 +24,9 @@ import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分�
 import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
+import { REVIEW_HARD, REVIEW_GOOD, REVIEW_EASY, REVIEW_HARD_BG, REVIEW_GOOD_BG, REVIEW_EASY_BG, BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（原居本文件——外提防 WidgetHostBridge 反向成环）
+import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -61,7 +62,6 @@ export function connectDailyReviewCount(): DailyReviewCountStore {
 // ★ 0.209.0：卡面模式（用户需求：复习卡支持「正反两面」——先看题面，点击翻面后再评分）
 // ★ 0.224.0：升级全局单通道——类与 store 外提 common/FaceModeStore.ets（桌面卡片跟随需
 //   WidgetHostBridge 读取，原居本文件反向 import 组件会成环）；本页 ⚙ 与全局设置同一真相源即时同步。
-
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -569,42 +569,42 @@ export struct ReviewPage {
     Row({ space: 10 }) {
       Button() {
         Column({ space: 2 }) {
-          Text('生疏').fontSize(14).fontWeight(600).fontColor('#E5484D')
+          Text('生疏').fontSize(14).fontWeight(600).fontColor(REVIEW_HARD)
           Text('几乎想不起来').fontSize(10).fontColor(TEXT_TERTIARY)
-          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'hard'))}后`).fontSize(11).fontColor('#E5484D')
+          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'hard'))}后`).fontSize(11).fontColor(REVIEW_HARD)
         }
       }
       .width(this.isTablet ? 130 : 104)
       .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：文字离框边留白
-      .backgroundColor('#26E5484D')
+      .backgroundColor(REVIEW_HARD_BG)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onRate('hard');
       })
       Button() {
         Column({ space: 2 }) {
-          Text('尚可').fontSize(14).fontWeight(600).fontColor('#F5A623')
+          Text('尚可').fontSize(14).fontWeight(600).fontColor(REVIEW_GOOD)
           Text('回忆有点费劲').fontSize(10).fontColor(TEXT_TERTIARY)
-          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'good'))}后`).fontSize(11).fontColor('#F5A623')
+          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'good'))}后`).fontSize(11).fontColor(REVIEW_GOOD)
         }
       }
       .width(this.isTablet ? 130 : 104)
       .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：同上
-      .backgroundColor('#26F5A623')
+      .backgroundColor(REVIEW_GOOD_BG)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onRate('good');
       })
       Button() {
         Column({ space: 2 }) {
-          Text('熟知').fontSize(14).fontWeight(600).fontColor('#3BB273')
+          Text('熟知').fontSize(14).fontWeight(600).fontColor(REVIEW_EASY)
           Text('一眼就能反应').fontSize(10).fontColor(TEXT_TERTIARY)
-          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'easy'))}后`).fontSize(11).fontColor('#3BB273')
+          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'easy'))}后`).fontSize(11).fontColor(REVIEW_EASY)
         }
       }
       .width(this.isTablet ? 130 : 104)
       .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：同上
-      .backgroundColor('#263BB273')
+      .backgroundColor(REVIEW_EASY_BG)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onRate('easy');
@@ -1172,6 +1172,12 @@ export struct ReviewPage {
     .hideTitleBar(true)
     // ★ 0.200.0：面板打开时返回键先关面板
     .onBackPressed(() => {
+      // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——修复仅画布页拦截的盲区，0.229.26 审计 B9 实锤）
+      const gsShared = connectGlobalSettingsShared();
+      if (gsShared.visible) {
+        gsShared.closeReq++;
+        return true;
+      }
       if (this.countSettingsVisible) {
         this.countSettingsVisible = false;
         return true;

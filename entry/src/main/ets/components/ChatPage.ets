@@ -46,10 +46,11 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
+import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, headerFontSize } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
-import { GlobalSettingsDialog, isKnownTextOnlyModel } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）
+import { GlobalSettingsDialog, isKnownTextOnlyModel, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）；★ 0.230.0：加共享开态 store
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
@@ -490,6 +491,7 @@ struct CodeBlockView {
 @ComponentV2
 export struct ChatPage {
   @Param pathStack: NavPathStack = new NavPathStack();
+  gsShared: GlobalSettingsSharedStore = connectGlobalSettingsShared(); // ★ 0.230.0：设置弹窗共享开态（跨页返回键拦截）
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
@@ -599,9 +601,7 @@ export struct ChatPage {
   @Local tableZoomRows: string[][] = [];
   @Local tableZoomWrap: boolean = false;  // 放大视图默认不换行（与气泡内表格默认一致）
   // ★ 0.150：全局设置弹窗状态（顶栏 ⚙ 唤起；遮罩不关闭，✕/返回键走弹窗内未保存确认）
-  @Local globalSettingsVisible: boolean = false;
-  @Local globalSettingsCloseReq: number = 0; // 外部请求关闭计数器（handleBack 递增 → 弹窗 @Monitor 触发 requestClose）
-  // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
+      // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
   // ★ 0.195.0：大屏断点（≥600vp）——返回箭头大屏专属（小屏侧滑返回）
@@ -794,6 +794,131 @@ export struct ChatPage {
       result.push(parts[j].trim());
     }
     return result;
+  }
+
+  // ============================================================
+  // ★ 0.231.0：Markdown 富文本渲染（type=0 普通文本段升级）
+  // 块级：# 标题 / - 列表 / 1. 列表 / > 引用 / --- 分割线；行内：**粗** *斜* ~~删~~ `码` [链](url)
+  // 设计：每块=单 Text（前缀 Span 承列表符号——横向 Scroll 陷阱/权重失效族坑全避开）；
+  //   划词翻译/复制/全选逐块照常（key 加 |b<块号> 后缀）；命中书签的段回落纯文本（保偏移语义）
+  // ============================================================
+  parseRichBlocks(content: string): MdBlock[] {
+    return parseBlockMd(content.split('\n'));
+  }
+
+  @Builder
+  MdInlineSpans(lines: string[], fontSize: number) {
+    ForEach(lines, (line: string, lsi: number) => {
+      ForEach(parseInlineMd(line), (sp: MdSpan, _si: number) => {
+        if (sp.strike) {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize))
+            .decoration({ type: TextDecorationType.LineThrough })
+        } else if (sp.link) {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize))
+            .fontColor(BRAND_SECONDARY)
+            .decoration({ type: TextDecorationType.Underline, color: BRAND_SECONDARY })
+        } else if (sp.code) {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize - 1))
+            .fontColor(CODE_TEXT)
+            .fontFamily('monospace')
+        } else if (sp.bold && sp.italic) {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize))
+            .fontWeight(600)
+            .fontStyle(FontStyle.Italic)
+        } else if (sp.bold) {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize))
+            .fontWeight(600)
+        } else if (sp.italic) {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize))
+            .fontStyle(FontStyle.Italic)
+        } else {
+          Span(sp.text)
+            .fontSize(this.fs(fontSize))
+        }
+      }, (sp: MdSpan, si: number) => `${lsi}_${si}_${sp.text.length}_${sp.bold ? 1 : 0}${sp.italic ? 1 : 0}${sp.strike ? 1 : 0}${sp.code ? 1 : 0}${sp.link ? 1 : 0}`)
+      if (lsi < lines.length - 1) {
+        Span('\n')
+          .fontSize(this.fs(fontSize))
+      }
+    }, (line: string, lsi: number) => `${lsi}_${line.length}`)
+  }
+
+  // 单块 Text：统一挂划词工具栏四件套（选择菜单/选中回调/全选受控/可复制）
+  @Builder
+  MdBlockText(blk: MdBlock, selKey: string, fontSize: number) {
+    Text('', { controller: this.getOrCreateTextController(selKey) }) {
+      if (blk.kind === 'li') {
+        Span('• ')
+          .fontSize(this.fs(fontSize))
+          .fontColor(TEXT_TERTIARY)
+      } else if (blk.kind === 'oli') {
+        Span(blk.order + ' ')
+          .fontSize(this.fs(fontSize))
+          .fontColor(TEXT_TERTIARY)
+      }
+      this.MdInlineSpans(blk.lines, fontSize)
+    }
+      .fontSize(this.fs(fontSize))
+      .lineHeight(this.fs(Math.round(fontSize * 1.5)))
+      .fontColor(blk.kind === 'quote' ? TEXT_SECONDARY : TEXT_PRIMARY)
+      .fontWeight(blk.kind.length === 2 && blk.kind.charAt(0) === 'h' ? 600 : 400)
+      .copyOption(CopyOptions.LocalDevice)
+      .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
+      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+        onAppear: () => {
+          this.selKey = selKey;
+        },
+        onDisappear: () => {
+          this.clearSelectionState();
+        }
+      })
+      .onTextSelectionChange((start: number, end: number) => {
+        this.handleSelectionChange(selKey, blockPlainText(blk), start, end);
+      })
+      .selection(
+        this.selectAllKey.startsWith(selKey + '|') ? 0 : 1,
+        this.selectAllKey.startsWith(selKey + '|') ? blockPlainText(blk).length : 0
+      )
+  }
+
+  // 富文本段总入口：逐块分发（分割线/引用/列表缩进/标题字号）
+  @Builder
+  MdRichSegment(content: string, keyBase: string) {
+    Column({ space: 4 }) {
+      ForEach(this.parseRichBlocks(content), (blk: MdBlock, bi: number) => {
+        if (blk.kind === 'hr') {
+          Divider()
+            .strokeWidth(0.5)
+            .color(STROKE_CARD)
+            .margin({ top: 2, bottom: 2 })
+        } else if (blk.kind === 'quote') {
+          Column() {
+            this.MdBlockText(blk, `${keyBase}|b${bi}`, 15.5)
+          }
+          .border({ width: { left: 3 }, color: { left: BRAND_SECONDARY } })
+          .padding({ left: 10 })
+          .alignItems(HorizontalAlign.Start)
+        } else if (blk.kind === 'li' || blk.kind === 'oli') {
+          Column() {
+            this.MdBlockText(blk, `${keyBase}|b${bi}`, 16)
+          }
+          .margin({ left: blk.depth * 14 })
+          .alignItems(HorizontalAlign.Start)
+        } else if (blk.kind === 'h1' || blk.kind === 'h2' || blk.kind === 'h3' ||
+          blk.kind === 'h4' || blk.kind === 'h5' || blk.kind === 'h6') {
+          this.MdBlockText(blk, `${keyBase}|b${bi}`, headerFontSize(blk.kind))
+        } else {
+          this.MdBlockText(blk, `${keyBase}|b${bi}`, 16)
+        }
+      }, (blk: MdBlock, bi: number) => `${bi}_${blk.kind}_${blk.order}_${blk.depth}_${blk.lines.length}_${blockPlainText(blk).length}`)
+    }
+    .alignItems(HorizontalAlign.Start)
   }
 
   // ★ 新增：调用 LLM 生成摘要（0.117）
@@ -2988,8 +3113,8 @@ export struct ChatPage {
       this.tableZoomVisible = false; // 表格放大弹窗（0.153）
       return true;
     }
-    if (this.globalSettingsVisible) {
-      this.globalSettingsCloseReq++; // ★ 0.150：全局设置弹窗——递增计数器触发弹窗内 requestClose（有未保存修改时二次确认，不直接丢弃）
+    if (this.gsShared.visible) {
+      this.gsShared.closeReq++; // ★ 0.150：全局设置弹窗——递增计数器触发弹窗内 requestClose（有未保存修改时二次确认，不直接丢弃）
       return true;
     }
     if (this.annotationNotifyVisible) {
@@ -3074,7 +3199,7 @@ export struct ChatPage {
       .height(40) // ★ 0.196.5：同上——40vp 撑高
       .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——8vp 间距统一（Row 自身 right padding 16 收尾）
       .onClick(() => {
-        this.globalSettingsVisible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
+        this.gsShared.visible = true; // ★ 0.150：改唤全局设置弹窗（原 SettingsPage 页面入口由弹窗替代）
       })
     }
     .width('100%')
@@ -3179,6 +3304,9 @@ export struct ChatPage {
                              //   （划选已标记文字 → 按钮变「取消标记」），段落上方不再插任何小字行
                              if (seg.type === 0) {
                               // 普通文本段
+                              // ★ 0.231.0：常态走 Markdown 富文本渲染（标题/粗斜/列表/引用/分割线/链接）；
+                              //   命中书签的段回落纯文本渲染（书签偏移=纯文本语义，保划词级荧光笔不破）
+                              if (this.isBookmarkAt(`${msg.messageId}|${idx}`)) {
                               // ★ 0.145：划词翻译——AI 文本段同样长按划词（key 纳入段索引 idx，与用户消息 key 空间隔离）
                               // ★ 0.191.0 重做：划词级书签——命中本段时按字符偏移拆三段 Span，
                               //   划选文字紫色+下划线（Span 不支持背景色，紫字+紫下划线为等效荧光笔方案）；未命中单 Span 原样
@@ -3216,6 +3344,10 @@ export struct ChatPage {
                                   this.selectAllKey.startsWith(`${msg.messageId}|${idx}|`) ? 0 : 1,
                                   this.selectAllKey.startsWith(`${msg.messageId}|${idx}|`) ? seg.content.length : 0
                                 )
+                              } else {
+                                // ★ 0.231.0：常态富文本（标题/粗斜/列表/引用/分割线/链接——划词翻译/复制逐块照常）
+                                this.MdRichSegment(seg.content, `${msg.messageId}|${idx}`)
+                              }
                             }
                             if (seg.type === 1) {
                               // ★ 代码块：使用 CodeBlockView 组件，支持自动换行切换（0.122）
@@ -4721,12 +4853,12 @@ export struct ChatPage {
         }
 
         // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起；遮罩点击不关闭，✕/返回键走弹窗内未保存确认）
-        if (this.globalSettingsVisible) {
+        if (this.gsShared.visible) {
           GlobalSettingsDialog({
             onClose: () => {
-              this.globalSettingsVisible = false;
+              this.gsShared.visible = false;
             },
-            closeReq: this.globalSettingsCloseReq
+            closeReq: this.gsShared.closeReq
           })
         }
 

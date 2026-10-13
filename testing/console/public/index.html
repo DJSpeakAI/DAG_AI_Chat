@@ -194,8 +194,23 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-const PAGE_VER = '0.229.22'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）
+const PAGE_VER = '0.231.0.1'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.231.0.1：跟 0.230.1 云同步修复+0.231.0 Markdown（SYNC-GUARD 用例）
 const base = () => LOCAL_BASE;
+// ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
+let STALE = false, STALE_TOASTED = false;
+function applySrvState(sv, cfg) {
+  const staleTxt = STALE ? '（⚠ 正本已更新·服务跑旧码，需重启）' : '';
+  $('srvState').textContent = '服务在线 v' + sv + (sv !== PAGE_VER ? '（旧于页面 ' + PAGE_VER + '，需重启）' : '') + staleTxt + ' · ' + (cfg ? cfg.bundle : '');
+  if (STALE && !STALE_TOASTED) { STALE_TOASTED = true; toast('⚠ 正本 server.js 已更新，后台服务仍在跑旧代码——测不到新逻辑！请重启服务（Ctrl+C → ↑ → 回车）'); }
+  if (!STALE) STALE_TOASTED = false;
+}
+async function pollStale() { // 30s 轮询里复查（服务中途被判定旧码→顶栏立刻标红）
+  try {
+    const hres = await fetch(LOCAL_BASE + '/api/health', { signal: AbortSignal.timeout(2000) });
+    const hv = await hres.json();
+    if (hv.stale && !STALE) { STALE = true; applySrvState(hv.version || '?', APP_CFG); }
+  } catch (_) { /* 服务不在线由 refreshDevices 兜底显示 */ }
+}
 
 async function api(path, opt) {
   const r = await fetch(base() + path, opt);
@@ -216,12 +231,16 @@ async function boot() {
     $('guide').style.display = 'none'; $('app').style.display = 'grid';
     renderTree(); await refreshDevices(); await loadHistory(); loadVersion();
     // ★ 0.229.21 服务版本守卫（治本"旧服务跑新页面"全面错位——用户曾连撞三假象皆因服务停在旧版未重启）
+    // ★ 0.229.23 追加 stale 守卫（治本 0.229.17 事故盲区：页面+服务同为旧版时本守卫无感知）——
+    //   服务实时比对磁盘正本 mtime，正本被更新（AI 改码）而服务未重启 → stale:true，顶栏标红+开跑前置确认
     try {
       const hres = await fetch(LOCAL_BASE + '/api/health', { signal: AbortSignal.timeout(2000) });
       const hv = await hres.json();
       const sv = hv.version || '?';
-      $('srvState').textContent = '服务在线 v' + sv + (sv !== PAGE_VER ? '（旧于页面 ' + PAGE_VER + '，需重启）' : '') + ' · ' + (d.config ? d.config.bundle : '');
+      STALE = !!hv.stale;
+      applySrvState(sv, d.config);
       if (sv !== PAGE_VER) toast('⚠ 后台服务 v' + sv + ' 落后于页面 ' + PAGE_VER + '——新功能未生效！请在 DevEco Terminal 重启服务（Ctrl+C → ↑ → 回车）');
+      else if (STALE) toast('⚠ 正本 server.js 已更新，后台服务仍在跑旧代码——测试结果测不到新逻辑！请重启服务（Ctrl+C → ↑ → 回车）');
     } catch (_) {
       $('srvState').textContent = '服务在线 · ' + (d.config ? d.config.bundle : '');
     }
@@ -450,6 +469,14 @@ async function ensureDevicesConnected() {
 // ---------- 执行 ----------
 async function startRun() {
   if (!CASESEL.size || !DEVSEL.size) { alert('至少勾选一个用例和一台设备'); return; }
+  // ★ 0.229.23 开跑前置守卫：正本已更新但服务跑旧码 → 先确认（跑旧码测不到新逻辑，防"测了白测"还误判 app）
+  try {
+    const hv = await (await fetch(LOCAL_BASE + '/api/health', { signal: AbortSignal.timeout(2000) })).json();
+    STALE = !!hv.stale;
+    if (STALE) {
+      if (!confirm('⚠ 正本 server.js 已更新，但后台服务仍在跑旧代码——现在开跑测不到新逻辑（结果可能误导排查方向）。\n\n建议先去 DevEco Terminal 重启服务（Ctrl+C → ↑ → 回车），再回来开跑。\n仍要用旧代码继续跑吗？')) { toast('已取消——请先重启服务再开跑'); return; }
+    }
+  } catch (_) { /* 健康检查失败不阻断（refreshDevices 会另行提示） */ }
   if (!(await ensureDevicesConnected())) return;
   // ★ 0.229.18：模式下拉对「开始测试」同样生效——选「全新安装」时测试前自动先卸载重装
   //   （"从零开始"类用例（登录/协议/云同步）必须真清数据才成立；此前模式下拉只对【装机】按钮生效=用户踩坑根源）
@@ -581,7 +608,7 @@ function showSummary(s) {
 function buildReport() {
   const s = lastSummary || {};
   const L = [];
-  L.push('【测试台 0.229.22 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
+  L.push('【测试台 ' + PAGE_VER + ' 问题报告】' + (lastRunId || '未知run') + ' · ' + new Date().toLocaleString());
   L.push('设备：' + [...DEVSEL].join('、'));
   L.push('结论：✗' + (s.fail||0) + ' 失败 / ⚠' + (s.warn||0) + ' 警告 / ✓' + (s.pass||0) + ' 通过' + (s.skip ? ' / −' + s.skip + ' 跳过' : '') + (s.aborted ? ' / 已中止' : ''));
   // ★ 0.229.20 接手 AI 判别框架：先分清「app 代码问题」还是「测试台流程问题」再动手（用户要求正向循环）
@@ -696,7 +723,7 @@ function closeDetail() { $('modalBg').style.display = 'none'; $('detail').style.
 
 
 boot();
-setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') refreshDevices(); }, 30000);
+setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') { refreshDevices(); pollStale(); } }, 30000);
 // ★ 0.229.15：关页签自动停后台（用户拍板 B）——延迟 30s 关闭 + 页面回来自动取消：
 // 最小化不触发 pagehide（服务照常跑）；刷新后 boot 成功即取消关闭（刷新不再误停）；跑测中服务端拒绝（安全）
 window.addEventListener('pagehide', () => {

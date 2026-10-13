@@ -15,7 +15,7 @@ import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——U
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flushCloudRowsNow } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
-import { initCloudDb, forceCloudSyncNow, wipeCloudRows } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.228.4 临时清洗钩子（验证后删）
+import { initCloudDb, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
 import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
 import { buildBackupPayload, writeInternalBackup } from '../utils/BackupUtil'; // 0.205.0 三道防线：退后台自动内部备份
@@ -52,17 +52,8 @@ export default class EntryAbility extends UIAbility {
     this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（冷启动路径——method/params 在 want.parameters）
     this.registerWidgetCallee(); // ★ 0.204.1：桌面卡片 call（热路径——进程存活/解冻后走 Callee，onCreate 时注册一次）
     this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
-    // ★ 0.228.4 临时清洗入口（aa start --ps wipeCloud 1 驱动；20s 等 RDB+激活；验证后删）
-    try {
-      const wp = want.parameters;
-      if (wp !== undefined && wp !== null && String(wp['wipeCloud'] ?? '') === '1') {
-        setTimeout(() => {
-          wipeCloudRows();
-        }, 20000);
-      }
-    } catch (_e) {
-      // 静默
-    }
+    // ★ 0.230.1：0.228.4 临时清洗钩子 wipeCloudRows 已删除（伪墓碑止血改由 initCloudDb 内
+    //   一次性幂等清洗接管——正本 server 同步；此入口曾是全量 del 行写入口，数据毁灭地雷拆除）
   }
 
   // ★ 0.206.0：初始化 AGC 核心（异步不阻塞启动；失败静默——埋点通道降级为仅 hiAppEvent 本地）

@@ -18,7 +18,7 @@ import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connect
 import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.228.1 临时诊断（定位后删）
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
-import { CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）
+import { CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter, writeTombstone, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）；★ 0.230.1 writeTombstone（显式墓碑唯一出生通道）+ forceCloudSyncNow（缺片 nudge 重拉）
 import { WordItem, WordFolder, WordBankStore } from './WordModel'; // ★ 0.228.0 行桥接（词池序列化/复活）
 import { KnowledgeCard, KFolder, KnowledgeBankStore } from './KnowledgeModel'; // ★ 0.228.0 行桥接
 import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, reviveFolder } from '../utils/BackupUtil'; // ★ 0.228.0 plain 流水线复用（0.205.4 纪律）
@@ -1687,52 +1687,38 @@ export async function flushCloudRowsNow(): Promise<void> {
   }
   try {
     // 气泡树（★ 0.228.1 活动模式真相——非活动池 stale 不得作为活集/写行来源）
-    const liveNodes = new Set<string>();
+    // ★ 0.230.1：flushDeletions 自动差集对账已整体删除——墓碑只准显式删除操作触发
+    //   （recordNodeTomb/recordTabTomb/recordWordTomb/recordKnowledgeTomb），reconcile/flush
+    //   自动路径永不写墓碑（0.228.0 四连环 Bug B 根凶：残缺池对账 RDB 全表 → 伪墓碑批量
+    //   出生+本地物理删行 → 新戳压制增量下行 → 上行即全端丢失）
     for (const node of activeTreeNodes()) {
-      liveNodes.add(node.nodeID);
       upsertIfChanged('node:' + node.nodeID, nodeToJson(node));
     }
-    flushDeletions('node:', liveNodes);
     // Tab 森林
     const forest = connectTabForest();
     const tabs = parseTabs(forest.tabsJson);
-    const liveTabs = new Set<string>();
     for (const t of tabs) {
-      liveTabs.add(t.id);
       upsertIfChanged('tab:' + t.id, JSON.stringify(t));
     }
-    flushDeletions('tab:', liveTabs);
     // 单词库 + 文件夹
     if (wordBankProvider !== null) {
       const ws = wordBankProvider();
-      const liveWords = new Set<string>();
       for (const w of ws.words) {
-        liveWords.add(w.id);
         upsertIfChanged('word:' + w.id, JSON.stringify(wordToPlain(w)));
       }
-      flushDeletions('word:', liveWords);
-      const liveWf = new Set<string>();
       for (const f of ws.folders) {
-        liveWf.add(f.id);
         upsertIfChanged('wfolder:' + f.id, wordFolderToJson(f));
       }
-      flushDeletions('wfolder:', liveWf);
     }
     // 知识库 + 文件夹
     if (knowledgeBankProvider !== null) {
       const ks = knowledgeBankProvider();
-      const liveCards = new Set<string>();
       for (const c of ks.cards) {
-        liveCards.add(c.id);
         upsertIfChanged('card:' + c.id, JSON.stringify(cardToPlain(c)));
       }
-      flushDeletions('card:', liveCards);
-      const liveKf = new Set<string>();
       for (const f of ks.folders) {
-        liveKf.add(f.id);
         upsertIfChanged('kfolder:' + f.id, JSON.stringify(folderToPlain(f)));
       }
-      flushDeletions('kfolder:', liveKf);
     }
     // 账号级设置三枚
     upsertIfChanged('cfg:api-config', cfgApiToJson());
@@ -1748,36 +1734,23 @@ export async function flushCloudRowsNow(): Promise<void> {
   }
 }
 
+// ★ 0.230.1：会话级墓碑注册表——显式删除与每轮 reconcile 的 del 行全集；
+//   flush 写行前查表：已墓碑 id 永不写行（否则「展示即复习」等 mtime 变更会令实体行
+//   时间戳反超墓碑 → LWW 判活 → 已删条目复活——真机实锤：删词后进词库页即复活）
+const tombstonedIds = new Set<string>();
+
 function upsertIfChanged(key: string, value: string): void {
+  const id = key.substring(key.indexOf(':') + 1);
+  if (tombstonedIds.has(id)) {
+    deleteRowLocal(key); // 墓碑压制中的实体行：清本地残行，绝不重写（重写=新时间戳=复活）
+    rowCache.delete(key);
+    return;
+  }
   if (rowCache.get(key) === value) {
     return; // diff-cache 挡（值变才写行——杀 churn）
   }
   upsertRow(key, value);
   rowCache.set(key, value);
-}
-
-// ★ 0.228.2：删除检测改 RDB 行键差集（cache 无关——冷启缓存空时删除曾零 del 行出生，
-//   云端实体行在→对端复活=用户实测卡片复活根因；RDB 行是上行事实，永不失忆）
-function flushDeletions(prefix: string, live: Set<string>): void {
-  queryAllRows().then((rows: CloudRow[]) => {
-    const now = Date.now();
-    for (const r of rows) {
-      if (!r.key.startsWith(prefix) || r.key.indexOf('~') >= 0) {
-        continue;
-      }
-      const id = r.key.substring(prefix.length);
-      if (live.has(id)) {
-        continue;
-      }
-      const o: Record<string, Object> = {};
-      o['t'] = now;
-      upsertRow('del:' + id, JSON.stringify(o)); // 删除标记行（探针实证：物理删行不传播）
-      deleteRowLocal(r.key); // 本地清理（云端残留由 del 行语义压制）
-      rowCache.delete(r.key);
-    }
-  }).catch(() => {
-    // 静默（下次 flush 重试）
-  });
 }
 
 // ---- 下行 reconcile（dataChange/forceSync 后触发；全表 query=同步完成后的单点快照） ----
@@ -1828,7 +1801,8 @@ function reconcileWithRows(rows: CloudRow[]): void {
     raw.set(r.key, r.value);
     ts.set(r.key, r.updatedAt);
   }
-  // chunk 重组（主行 {"__chunks":N} + <key>~<i> 片段行；缺片=坏行丢弃自愈）
+  // chunk 重组（主行 {"__chunks":N} + <key>~<i> 片段行；缺片=pending 计数 + 坏行丢弃自愈）
+  let pendingChunkCount = 0; // ★ 0.230.1：缺片行计数（>0=本轮下行不完整，闸门不开）
   const entity = new Map<string, string>();
   raw.forEach((v: string, k: string): void => {
     if (k.indexOf('~') >= 0) {
@@ -1851,6 +1825,11 @@ function reconcileWithRows(rows: CloudRow[]): void {
         }
         if (ok) {
           entity.set(k, full);
+        } else {
+          // ★ 0.230.1：缺片=下行不完整（Bug A 实锤形态）——该行不进实体域（现行为），
+          //   并计数上报：闸门本会话不开（防残缺态上行旧值覆盖云端）+ 有界 nudge 重拉
+          pendingChunkCount++;
+          rbLog(`R5 chunk-pending ${k} chunks=${m.__chunks}`);
         }
       }
     } catch (_e) {
@@ -1889,7 +1868,9 @@ function reconcileWithRows(rows: CloudRow[]): void {
         const r = JSON.parse(v) as Record<string, Object>;
         const t = Number(r['t'] ?? 0);
         if (t > 0) {
-          dels.set(k.substring('del:'.length), t);
+          const did = k.substring('del:'.length);
+          dels.set(did, t);
+          tombstonedIds.add(did); // ★ 0.230.1：注册进会话墓碑表——flush 对其永不写行（防 mtime 复活）
         }
       } catch (_e) {
         // 坏墓碑忽略
@@ -1921,8 +1902,16 @@ function reconcileWithRows(rows: CloudRow[]): void {
   if (nodesChanged || tabsChanged || layoutChanged || delsPropagated || interChanged) {
     refreshWorkspaceFromPools(); // 重建工作区 + needsCloudRedraw（保坐标重绘，0.223.0 机制原样）
   }
-  // 首拉闸门开启
-  arb.rowInitDone = true;
+  // ★ 0.230.1：首拉闸门纪律——本轮无缺片才开（开着=本会话已完成一次完整下行）；
+  //   缺片>0：闸门保持关（上行全阻——防残缺态旧值 LWW 压云端新值），但有界 nudge 重拉，
+  //   dataChange 事件到片后自动重跑 reconcile 直至完整开闸（重试上限后放弃=只读态等前台再拉）
+  if (pendingChunkCount > 0) {
+    rbLog(`R6 gate-held pending=${pendingChunkCount} nudge=${pullNudgeAttempts}`);
+    schedulePullNudge();
+  } else {
+    pullNudgeAttempts = 0;
+    arb.rowInitDone = true;
+  }
   // 迁移物化：吸收值只存在于内存 map（reconcile 已把它们播进 cache 令 flush 误判「未变」）——
   //   必须显式落行，否则实体行永远不出生、行模式云端为空（实测实锤：仅 cfg 3 行）
   if (justMigrated) {
@@ -1933,9 +1922,25 @@ function reconcileWithRows(rows: CloudRow[]): void {
     materializeRows(cloudWf, 'wfolder:');
     materializeRows(cloudKf, 'kfolder:');
   }
-  // 无条件 flush：diff-cache 消化成本（全等=零写行）；同时兜底「已迁移但行缺失」设备的
-  //   恢复路径（本地条目=云端无行 → cache 未播种 → 此处落行）
+  // flush：diff-cache 消化成本（全等=零写行）；闸门未开时内部自返回（0.230.1 起闸门=会话级）
   flushCloudRowsNow();
+}
+
+// ★ 0.230.1：缺片 nudge 重拉（有界）——15s 后 forceCloudSyncNow 触发下一轮 reconcile；
+//   ≤6 次（约 90s），成功（无缺片）即由上方 pullNudgeAttempts=0 复位
+let pullNudgeAttempts: number = 0;
+let pullNudgeTimer: number = -1;
+
+function schedulePullNudge(): void {
+  if (pullNudgeTimer >= 0 || pullNudgeAttempts >= 6) {
+    return;
+  }
+  pullNudgeAttempts++;
+  pullNudgeTimer = setTimeout(() => {
+    pullNudgeTimer = -1;
+    rbLog(`R7 nudge-pull #${pullNudgeAttempts}`);
+    forceCloudSyncNow();
+  }, 15000);
 }
 
 function materializeRows(m: Map<string, string>, _prefix: string): void {
@@ -2029,6 +2034,8 @@ function mergeNodes(cloud: Map<string, string>, dels: Map<string, number>, ts: M
     const id = k.substring('node:'.length);
     const delT = dels.get(id);
     if (delT !== undefined && delT >= (ts.get(k) ?? 0)) {
+      deleteRowLocal(k); // ★ 0.230.1：del 胜出同步清本地实体行（防压制行滞留→两端行数假不对称）
+      rowCache.delete(k);
       return; // 云端删除（del 行新于实体行）
     }
     const localNode = byId.get(id);
@@ -2099,6 +2106,8 @@ function mergeTabs(cloud: Map<string, string>, dels: Map<string, number>, ts: Ma
     const id = k.substring('tab:'.length);
     const delT = dels.get(id);
     if (delT !== undefined && delT >= (ts.get(k) ?? 0)) {
+      deleteRowLocal(k); // ★ 0.230.1：del 胜出同步清本地实体行（防压制行滞留→两端行数假不对称）
+      rowCache.delete(k);
       return;
     }
     try {
@@ -2152,6 +2161,8 @@ function mergePlainItems(prefix: string, cloud: Map<string, string>, localSers: 
     const id = k.substring(prefix.length);
     const delT = dels.get(id);
     if (delT !== undefined && delT >= (ts.get(k) ?? 0)) {
+      deleteRowLocal(k); // ★ 0.230.1：del 胜出同步清本地实体行（防压制行滞留→两端行数假不对称）
+      rowCache.delete(k);
       return; // 云端删除胜
     }
     const localSer = localSers.get(id);
@@ -2293,23 +2304,52 @@ function mergeCfgs(cloudCfg: Map<string, string>): void {
   apply('cfg:face-mode', cfgFaceModeApply, cfgFaceModeToJson());
 }
 
-// ---- 旧接口兼容 shim（WordStoreUtil/KnowledgeStoreUtil 既有 import 零改动迁移） ----
+// ---- 显式墓碑入口（★ 0.230.1：del 行唯一合法出生通道——用户显式删除操作专用） ----
+// 词/卡/夹全部删除路径（单删/批删/夹删/级联删/清空根夹）已带 id 列表汇入下列函数；
+// 节点/Tab 删除由 BBTreeCanvas 显式调用（0.228.x 旧案靠 flush 差集自动出生=四连环根凶，已废）
+// 墓碑 id=裸 id（无域前缀，各域 id 生成方案天然不撞车）；本地实体行的清理由 reconcile
+// del 分支完成（del 新戳每次压制+deleteRowLocal），此处不碰域前缀（级联列表混夹/词/卡）
+const TOMB_ROW_PREFIXES: string[] = ['node:', 'tab:', 'word:', 'card:', 'wfolder:', 'kfolder:'];
+
 export function noteBankMutation(): void {
-  scheduleRowFlush();
+  scheduleRowFlush(); // 词/卡/夹非删除变更（增/改/移动/复制）统一防抖上行
 }
 
-export function recordWordTomb(_ids: string[]): void {
-  scheduleRowFlush(); // 删除由 flush 的 cache 差集推导（del 标记行自动生成）
+export function recordTombstones(ids: string[]): void {
+  for (const id of ids) {
+    writeTombstone(id); // del:<id> 行（绕首拉闸门——显式意图任何时刻落库都安全）
+    tombstonedIds.add(id); // ★ 0.230.1：会话墓碑表注册（flush 永不写行）
+    for (const pre of TOMB_ROW_PREFIXES) {
+      rowCache.delete(pre + id); // cache 除账（防残留缓存令 flush 误判）
+    }
+  }
+  scheduleRowFlush(); // 删除常伴随归属/mtime 变更，其余行照常 flush
 }
 
-export function recordKnowledgeTomb(_ids: string[]): void {
-  scheduleRowFlush();
+export function recordWordTomb(ids: string[]): void {
+  recordTombstones(ids); // 词 + 单词库文件夹共用（裸 id 域自明）
+}
+
+export function recordKnowledgeTomb(ids: string[]): void {
+  recordTombstones(ids); // 卡 + 知识库文件夹共用
+}
+
+export function recordNodeTomb(ids: string[]): void {
+  recordTombstones(ids); // ★ 0.230.1 新增：气泡节点（含子树全集 id）
+}
+
+export function recordTabTomb(ids: string[]): void {
+  recordTombstones(ids); // ★ 0.230.1 新增：选项卡
 }
 
 // ---- 启动接线（EntryAbility.onWindowStageCreate 调用） ----
 export function setupCloudDownlink(): void {
   registerCloudRowsReady(reconcileCloudRows);
   registerRowFlush(scheduleRowFlush);
+  // ★ 0.230.1：首拉闸门每会话再武装——原持久化 true 跨会话存活，重启后首拉未完成
+  //   flush 即上行本地旧值（残缺 RDB 态 LWW 压过云端新值=Bug A 放大器）；闸门改为
+  //   「本会话内完成一次无缺片 reconcile」才开（见 reconcileWithRows）
+  connectCloudSyncArbiter().rowInitDone = false;
 }
 
 // ★ 0.165.2：按当前模式的权威池重建工作区（复用 0.151 applyCanvasModeSwitch 的搬移模式）——

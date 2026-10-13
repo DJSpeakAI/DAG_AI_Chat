@@ -1,6 +1,11 @@
 ﻿// ============================================================
 // GlobalSettingsDialog.ets — 全局设置弹窗（★ 0.150）
 // ============================================================
+// ★ 0.230.0：设置弹窗开态共享真相源 GlobalSettingsSharedStore——弹窗实例挂 Index 宿主（边栏「设置」
+//   入口）/画布 ⚙/对话页 ⚙ 三处，但返回键事件只送达栈顶 NavDestination（词库/知识库/复习/统计/账单页），
+//   各页 onBackPressed 原先不知弹窗开态→返回键不关弹窗（0.229.26 审计 B9 实锤：仅画布页有拦截分支）。
+//   共享 store 后：任何页 onBackPressed 首分支 connectGlobalSettingsShared().closeReq++ 即触发
+//   requestClose（含未保存修改二次确认，0.150 语义原样）。
 // 本文件是应用的全局设置弹窗（ChatPage 顶栏 ⚙ 与 BBTreeCanvas 画布 ⚙ 共用同一实例数据）：
 //   - Tab 1「API 配置」：★ 0.190.0 提供商化——模型提供商 2×2 卡片（华为云 MaaS / 火山引擎 /
 //     DeepSeek 3 预设 + 自定义配置，其他服务商全走自定义）；预设=模型下拉（预置清单+「自定义」
@@ -46,6 +51,7 @@ import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡�
 import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
+import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.230.0：GlobalSettingsSharedStore（开态跨页共享——返回键拦截）
 
 // ============================================================
 // ★ 0.190.0/0.190.1：模型提供商预设（3 预设 + 自定义配置）
@@ -123,7 +129,7 @@ const PROVIDER_CUSTOM: string = 'custom'; // 自定义配置（任意 OpenAI 兼
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.228.0';
+const APP_VERSION: string = 'v0.231.0'; // ★ 0.231.0：云同步数据安全修复+Markdown 行内渲染
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -158,6 +164,16 @@ export function isKnownTextOnlyModel(provider: string, model: string): boolean {
 }
 
 // ★ 0.189.1：AUDIO_MODEL_LIST（预置音频模型）已随云端 TTS 配置区移除
+
+// ★ 0.230.0：设置弹窗开态共享真相源（会话级 AppStorageV2——见文件头注释）
+@ObservedV2
+export class GlobalSettingsSharedStore {
+  @Trace visible: boolean = false;
+  @Trace closeReq: number = 0; // 外部请求关闭计数器（onBackPressed 递增→挂载点传参→requestClose 含未保存确认）
+}
+export function connectGlobalSettingsShared(): GlobalSettingsSharedStore {
+  return AppStorageV2.connect(GlobalSettingsSharedStore, 'global-settings-shared', () => new GlobalSettingsSharedStore()) as GlobalSettingsSharedStore;
+}
 
 // 全局设置弹窗 — Tab1 API 配置（原 SettingsPage 搬入）+ Tab2 AI 偏好（★ 0.150 新增）
 @ComponentV2

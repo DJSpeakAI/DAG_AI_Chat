@@ -45,15 +45,24 @@ export function connectCloudSync(): CloudSyncStore {
 
 // ★ 0.228.0：仲裁器 v2（全新 key——0.224.1 教训：旧 key 尾追字段不持久化；v1 整体废弃）
 //   只留行模式必需的两个标志：首拉闸门 + 旧池迁移标记
+// ★ 0.230.1：rowInitDone 改会话级闸门——setupCloudDownlink 每次启动重置 false
+//   （原持久化 true：重启后首拉未完成 flush 即上行旧值，残缺 RDB 态覆盖云端新值=Bug A 放大器）
 @ObservedV2
 export class CloudSyncArbiter {
-  @Trace rowInitDone: boolean = false;   // 首轮「拉全表+reconcile」完成前禁一切行上行（0.223.1 种子事故时序防线）
+  @Trace rowInitDone: boolean = false;   // 首轮「拉全表+reconcile」完成前禁一切行上行（0.223.1 种子事故时序防线；0.230.1 起每会话重置+须拉全无缺片才开）
   @Trace legacyMigrated: boolean = false; // 旧四池行已吸收成条目行（迁移幂等标记）
 }
 
 export function connectCloudSyncArbiter(): CloudSyncArbiter {
   return PersistenceV2.connect(CloudSyncArbiter, 'cloud-sync-arbiter-v2',
     () => new CloudSyncArbiter()) as CloudSyncArbiter;
+}
+
+// ★ 0.230.1：一次性伪墓碑清洗标记（全新 key——墓碑只准显式删除触发后，0.228.0 自动路径
+//   出生的一批伪 del 行须止血清除，防上行引发全端数据丢失 Bug D）
+@ObservedV2
+export class TombstonePurgeMark {
+  @Trace purged: boolean = false;
 }
 
 // ★ 0.228.0：行就绪回调注册（ChatModel.rowBridge——下行 reconcile 入口）
@@ -84,6 +93,21 @@ export function initCloudDb(context: common.UIAbilityContext): void {
         updated_at INTEGER
       )`);
       rdbStore = store;
+      // ★ 0.230.1：一次性伪墓碑清洗——必须在 activateCloudSync（任何上行）之前执行，
+      //   否则 0.228.0 自动路径出生的伪 del 行上行=云端压制=全端数据丢失（Bug D）。
+      //   云端合法 del 行（早已上传的）被清后随下次下行自动回来，语义无损。
+      const purgeMark = PersistenceV2.connect(TombstonePurgeMark, 'tombstone-purge-v1',
+        () => new TombstonePurgeMark()) as TombstonePurgeMark;
+      if (!purgeMark.purged) {
+        try {
+          const delPred = new relationalStore.RdbPredicates(TABLE_NAME);
+          delPred.beginsWith('key', 'del:');
+          await rdbStore.delete(delPred);
+          purgeMark.purged = true; // 成功才打幂等标记（失败下次启动重试）
+        } catch (_e) {
+          return false; // ★ 清洗失败=本会话不激活同步（杜绝伪墓碑上行窗口，下次启动重试）
+        }
+      }
       const granted = await hasSyncPermission();
       if (granted && connectCloudSync().enabled) {
         activateCloudSync();
@@ -98,6 +122,12 @@ export function initCloudDb(context: common.UIAbilityContext): void {
 // ★ 0.165.1：激活端云同步（幂等）——设分布式表 + autoSync + 订阅下行 + 立即追赶
 function activateCloudSync(): void {
   if (rdbStore === null || cloudSyncActive) {
+    return;
+  }
+  // ★ 0.230.1：伪墓碑未清洗=禁激活（清洗失败会话的兜底——手动开同步也进不来）
+  const purgeMark = PersistenceV2.connect(TombstonePurgeMark, 'tombstone-purge-v1',
+    () => new TombstonePurgeMark()) as TombstonePurgeMark;
+  if (!purgeMark.purged) {
     return;
   }
   try {
@@ -295,41 +325,44 @@ export function deleteRowLocal(key: string): Promise<void> {
   });
 }
 
-// ★ 0.228.4 临时清洗钩子（用户拍板零数据开测；验证后与 EntryAbility 挂点一并删）：
-//   对全部实体行写 del 标记行+本地删行——del 行经正规 API 写入=框架认账会上传，
-//   全端 reconcile 后语义清空（物理行残留云端无害被 del 压制）
-export function wipeCloudRows(): void {
+// ★ 0.230.1：显式墓碑写入（唯一合法的 del 行出生通道——用户显式删除操作专用）。
+//   刻意**绕过首拉闸门**（不走 upsertRow）：显式删除意图任何时刻落库都安全——
+//   它压制的正是用户要删的实体；且闸门关着时用户照样能删东西，删了就必须传播。
+//   （0.228.0 教训反面条：flushDeletions 自动差集对账以残缺池判死活 → 伪墓碑批量
+//   出生 → 本地物理删行 → 墓碑新戳压制增量下行 → 上行即全端丢失。自动路径已整体删除）
+export function writeTombstone(id: string): void {
   ensureReady().then((ok: boolean) => {
-    if (!ok) {
+    if (!ok || rdbStore === null) {
       return;
     }
-    queryAllRows().then((rows: CloudRow[]) => {
-      const now = Date.now();
-      for (const r of rows) {
-        const p = ['node:', 'tab:', 'word:', 'card:', 'wfolder:', 'kfolder:', 'layout:'];
-        let hit = false;
-        for (const pre of p) {
-          if (r.key.startsWith(pre)) {
-            hit = true;
-            break;
-          }
-        }
-        if (!hit) {
-          continue;
-        }
-        const id = r.key.substring(r.key.indexOf(':') + 1);
-        const o: Record<string, Object> = {};
-        o['t'] = now;
-        rdbStore!.insert(TABLE_NAME, {
-          'key': 'del:' + id, 'value': JSON.stringify(o), 'updated_at': now
-        } as relationalStore.ValuesBucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE).catch(() => {
-        });
-        deleteRowLocal(r.key);
-      }
-    }).catch(() => {
+    const now = Date.now();
+    const o: Record<string, Object> = {};
+    o['t'] = now;
+    writeRow('del:' + id, JSON.stringify(o), now).catch(() => {
     });
   });
 }
+
+// ★ 0.230.1：本地清理实体行全集（主行 + <key>~<n> chunk 残片）——显式删除路径配套
+export function deleteEntityRowsLocal(entityKey: string): void {
+  deleteRowLocal(entityKey);
+  ensureReady().then((ok: boolean) => {
+    if (!ok || rdbStore === null) {
+      return;
+    }
+    try {
+      const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+      predicates.beginsWith('key', entityKey + '~');
+      rdbStore.delete(predicates).catch(() => {
+      });
+    } catch (_e) {
+      // 静默
+    }
+  });
+}
+
+// ★ 0.230.1：0.228.4 临时清洗钩子 wipeCloudRows 已整体删除（曾是全量 del 行写入口=数据毁灭地雷；
+//   伪墓碑止血改由 initCloudDb 内一次性幂等清洗接管，EntryAbility 挂点同删）
 export function upsertCloudData(_key: string, _value: string): void {
   if (flushHandler !== null) {
     flushHandler(); // 桥接层内部 3 秒防抖合并

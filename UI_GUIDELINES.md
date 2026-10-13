@@ -28,6 +28,8 @@
 | STROKE_CARD | color/stroke-card | `#FFFFFF` 8% | 卡片描边 |
 | STROKE_BRAND | color/stroke-brand | `#7C4DFF` 40% | 悬停描边 / 未登录图标容器描边 |
 | SEGMENTED_TRACK | color/segmented-track | `#FFFFFF` 6% | 分段控件轨道底色（平板二稿新增） |
+| DANGER | `#F44336` | 删除/破坏性操作警示红（补录：0.190.5 起在用，0.230.0 补档） |
+| REVIEW_HARD / GOOD / EASY | `#E5484D` / `#F5A623` / `#3BB273` | 复习评分三档色（生疏红/尚可橙/熟知绿；配 15% 透明底 _BG 变体——★ 0.230.0 token 化入档，原 ReviewPage 散落色值收敛） |
 
 ## 二、圆角 Token（5 档）
 
@@ -104,7 +106,7 @@
 
 **2. 导航项**
 - 高 44 宽 208，内边距左右 12，圆角 RADIUS_NAV(12)；图标 18，图标与文字距 10
-- 默认态文字 TEXT_SECONDARY；**选中态：BRAND_PRIMARY 整块填充 + 文字纯白**
+- 默认态文字 TEXT_SECONDARY；**选中态：SURFACE_HOVER 整块填充（★ 0.230.0 修正——0.220.0 折叠体系重构后代码实际为 SURFACE_HOVER，AppSideBar isItemActive 三元；原"BRAND_PRIMARY 整块填充"为旧规格，0.229.26 审计文档一致性发现后跟代码改档）**
 
 **3. 账号区（已登录）**
 - 头像 36×36 圆形 clip；昵称 CardTitleSm + 说明 Caption 行距 2；右侧 chevron 16

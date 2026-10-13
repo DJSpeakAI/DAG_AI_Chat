@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000252, // ★ 0.228.0：云同步细粒度行模式重构（Phase 0 探针先行）；更早历史见 MEMORY.md
+    "versionCode": 1000254, // ★ 0.231.0：云同步四连环数据安全修复（显式墓碑/伪墓碑清洗/缺片闸门）+ AI 回复 Markdown 行内渲染；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

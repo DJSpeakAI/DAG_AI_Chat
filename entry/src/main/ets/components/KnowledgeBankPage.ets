@@ -48,6 +48,7 @@ import { ensureFolderPath } from '../utils/KnowledgeStoreUtil';
 import { track } from '../utils/TrackUtil';
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.0 手机知识库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.18：设备类型判定（仅手机去掉知识库空白处长按创建菜单，PC 右键/Pad 长按保留）
+import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 
 @ComponentV2
@@ -1017,6 +1018,7 @@ export struct KnowledgeBankPage {
   @Builder
   editorDialog() {
     Stack({ alignContent: Alignment.Center }) {
+      Scroll() { // ★ 0.230.0 B11 键盘适配：窗口 RESIZE 压矮时弹窗收缩可滚，保存滚动可达（同词库编辑器）
       Column() {
         Text(this.editorIsAdd ? '新增知识卡' : '编辑知识卡')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
@@ -1212,7 +1214,7 @@ export struct KnowledgeBankPage {
         }
         .width('100%')
         .margin({ top: 10 })
-        Row() {
+        Row({ space: 12 }) { // ★ 0.230.0：等宽铁律姿势（0.197.3——margin 参与 layoutWeight 分配挤窄保存 12vp，审计实锤差 30px）
           Button('取消')
             .fontSize(14)
             .fontColor(TEXT_SECONDARY)
@@ -1227,7 +1229,6 @@ export struct KnowledgeBankPage {
             .backgroundColor(BRAND_PRIMARY)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
-            .margin({ left: 12 })
             .onClick(() => {
               this.saveEditor();
             })
@@ -1236,10 +1237,12 @@ export struct KnowledgeBankPage {
         .margin({ top: 20 })
       }
       .width(this.isTablet ? 520 : '86%') // ★ 0.201.2：平板固定 520（86% 在宽屏超宽、双按钮被拉长——用户实测）；规范入 UI_GUIDELINES「模态弹窗与操作按钮」
-      .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .padding(20)
-      // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）──
+       .borderRadius(RADIUS_NAV)
+       .backgroundColor(SURFACE_NODE)
+       .padding(20)
+       }
+       .constraintSize({ maxHeight: '96%' }) // ★ 0.230.0 B11：Scroll 高度约束（键盘 RESIZE 压矮窗口时收缩可滚）
+       // ── ★ 0.202.2：标签 mini 编辑弹窗（长按改/自定义加）──
       // ★ 0.210.1 修复「下面的方框一直往下」两连：①原 Blank() 把弹窗推到遮罩最底部（键盘避让
       //   反复触发一路下沉）②挂编辑弹窗内部时 height('100%') 参照自适应高度父——无参照、永不安居
       //   （真机 dump 实锤：标题 y=1640 贴屏底）。上移到全屏遮罩层与编辑弹窗同级：height('100%')
@@ -3172,6 +3175,12 @@ export struct KnowledgeBankPage {
     .hideTitleBar(true)
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
+      // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——修复仅画布页拦截的盲区，0.229.26 审计 B9 实锤）
+      const gsShared = connectGlobalSettingsShared();
+      if (gsShared.visible) {
+        gsShared.closeReq++;
+        return true;
+      }
       // ★ 0.222.0：手机边栏抽屉开着时返回键先收抽屉
       if (this.sidebarVisible) {
         this.closeSidebar();
