@@ -148,7 +148,7 @@ const TTS_OFFICIAL_VOICE: string = 'zh_female_vv_uranus_bigtts';
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.232.2'; // ★ 0.232.2：TTS区折叠默认收起+自定义档干净起点/隐音色ID+知识卡左对齐修正
+const APP_VERSION: string = 'v0.233.0'; // ★ 0.233.0：UI规范落地（三角放大/音色ID联动/弹窗留白/司忆区拆行/气泡拉满）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -458,7 +458,8 @@ export struct GlobalSettingsDialog {
     this.apiConfig.audioKey = this.editTtsKey.trim();
     // ★ 0.232.2：自定义提供商音色不适用（字段已隐藏）——存空串，引擎空值自动兜底官方音色；
     //   豆包语音合成2.0 仍强制官方音色（0.232.1 置灰闭环）
-    this.apiConfig.audioVoice = this.editTtsProvider !== 'volcano' ? '' :
+    // ★ 0.233.0：音频模型选「自定义…」时音色同样不适用（UI 已隐藏）——存空串兜底官方音色
+    this.apiConfig.audioVoice = (this.editTtsProvider !== 'volcano' || this.editTtsModelSel >= TTS_MODEL_PRESETS.length) ? '' :
       (this.ttsVoiceEditable() ? this.editTtsVoice.trim() : TTS_OFFICIAL_VOICE);
     this.apiConfig.audioEndpoint = this.currentTtsEndpointValue();
     // ★ 0.232.0：首次启用云端朗读一次性提示（用户规则：第一次填写音频配置时提示，之后不再）
@@ -615,11 +616,12 @@ export struct GlobalSettingsDialog {
         .margin({ top: 20, bottom: 14 })
 
       // ★ 0.232.2：标题行整行可点折叠（默认收起——低频功能不占屏，用户拍板）
+      // ★ 0.233.0：折叠三角放大对齐全项目大三角规格（字号 16/宽 22——0.222.14 统一值，用户「小三角太小」拍板）
       Row() {
         Text(this.ttsCollapsed ? '▸' : '▾')
-          .fontSize(13)
+          .fontSize(16)
           .fontColor(TEXT_TERTIARY)
-          .width(18)
+          .width(22)
         Text('语音朗读（TTS）')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
@@ -724,7 +726,7 @@ export struct GlobalSettingsDialog {
             .fontColor(TEXT_PRIMARY)
             .layoutWeight(1)
           Text(this.isTtsModelDropdownOpen ? '▲' : '▼')
-            .fontSize(12)
+            .fontSize(16)
             .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
@@ -828,7 +830,8 @@ export struct GlobalSettingsDialog {
 
       // 音色 ID（★ 0.232.1 联动：声音复刻/自定义模型可填 S_ 音色；豆包语音合成2.0 置灰=官方音色体系）
       // ★ 0.232.2：自定义提供商整块隐藏（火山音色体系不适用——用户拍板「自定义了音色 ID 就取消掉」）
-      if (this.editTtsProvider === 'volcano') {
+      // ★ 0.233.0：音频模型选「自定义…」时同样隐藏（模型都自定义了音色 ID 不用填——用户拍板；仅预设模型显示）
+      if (this.editTtsProvider === 'volcano' && this.editTtsModelSel < TTS_MODEL_PRESETS.length) {
       Column() {
         Text('音色 ID')
           .fontSize(14)
@@ -942,7 +945,7 @@ export struct GlobalSettingsDialog {
             .fontColor(TEXT_PRIMARY)
             .layoutWeight(1)
           Text(this.isModelDropdownOpen ? '▲' : '▼')
-            .fontSize(12)
+            .fontSize(16)
             .fontColor(TEXT_TERTIARY)
         }
         .width('100%')
@@ -2337,7 +2340,7 @@ export struct GlobalSettingsDialog {
             })
         }
       }
-      .width(this.windowMode.isTablet ? 560 : '94%') // ★ 0.232.1 断点制（用户拍板：配置类弹窗 PC/Pad 固定 560，不做屏宽自适应——聊天页才需要自适应；手机维持 94%）
+      .width(this.windowMode.isTablet ? 560 : '92%') // ★ 0.232.1 断点制（用户拍板：配置类弹窗 PC/Pad 固定 560，不做屏宽自适应——聊天页才需要自适应）；★ 0.233.0：手机 94%→92%（用户实锤「右边顶格」——弹窗左右必须各留空地不贴边）
       .height('88%')
       .padding(16)
       .borderRadius(RADIUS_NAV)

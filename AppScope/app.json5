@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000257, // ★ 0.232.2：TTS 配置区折叠默认收起+切自定义清空/隐音色 ID+知识卡标题左对齐修正；更早历史见 MEMORY.md
+    "versionCode": 1000258, // ★ 0.233.0：UI规范落地（三角放大/音色ID联动/弹窗留白/司忆区拆行/气泡拉满）；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

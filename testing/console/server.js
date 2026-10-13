@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.232.1.1'; // ★ 四段制：前三段跟 APP（0.232.1=TTS双预设+弹窗断点制+司忆区交互）、第四段=测试台工具版本 // ★ 0.232.1.1：跟 APP 0.232.1（CHAT-KEEP/TTS-API 用例沿用）
+const VERSION = '0.233.0.7'; // ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护 // ★ 四段制：前三段跟 APP（0.233.0=UI规范落地：三角放大/音色ID联动/弹窗留白/司忆区拆行/气泡拉满）、第四段=测试台工具版本 // ★ 0.233.0.1：跟 APP 0.233.0（A16/A17/A18/C1 四条 UI 审计断言）
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -822,8 +822,10 @@ async function navTo(serial, text, log) {
 }
 
 // ★ 0.232.0 双击原语（画布气泡双击=进入对话页——0.173 单双击并存判定；uiInput doubleClick）
+// ★ 0.233.0.2 修复：`uitest uiInput doubleClick` 原语在 Pad 实测无效（CHAT-KEEP 历史零 pass、
+//   三轮 dump 实锤双击后仍停留画布）。改单次 shell 会话内串联两次 click（间隔 150ms=双击窗口内）
 async function uiDoubleClick(serial, x, y, waitMs = 2400) {
-  const r = await sh(serial, `uitest uiInput doubleClick ${x} ${y}`, 15000);
+  const r = await sh(serial, `uitest uiInput click ${x} ${y}; sleep 0.15; uitest uiInput click ${x} ${y}`, 15000);
   await sleep(waitMs);
   return { ok: !SH_ERR_RE.test(r), raw: r.trim().slice(0, 120) };
 }
@@ -1524,7 +1526,7 @@ const CASES = [
       }
       ctx.log('★巡检汇总', fails + warns === 0 ? 'pass' : (fails ? 'fail' : 'warn'), `7 页 ${pageSnap.length} 页成功，fail=${fails} warn=${warns}——warn 项为人工裁决候选（补 token/豁免清单），fail 项为规范硬违规（修复走 app 迭代）`);
     } },
-  { id: 'UI-AUDIT-DIALOGS', suite: 'ui-audit', name: '弹窗体系·B1/B2 宽度断点+B4 等宽+B5 层级色+B9 返回键+B11 键盘+B13 删除确认', semi: false, scope: 'each',
+  { id: 'UI-AUDIT-DIALOGS', suite: 'ui-audit', name: '弹窗体系·B1/B2 宽度+B4 等宽+B5 层级色+B9 返回键+B11 键盘+B13 删除确认+A16 左右留白+A17 三角规格+A18 轨道留白+C1 音色ID联动（0.233.0）', semi: false, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '弹窗审计（UI 断言）'); return; }
@@ -1648,7 +1650,7 @@ const CASES = [
           } else ctx.log('长按菜单', 'warn', '长按后未见「删除气泡」菜单（定位目标可能非气泡节点）');
         } else ctx.log('气泡定位', 'warn', '画布未找到可长按气泡节点');
       }
-      // ── ④ 设置弹窗（A14 保存行等宽 + 宽度 + B9 返回键）──
+      // ── ④ 设置弹窗（A14 保存行等宽 + 宽度 + B9 返回键 + ★0.233.0 A16/A17/A18/C1 用户四条 UI 反馈）──
       nav = await navTo(serial, '设置', ctx.log);
       if (nav.ok) {
         await sleep(1200);
@@ -1657,6 +1659,52 @@ const CASES = [
         const c = await calOnce();
         report2(ctx, AUDIT.auditDialogButtons(d.nodes, c, '全局设置弹窗·保存行', ['保存', '返回']));
         report2(ctx, AUDIT.auditDialogButtonColor(d.nodes, c, '全局设置弹窗·保存', '保存', 'BRAND_PRIMARY'));
+        // ★ 0.233.0 A16 弹窗左右留白（用户实锤「右边顶格」——弹窗与屏幕左右必须各留空地不贴边）
+        const scrM = String((JSON.parse(d.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        const screenW = scrM ? +scrM[3] : 0;
+        report2(ctx, AUDIT.auditDialogSideMargins(d.nodes, c, '全局设置弹窗', '全局设置', screenW));
+        // ★ 0.233.0 A17 TTS 折叠三角规格（大三角 22vp——用户「小三角太小」拍板）
+        report2(ctx, AUDIT.auditCollapseTriangle(d.nodes, c, '语音朗读（TTS）'));
+        // ★ 0.233.0 A18 Tab 轨道两端留白 12vp（用户拍板「导航栏左右留空地」）
+        report2(ctx, AUDIT.auditTabTrackPadding(d.nodes, c, '全局设置弹窗', '全局设置'));
+        // ★ 0.233.0 C1 音色 ID 联动（音频模型=「自定义…」→ 音色 ID 整块隐藏；用户拍板「模型都自定义了音色取消」）
+        const ttsRow = d.nodes.find((n) => (n.text || '').includes('语音朗读（TTS）'));
+        if (ttsRow) {
+          await sh(serial, `uitest uiInput click ${ttsRow.xc} ${ttsRow.yc}`, 15000);
+          await sleep(1300);
+          // ★ 0.233.0.2：展开表单在弹窗 Scroll 视口下方（dump 只含可视节点，首轮 C1 实锤）——上滑滚到底再 dump
+          // ★ 0.233.0.4：滚到底后「音频模型」贴视口底缘，下拉面板向下弹出仍超出可视区（二轮实锤「自定义…」
+          //   定位失败）——再小幅下滑让下拉行居于视口中部，面板向下弹有半屏空间
+          const scrH = scrM ? +scrM[4] : 1600;
+          await sh(serial, `uitest uiInput swipe ${Math.round(screenW / 2)} ${Math.round(scrH * 0.72)} ${Math.round(screenW / 2)} ${Math.round(scrH * 0.2)} 800`, 15000);
+          await sleep(700);
+          await sh(serial, `uitest uiInput swipe ${Math.round(screenW / 2)} ${Math.round(scrH * 0.3)} ${Math.round(screenW / 2)} ${Math.round(scrH * 0.55)} 600`, 15000);
+          await sleep(900);
+          const d2 = await dumpAuditNodes(serial);
+          artSave('UI-AUDIT-DIALOGS', `dump-tts-open-${dev.id}.json`, d2.text);
+          const hasVoiceBefore = d2.nodes.some((n) => n.text === '音色 ID');
+          const lbl = d2.nodes.find((n) => n.text === '音频模型');
+          const row = lbl ? d2.nodes.filter((n) => n.y >= lbl.y2 && n.y - lbl.y2 < 60 && n.h > 30 && n.h < 70).sort((a, b) => a.y - b.y)[0] : null;
+          if (row) {
+            await sh(serial, `uitest uiInput click ${row.xc} ${row.yc}`, 15000);
+            await sleep(1000);
+            // ★ 0.233.0.5：下拉面板向下弹出且「自定义…」是面板最后一项——Scroll 裁剪致其落在可视区外
+            //   （三轮 dump 存证实锤）——展开后再上滑一段把面板尾部滚进视口
+            await sh(serial, `uitest uiInput swipe ${Math.round(screenW / 2)} ${Math.round(scrH * 0.7)} ${Math.round(screenW / 2)} ${Math.round(scrH * 0.35)} 600`, 15000);
+            await sleep(700);
+            const cust = await uiClickText(serial, '自定义…', { exact: true, waitMs: 1500 });
+            if (cust.ok) {
+              const d3 = await dumpAuditNodes(serial);
+              artSave('UI-AUDIT-DIALOGS', `dump-tts-custom-model-${dev.id}.json`, d3.text);
+              const hasVoiceAfter = d3.nodes.some((n) => n.text === '音色 ID');
+              ctx.log('★C1 音色ID联动·音频模型=自定义…', hasVoiceAfter ? 'fail' : 'pass',
+                `音色 ID 切前=${hasVoiceBefore ? '显示' : '不显示'} → 切后=${hasVoiceAfter ? '仍显示（违规——用户拍板「都自定义了音色 ID 就取消掉」）' : '已隐藏 ✓（0.233.0 规范生效）'}`);
+            } else ctx.log('C1 下拉「自定义…」', 'warn', (cust.err || '') + '——下拉面板定位失败（结构变化人工复核 dump 存证）');
+          } else ctx.log('C1 音频模型下拉行', 'warn', '未定位到下拉触发行（TTS 未展开或结构变化）');
+          // 收尾·还原：不保存关闭（切了模型未保存——backKey 会弹「修改未保存」，先主动点掉防卡）
+          const discard = await uiClickText(serial, '不保存关闭', { exact: true, waitMs: 1200 });
+          if (discard.ok) ctx.log('C1 收尾·不保存关闭', 'pass', '已还原（切模型未落盘，零数据破坏）');
+        } else ctx.log('C1 TTS 折叠行', 'warn', '未见「语音朗读（TTS）」行——跳过联动测试');
         await backKey('全局设置弹窗', '全局设置');
       }
       // ── ⑤ fresh 专属弹窗（协议/门禁/堆叠）非 fresh 态如实 skip（守卫基线对齐铁律 §12.11）──
@@ -1676,9 +1724,16 @@ const CASES = [
       await coldStart(serial);
       ctx.log('前置状态', 'info', '已装机真实数据态——须存在一个「有 AI 回复」的气泡（画布气泡卡带「N条对话」标记）');
       // ⓪ 先进画布（★ 0.232.1 修：冷启停在首页——大屏点边栏「气泡树」/手机点「进入气泡树」主按钮）
+      // ★ 0.233.0.7：冷启=拉回前台（非真冷启）——上轮结束若留在对话页则无边栏，两入口全空 →
+      //   先 Back 键清场（对话页退回画布）再重试定位
       let nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
       if (!nav.ok) {
         nav = await uiClickText(serial, '进入气泡树', { waitMs: 2600 });
+      }
+      if (!nav.ok) {
+        await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+        await sleep(1500);
+        nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
       }
       ctx.log('⓪ 进入气泡树画布', nav.ok ? 'pass' : 'fail',
         nav.ok ? `已点击 (${nav.x},${nav.y})——冷启首页→画布（找对话气泡的前提）` : '「气泡树」与「进入气泡树」均未命中（可能已在画布或首页改版）');
@@ -1691,24 +1746,31 @@ const CASES = [
       // ② 双击进对话页（0.173 双击语义）
       await uiDoubleClick(serial, target.x, target.y);
       const dc = await ctx.art.dump(`CHAT-KEEP-${dev.id}`, 'dump-chat.json', serial);
+      // ★ 0.233.0.2 判定修正：0.195.0 喇叭 emoji 已换单色 svg（dump 无 🔊/🔈）——补对话页标题特征：
+      //   对话页顶栏副标题=「N 条对话」（无时间后缀）；画布气泡卡=「N 条对话 · X天前」（带 ·）
       const speak0 = (dc.text.match(/🔊|🔈/g) || []).length;
-      const enterOk = speak0 >= 1;
+      const enterOk = speak0 >= 1 || /"text":\s*"\d+ 条对话"/.test(dc.text) || dc.text.includes('暂无对话');
       ctx.log('② 双击进入对话页', enterOk ? 'pass' : 'fail',
-        enterOk ? `AI 消息喇叭标记×${speak0}（对话内容在屏）` : '未见消息标记（双击未生效/该气泡无 AI 回复——换气泡或先发消息）');
+        enterOk ? (speak0 >= 1 ? `AI 消息喇叭标记×${speak0}（对话内容在屏）` : '对话页标题特征命中（双击进页 ✓，svg 时代判定）')
+          : '双击后仍在画布（双击未生效——目标气泡定位或双击模拟失效）');
       if (!enterOk) return;
-      // ③ 压后台：起浏览器（复刻「打开另一个APP」；华为冻结即时生效）
-      const bg = await sh(serial, `aa start -b com.huawei.hmos.browser -U`, 15000);
-      ctx.log('③ 打开浏览器压后台', /error:|fail/i.test(bg) ? 'warn' : 'pass', bg.trim().slice(0, 100) || 'aa start 已发（复刻用户开别的 APP）');
+      // ③ 压后台：起系统设置（复刻「打开另一个APP」；华为冻结即时生效）
+      // ★ 0.233.0.4：去掉悬空 -U（aa start -U 须配 URL 值）；★ 0.233.0.5：Pad 实锤无 com.huawei.hmos.browser
+      //   （10103101 Failed to find a matching application）——压后台载体改必装的系统设置 app
+      const bg = await sh(serial, `uitest uiInput keyEvent Home`, 15000);
+      ctx.log('③ Home 键回桌面压后台', /error:|fail/i.test(bg) ? 'warn' : 'pass', bg.trim().slice(0, 100) || 'aa start 已发（复刻用户开别的 APP）');
       await sleep(5000);
       // ④ 热回（aa start 已有实例拉回前台——非冷启，等同用户滑回来）
       await sh(serial, `aa start -a ${CFG.ability} -b ${CFG.bundle}`, 15000);
       await sleep(4500);
       // ⑤ 断言：仍在对话页且消息保留（0.232.0 修复点——云同步重建工作区不再清空 current）
+      // ★ 0.233.0.2：判定同②修正（svg 时代）——对话页特征仍在=保留
       const dw = await ctx.art.dump(`CHAT-KEEP-${dev.id}`, 'dump-warm.json', serial);
       const speak1 = (dw.text.match(/🔊|🔈/g) || []).length;
-      ctx.log('★热回后对话保留', speak1 >= speak0 ? 'pass' : 'fail',
-        speak1 >= speak0 ? `喇叭标记 ${speak0}→${speak1}——对话原样保留（0.232.0 修复生效）`
-          : `喇叭标记 ${speak0}→${speak1}——对话被清零/丢失（0.232.0 前旧病：refreshWorkspaceFromPools 清空 current.nodeID 复发）`);
+      const inChat1 = speak1 >= speak0 || /"text":\s*"\d+ 条对话"/.test(dw.text) || dw.text.includes('暂无对话');
+      ctx.log('★热回后对话保留', inChat1 ? 'pass' : 'fail',
+        inChat1 ? `对话页特征保留（喇叭 ${speak0}→${speak1}）——消息原样（0.232.0 修复生效）`
+          : '热回后不在对话页——对话被清零/丢失（0.232.0 前旧病：refreshWorkspaceFromPools 清空 current.nodeID 复发）');
       const h = await hilogErrors(serial);
       ctx.log('链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'warn') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
     } },
@@ -1889,6 +1951,9 @@ async function handler(req, res) {
   //   解决"刷新也触发 pagehide"的误停——刷新后 boot 成功即取消，只有真关页签才延迟后停
   if (u.pathname === '/api/shutdown' && req.method === 'POST') {
     if (running) return json(res, 409, { error: '测试正在运行，请等它结束后再关闭' });
+    // ★ 0.233.0.3 看护协作标记：主动关闭（页面按钮/关 html 延迟关/agent curl）=用户意图关闭——
+    //   写 .watchdog-skip，watch-server.sh 看到标记保持关闭不拉起；新实例启动时清标记恢复看护
+    try { fs.writeFileSync(path.join(ROOT, '.watchdog-skip'), String(Date.now())); } catch (_) { /* 尽力写 */ }
     const delay = parseInt(u.searchParams.get('delay') || '0', 10);
     if (delay > 0) {
       if (pendingShutdown) clearTimeout(pendingShutdown);
@@ -1913,6 +1978,8 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/shutdown/cancel' && req.method === 'POST') {
     if (pendingShutdown) { clearTimeout(pendingShutdown); pendingShutdown = null; console.log('[关闭] 页面已回来——自动关闭已取消'); }
+    // ★ 0.233.0.3：取消关闭=无关闭意图——清看护跳过标记（防残留标记挡住意外退出的自动拉起）
+    try { fs.unlinkSync(path.join(ROOT, '.watchdog-skip')); } catch (_) { /* 无标记跳过 */ }
     return json(res, 200, { ok: true, cancelled: true });
   }
   if (u.pathname === '/api/suites') {
@@ -2120,6 +2187,8 @@ async function startListen(attempt) {
   });
   srv.listen(CFG.port, '127.0.0.1', () => {
     try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch (_) { /* 尽力写 */ }
+    // ★ 0.233.0.3：新实例启动=恢复看护——清看护跳过标记（watch-server.sh 恢复自动重启/拉起）
+    try { fs.unlinkSync(path.join(ROOT, '.watchdog-skip')); } catch (_) { /* 无标记跳过 */ }
     console.log(`[测试台 ${VERSION}] http://127.0.0.1:${CFG.port}  正本 testing/console/  HAP=${CFG.hap}`);
     const d = syncDesktop();
     console.log(d.ok ? `[桌面交付] 测试台.html + 启动测试台.sh（双击全自动：起服务+开浏览器）→ ${CFG.desktopDir}` : `[桌面交付] 跳过：${d.reason}`);

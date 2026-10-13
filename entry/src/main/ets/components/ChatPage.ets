@@ -3295,7 +3295,7 @@ export struct ChatPage {
                           .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
                           .backgroundColor(SURFACE_NODE) // ★ 0.195.0：用户气泡底色改与 AI 气泡一致（原主紫 BRAND_PRIMARY，用户拍板「调成一样」）
                           .copyOption(CopyOptions.LocalDevice)
-                          .constraintSize({ maxWidth: '90%' }) // ★ 0.190.3：气泡最大宽度 85%→90%（用户要求对话列表再加宽一点点）；0.148 原约束——长文本自动换行，防溢出屏幕
+                          .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现，不再留侧边空间）；0.190.3 原 90%、0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
                           .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
@@ -3564,9 +3564,11 @@ export struct ChatPage {
                              .margin({ top: 8, bottom: 6 })
                            Column() {
                               ForEach(this.getReviewWords(msg.messageId), (w: WordItem, idx: number) => {
-                                Scroll() {
-                                  Column() {
-                                    Row() {
+                                // ★ 0.233.0：单词词条拆两行（用户拍板「不能把单词和下面的解释内容放在一起一起滑——
+                                //   拆开来」；体验对齐知识卡 0.232.1 标题/内容行分离）：词行（三角+词+音标+喇叭）常驻
+                                //   独立横滑，全称+释义内容行独立横滑——滑解释时单词始终可见不动
+                                Column() {
+                                  Row() {
                                       // ★ 0.169.1：复习区划词——词行/全称/释义均可长按划词（翻译/入知识库/复制）；
                                       // key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
                                       // ★ 0.188.0：👆→▼/▲ 紫色三角（UI_GUIDELINES 辅助紫=提示语义；展开态转▲）；点词/点箭头展开 3 档评分
@@ -3577,6 +3579,8 @@ export struct ChatPage {
                                         .onClick(() => {
                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                         })
+                                    Scroll() {
+                                      Row() {
                                       Text(w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
                                         .fontSize(this.fs(13))
                                         .fontWeight(600)
@@ -3622,10 +3626,19 @@ export struct ChatPage {
   wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
 })
                                       }
-                                   }
-                                     // ★ 0.224.2：全称行=反面内容（用户拍板：双面正面只显词+音标——缩写全称/中译英
-                                     //   英文都是「答案」，与释义一同隐藏到点词条展开；单面恒显=现状零回归）
-                                      if (w.fullName.length > 0 && (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${w.id}`)) {
+                                      }
+                                    }
+                                    .scrollable(ScrollDirection.Horizontal)
+                                    .scrollBar(BarState.Off)
+                                    .align(Alignment.Start)
+                                    .layoutWeight(1)
+                                  }
+                                  .width('100%')
+                                  // 内容行：全称+释义（「答案」侧）独立横滑——双面模式展开即显（0.224.0 反面语义不变）
+                                  if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${w.id}`) {
+                                    Scroll() {
+                                      Column() {
+                                      if (w.fullName.length > 0) {
                                         // ★ 0.169.1：全称行划词（缩略词全称/中译英答案）
                                         // ★ 0.232.1：全称可点=展开评分（点击区扩大——与音标/释义同规）
                                         Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
@@ -3677,12 +3690,16 @@ export struct ChatPage {
                                           this.handleSelectionChange(`${msg.messageId}|rwe${idx}`, w.explain, start, end);
                                         })
                                     }
-                                   }
-                                   .alignItems(HorizontalAlign.Start)
+                                      }
+                                    .alignItems(HorizontalAlign.Start)
+                                      }
+                                    .scrollable(ScrollDirection.Horizontal)
+                                    .scrollBar(BarState.Off)
+                                    .align(Alignment.Start)
+                                    .width('100%')
+                                  }
                                 }
-                                .scrollable(ScrollDirection.Horizontal)
-                                .scrollBar(BarState.Off)
-                                .align(Alignment.Start)
+                                .alignItems(HorizontalAlign.Start)
                                 .width('100%')
                                 .margin({ top: idx > 0 ? 6 : 0 })
                                 // ★ 0.187.0：评分区——展开 3 档按钮 / 已评分显示下次复习
@@ -3796,13 +3813,14 @@ export struct ChatPage {
                                              this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
                                            })
                                         }
-                                        .scrollable(ScrollDirection.Horizontal)
-                                        .scrollBar(BarState.Off)
-                                        .align(Alignment.Start)
-                                        .width('100%')
-                                        // ★ 0.232.2：定义行容器与标题行文字对齐（用户实锤「下面容器多出去了」——
-                                        //   左缘缩进=三角+间距 18，与标题起点同轴；右缘同容器边）
-                                        .margin({ top: 2, left: 18 })
+                                         .scrollable(ScrollDirection.Horizontal)
+                                         .scrollBar(BarState.Off)
+                                         .align(Alignment.Start)
+                                         .width('100%')
+                                         // ★ 0.233.0：定义行左缘与上方单词区左对齐（0 缩进——用户拍板「翻面左边留空
+                                         //   不好看，跟上面的单词库的左对齐」）；原 margin left 18 正是「右边超出一个
+                                         //   地方」真凶——margin 叠加在 width('100%') 外部使总宽超 18，右缘突出
+                                         .margin({ top: 2 })
                                       }
                                    }
                                    .alignItems(HorizontalAlign.Start)
@@ -3816,7 +3834,7 @@ export struct ChatPage {
                             .alignItems(HorizontalAlign.Start)
                           }
                           }
-                          .constraintSize({ maxWidth: '90%' }) // ★ 0.190.3：气泡最大宽度 85%→90%（用户要求对话列表再加宽一点点）；0.148 原约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
+                          .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现）；0.190.3 原 90%、0.148 原约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
                         .borderRadius(RADIUS_CONTROL)
                         .backgroundColor(SURFACE_NODE)
@@ -4296,11 +4314,10 @@ export struct ChatPage {
                   .color(STROKE_CARD)
                   .margin({ bottom: 6 })
                 ForEach(this.editReviewWords, (w: WordItem, idx: number) => {
-                  // ★ 0.160 bugfix: wrap each entry in horizontal Scroll (same as bubble review area) —
-                  // long word/phonetic text overflowed the dialog boundary without it (user report)
-                  Scroll() {
+                  // ★ 0.233.0：同气泡复习区——单词词条拆两行（用户拍板「单词和解释拆开来」）：
+                  //   词行（三角+词+音标+喇叭）常驻独立横滑，全称+释义内容行独立横滑——滑解释词不动
                   Column() {
-                     Row() {
+                    Row() {
                        // ★ 0.188.0：👆→▼/▲ 紫色三角（展开态转▲）；点词/点箭头展开 3 档评分
                        Text(this.reviewExpandKey === `edit|${w.id}` ? '▲' : '▼')
                          .fontSize(10)
@@ -4309,6 +4326,8 @@ export struct ChatPage {
                          .onClick(() => {
                            this.onReviewWordTap(`edit|${w.id}`);
                          })
+                     Scroll() {
+                       Row() {
                        Text(w.word)
                          .fontSize(13)
                          .fontWeight(600)
@@ -4340,9 +4359,19 @@ export struct ChatPage {
   wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
 })
                       }
-                    }
-                    // ★ 0.224.2：全称行=反面内容（双面正面只显词+音标——与释义一同隐藏到展开；单面恒显）
-                    if (w.fullName.length > 0 && (this.faceMode.mode !== 'double' || this.reviewExpandKey === `edit|${w.id}`)) {
+                       }
+                     }
+                     .scrollable(ScrollDirection.Horizontal)
+                     .scrollBar(BarState.Off)
+                     .align(Alignment.Start)
+                     .layoutWeight(1)
+                   }
+                   .width('100%')
+                   // 内容行：全称+释义（「答案」侧）独立横滑——双面模式展开即显（0.224.0 反面语义不变）
+                   if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `edit|${w.id}`) {
+                     Scroll() {
+                       Column() {
+                       if (w.fullName.length > 0) {
                       // ★ 0.232.1：全称可点=展开评分（点击区扩大）
                       Text(w.fullName)
                         .fontSize(12)
@@ -4365,12 +4394,17 @@ export struct ChatPage {
                           this.onReviewWordTap(`edit|${w.id}`);
                         })
                     }
+
+                     }
+                     .alignItems(HorizontalAlign.Start)
+                       }
+                     .scrollable(ScrollDirection.Horizontal)
+                     .scrollBar(BarState.Off)
+                     .align(Alignment.Start)
+                     .width('100%')
+                   }
                   }
                   .alignItems(HorizontalAlign.Start)
-                  }
-                  .scrollable(ScrollDirection.Horizontal)
-                  .scrollBar(BarState.Off)
-                  .align(Alignment.Start)
                   .width('100%')
                   .margin({ bottom: idx === this.editReviewWords.length - 1 ? 0 : 6 })
                   // ★ 0.187.0：评分区 / ★ 0.198.3 移出横向 Scroll（同气泡复习区根因——Scroll 内宽度约束失效）
@@ -4443,7 +4477,8 @@ export struct ChatPage {
                         .scrollBar(BarState.Off)
                         .align(Alignment.Start)
                         .width('100%')
-                        .margin({ top: 2, left: 18 }) // ★ 0.232.2：定义行容器与标题行文字对齐（左缘缩进 18=三角+间距）
+                        // ★ 0.233.0：同气泡复习区——定义行左缘 0 对齐上方单词区（margin left 18 右缘超界同根因）
+                        .margin({ top: 2 })
                       }
                     }
                     .alignItems(HorizontalAlign.Start)

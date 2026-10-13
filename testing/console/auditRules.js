@@ -220,4 +220,63 @@ function verdictBackKey(dialogGone, appAlive) {
   return [];
 }
 
-module.exports = { parseDesignTokens, normalizeColor, collectAppNodes, calibrateDensity, auditColorWhitelist, auditPageBackground, auditHotzone, auditDialogButtons, auditDialogWidth, auditDialogButtonColor, auditSidebar, verdictBackKey, SIZE_SPEC };
+// ---------- ★ 0.233.0 新增断言（用户四条 UI 反馈落规范——UI_GUIDELINES 11.1/11.2/11.3/11.6） ----------
+
+// 面板定位 helper：含标题中心点的 SURFACE_NODE 容器中最小面积者（=最内层弹窗面板本体）
+function findDialogPanel(nodes, titleText) {
+  const title = nodes.filter((n) => n.text && n.text.includes(titleText)).sort((a, b) => a.w * a.h - b.w * b.h)[0];
+  if (!title) return null;
+  const panelColor = normalizeColor('#241640');
+  const panels = nodes.filter((n) => n.backgroundColor && normalizeColor(n.backgroundColor) === panelColor &&
+    n.x <= title.xc && n.x2 >= title.xc && n.y <= title.yc && n.y2 >= title.yc);
+  return panels.sort((a, b) => (a.w * a.h) - (b.w * b.h))[0] || null;
+}
+
+// A16 弹窗左右留白（★0.233.0 用户定稿「左边留空地右边也预留空地，不能贴边，贴边就很丑」）：
+// 弹窗面板两侧距屏幕边缘各 ≥2% 屏宽（手机 92% 断点=每侧 4%；宽屏固定值居中天然更大）
+function auditDialogSideMargins(nodes, ctx, dialogName, titleText, screenW) {
+  const panel = findDialogPanel(nodes, titleText);
+  if (!panel) return [V('A16 弹窗左右留白', dialogName, '面板定位', `未找到含「${titleText}」的 SURFACE_NODE 面板`, 'warn')];
+  if (!screenW) return [V('A16 弹窗左右留白', dialogName, '屏宽基准', 'dump 根节点 bounds 缺失——跳过', 'warn')];
+  const minPad = Math.round(screenW * 0.02);
+  const leftPad = panel.x, rightPad = screenW - panel.x2;
+  const out = [];
+  if (leftPad < minPad) out.push(V('A16 弹窗左留白', dialogName, `≥${minPad}px(2%屏宽)`, `${leftPad}px——左边贴边`, 'fail'));
+  if (rightPad < minPad) out.push(V('A16 弹窗右留白', dialogName, `≥${minPad}px(2%屏宽)`, `${rightPad}px——右边贴边（0.233.0 用户实锤项）`, 'fail'));
+  return out;
+}
+
+// A17 折叠三角规格（★0.233.0 用户拍板「小三角太小，用大三角」）：行首三角容器宽 22vp（0.222.14 大三角统一值）
+function auditCollapseTriangle(nodes, ctx, rowTitleText) {
+  const row = nodes.find((n) => (n.text || '').includes(rowTitleText));
+  if (!row) return [V('A17 折叠三角规格', rowTitleText, '折叠行存在', '未找到折叠行', 'warn')];
+  const tri = nodes.filter((n) => ['▸', '▾', '▲', '▼'].includes(n.text) &&
+    Math.abs(n.yc - row.yc) < Math.max(row.h, 24)).sort((a, b) => a.x - b.x)[0];
+  if (!tri) return [V('A17 折叠三角规格', rowTitleText, '行首三角存在', '同高度行内未见三角字符（三角被删或换图标）', 'warn')];
+  if (!ctx.density) return [];
+  const want = 22 * ctx.density;
+  if (Math.abs(tri.w - want) > 2 * ctx.density) {
+    return [V('A17 折叠三角宽 22vp', rowTitleText, `≈${Math.round(want)}px（22vp·0.222.14 大三角）`, `${tri.w}px——小三角违规（用户拍板放大）`, 'fail')];
+  }
+  return [];
+}
+
+// A18 Tab 轨道两端留白（★0.232.2 两轮拍板定 12；UI_GUIDELINES 11.2）：SEGMENTED_TRACK 轨道与弹窗面板内缘间距 ≥12vp
+function auditTabTrackPadding(nodes, ctx, dialogName, titleText) {
+  if (!ctx.density) return [];
+  const tk = parseDesignTokens();
+  const trackColor = [...tk.colors.entries()].filter(([hex, name]) => name === 'SEGMENTED_TRACK').map(([hex]) => hex)[0];
+  const panel = findDialogPanel(nodes, titleText);
+  if (!trackColor || !panel) return [V('A18 Tab轨道端留白', dialogName, '轨道/面板定位', `track=${trackColor ? '✓' : '缺'} panel=${panel ? '✓' : '缺'}`, 'warn')];
+  const track = nodes.filter((n) => normalizeColor(n.backgroundColor) === trackColor && n.w > 200 && n.h > 30)
+    .sort((a, b) => b.w - a.w)[0];
+  if (!track) return [V('A18 Tab轨道端留白', dialogName, 'SEGMENTED_TRACK 轨道容器', '未定位（轨道底色/结构变化）', 'warn')];
+  const want = 12 * ctx.density;
+  const leftPad = track.x - panel.x, rightPad = panel.x2 - track.x2;
+  const out = [];
+  if (leftPad < want - 2 * ctx.density) out.push(V('A18 Tab轨道左留白', dialogName, `≥${Math.round(want)}px(12vp)`, `${leftPad}px`, 'fail'));
+  if (rightPad < want - 2 * ctx.density) out.push(V('A18 Tab轨道右留白', dialogName, `≥${Math.round(want)}px(12vp)`, `${rightPad}px——首尾 Tab 贴轨道边缘（0.232.1 用户拍板违规）`, 'fail'));
+  return out;
+}
+
+module.exports = { parseDesignTokens, normalizeColor, collectAppNodes, calibrateDensity, auditColorWhitelist, auditPageBackground, auditHotzone, auditDialogButtons, auditDialogWidth, auditDialogButtonColor, auditSidebar, verdictBackKey, auditDialogSideMargins, auditCollapseTriangle, auditTabTrackPadding, findDialogPanel, SIZE_SPEC };
