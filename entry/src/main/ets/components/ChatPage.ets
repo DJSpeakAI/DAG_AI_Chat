@@ -4609,8 +4609,8 @@ export struct ChatPage {
                         if (msg.role === 'assistant') {
                           // ★ 0.224.4：操作行整齐划一（用户三要求）——统一间隙 Row({space:8})、按钮 padding 对称 4
                           // ★ 0.235.2：新增复制全文+删除按钮（复制走 copyFullMessage、删除走 requestDeleteMessage 确认链路）
-                          // ★ 0.237.3：操作行重排+右对齐（用户语音八要求）——①按钮组固定顺序：
-                          //   喇叭→刷新→换一批→复制→删除（喇叭挪最前、换一批插复制左边）②模型名+token
+                           // ★ 0.237.4：操作行再重排（用户语音拍板）——按钮组固定顺序：
+                           //   喇叭→换一批→复制→删除→刷新（刷新从第2挪到第5收尾）②模型名+token
                           //   右对齐贴行尾（Blank 弹性占位推开）③左右边距对称：padding left/right 10——
                           //   最左喇叭离气泡内容左缘 = 「输出 N」末字离气泡内容右缘（width 100% 内 padding，
                           //   margin 会叠加在 100% 之外致溢出）④模型名/token 上限改百分比自适应（35%/50%
@@ -4628,20 +4628,9 @@ export struct ChatPage {
                             .onClick(() => {
                               this.startTTS(msg);
                             })
-                            // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
-                            // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
-                            Row() {
-                              Image($r('app.media.refresh'))
-                                .width(14)
-                                .height(14)
-                                .objectFit(ImageFit.Contain)
-                            }
-                            .padding(4)
-                            .onClick(() => {
-                              this.regenerateMessage(msg);
-                            })
                             // ★ 0.237.3：换一批——本条回复下方生词/知识卡复习区整批轮换
-                            //   （shuffle 交叉双箭头，非刷新语义；图标白 65% 与全行统一）
+                            //   （shuffle 交叉双箭头，非刷新语义；图标白 65% 与全行统一；
+                            //   ★ 0.237.4 从第3挪到第2，紧跟喇叭）
                             Row() {
                               Image($r('app.media.shuffle'))
                                 .width(14)
@@ -4673,6 +4662,19 @@ export struct ChatPage {
                             .padding(4)
                             .onClick(() => {
                               this.requestDeleteMessage(msg.messageId);
+                            })
+                            // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
+                            // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
+                            // ★ 0.237.4：从第2挪到第5收尾（用户拍板，低频 destructive 前置、再生垫后）
+                            Row() {
+                              Image($r('app.media.refresh'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding(4)
+                            .onClick(() => {
+                              this.regenerateMessage(msg);
                             })
                             // ★ 0.237.3：弹性占位——把右侧模型信息组推到行尾（右对齐）
                             Blank()
