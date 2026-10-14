@@ -28,7 +28,7 @@ export class MdBlock {
   order: string = ''; // oli 序号文本（如 '3.'）
   depth: number = 0; // 列表缩进层级（2 空格一级）
   lines: string[] = []; // 该块的原始行（p/quote 可多行；单行块=1 行）
-  anchorType: string = ''; // ★ 0.234.0：锚点类型（quiz/hook/link/breath；kind='anchor' 时有效）
+  anchorType: string = ''; // ★ 0.234.0：锚点类型；★ 0.237.0 六类（quiz/hook/rephrase/predict/recap/breath；kind='anchor' 时有效）
   anchorText: string = ''; // ★ 0.234.0：锚点文案（lines 同步存一份，保 blockPlainText/降级渲染兼容）
 }
 
@@ -239,8 +239,22 @@ const RE_QUOTE: RegExp =/^> ?(.*)$/;
 // ★ 0.234.0：锚点标记行——[[anchor:类型|文案]] 独占一行（前后空行由块级空行切分天然保证）
 const RE_ANCHOR: RegExp = /^\[\[anchor:([a-zA-Z]+)\|(.+)\]\]$/;
 
-// ★ 0.234.0：解析独占行锚点标记（宽容协议：类型大小写不敏感；白名单 quiz/hook/link + breath
-// 保留位——AI 误输出 breath 按转本地 breath 处理）；非法类型/缺竖线/空文案/非独占行 → null=普通文本
+// ★ 0.237.0：锚点类型白名单（六类——5 类 AI 生成 + breath 本地保留）；
+//   砍 link（联想权只属于用户，AI 发散联想必然不对味——link 输入一律降级普通文本）
+const ANCHOR_TYPES: string[] = ['quiz', 'hook', 'rephrase', 'predict', 'recap', 'breath'];
+
+function isAnchorType(type: string): boolean {
+  for (let i = 0; i < ANCHOR_TYPES.length; i++) {
+    if (ANCHOR_TYPES[i] === type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ★ 0.234.0：解析独占行锚点标记（宽容协议：类型大小写不敏感）；
+//   ★ 0.237.0 白名单=quiz/hook/rephrase/predict/recap/breath；非法类型（含已砍的 link）/缺竖线/空文案/
+//   非独占行 → null=普通文本
 function parseAnchorLine(line: string): MdBlock | null {
   const m = RE_ANCHOR.exec(line.trim());
   if (m === null) {
@@ -248,7 +262,7 @@ function parseAnchorLine(line: string): MdBlock | null {
   }
   const type = m[1].toLowerCase();
   const text = m[2].trim();
-  if ((type !== 'quiz' && type !== 'hook' && type !== 'link' && type !== 'breath') || text.length === 0) {
+  if (!isAnchorType(type) || text.length === 0) {
     return null;
   }
   const b = new MdBlock();
@@ -479,23 +493,35 @@ export function stripAnchorMarks(content: string, keepText: boolean): string {
   return out.join('\n');
 }
 
-// breath 本地保底文案池（确定性轮换——同输入同输出；禁止 emoji，项目图标规范）
+// ★ 0.237.0 breath 本地保底文案池——「到这里了」进度实感定位（替代一期「歇口气」空洞安慰）：
+//   由结构信息本地可算（不进语义填空）；{sec}/{chars} 占位由 insertLocalAnchors 注入
+//   （第几节 / 本节累计字数——渲染上下文实感）；确定性轮换纪律不变（同输入同输出；禁止 emoji）
 export const BREATH_POOL: string[] = [
-  '歇口气，消化一下刚看的',
-  '停一秒，刚才那段说的是什么？',
-  '深呼吸，把它和前面的知识连起来',
-  '看到这里，你已经走了很远了'
+  '读到这里，你已经走完这一节了',
+  '停一下：上面这段已经讲完了，往下是新的内容点',
+  '到第{sec}节了，本节刚讲了约{chars}字',
+  '喘口气，把这一段和前面连起来再看下一段'
 ];
 
-// 密度档 → 本地保底阈值（密 400 / 中 550 / 疏 700 字；AI 侧密度联动=二期）
+// 保底文案占位解析：{sec}=当前节序号（1 起；0=引言/无 ## 兜底语境）、{chars}=本节累计正文字数；
+//   无节语境时参数化文案退化为中性段级表述（确定性不变）
+function resolveBreathText(tpl: string, sec: number, chars: number): string {
+  if (tpl.indexOf('{sec}') < 0) {
+    return tpl;
+  }
+  if (sec <= 0) {
+    return `到这里告一段落了，这一段约 ${chars} 字，下面是新的内容`;
+  }
+  return tpl.replace('{sec}', String(sec)).replace('{chars}', String(chars));
+}
+
+// 密度档 → 本地保底阈值（★ 0.237.0 两档制，用户拍板去掉「中」：疏 800 / 密 400 字）；
+//   非 dense（含遗留 standard 与一切非法档位）一律兜底疏 800；AI 侧密度联动见 Prompts.ts
 export function breathThreshold(density: string): number {
   if (density === 'dense') {
     return 400;
   }
-  if (density === 'sparse') {
-    return 700;
-  }
-  return 550;
+  return 800;
 }
 
 // 消息渲染条目——统一承载文本块/锚点/代码块/表格（ChatPage 由 parseMarkdown 段落展开；
@@ -537,22 +563,35 @@ export function foldItemCharCount(item: FoldItem): number {
 // 本地 breath 保底插入：累计正文 ≥ threshold 且区间无 AI 锚点时在文本块边界补 1 个 breath；
 //   相邻锚点最小间距 200 字由 threshold≥400 天然满足；只在文本块后插（代码/表格边界不插，
 //   免平铺渲染按段重组复杂化）；末条后不插（避免消息尾巴突兀）；确定性=同输入同输出
+// ★ 0.237.0：节上下文实感注入——随走随记当前 ## 节序号与本节累计字数（h2 本体不计字数），
+//   BREATH_POOL 参数化文案（{sec}/{chars}）由 resolveBreathText 就地解析
 export function insertLocalAnchors(items: FoldItem[], threshold: number): FoldItem[] {
   const out: FoldItem[] = [];
   let since = 0;
   let pool = 0;
+  let secOrder = 0;
+  let secChars = 0;
   for (let i = 0; i < items.length; i++) {
+    const blk = items[i].block;
+    const isH2 = items[i].kind === 'text' && blk !== null && blk.kind === 'h2';
+    if (isH2) {
+      secOrder += 1;
+      secChars = 0;
+    }
     out.push(items[i]);
     if (items[i].kind === 'anchor') {
       since = 0; // AI 锚点重置累计
       continue;
     }
     since += foldItemCharCount(items[i]);
+    if (!isH2) {
+      secChars += foldItemCharCount(items[i]);
+    }
     if (since >= threshold && i < items.length - 1 && items[i].kind === 'text') {
       const b = new MdBlock();
       b.kind = 'anchor';
       b.anchorType = 'breath';
-      b.anchorText = BREATH_POOL[pool % BREATH_POOL.length];
+      b.anchorText = resolveBreathText(BREATH_POOL[pool % BREATH_POOL.length], secOrder, secChars);
       b.lines = [b.anchorText];
       const it = new FoldItem();
       it.kind = 'anchor';

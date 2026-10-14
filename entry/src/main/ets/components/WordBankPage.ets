@@ -43,6 +43,7 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档�
   import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.19：手机单词库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
+import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
 const TREE_CELL: number = 14; // ★ 0.222.19：树形连接线每层缩进宽度（vp，与知识库同款）
 
 // ★ 0.219.2：单词库视图模式（AppStorageV2 共享 @Trace grid）——gridMode 从 @Local 改挂共享 store：
@@ -1683,14 +1684,15 @@ export struct WordBankPage {
                   .height('100%')
                 }
                 .height('100%')
-                Text(this.pickerHasChildren(item.folder.id) ? (this.isPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
-                  .fontSize(16)
-                  .fontColor(TEXT_TERTIARY)
-                  .width(22)
-                  .textAlign(TextAlign.Center)
-                  .onClick(() => {
-                    this.togglePickerCollapse(item.folder.id);
-                  })
+                // ★ 0.237.0 军令：树行折叠三角字符 ▸/▾ → FoldChevron SVG；叶子行空占位同宽对齐
+                if (this.pickerHasChildren(item.folder.id)) {
+                  FoldChevron({ expanded: !this.isPickerCollapsed(item.folder.id) })
+                    .onClick(() => {
+                      this.togglePickerCollapse(item.folder.id);
+                    })
+                } else {
+                  Row().width(12)
+                }
                 Text(item.folder.name)
                   .fontSize(13)
                   .fontColor(TEXT_PRIMARY)

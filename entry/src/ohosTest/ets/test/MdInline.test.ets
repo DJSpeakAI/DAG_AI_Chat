@@ -1,9 +1,11 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock } from '../../../main/ets/utils/MdInline';
+import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, BREATH_POOL, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock } from '../../../main/ets/utils/MdInline';
 
 // ★ 0.231.0：Markdown 行内/块级解析器单元断言（project_rule §12.13 测试覆盖军令——
 //   新功能必须带测试项；纯函数模块=ChatPage 渲染与本断言双消费）
 // ★ 0.234.0：注意力锚点+分章折叠断言（任务书 §8.1 六组——标记解析/清洗/breath 保底/章节切分/展开集）
+// ★ 0.237.0：锚点二期——钩子树六类白名单（砍 link 加 rephrase/predict/recap）/breath 两档阈值/
+//   保底文案池节上下文实感（任务书 §8.1）
 export default function mdInlineTest() {
   describe('DAGAI_MdInlineTest', () => {
     // ---- 行内：标记配对与样式归位 ----
@@ -146,12 +148,28 @@ export default function mdInlineTest() {
       expect(inline[0].kind).assertEqual('p');
       const badType = parseBlockMd(['[[anchor:warn|文案]]']);
       expect(badType[0].kind).assertEqual('p');
+      // ★ 0.237.0：link 已砍（联想权只属于用户）——link 输入一律降级普通文本
+      const legacyLink = parseBlockMd(['[[anchor:link|生活联想文案]]']);
+      expect(legacyLink[0].kind).assertEqual('p');
       const noBar = parseBlockMd(['[[anchor:quiz 文案]]']);
       expect(noBar[0].kind).assertEqual('p');
       const empty = parseBlockMd(['[[anchor:quiz|   ]]']);
       expect(empty[0].kind).assertEqual('p');
     })
-    // ---- stripAnchorMarks 两种模式（§8.1-3）----
+    // ---- ★ 0.237.0：钩子树新三类合法解析 + 徽标池成员 ----
+    it('anchor_new_types_legal', 0, () => {
+      const rephrase = parseBlockMd(['[[anchor:rephrase|把递归想成套娃]]']);
+      expect(rephrase[0].kind).assertEqual('anchor');
+      expect(rephrase[0].anchorType).assertEqual('rephrase');
+      const predict = parseBlockMd(['[[anchor:PREDICT|你猜下一步会怎么推]]']);
+      expect(predict[0].kind).assertEqual('anchor');
+      expect(predict[0].anchorType).assertEqual('predict'); // 大小写归一
+      const recap = parseBlockMd(['[[anchor:recap|一句话锁住刚讲的]]']);
+      expect(recap[0].kind).assertEqual('anchor');
+      expect(recap[0].anchorType).assertEqual('recap');
+      expect(BREATH_POOL.length).assertEqual(4); // 文案池四条确定性轮换
+    })
+    // ---- stripAnchorMarks 两种模式（§8.1-3；★ 0.237.0 新类型同规清洗）----
     it('strip_keep_and_drop', 0, () => {
       const src = '第一段\n\n[[anchor:quiz|考考你刚看的]]\n\n第二段';
       const keep = stripAnchorMarks(src, true);
@@ -162,6 +180,14 @@ export default function mdInlineTest() {
       expect(drop.includes('考考你刚看的')).assertFalse();
       expect(drop.includes('第一段')).assertTrue();
       expect(drop.includes('第二段')).assertTrue();
+      const src2 = '前文\n\n[[anchor:rephrase|大白话重说]]\n\n[[anchor:predict|你猜呢]]\n\n后文';
+      const drop2 = stripAnchorMarks(src2, false);
+      expect(drop2.includes('[[anchor')).assertFalse();
+      expect(drop2.includes('大白话重说')).assertFalse();
+      expect(drop2.includes('你猜呢')).assertFalse();
+      const keep2 = stripAnchorMarks(src2, true);
+      expect(keep2.includes('大白话重说')).assertTrue();
+      expect(keep2.includes('你猜呢')).assertTrue();
     })
     // ---- insertLocalAnchors：超阈值补插 / 区间有 AI 锚点不补 / 确定性（§8.1-4）----
     it('local_anchor_insert_rules', 0, () => {
@@ -211,10 +237,58 @@ export default function mdInlineTest() {
       const out2 = insertLocalAnchors(withAi, 550);
       expect(out2.length).assertEqual(4);
       expect(countBreath(out2)).assertEqual(0);
-      // 密度档阈值
+      // 密度档阈值（★ 0.237.0 两档制：疏 800 / 密 400；遗留 standard 与非法档位兜底=疏 800）
       expect(breathThreshold('dense')).assertEqual(400);
-      expect(breathThreshold('standard')).assertEqual(550);
-      expect(breathThreshold('sparse')).assertEqual(700);
+      expect(breathThreshold('sparse')).assertEqual(800);
+      expect(breathThreshold('standard')).assertEqual(800);
+      expect(breathThreshold('whatever')).assertEqual(800);
+    })
+    // ---- ★ 0.237.0：保底文案池节上下文实感（{sec}/{chars} 注入 + 无节语境退化 + 确定性）----
+    it('local_anchor_breath_pool_progress', 0, () => {
+      const mkH2 = (t: string): FoldItem => {
+        const b = new MdBlock();
+        b.kind = 'h2';
+        b.lines = [t];
+        const it = new FoldItem();
+        it.kind = 'text';
+        it.block = b;
+        return it;
+      };
+      const mkParaN = (): FoldItem => {
+        const b = new MdBlock();
+        b.kind = 'p';
+        b.lines = ['字'.repeat(400)];
+        const it = new FoldItem();
+        it.kind = 'text';
+        it.block = b;
+        return it;
+      };
+      const breathTexts = (items: FoldItem[]): string[] => {
+        const out = insertLocalAnchors(items, 400);
+        const arr: string[] = [];
+        for (let i = 0; i < out.length; i++) {
+          const b = out[i].block;
+          if (out[i].kind === 'anchor' && b !== null && b.anchorType === 'breath') {
+            arr.push(b.anchorText);
+          }
+        }
+        return arr;
+      };
+      // 有 ## 节：第 3 个 breath 命中参数化文案（pool[2]）→ 携带「第1节」+本节累计字数（400×3=1200）
+      const withSec = [mkH2('一、概念'), mkParaN(), mkParaN(), mkParaN(), mkParaN()];
+      const texts1 = breathTexts(withSec);
+      expect(texts1.length).assertEqual(3); // 前三段各 ≥400 触发，末段不插
+      expect(texts1[2].includes('第1节')).assertTrue();
+      expect(texts1[2].includes('1200')).assertTrue();
+      // 确定性：同输入同输出
+      const texts2 = breathTexts(withSec);
+      expect(texts1[2] === texts2[2]).assertTrue();
+      // 无 ## 兜底语境：参数化文案退化为中性段级表述（不含「第N节」）
+      const noSec = [mkParaN(), mkParaN(), mkParaN(), mkParaN()];
+      const texts3 = breathTexts(noSec);
+      expect(texts3.length).assertEqual(3);
+      expect(texts3[2].includes('第')).assertFalse();
+      expect(texts3[2].includes('1200')).assertTrue();
     })
     // ---- splitFoldSections：## 切分 / ### 归上节 / 引言第 0 节 / 无 ## 兜底（§8.1-5）----
     it('sections_split_by_h2', 0, () => {

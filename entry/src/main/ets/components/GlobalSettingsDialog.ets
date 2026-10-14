@@ -46,6 +46,7 @@ import {
 } from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
 import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件）
+import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.232.1：弹窗宽度断点制（PC/Pad 固定 560 不做屏宽自适应——用户拍板「配置类 UI 自适应宽度难看」）
 import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面变更即时推桌面卡片
 import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
@@ -172,7 +173,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.236.2'; // ★ 0.236.2：试听55000000根因修复（音色ID默认回填S_bv8H32Sg2杜绝官方音色配复刻模型/引擎回退同步换官方资源seed-tts-2.0根治二次失败/自定义档接口地址占位符改真实地址）；上一版 0.236.1：TTS设置区体验修订
+const APP_VERSION: string = 'v0.237.0'; // ★ 0.237.0：锚点二期钩子树重构与折叠三角统一（钩子六类砍link加rephrase/predict/recap/折叠三角SVG军令统一/小标题品牌色+术语荧光底/密度两档疏密）；上一版 0.236.2：试听55000000根因修复
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -393,9 +394,10 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
-    // ★ 0.234.0：注意力锚点编辑副本回显
+    // ★ 0.234.0：注意力锚点编辑副本回显；★ 0.237.0 两档制归一——遗留 'standard'（旧中档）归疏，
+    //   不改写已落盘数据（保存时随选择落新值）
     this.editAnchorMode = this.anchorPref.anchorMode;
-    this.editAnchorDensity = this.anchorPref.anchorDensity;
+    this.editAnchorDensity = this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse';
     this.editFoldMode = this.anchorPref.foldMode;
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
     // ★ 0.232.1：模型改下拉预设回显（icl/tts 两预设 + 清单外手填落「自定义…」）
@@ -466,7 +468,7 @@ export struct GlobalSettingsDialog {
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
       this.editEncourageMode !== this.aiPreference.encourageMode || // ★ 0.191.0：鼓励三档
       this.editAnchorMode !== this.anchorPref.anchorMode || // ★ 0.234.0：锚点卡片开关
-      this.editAnchorDensity !== this.anchorPref.anchorDensity || // ★ 0.234.0：密度档
+      this.editAnchorDensity !== (this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse') || // ★ 0.237.0：密度档两档归一比较（遗留 standard 按疏算——防开弹窗即恒脏误报「修改未保存」）
       this.editFoldMode !== this.anchorPref.foldMode || // ★ 0.234.0：分章折叠开关
       this.editReviewLearn !== this.learnCountStore.learnCount || // ★ 0.197.2：复习显示（保存模式）
       this.editReviewKnowledge !== this.knowledgeCountStore.knowledgeCount ||
@@ -967,12 +969,9 @@ export struct GlobalSettingsDialog {
         .margin({ top: 20, bottom: 14 })
 
       // ★ 0.232.2：标题行整行可点折叠（默认收起——低频功能不占屏，用户拍板）
-      // ★ 0.233.0：折叠三角放大对齐全项目大三角规格（字号 16/宽 22——0.222.14 统一值，用户「小三角太小」拍板）
+      // ★ 0.237.0 军令：折叠三角字符 ▸/▾ → FoldChevron SVG（全项目唯一折叠指示器，废弃 0.233.0 的 16/22 字符档）
       Row() {
-        Text(this.ttsCollapsed ? '▸' : '▾')
-          .fontSize(16)
-          .fontColor(TEXT_TERTIARY)
-          .width(22)
+        FoldChevron({ expanded: !this.ttsCollapsed })
         Text('语音朗读（TTS）')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
@@ -1823,7 +1822,7 @@ export struct GlobalSettingsDialog {
             Text('锚点卡片')
               .fontSize(14)
               .fontColor(TEXT_PRIMARY)
-            Text('中/长回复中插入考考你、悬念、联想等锚点卡片')
+            Text('中/长回复中插入考考你、前方高能、换个说法等锚点卡片')
               .fontSize(11)
               .lineHeight(18)
               .fontColor(TEXT_TERTIARY)
@@ -1838,7 +1837,8 @@ export struct GlobalSettingsDialog {
         }
         .width('100%')
 
-        // 密度分段控件（密 / 中 / 疏——只调本地保底阈值 400/550/700 字；SEGMENTED_TRACK 轨道+激活段主紫）
+        // 密度分段控件（★ 0.237.0 两档制——用户拍板去掉「中」：密 400 / 疏 800 字，默认疏；
+        //   疏档 AI 全文 2~3 个锚点、密档 3~5 个；SEGMENTED_TRACK 轨道+激活段主紫）
         Row() {
           Text('密')
             .fontSize(13)
@@ -1850,17 +1850,6 @@ export struct GlobalSettingsDialog {
             .backgroundColor(this.editAnchorDensity === 'dense' ? BRAND_PRIMARY : Color.Transparent)
             .onClick(() => {
               this.editAnchorDensity = 'dense';
-            })
-          Text('中')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editAnchorDensity === 'standard' ? TEXT_PRIMARY : TEXT_SECONDARY)
-            .backgroundColor(this.editAnchorDensity === 'standard' ? BRAND_PRIMARY : Color.Transparent)
-            .onClick(() => {
-              this.editAnchorDensity = 'standard';
             })
           Text('疏')
             .fontSize(13)
@@ -1880,7 +1869,7 @@ export struct GlobalSettingsDialog {
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(SEGMENTED_TRACK)
 
-        Text('💡 开启后，中/长回复中会插入考考你、悬念、联想等锚点卡片，读长文时轻轻拉回注意力；关闭后 AI 按原文回复。短回复与听播模式不插入。')
+        Text('💡 开启后，中/长回复中会插入考考你、前方高能、换个说法等锚点卡片，读长文时轻轻拉回注意力；密档锚点更频繁、疏档更克制。关闭后 AI 按原文回复。短回复与听播模式不插入。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)

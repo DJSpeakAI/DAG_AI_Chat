@@ -32,7 +32,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）
- import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, ANCHOR_LONG_PROMPT, ANCHOR_MEDIUM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）
+ import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -53,9 +53,13 @@ import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149
 import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog, isKnownTextOnlyModel, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）；★ 0.230.0：加共享开态 store
+import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一——chevron SVG 旋转两态）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
+
+// ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
+const glowHighlight: boolean = true;
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -997,7 +1001,7 @@ export struct ChatPage {
     }
   }
 
-  // 锚点徽标文案（四档映射——任务书 §5.3；禁止 emoji）
+  // 锚点徽标文案（★ 0.237.0 六档映射——钩子树砍2留2加3；禁止 emoji）
   anchorBadge(type: string): string {
     if (type === 'quiz') {
       return '考考你';
@@ -1005,10 +1009,16 @@ export struct ChatPage {
     if (type === 'hook') {
       return '前方高能';
     }
-    if (type === 'link') {
-      return '联想一下';
+    if (type === 'rephrase') {
+      return '换个说法';
     }
-    return '歇口气';
+    if (type === 'predict') {
+      return '先猜再看';
+    }
+    if (type === 'recap') {
+      return '一句话锁住';
+    }
+    return '到这里了'; // breath 本地保底（进度实感定位，替代旧「歇口气」）
   }
 
   // 锚点卡片浮现动画（淡入+上移 8vp+200ms；ForEach key 稳定 → 每卡只播一次）
@@ -1043,6 +1053,7 @@ export struct ChatPage {
           Span(sp.text)
             .fontSize(this.fs(fontSize))
             .fontWeight(600)
+            .textBackgroundStyle({ color: glowHighlight ? 'rgba(124,77,255,0.12)' : Color.Transparent, radius: glowHighlight ? 2 : 0 }) // ★ 0.237.0 术语荧光底（12% 品牌紫底——治「一大片白」；heading 走品牌色文字不加底，避免叠加；glowHighlight 一键回退纯加粗）
         } else if (sp.italic) {
           Span(sp.text)
             .fontSize(this.fs(fontSize))
@@ -1057,6 +1068,11 @@ export struct ChatPage {
           .fontSize(this.fs(fontSize))
       }
     }, (line: string, lsi: number) => `${lsi}_${line.length}`)
+  }
+
+  // ★ 0.237.0：h1~h6 标题块判定（'hr' 排除——同为 h 开头两字符但非标题）
+  isHeadingKind(kind: string): boolean {
+    return kind.length === 2 && kind.charAt(0) === 'h' && kind.charAt(1) >= '1' && kind.charAt(1) <= '6';
   }
 
   // 单块 Text：统一挂划词工具栏四件套（选择菜单/选中回调/全选受控/可复制）
@@ -1076,8 +1092,8 @@ export struct ChatPage {
     }
       .fontSize(this.fs(fontSize))
       .lineHeight(this.fs(Math.round(fontSize * 1.5)))
-      .fontColor(blk.kind === 'quote' ? TEXT_SECONDARY : TEXT_PRIMARY)
-      .fontWeight(blk.kind.length === 2 && blk.kind.charAt(0) === 'h' ? 600 : 400)
+      .fontColor(this.isHeadingKind(blk.kind) ? BRAND_SECONDARY : (blk.kind === 'quote' ? TEXT_SECONDARY : TEXT_PRIMARY)) // ★ 0.237.0 文章小标题品牌色（整条染色不拆编号——AI 编号格式不统一，拆解有误伤风险）
+      .fontWeight(this.isHeadingKind(blk.kind) ? 600 : 400)
       .copyOption(CopyOptions.LocalDevice)
       .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
       .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
@@ -1297,25 +1313,23 @@ export struct ChatPage {
   }
 
   // ★ 0.235.1：折叠行——整行可点 toggle（收起态整行卡片）：章节标题(14fp，完整呈现可换行——禁截断省略号，
-  //   0.235.1 用户拍板：「标题一定要呈现完整，哪怕两行三行」) + 右「共 N 节 · 约 X 字」(11fp/TEXT_SECONDARY)；
+  //   0.235.1 用户拍板：「标题一定要呈现完整，哪怕两行三行」) + 右「约 X 字」(11fp/TEXT_SECONDARY)；
   //   「第 X 节」序号已删——AI 生成 MD 的 ## 标题自带 123 序号，UI 再加前缀=把标题拆开还挤占窄屏宽度（0.235.1）；
   //   无 ## 兜底段显示「第 X 段 · 约 Y 字」（任务书 §2.3，兜底段无标题、序号是唯一标识故保留）
-  // ★ 0.235.2：三角统一术卡样式（用户拍板「折叠行小三角和背单词卡左边的小三角应该一样」）——
-  //   实心字形 ▼展开/▶收起 + fs(10) + 紧贴式 margin right 4（对齐 4206 复习区词行三角，
-  //   推翻 0.235.1 的 ▸/▾ 16fp+width(22) 固定宽容器=字形细小+视觉 7vp 松间距）
+  // ★ 0.235.2：三角统一术卡样式 → ★ 0.237.0 军令 SVG 终式：字符字形（▼/▶/▸/▾）在系统字体下宽高粗细
+  //   天然不一致且随字体漂移，根治=全项目唯一折叠指示器 FoldChevron（同一颗 chevron SVG 旋转两态：
+  //   收起 0° 指右 / 展开 90° 指下，220ms EaseInOut——UI_GUIDELINES §13）
+  // ★ 0.237.0：去「共 N 节」（用户拍板）——右侧只留「约 X 字」；「≥3 节才折叠」门槛逻辑不受影响
   @Builder
   FoldRow(msg: ChatMessage, sections: FoldSection[], sec: FoldSection, si: number) {
-    Row({ space: 4 }) {
-      Text(this.expandedSetFor(msg.messageId, sections).has(si) ? '▼' : '▶')
-        .fontSize(this.fs(10))
-        .fontColor(BRAND_SECONDARY)
-        .margin({ right: 4 })
+    Row({ space: 6 }) {
+      FoldChevron({ expanded: this.expandedSetFor(msg.messageId, sections).has(si) })
       if (sec.numbered) {
         Text(sec.title)
           .fontSize(14)
           .fontColor(TEXT_PRIMARY)
           .layoutWeight(1)
-        Text(`共 ${this.numberedSectionCount(sections)} 节 · 约 ${sec.charCount} 字`)
+        Text(`约 ${sec.charCount} 字`)
           .fontSize(11)
           .fontColor(TEXT_SECONDARY)
       } else {
@@ -1427,7 +1441,8 @@ export struct ChatPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  // ★ 0.234.0：章节总数（order>0 的节/段——「共 N 节」与 ≥3 门槛共用口径）
+  // ★ 0.234.0：章节总数（order>0 的节/段——≥3 折叠门槛口径；0.237.0 起「共 N 节」展示已删，
+  //   本方法保留供门槛语义与后续消费——任务书 §三：只删展示文本不删函数）
   numberedSectionCount(sections: FoldSection[]): number {
     let n = 0;
     for (let i = 0; i < sections.length; i++) {
@@ -2731,14 +2746,14 @@ export struct ChatPage {
                   .height('100%')
                 }
                 .height('100%')
-                Text(this.wordPickerHasChildren(item.folder.id) ? (this.isWordPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
-                  .fontSize(16)
-                  .fontColor(TEXT_TERTIARY)
-                  .width(22)
-                  .textAlign(TextAlign.Center)
-                  .onClick(() => {
-                    this.toggleWordPickerCollapse(item.folder.id);
-                  })
+                if (this.wordPickerHasChildren(item.folder.id)) {
+                  FoldChevron({ expanded: !this.isWordPickerCollapsed(item.folder.id) })
+                    .onClick(() => {
+                      this.toggleWordPickerCollapse(item.folder.id);
+                    })
+                } else {
+                  Row().width(12) // 叶子行空占位（同宽对齐——树行文本同轴线）
+                }
                 Text(item.folder.name)
                   .fontSize(13)
                   .fontColor(TEXT_PRIMARY)
@@ -3279,14 +3294,14 @@ export struct ChatPage {
                   .height('100%')
                 }
                 .height('100%')
-                Text(this.cardPickerHasChildren(item.folder.id) ? (this.isCardPickerCollapsed(item.folder.id) ? '▸' : '▾') : '')
-                  .fontSize(16)
-                  .fontColor(TEXT_TERTIARY)
-                  .width(22)
-                  .textAlign(TextAlign.Center)
-                  .onClick(() => {
-                    this.toggleCardPickerCollapse(item.folder.id);
-                  })
+                if (this.cardPickerHasChildren(item.folder.id)) {
+                  FoldChevron({ expanded: !this.isCardPickerCollapsed(item.folder.id) })
+                    .onClick(() => {
+                      this.toggleCardPickerCollapse(item.folder.id);
+                    })
+                } else {
+                  Row().width(12) // 叶子行空占位（同宽对齐——树行文本同轴线）
+                }
                 Text(item.folder.name)
                   .fontSize(13)
                   .fontColor(TEXT_PRIMARY)
@@ -3847,6 +3862,7 @@ export struct ChatPage {
   // ★ 0.234.0 重构（任务书 §6.2）：鼓励注入整体删除（encourageMode 不再参与——统计页/复习页独享）；
   //   新增 SECTION_PROMPT（长回复且 锚点开或折叠开——## 分节是折叠地基，两开关谁开都需要）+
   //   ANCHOR_LONG（长回复且锚点开）/ ANCHOR_MEDIUM（中回复且锚点开）；短回复与听播零注入（范围红线）
+  // ★ 0.237.0：ANCHOR_LONG 改密度档联动（buildAnchorLongPrompt——疏 2~3 个/密 3~5 个，任务书 §六）
   buildPreferencePrompt(isPodcast: boolean): string {
     let prompt = '';
     const nickname = this.aiPreference.aiNickname.trim();
@@ -3860,7 +3876,7 @@ export struct ChatPage {
       }
       if (this.anchorPref.anchorMode === 'on') {
         if (long) {
-          prompt += ANCHOR_LONG_PROMPT;
+          prompt += buildAnchorLongPrompt(this.anchorPref.anchorDensity);
         } else if (this.replyLengthMode === 'medium') {
           prompt += ANCHOR_MEDIUM_PROMPT;
         }
@@ -4270,16 +4286,13 @@ export struct ChatPage {
                                 //   独立横滑，全称+释义内容行独立横滑——滑解释时单词始终可见不动
                                 Column() {
                                   Row() {
-                                      // ★ 0.169.1：复习区划词——词行/全称/释义均可长按划词（翻译/入知识库/复制）；
-                                      // key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
-                                      // ★ 0.188.0：👆→▼/▲ 紫色三角（UI_GUIDELINES 辅助紫=提示语义；展开态转▲）；点词/点箭头展开 3 档评分
-                                      Text(this.reviewExpandKey === `${msg.messageId}|${w.id}` ? '▲' : '▼')
-                                        .fontSize(this.fs(10))
-                                        .fontColor(BRAND_SECONDARY)
-                                        .margin({ right: 4 })
-                                        .onClick(() => {
-                                          this.onReviewWordTap(`${msg.messageId}|${w.id}`);
-                                        })
+                                       // ★ 0.188.0：复习区划词——词行/全称/释义均可长按划词（翻译/入知识库/复制）；
+                                       //   key 段前缀 rw*/rwf*/rwe* 与正文段纯数字 idx 空间隔离；音标行为发音辅助符号不加
+                                       // ★ 0.237.0 军令：字符三角 ▼/▲ → FoldChevron SVG（收起指右/展开指下）；点词/点箭头展开 3 档评分
+                                       FoldChevron({ expanded: this.reviewExpandKey === `${msg.messageId}|${w.id}` })
+                                         .onClick(() => {
+                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                         })
                                     Scroll() {
                                       Row() {
                                       Text(w.word, { controller: this.getOrCreateTextController(`${msg.messageId}|rw${idx}`) })
@@ -4430,16 +4443,13 @@ export struct ChatPage {
                                 //   拆开=标题行常驻不动，仅定义行独立横滑，看内容时标题始终可见）
                                 Column() {
                                       Row() {
-                                        // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
-                                        // key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
-                                        // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
-                                        Text(this.reviewExpandKey === `${msg.messageId}|${card.id}` ? '▲' : '▼')
-                                          .fontSize(this.fs(10))
-                                          .fontColor(BRAND_SECONDARY)
-                                          .margin({ right: 4 })
-                                          .onClick(() => {
-                                            this.onReviewWordTap(`${msg.messageId}|${card.id}`);
-                                          })
+                                         // ★ 0.169.1：复习区划词——标题/定义行均可长按划词（翻译/入知识库/复制）；
+                                         //   key 段前缀 rk*/rkd* 与生词区 rw* 及正文段纯数字 idx 空间隔离
+                                         // ★ 0.237.0 军令：字符三角 ▼/▲ → FoldChevron SVG；点标题/点箭头展开 3 档评分
+                                         FoldChevron({ expanded: this.reviewExpandKey === `${msg.messageId}|${card.id}` })
+                                           .onClick(() => {
+                                             this.onReviewWordTap(`${msg.messageId}|${card.id}`);
+                                           })
                                         Scroll() {
                                           Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
                                             .fontSize(this.fs(13))
@@ -5083,14 +5093,11 @@ export struct ChatPage {
                   //   词行（三角+词+音标+喇叭）常驻独立横滑，全称+释义内容行独立横滑——滑解释词不动
                   Column() {
                     Row() {
-                       // ★ 0.188.0：👆→▼/▲ 紫色三角（展开态转▲）；点词/点箭头展开 3 档评分
-                       Text(this.reviewExpandKey === `edit|${w.id}` ? '▲' : '▼')
-                         .fontSize(10)
-                         .fontColor(BRAND_SECONDARY)
-                         .margin({ right: 4 })
-                         .onClick(() => {
-                           this.onReviewWordTap(`edit|${w.id}`);
-                         })
+                        // ★ 0.237.0 军令：字符三角 ▼/▲ → FoldChevron SVG；点词/点箭头展开 3 档评分
+                        FoldChevron({ expanded: this.reviewExpandKey === `edit|${w.id}` })
+                          .onClick(() => {
+                            this.onReviewWordTap(`edit|${w.id}`);
+                          })
                      Scroll() {
                        Row() {
                        Text(w.word)
@@ -5188,14 +5195,11 @@ export struct ChatPage {
                 // ★ 0.232.1 标题/内容行分离（与气泡复习区同规——定义独立横滑，标题常驻）
                 Column() {
                    Row() {
-                      // ★ 0.188.0：📖→▼/▲ 紫色三角（知识库复刻）；点标题/点箭头展开 3 档评分
-                      Text(this.reviewExpandKey === `editcard|${card.id}` ? '▲' : '▼')
-                        .fontSize(10)
-                        .fontColor(BRAND_SECONDARY)
-                        .margin({ right: 4 })
-                        .onClick(() => {
-                          this.onReviewWordTap(`editcard|${card.id}`);
-                        })
+                       // ★ 0.237.0 军令：字符三角 ▼/▲ → FoldChevron SVG；点标题/点箭头展开 3 档评分
+                       FoldChevron({ expanded: this.reviewExpandKey === `editcard|${card.id}` })
+                         .onClick(() => {
+                           this.onReviewWordTap(`editcard|${card.id}`);
+                         })
                       Scroll() {
                         Text(card.title)
                           .fontSize(13)

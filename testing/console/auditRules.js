@@ -246,19 +246,32 @@ function auditDialogSideMargins(nodes, ctx, dialogName, titleText, screenW) {
   return out;
 }
 
-// A17 折叠三角规格（★0.233.0 用户拍板「小三角太小，用大三角」）：行首三角容器宽 22vp（0.222.14 大三角统一值）
+// A17 折叠指示器 SVG 同源（★0.237.0 用户军令「全项目只许一套折叠三角」）：
+// 折叠行首=FoldChevron（chevron_fold.svg 同源 Image，≈12vp，收起 0°/展开 90° 旋转两态）；
+// 折叠类字符三角（▸▾▼▶▲）行内残留=fail（发送▾与下拉▲▼=菜单语义不在此列）
 function auditCollapseTriangle(nodes, ctx, rowTitleText) {
   const row = nodes.find((n) => (n.text || '').includes(rowTitleText));
-  if (!row) return [V('A17 折叠三角规格', rowTitleText, '折叠行存在', '未找到折叠行', 'warn')];
-  const tri = nodes.filter((n) => ['▸', '▾', '▲', '▼'].includes(n.text) &&
-    Math.abs(n.yc - row.yc) < Math.max(row.h, 24)).sort((a, b) => a.x - b.x)[0];
-  if (!tri) return [V('A17 折叠三角规格', rowTitleText, '行首三角存在', '同高度行内未见三角字符（三角被删或换图标）', 'warn')];
-  if (!ctx.density) return [];
-  const want = 22 * ctx.density;
-  if (Math.abs(tri.w - want) > 2 * ctx.density) {
-    return [V('A17 折叠三角宽 22vp', rowTitleText, `≈${Math.round(want)}px（22vp·0.222.14 大三角）`, `${tri.w}px——小三角违规（用户拍板放大）`, 'fail')];
+  if (!row) return [V('A17 折叠指示器', rowTitleText, '折叠行存在', '未找到折叠行', 'warn')];
+  const out = [];
+  const charTri = nodes.filter((n) => ['▸', '▾', '▼', '▶', '▲'].includes(String(n.text || '').trim()) &&
+    Math.abs(n.yc - row.yc) < Math.max(row.h, 24));
+  if (charTri.length) {
+    out.push(V('A17 字符三角清零', rowTitleText, '折叠行无字符三角（军令=SVG 唯一）',
+      `残留 ${charTri.length} 处（${charTri.map((n) => n.text).join(' ')}）`, 'fail'));
   }
-  return [];
+  const chev = nodes.filter((n) => String(n.type || '').toLowerCase() === 'image' &&
+    n.x < row.x && Math.abs(n.yc - row.yc) < Math.max(row.h, 24) && n.w < 60).sort((a, b) => b.x - a.x)[0];
+  if (!chev) {
+    out.push(V('A17 折叠指示器', rowTitleText, '行首 FoldChevron Image（chevron_fold 同源）',
+      '行首左侧未见小尺寸 Image 节点（结构变化人工复核 dump）', 'warn'));
+  } else if (ctx.density) {
+    const want = 12 * ctx.density;
+    if (Math.abs(chev.w - want) > 2 * ctx.density) {
+      out.push(V('A17 折叠指示器 12vp', rowTitleText, `≈${Math.round(want)}px（12vp 军令统一尺寸）`,
+        `${Math.round(chev.w)}px——尺寸偏离（各处折叠指示器必须同 12vp）`, 'fail'));
+    }
+  }
+  return out;
 }
 
 // A18 Tab 轨道两端留白（★0.232.2 两轮拍板定 12；UI_GUIDELINES 11.2）：SEGMENTED_TRACK 轨道与弹窗面板内缘间距 ≥12vp

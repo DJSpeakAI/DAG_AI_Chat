@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.235.2.1'; // ★ 四段制：前三段跟 APP（0.235.2=消息操作行复制全文+删除/滑动删除统一右滑/折叠三角统一术卡），第四段=测试台工具版本 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）（chat 套件新增 SEL-CLEAR/CHAT-QUOTE 两用例）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.237.0.1'; // ★ 四段制：前三段跟 APP（0.237.0=锚点二期钩子树重构与折叠三角统一），第四段=测试台工具版本 // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -2112,39 +2112,47 @@ const CASES = [
       }
     } },
 
-  // ---------- ★ 0.235.2 折叠三角统一（用户拍板「折叠行小三角和背单词卡左边的小三角应该一样」） ----------
-  // fontSize dump 不可达（0.229.26 实证）→ 相对几何断言：屏内 ▶/▼/▲ 三角 Text 节点高度全族一致（max/min<1.35）；
-  //   旧版折叠行 ▸/▾ 16fp 高度≈1.6×fs(10) 三角必被抓。'▸'/'▾' 字形残留=直接 fail（0.235.2 起消息区禁用细小字形）
-  { id: 'CHAT-FOLD', suite: 'chat', name: '折叠三角·章节折叠行与术卡三角同大小、无旧字形残留（0.235.2 统一回归）', semi: false, scope: 'each',
+  // ---------- ★ 0.237.0 折叠指示器军令断言（用户拍板「全项目只许一套折叠三角」→ SVG chevron 唯一） ----------
+  // 三断言：① 折叠行右侧只留「约 X 字」（去「共 N 节」）② 折叠类字符三角（▸▶▼▲）全屏清零（发送▾=菜单语义
+  //   合法 ≤1）③ 折叠行行首=FoldChevron Image 在位（≈12vp，同一颗 chevron_fold 旋转两态——同源即无「另一个型号」）
+  { id: 'CHAT-FOLD', suite: 'chat', name: '折叠指示器·SVG 同源+字符三角清零+去共N节（0.237.0 军令回归）', semi: false, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
-      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '折叠三角断言（UI 断言专属，PC 无 UI 通道）'); return; }
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '折叠指示器断言（UI 断言专属，PC 无 UI 通道）'); return; }
       await coldStart(serial);
       if (!(await navIntoChat(ctx, serial))) return;
       const d = await dumpAuditNodes(serial);
       if (!d.ok) { ctx.log('① 审计 dump', 'fail', 'dumpLayout -a 失败'); return; }
-      // ① 折叠行存在性（「共 N 节」=章节折叠行特征文案；无=当前对话无 ≥3 节长回复或折叠开关关，如实 skip）
-      const foldRow = d.nodes.find((n) => /共 \d+ 节/.test(String(n.text || '')));
-      if (!foldRow) { ctx.log('★折叠行三角统一', 'skip', '当前对话无章节折叠行（无 ≥3 节长回复或折叠开关关）——换有长 AI 回复的气泡再跑本用例'); return; }
-      ctx.log('① 折叠行在屏', 'pass', `「${String(foldRow.text).slice(0, 24)}」(${Math.round(foldRow.x)},${Math.round(foldRow.y)})`);
-      // ② 旧字形清零（0.235.1 折叠行 ▸/▾ 已换实心 ▶/▼）——★首轮盯屏修正：发送 ▾ 下拉（输入区常驻）合法
-      //   保留 1 处、文件夹树 picker 不在对话页——'▸' 应零残留；'▾' 允许 ≤1（恰=发送下拉）
-      const legacyTri = (d.text.match(/▸/g) || []).length;
-      const legacyDown = (d.text.match(/▾/g) || []).length;
-      ctx.log('★② 旧字形 ▸ 清零', legacyTri === 0 ? 'pass' : 'fail',
-        legacyTri === 0 ? `全屏无 ▸（0.235.2 折叠行实心 ▶ 已全量替换；▾=${legacyDown} 处${legacyDown <= 1 ? '（=发送下拉，合法）' : '（>1 需盯屏复核）'}）` : `残留 ${legacyTri} 处 ▸（折叠行旧字形未清干净——0.235.2 UI_GUIDELINES §13 红线）`);
-      // ③ 三角大小全族一致（▶ 折叠收起 / ▼ 折叠展开 / ▲▼ 复习区术卡+编辑器卡，全 fs(10) 同族）
-      const tris = d.nodes.filter((n) => ['▶', '▼', '▲'].includes(String(n.text || '').trim()));
-      artSave('CHAT-FOLD', `tris-${dev.id}.json`, tris.map((n) => ({ t: n.text, x: n.x, y: n.y, w: n.w, h: n.h })));
-      if (tris.length === 0) {
-        ctx.log('★③ 三角大小一致', 'fail', '折叠行在屏但未找到任何 ▶/▼ 三角节点（三角未渲染或 dump 缺失）');
-      } else if (tris.length === 1) {
-        ctx.log('★③ 三角大小一致', 'warn', `仅 1 个三角（${tris[0].text} ${Math.round(tris[0].h)}px）在屏——无第二对象可比对（复习区词库空时术卡三角不出现），单对象存在性 ✓`);
+      artSave('CHAT-FOLD', `dump-${dev.id}.json`, d.text);
+      // ① 折叠行存在性（0.237.0 起特征文案=「约 N 字」——「共 N 节」已删）
+      const foldRows = d.nodes.filter((n) => /约 \d+ 字/.test(String(n.text || '')));
+      if (foldRows.length === 0) { ctx.log('★折叠指示器', 'skip', '当前对话无章节折叠行（无 ≥3 节长回复或折叠开关关）——换有长 AI 回复的气泡再跑本用例'); return; }
+      ctx.log('① 折叠行在屏', 'pass', `${foldRows.length} 行（首行「${String(foldRows[0].text).slice(0, 24)}」）`);
+      // ② 去「共 N 节」
+      const hasN = d.nodes.some((n) => /共 \d+ 节/.test(String(n.text || '')));
+      ctx.log('★② 去共N节', hasN ? 'fail' : 'pass',
+        hasN ? '折叠行仍显示「共 N 节」（0.237.0 应只留「约 X 字」）' : '折叠行右侧只留「约 X 字」✓（0.237.0 用户拍板）');
+      // ③ 折叠类字符三角清零（发送 ▾ 下拉=菜单语义合法保留 ≤1；GSD 下拉不在对话页）
+      //   ★节点计数（非原始文本 match）——dump -a 的 text/originalText 双字段含同一字符，raw match 会双计
+      const triNode = (ch) => d.nodes.filter((n) => String(n.text || '').trim() === ch);
+      const legacy = ['▸', '▶', '▼', '▲'].map((ch) => ({ ch, n: triNode(ch).length })).filter((x) => x.n > 0);
+      const downN = triNode('▾').length;
+      const legacyBad = legacy.length > 0 || downN > 1;
+      ctx.log('★③ 字符三角清零', legacyBad ? 'fail' : 'pass',
+        legacyBad
+          ? `残留：${legacy.map((x) => `${x.ch}×${x.n}`).join(' ')}${downN > 1 ? ` ▾×${downN}（>1，仅发送下拉 1 处合法）` : ''}——0.237.0 UI_GUIDELINES §13 军令红线（折叠指示器必须 SVG 唯一）`
+          : `▸▶▼▲ 全零；▾=${downN} 处（≤1=发送下拉，合法）——折叠三角已 SVG 化 ✓`);
+      // ④ 折叠行行首=FoldChevron Image（同线左侧小 Image，与行内文本同高域）
+      const chevs = d.nodes.filter((n) => String(n.type || '').toLowerCase() === 'image' && n.w >= 15 && n.w <= 70 &&
+        foldRows.some((r) => Math.abs(n.yc - r.yc) < Math.max(r.h, 24)));
+      artSave('CHAT-FOLD', `chevs-${dev.id}.json`, chevs.map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h })));
+      if (chevs.length === 0) {
+        ctx.log('★④ 折叠行 SVG 指示器', 'fail', `折叠行在屏但行首未见 FoldChevron Image（${foldRows.length} 行均无——指示器未渲染或 dump 缺失）`);
       } else {
-        const hs = tris.map((n) => n.h);
-        const ratio = Math.max(...hs) / Math.min(...hs);
-        ctx.log('★③ 三角大小一致', ratio < 1.35 ? 'pass' : 'fail',
-          `${tris.length} 个三角（${tris.map((n) => String(n.text)).join(' ')}）高度 ${Math.round(Math.min(...hs))}~${Math.round(Math.max(...hs))}px，max/min=${ratio.toFixed(2)}（<1.35=同字号族；旧版 16fp vs fs(10)≈1.6 必被抓）——验收线：折叠行与术卡三角放一起看不出大小差异`);
+        const ws = chevs.map((n) => n.w);
+        const ratio = chevs.length > 1 ? Math.max(...ws) / Math.min(...ws) : 1;
+        ctx.log('★④ 折叠行 SVG 指示器', ratio < 1.35 ? 'pass' : 'fail',
+          `${chevs.length} 处行首 Image 宽 ${Math.round(Math.min(...ws))}~${Math.round(Math.max(...ws))}px${chevs.length > 1 ? ` max/min=${ratio.toFixed(2)}` : ''}（<1.35=同 12vp 族——同一颗 chevron_fold 旋转两态，物理上不可能出现另一个型号）`);
       }
     } },
 

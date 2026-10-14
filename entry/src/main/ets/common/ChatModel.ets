@@ -404,12 +404,13 @@ export function connectAiPreference(): AiPreference {
 
 // ★ 0.234.0：注意力锚点偏好（锚点卡片/密度/分章折叠三字段）——独立全新 key 'anchor-pref-v1'
 // （0.143 铁律：绝不往 ai-preference-v2 旧快照类加字段；独立 key 让称呼/鼓励零迁移零风险）
-// anchorMode：锚点卡片开关（off/on，默认开=钩子模式）；anchorDensity：本地保底密度档
-// （dense 密 400 / standard 中 550 / sparse 疏 700 字）；foldMode：长文分章折叠开关（off/on，默认开）
+// anchorMode：锚点卡片开关（off/on，默认开=钩子模式）；anchorDensity：密度档
+// （★ 0.237.0 两档制，用户拍板去掉「中」：dense 密 400 / sparse 疏 800 字，默认疏；
+//   遗留 'standard' 值由 breathThreshold/设置分段兜底为疏，不改写已落盘数据）；foldMode：长文分章折叠开关（off/on，默认开）
 @ObservedV2
 export class AnchorPref {
   @Trace anchorMode: string = 'on';
-  @Trace anchorDensity: string = 'standard';
+  @Trace anchorDensity: string = 'sparse';
   @Trace foldMode: string = 'on';
 }
 

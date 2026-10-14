@@ -19,6 +19,7 @@ import { connectKnowledgeBank, deleteFolder } from '../utils/KnowledgeStoreUtil'
 import { KnowledgeBankStore, KFolder, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.222.19：单词库文件夹树数据
 import { WordBankStore, WordFolder, WordFolderNavStore, connectWordFolderNav, WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库折叠态+文件夹导航共享 store
+import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
 
 const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
 
@@ -678,9 +679,8 @@ export struct AppSideBar {
             .fontFamily(FONT_INTER_SEMIBOLD)
             .fontColor(TEXT_PRIMARY)
           Blank()
-          Text(this.activeNavExpanded() ? '▾' : '▸')
-            .fontSize(16)
-            .fontColor(TEXT_TERTIARY)
+          // ★ 0.237.0 军令：导航条折叠三角字符 ▾/▸ → FoldChevron SVG
+          FoldChevron({ expanded: this.activeNavExpanded() })
         }
         .width('100%')
         .height(36)
@@ -800,14 +800,15 @@ export struct AppSideBar {
               .height('100%')
             }
             .height('100%')
-            Text(this.hasChildren(item.id) ? (this.isFolderCollapsed(item.id) ? '▸' : '▾') : '')
-              .fontSize(16)
-              .fontColor(TEXT_TERTIARY)
-              .width(22)
-              .textAlign(TextAlign.Center)
-              .onClick(() => {
-                this.toggleFolderCollapse(item.id);
-              })
+            // ★ 0.237.0 军令：树行折叠三角字符 ▸/▾ → FoldChevron SVG；叶子行空占位同宽对齐
+            if (this.hasChildren(item.id)) {
+              FoldChevron({ expanded: !this.isFolderCollapsed(item.id) })
+                .onClick(() => {
+                  this.toggleFolderCollapse(item.id);
+                })
+            } else {
+              Row().width(12)
+            }
             Text(item.name)
               .fontSize(13)
               .fontColor(this.treeRowActive(item.id) ? TEXT_PRIMARY : TEXT_SECONDARY)
