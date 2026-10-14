@@ -13,10 +13,11 @@
 //
 // ★ 0.232.0 三层兜底（用户规则「没配置→本地；失败→本地」）：
 //   1. configured()（audioKey+audioModel 非空）才走云端，否则调用方直落本地；
-//   2. ★ 音色资源回退：合成音色（S_ 前缀，声音复刻体系）在控制台未开通对应资源时
-//      返回 55000000「resource ID is mismatched with speaker related resource」（2026-10-13
-//      本机 curl 实证）——自动换官方音色 zh_female_vv_uranus_bigtts 重试一次，会话内
-//      记住生效音色（控制台开通复刻资源后自动回到合成音色，零代码改动）；
+//   2. ★ 音色资源回退（★ 0.236.2 重构）：声音复刻 2.0 资源（seed-icl-2.0）下 S_ 复刻音色
+//      未开通/失效、或官方音色误配复刻资源，都返回 55000000「resource ID is mismatched
+//      with speaker related resource」——回退=音色+模型资源同步换（官方音色
+//      zh_female_vv_uranus_bigtts + seed-tts-2.0，0.232.0 实证可用组合），会话内记住生效
+//      组合（控制台开通复刻资源后自动回到合成音色，零代码改动）；
 //   3. 云端仍失败 → onError 交调用方回退本地 CoreSpeechKit。
 //
 // 会话模型：speak() = 一个会话（代际号 generation 使在飞回调全部失效）；
@@ -38,6 +39,15 @@ const CLOUD_TTS_MAX_SEGMENT_LEN = 280;
 
 // 官方音色（合成音色资源不匹配时的回退目标——0.232.0 实证 seed-tts-2.0 下可用）
 const FALLBACK_OFFICIAL_VOICE = 'zh_female_vv_uranus_bigtts';
+
+// ★ 0.236.2：官方模型资源（复刻资源 55000000 时的回退目标）——官方音色 zh_female_vv_uranus_bigtts
+//   属豆包语音合成体系，在 seed-icl-2.0（声音复刻 2.0）资源下同样报 55000000；回退必须
+//   音色+资源 ID 同步换（旧逻辑只换音色不换资源=回退必然二次失败，2026-10-15 根因实锤）
+const FALLBACK_OFFICIAL_MODEL = 'seed-tts-2.0';
+
+// ★ 0.236.2：开发期临时默认音色（用户拍板「音色 ID 默认填写，上线之前我会命令给删除的」；
+//   2026-10-14 实证 seed-icl-2.0 + S_bv8H32Sg2 code=0 直连可用）
+const DEFAULT_VOICE_ICL = 'S_bv8H32Sg2';
 
 // 资源/音色不匹配业务码（openspeech 返回体 code——55000000）
 const CODE_VOICE_RESOURCE_MISMATCH = 55000000;
@@ -79,6 +89,7 @@ export class CloudTtsEngine {
   private session: CloudTtsSession | null = null;
   private cacheDir: string = '';
   private voiceOverride: string = ''; // ★ 音色资源回退会话缓存（空=用配置音色）
+  private modelOverride: string = ''; // ★ 0.236.2：回退模型资源会话缓存（空=用 presetModel；音色+资源同步换）
   private started: boolean = false;   // onStart 已触发（每会话一次）
 
   // ★ 0.232.0：云端已配置判定（audioKey+audioModel 双非空——未填模型/Key 时直落本地）
@@ -137,6 +148,7 @@ export class CloudTtsEngine {
     this.waitingForAudio = true; // 首段到达立即开播（0.142 死锁教训）
     this.started = false;
     this.voiceOverride = ''; // 显式会话音色即最终值（空值时合成层兜底官方音色）
+    this.modelOverride = '';
     this.requestNextSegment();
     return true;
   }
@@ -176,11 +188,14 @@ export class CloudTtsEngine {
     // ★ 0.236.1：会话参数走 preset* 显式值（speak/speakWithParams 统一管线）
     const endpoint = this.presetEndpoint;
     const apiKey = this.presetKey;
-    const model = this.presetModel;
-    // 音色：会话回退缓存 > 显式值；空值兜底官方音色
+    // 音色：会话回退缓存 > 显式值；空值兜底（★ 0.236.2：声音复刻 2.0 资源=开发期默认复刻
+    //   音色 S_bv8H32Sg2 免一次 55000000 失败重试，其他资源=官方音色原语义）
+    const model = this.modelOverride.length > 0 ? this.modelOverride : this.presetModel;
     const configVoice = this.presetVoice.trim();
-    const voice = this.voiceOverride.length > 0 ? this.voiceOverride :
-      (configVoice.length > 0 ? configVoice : FALLBACK_OFFICIAL_VOICE);
+    let voice = this.voiceOverride.length > 0 ? this.voiceOverride : configVoice;
+    if (voice.length === 0) {
+      voice = model === 'seed-icl-2.0' ? DEFAULT_VOICE_ICL : FALLBACK_OFFICIAL_VOICE;
+    }
     this.requestController = this.synthesizeSegment(
       endpoint, apiKey, model, voice,
       this.segments[index],
@@ -198,16 +213,21 @@ export class CloudTtsEngine {
         if (gen !== this.generation) {
           return;
         }
-        // ★ 音色资源回退：合成音色（S_ 前缀）资源未开通 → 官方音色整会话重试一次
+        // ★ 音色资源回退（★ 0.236.2 条件与动作重构）：声音复刻 2.0 资源（seed-icl-2.0）下
+        //   S_ 复刻音色未开通/失效、或官方音色误配复刻资源，都返回 55000000——回退动作必须
+        //   音色+模型资源同步换（官方音色 zh_female_vv_uranus_bigtts + seed-tts-2.0，
+        //   0.232.0 实证可用组合），旧逻辑只换音色不换资源=回退二次失败照样 55000000；
+        //   会话内记住生效组合（控制台开通复刻资源后自动回到合成音色，零代码改动）
         if (bizCode === CODE_VOICE_RESOURCE_MISMATCH && this.voiceOverride.length === 0 &&
-          voice.startsWith('S_')) {
+          this.presetModel === 'seed-icl-2.0') {
           this.voiceOverride = FALLBACK_OFFICIAL_VOICE; // 会话内记住（含后续段）
+          this.modelOverride = FALLBACK_OFFICIAL_MODEL;
           this.requestIndex = 0;
           this.playIndex = 0;
           this.audioCache = [];
           this.waitingForAudio = true;
           this.cleanupSegment();
-          this.requestNextSegment(); // 从头重来（此时 voiceOverride 生效）
+          this.requestNextSegment(); // 从头重来（此时 voiceOverride/modelOverride 生效）
           return;
         }
         const s = this.session;

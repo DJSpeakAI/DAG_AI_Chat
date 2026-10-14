@@ -148,6 +148,9 @@ const TTS_MODEL_PRESETS: TtsModelPreset[] = [
 // 官方音色（seed-tts-2.0 专用——2.0 模型只能用 2.0 官方音色，0.139 教训）
 const TTS_OFFICIAL_VOICE: string = 'zh_female_vv_uranus_bigtts';
 
+// ★ 0.236.2：开发期临时默认音色（用户拍板「音色 ID 默认填写，上线之前我会命令给删除的」）
+const TTS_DEFAULT_VOICE: string = 'S_bv8H32Sg2';
+
 // ★ 0.236.0：千问 TTS（百炼 CosyVoice 复刻音色）预设
 const TTS_PROVIDER_QWEN: string = 'qianwen'; // ttsProvider 三值之一（volcano/qianwen/custom 三引擎物理互斥）
 const TTS_QWEN_DEFAULT_MODEL: string = 'cosyvoice-v3.5-plus'; // 空值兜底（引擎内同款常量）
@@ -169,7 +172,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.236.1'; // ★ 0.236.1：TTS设置区体验修订（火山档切回Key/音色内置兜底回填/千问档删手动输入与外链/试听喇叭svg/自定义档删模型字段）；上一版 0.236.0：千问TTS引擎接入
+const APP_VERSION: string = 'v0.236.2'; // ★ 0.236.2：试听55000000根因修复（音色ID默认回填S_bv8H32Sg2杜绝官方音色配复刻模型/引擎回退同步换官方资源seed-tts-2.0根治二次失败/自定义档接口地址占位符改真实地址）；上一版 0.236.1：TTS设置区体验修订
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -433,6 +436,12 @@ export struct GlobalSettingsDialog {
           this.editTtsModel = this.apiConfig.audioModel;
         }
       }
+    }
+    // ★ 0.236.2：音色 ID 默认回填（开发期临时——持久化旧官方音色/空值时强制回填用户复刻音色，
+    //   杜绝官方音色配声音复刻 2.0 模型的 55000000 资源不匹配报错；上线前随 TTS_DEFAULT_VOICE 一起删）
+    if (this.editTtsProvider === 'volcano' && this.editTtsModelSel === 0 &&
+      (this.editTtsVoice.trim().length === 0 || this.editTtsVoice.trim() === TTS_OFFICIAL_VOICE)) {
+      this.editTtsVoice = TTS_DEFAULT_VOICE;
     }
     // 千问档首次进入预填内置 Key（用户自定义值优先纪律——仅表单预填不写持久化）
     if (this.editTtsProvider === TTS_PROVIDER_QWEN && this.editTtsKey.length === 0) {
@@ -1035,7 +1044,7 @@ export struct GlobalSettingsDialog {
             .fontSize(14)
             .fontColor(TEXT_SECONDARY)
             .margin({ bottom: 6 })
-          TextInput({ text: $$this.editTtsEndpoint, placeholder: '如 https://example.com/api/v3/tts' })
+          TextInput({ text: $$this.editTtsEndpoint, placeholder: '如 https://openspeech.bytedance.com/api/v3/tts/unidirectional' })
             .width('100%')
             .height(48)
             .fontSize(14)
