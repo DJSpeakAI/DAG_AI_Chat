@@ -136,6 +136,13 @@ export struct KnowledgeBankPage {
   @Local gridCols: number = 4; // ★ 0.239.0：网格列数随容器宽连续自适应（禁写死档位军令）——封面卡目标格宽 200（卡片比单词卡高，格宽放宽）
   @Local gridGap: number = 12; // ★ 0.239.0：间距随格宽连续缩放（8~14 连续区间，与单词库同式）
 
+  // ── ★ 0.240.0：手机端搜索栏滚动隐藏（用户拍板「上滑收起/下滑呼回」，与单词库同款）──
+  // 宽屏（isTablet || isPcDevice）搜索栏常驻：渲染条件兜底 + onDidScroll 直接短路（PC 窗口拖窄误收后拖宽也能自愈）
+  @Local searchBarVisible: boolean = true;
+  private listScroller: Scroller = new Scroller();
+  private scrollAccum: number = 0; // 同方向累计量（≥10vp 才收/放，防轻蹭抖动）
+  private scrollDir: number = 0;   // 0=无 / 1=上滑（收） / -1=下滑（放）；方向反转即清零重计
+
   /** ★ 0.239.0 设备三档判定（照抄 WordBankPage.ets 0.218.8 先例）：phone/tablet/tv/car/wearable
    *  之外全算 PC 档——PC 窗口拖到多窄都是 PC 档（网格与切换按钮保持，不退化手机列表） */
   isPcDevice(): boolean {
@@ -298,22 +305,53 @@ export struct KnowledgeBankPage {
     return list;
   }
 
-  // ★ 0.222.16 用户拍板：「排序」入口文字=当前模式名+方向箭头（两按钮并拢后保留一眼可读性）
-  sortText(): string {
-    if (this.sortMode === 1) return '最新 ↑';
-    if (this.sortMode === 2) return '需复习 ↑';
-    if (this.sortMode === 3) return '需复习 ↓';
-    return '最新 ↓';
+  // ★ 0.240.0：手机端搜索栏滚动隐藏防抖逻辑（onDidScroll 每 tick 调用，纯轻量计算）——
+  //   上滑累计 >10vp 收起 / 下滑累计 >10vp 呼回 / 方向反转清零重计 / 滚回顶部（≤0.5vp）强制显示
+  handleSearchScroll(offset: number): void {
+    if (this.isTablet || this.isPcDevice()) {
+      if (!this.searchBarVisible) {
+        this.searchBarVisible = true;
+      }
+      return;
+    }
+    if (this.listScroller.currentOffset().yOffset <= 0.5) {
+      this.scrollAccum = 0;
+      this.scrollDir = 0;
+      if (!this.searchBarVisible) {
+        this.searchBarVisible = true;
+      }
+      return;
+    }
+    if (offset === 0) {
+      return;
+    }
+    const dir: number = offset > 0 ? 1 : -1;
+    if (dir !== this.scrollDir) {
+      this.scrollDir = dir;
+      this.scrollAccum = 0;
+    }
+    this.scrollAccum += Math.abs(offset);
+    if (this.scrollAccum >= 10) {
+      this.scrollAccum = 0;
+      if (dir > 0 && this.searchBarVisible) {
+        this.searchBarVisible = false; // 直接赋值 + transition 动画（禁 animateTo 闭包——畅享90pro UI 不刷新雷）
+      } else if (dir < 0 && !this.searchBarVisible) {
+        this.searchBarVisible = true;
+      }
+    }
   }
 
   // ★ 0.222.16：排序选项菜单（bindPopup 自定义 builder）——无参 @Builder 内部直读 sortMode（0.190.1 铁律）；
-  //   两项=最新/需复习，各带当前方向箭头，激活项品牌紫高亮；点击只改 sortMode 不收起，点遮罩才收
+  //   两项=最新/需复习，各带当前方向箭头，激活项品牌紫高亮；点击只改 sortMode 不收起，点遮罩才收；
+  //   ★ 0.240.0：激活项补紫底（SURFACE_HOVER+radius 8）——UI_GUIDELINES 铁律「排序/筛选选中态统一品牌紫背景」，按钮图标化后弹层成为排序状态唯一可视位
   @Builder
   sortMenuBuilder() {
     Column() {
       Text(this.sortMode === 1 ? '最新 ↑' : '最新 ↓')
         .fontSize(14)
         .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
+        .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
         .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -324,6 +362,8 @@ export struct KnowledgeBankPage {
       Text(this.sortMode === 3 ? '需复习 ↓' : '需复习 ↑')
         .fontSize(14)
         .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_PRIMARY)
+        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? SURFACE_HOVER : Color.Transparent)
+        .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
         .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -789,15 +829,22 @@ export struct KnowledgeBankPage {
         .layoutWeight(1)
       // ★ 0.222.16 用户拍板：两个独立排序按钮并拢为单个「排序」入口（参考单词库右上角 UI）；
       //   点击弹两选项（最新/需复习），点选项只切排序不收起（可连续切换），点遮罩才收；
-      //   按钮恒定紫底紫字（含默认「最新↓」——用户反馈默认态无紫底包裹不协调）
-      Button(this.sortText())
-        .fontSize(12)
-        .height(28)
-        .backgroundColor(SURFACE_HOVER)
-        .fontColor(BRAND_SECONDARY)
-        .padding({ left: 8, right: 8 })
-        .margin({ right: 4 })
-        .bindPopup(this.sortMenuVisible, {
+      //   ★ 0.240.0 用户拍板：紫底文字按钮（「最新 ↓」）→ sort.svg 图标按钮（顶栏全图标统一，与 grid/设置齿轮同规格 28×28）；
+      //   当前排序状态不再印在按钮上，点开弹层看紫色高亮
+      Row() {
+        Image($r('app.media.sort'))
+          .width(20)
+          .height(20)
+          .objectFit(ImageFit.Contain)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .height(28)
+      .width(28)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(Color.Transparent)
+      .margin({ right: 4 })
+      .bindPopup(this.sortMenuVisible, {
           builder: this.sortMenuBuilder(),
           placement: Placement.Bottom,
           popupColor: SURFACE_NODE,
@@ -2776,30 +2823,34 @@ export struct KnowledgeBankPage {
           // ★ 0.207.0：面包屑（非根目录显示；点级名跳转，点「知识库」回根）
           if (!this.multiSelectMode) {
             // ★ 0.148: search box + sort toggle (live filtering via @Computed)
-            Row() {
-              TextInput({ text: this.searchKeyword, placeholder: '搜索标题 / 内容' })
-                .fontSize(14)
-                .layoutWeight(1)
-                .height(40)
-                .padding({ left: 12, right: 12 })
-                .borderRadius(20)
-                .backgroundColor(SURFACE_SOFT)
-                .onChange((value: string) => {
-                  this.searchKeyword = value;
-                })
-              if (this.searchKeyword.length > 0) {
-                // Clear button — clearing restores the full list (spec 2.1.4)
-                Text('×')
-                  .fontSize(16)
-                  .fontColor(TEXT_TERTIARY)
-                  .margin({ left: 6 })
-                  .onClick(() => {
-                    this.searchKeyword = '';
+            // ★ 0.240.0：手机端滚动隐藏——宽屏（isTablet/isPcDevice）常驻兜底；条件渲染 + transition（0.222.7/0.222.8 已验证范式）
+            if (this.searchBarVisible || this.isTablet || this.isPcDevice()) {
+              Row() {
+                TextInput({ text: this.searchKeyword, placeholder: '搜索标题 / 内容' })
+                  .fontSize(14)
+                  .layoutWeight(1)
+                  .height(40)
+                  .padding({ left: 12, right: 12 })
+                  .borderRadius(20)
+                  .backgroundColor(SURFACE_SOFT)
+                  .onChange((value: string) => {
+                    this.searchKeyword = value;
                   })
-               }
-             }
-             .width('100%')
-             .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+                if (this.searchKeyword.length > 0) {
+                  // Clear button — clearing restores the full list (spec 2.1.4)
+                  Text('×')
+                    .fontSize(16)
+                    .fontColor(TEXT_TERTIARY)
+                    .margin({ left: 6 })
+                    .onClick(() => {
+                      this.searchKeyword = '';
+                    })
+                }
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+              .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: -8 })).animation({ duration: 200 }))
+            }
           } else {
             // ★ 0.148: multi-select toolbar — select-all / counter / cancel
             Row() {
@@ -3026,7 +3077,7 @@ export struct KnowledgeBankPage {
               }
             })
           } else {
-            List({ space: 8 }) {
+            List({ space: 8, scroller: this.listScroller }) { // ★ 0.240.0：挂 scroller（onDidScroll 里读 yOffset 判回顶）
               ForEach(this.filteredCards, (c: KnowledgeCard) => {
                 ListItem() {
                   Row() {
@@ -3246,6 +3297,11 @@ export struct KnowledgeBankPage {
             .width('100%')
             .layoutWeight(1)
             .padding({ left: 16, right: 16, top: 12 })
+            .onDidScroll((offset: number, state: ScrollState) => { // ★ 0.240.0：手机端搜索栏滚动隐藏（宽屏在方法内短路）
+              if (state !== ScrollState.Idle) {
+                this.handleSearchScroll(offset);
+              }
+            })
             .onClick(() => {
               // ★ 0.148: tapping the list's blank area exits multi-select.
               // Entry taps record lastEntryTapAt — a tap arriving here within

@@ -194,7 +194,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-const PAGE_VER = '0.237.2.1'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.237.1.1：跟 APP 0.237.1（划词取词基准修复，chat 套件新增 SEL-ACCURACY）；★ 0.237.0.1：跟 APP 0.237.0（CHAT-FOLD 重写为 SVG 折叠指示器军令断言）
+const PAGE_VER = '0.240.0.1'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.240.0.1：跟 APP 0.240.0（搜索栏滚动隐藏+排序图标化，kbview 新增 4 用例）；★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区）
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;

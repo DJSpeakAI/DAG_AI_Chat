@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000273, // ★ 0.239.0：知识库双视图（封面卡网格）+ 加号菜单双库统一；上一版 0.238.1：模型别名按模型 ID 一一对应；更早历史见 MEMORY.md
+    "versionCode": 1000274, // ★ 0.240.0：手机端搜索栏滚动隐藏 + 排序按钮图标化（两库同款）；上一版 0.239.0：知识库双视图+加号菜单；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

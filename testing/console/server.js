@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.239.0.1'; // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.240.0.1'; // ★ 0.240.0.1：跟 APP 0.240.0（手机端搜索栏滚动隐藏+排序按钮图标化）+ kbview 新增 KB-SORT-ICON/WB-SORT-ICON/KB-SEARCH-HIDE/WB-SEARCH-HIDE 四用例（图标试探定位/弹层紫底高亮断言/上滑收起下滑呼回回顶强制显示/宽屏常驻红线） // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -2524,6 +2524,219 @@ const CASES = [
       await sleep(1000);
       const d2 = await dumpLayout(serial);
       ctx.log('④ 遮罩关闭', !d2.text.includes('新建单词') ? 'pass' : 'warn', !d2.text.includes('新建单词') ? '点遮罩后菜单收起 ✓' : '菜单仍在屏（点击未落遮罩——人工复核）');
+    } },
+
+  // ---------- ★ 0.240.0 排序按钮图标化 + 手机端搜索栏滚动隐藏（两库同款改造；测试覆盖军令 §12.13） ----------
+  { id: 'KB-SORT-ICON', suite: 'kbview', name: '知识库排序·图标化按钮+弹层紫底高亮+切换/反转链路（0.240.0 改造）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '排序断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '知识库', ctx.log);
+      if (!nav.ok) { ctx.log('★排序', 'fail', '未能进入知识库页'); return; }
+      const d0 = await dumpLayout(serial);
+      // ① 旧紫底文字按钮拆净（图标化后屏上应无「最新 ↓」按钮文字）
+      const noOldBtn = !d0.text.includes('最新 ↓');
+      ctx.log('★① 文字按钮已拆', noOldBtn ? 'pass' : 'fail',
+        noOldBtn ? '屏上无「最新 ↓」文字按钮——已换 sort.svg 图标' : '「最新 ↓」仍在屏（图标化未生效/装了旧包）');
+      const pr = findTextRect(d0.text, '+');
+      if (!pr) { ctx.log('★② 打开排序弹层', 'fail', '未找到 ＋ 按钮（排序图标定位基准）'); return; }
+      // ② 图标按钮试探测点击（图标无文字——按 ＋ 左侧顶栏带偏移逐个试，覆盖手机/宽屏 × density2/3 的排序位；
+      //    弹层特征=「最新 ↓」+「需复习 ↑」双在场；误触 ＋菜单/设置弹窗则点遮罩先关再续）
+      let opened = false; let hitOff = 0;
+      for (const off of [170, 105, 215, 260, 140]) {
+        await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - off)} ${Math.round((pr.y1 + pr.y2) / 2)}`, 15000);
+        await sleep(1100);
+        const dt = await dumpLayout(serial);
+        if (dt.text.includes('最新 ↓') && dt.text.includes('需复习 ↑')) { opened = true; hitOff = off; break; }
+        if (dt.text.includes('新建卡片') || dt.text.includes('每次复习展示的卡片数')) {
+          await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - 300)} ${Math.round(pr.y2 + 300)}`, 15000);
+          await sleep(800);
+        }
+      }
+      if (!opened) { artSave('KB-SORT-ICON', `probe-fail-${dev.id}.json`, d0.text); ctx.log('★② 打开排序弹层', 'fail', '顶栏偏移试探 5 点未弹排序层（图标定位失败——人工盯屏校准偏移，dump 已存证）'); return; }
+      const d1 = await dumpAuditNodes(serial);
+      artSave('KB-SORT-ICON', `menu-${dev.id}.json`, d1.nodes.map((n) => ({ t: n.text, bg: n.backgroundColor, x: n.x, y: n.y })));
+      ctx.log('★② 打开排序弹层', 'pass', `排序图标位于＋左侧 ${hitOff}px——弹层「最新 ↓/需复习 ↑」双在场`);
+      // ③ 当前项紫底高亮（0.240.0：BRAND_SECONDARY 紫字 + SURFACE_HOVER #FF2C1B4D 紫底双标识）
+      const hl = (nodes, kw) => nodes.filter((n) => String(n.text || '').trim() === kw && String(n.backgroundColor || '').toLowerCase() === '#ff2c1b4d').length > 0;
+      ctx.log('★③ 当前项紫底高亮', hl(d1.nodes, '最新 ↓') ? 'pass' : 'fail',
+        hl(d1.nodes, '最新 ↓') ? '「最新 ↓」节点底色 #FF2C1B4D（SURFACE_HOVER）——紫字+紫底双标识' : '「最新 ↓」未见紫底（高亮未挂或装旧包）');
+      // ④ 切换排序：点「需复习 ↑」→ 弹层不收起 + 高亮跟手
+      await uiClickText(serial, '需复习 ↑', { exact: true, waitMs: 1000 });
+      const d2 = await dumpAuditNodes(serial);
+      const stayOpen = d2.text.includes('最新 ↓') && d2.text.includes('需复习');
+      ctx.log('★④ 切换不收起', stayOpen ? 'pass' : 'fail', stayOpen ? '点选项后弹层仍在（可连续切换交互保留）' : '弹层收起（点选项不收起被破坏）');
+      ctx.log('★④b 高亮跟手', hl(d2.nodes, '需复习 ↑') ? 'pass' : 'fail', hl(d2.nodes, '需复习 ↑') ? '切到需复习后紫底跳至「需复习 ↑」行' : '需复习行未见紫底（高亮未跟手）');
+      // ⑤ 点当前项反转方向（需复习 ↑ → 需复习 ↓，仍高亮）
+      await uiClickText(serial, '需复习 ↑', { exact: true, waitMs: 1000 });
+      const d3 = await dumpAuditNodes(serial);
+      const flipped = d3.text.includes('需复习 ↓') && !d3.text.includes('需复习 ↑');
+      ctx.log('★⑤ 点当前项反转', flipped && hl(d3.nodes, '需复习 ↓') ? 'pass' : 'fail',
+        flipped ? `反转后「需复习 ↓」${hl(d3.nodes, '需复习 ↓') ? '且紫底在 ✓' : '但紫底丢失'}` : '未见反转（屏上仍「需复习 ↑」或两者并存）');
+      // ⑥ 点遮罩关闭
+      await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - 300)} ${Math.round(pr.y2 + 300)}`, 15000);
+      await sleep(1000);
+      const d4 = await dumpLayout(serial);
+      ctx.log('⑥ 遮罩关闭', !d4.text.includes('需复习') ? 'pass' : 'warn', !d4.text.includes('需复习') ? '点遮罩后排序层收起 ✓' : '排序项仍在屏（点击未落遮罩——人工复核）');
+    } },
+
+  { id: 'WB-SORT-ICON', suite: 'kbview', name: '单词库排序·图标化按钮+三选项弹层紫底高亮+切字母+反转（0.240.0 改造）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '排序断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '单词库', ctx.log);
+      if (!nav.ok) { ctx.log('★排序', 'fail', '未能进入单词库页'); return; }
+      const d0 = await dumpLayout(serial);
+      const noOldBtn = !d0.text.includes('最新 ↓');
+      ctx.log('★① 文字按钮已拆', noOldBtn ? 'pass' : 'fail',
+        noOldBtn ? '屏上无「最新 ↓」文字按钮——已换 sort.svg 图标' : '「最新 ↓」仍在屏（图标化未生效/装了旧包）');
+      const pr = findTextRect(d0.text, '+');
+      if (!pr) { ctx.log('★② 打开排序弹层', 'fail', '未找到 ＋ 按钮（排序图标定位基准）'); return; }
+      let opened = false; let hitOff = 0;
+      for (const off of [170, 105, 215, 260, 140]) {
+        await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - off)} ${Math.round((pr.y1 + pr.y2) / 2)}`, 15000);
+        await sleep(1100);
+        const dt = await dumpLayout(serial);
+        if (dt.text.includes('最新 ↓') && dt.text.includes('需复习 ↑') && dt.text.includes('字母 ↑')) { opened = true; hitOff = off; break; }
+        if (dt.text.includes('新建单词') || dt.text.includes('每次展示的词条数')) {
+          await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - 300)} ${Math.round(pr.y2 + 300)}`, 15000);
+          await sleep(800);
+        }
+      }
+      if (!opened) { artSave('WB-SORT-ICON', `probe-fail-${dev.id}.json`, d0.text); ctx.log('★② 打开排序弹层', 'fail', '顶栏偏移试探 5 点未弹排序层（图标定位失败——人工盯屏校准，dump 已存证）'); return; }
+      const d1 = await dumpAuditNodes(serial);
+      artSave('WB-SORT-ICON', `menu-${dev.id}.json`, d1.nodes.map((n) => ({ t: n.text, bg: n.backgroundColor, x: n.x, y: n.y })));
+      ctx.log('★② 打开排序弹层', 'pass', `排序图标位于＋左侧 ${hitOff}px——三选项「最新 ↓/需复习 ↑/字母 ↑」全在场`);
+      const hl = (nodes, kw) => nodes.filter((n) => String(n.text || '').trim() === kw && String(n.backgroundColor || '').toLowerCase() === '#ff2c1b4d').length > 0;
+      ctx.log('★③ 当前项紫底高亮', hl(d1.nodes, '最新 ↓') ? 'pass' : 'fail',
+        hl(d1.nodes, '最新 ↓') ? '「最新 ↓」底色 #FF2C1B4D——紫字+紫底双标识' : '「最新 ↓」未见紫底（高亮未挂或装旧包）');
+      // ④ 切到字母排序（三选项特有路径）：点「字母 ↑」→ 高亮跳字母行、弹层不收
+      await uiClickText(serial, '字母 ↑', { exact: true, waitMs: 1000 });
+      const d2 = await dumpAuditNodes(serial);
+      const stayOpen = d2.text.includes('最新 ↓') && d2.text.includes('字母 ↑');
+      ctx.log('★④ 切字母不收起', stayOpen ? 'pass' : 'fail', stayOpen ? '点字母后弹层仍在（连续切换保留）' : '弹层收起（点选项不收起被破坏）');
+      ctx.log('★④b 高亮跟手', hl(d2.nodes, '字母 ↑') ? 'pass' : 'fail', hl(d2.nodes, '字母 ↑') ? '紫底跳至「字母 ↑」行 ✓' : '字母行未见紫底（高亮未跟手）');
+      // ⑤ 点当前项反转（字母 ↑ → 字母 ↓）
+      await uiClickText(serial, '字母 ↑', { exact: true, waitMs: 1000 });
+      const d3 = await dumpAuditNodes(serial);
+      const flipped = d3.text.includes('字母 ↓') && !d3.text.includes('字母 ↑');
+      ctx.log('★⑤ 点当前项反转', flipped && hl(d3.nodes, '字母 ↓') ? 'pass' : 'fail',
+        flipped ? `反转后「字母 ↓」${hl(d3.nodes, '字母 ↓') ? '且紫底在 ✓' : '但紫底丢失'}` : '未见反转（屏上仍「字母 ↑」或并存）');
+      await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - 300)} ${Math.round(pr.y2 + 300)}`, 15000);
+      await sleep(1000);
+      const d4 = await dumpLayout(serial);
+      ctx.log('⑥ 遮罩关闭', !d4.text.includes('字母 ↓') ? 'pass' : 'warn', !d4.text.includes('字母 ↓') ? '点遮罩后排序层收起 ✓' : '排序项仍在屏（人工复核）');
+    } },
+
+  { id: 'KB-SEARCH-HIDE', suite: 'kbview', name: '知识库搜索栏·手机上滑收起/下滑呼回/回顶强制显示+宽屏常驻红线（0.240.0 新功能）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '搜索栏断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '知识库', ctx.log);
+      if (!nav.ok) { ctx.log('★搜索栏', 'fail', '未能进入知识库页'); return; }
+      const d0 = await dumpLayout(serial);
+      const scrM = String((JSON.parse(d0.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+      const W = scrM ? +scrM[3] : 2560, H = scrM ? +scrM[4] : 1600;
+      const hint = (t) => findNodeHintAll(t, '搜索标题').length;
+      const base = hint(d0.text);
+      ctx.log('★① 搜索栏在场', base > 0 ? 'pass' : 'fail', base > 0 ? 'placeholder「搜索标题 / 内容」在树 ✓' : '未见搜索框（hint 未捕获或未渲染）');
+      const pr = findTextRect(d0.text, '+');
+      const isWide = (pr ? pr.x2 + 40 : W) > 1800;
+      const upSwipe = `uitest uiInput swipe ${Math.round(W / 2)} ${Math.round(H * 0.72)} ${Math.round(W / 2)} ${Math.round(H * 0.25)} 600`;
+      const downSwipe = `uitest uiInput swipe ${Math.round(W / 2)} ${Math.round(H * 0.3)} ${Math.round(W / 2)} ${Math.round(H * 0.68)} 600`;
+      await sh(serial, upSwipe, 20000); await sleep(700);
+      await sh(serial, upSwipe, 20000); await sleep(1100);
+      const d1 = await dumpLayout(serial);
+      artSave('KB-SEARCH-HIDE', `after-up-${dev.id}.json`, d1.text);
+      if (isWide) {
+        ctx.log('★② 宽屏常驻红线', hint(d1.text) > 0 ? 'pass' : 'fail', hint(d1.text) > 0 ? '宽屏上滑后搜索栏仍在（常驻不动 ✓）' : '宽屏上滑后搜索栏消失（收放逻辑误挂宽屏——红线违规）');
+      } else {
+        let hid = hint(d1.text) === 0;
+        if (!hid) { // 重试更长上滑（首轮滚动量可能不足或键盘态干扰）
+          await sh(serial, `uitest uiInput swipe ${Math.round(W / 2)} ${Math.round(H * 0.85)} ${Math.round(W / 2)} ${Math.round(H * 0.12)} 500`, 20000); await sleep(1100);
+          const d1b = await dumpLayout(serial); hid = hint(d1b.text) === 0;
+        }
+        ctx.log('★② 上滑收起', hid ? 'pass' : 'fail', hid ? '上滑后搜索框出树（收起 ✓）' : '上滑后搜索框仍在（未收起——收放失效或列表不足一屏无法滚动，人工复核）');
+        await sh(serial, downSwipe, 20000); await sleep(1100);
+        const d2 = await dumpLayout(serial);
+        ctx.log('★③ 下滑呼回', hint(d2.text) > 0 ? 'pass' : 'fail', hint(d2.text) > 0 ? '下滑后搜索框回树 ✓' : '下滑后搜索框未回（呼回失效）');
+        await sh(serial, downSwipe, 20000); await sleep(600);
+        await sh(serial, downSwipe, 20000); await sleep(1100);
+        const d3 = await dumpLayout(serial);
+        ctx.log('★④ 回顶强制显示', hint(d3.text) > 0 ? 'pass' : 'fail', hint(d3.text) > 0 ? '滚回顶部搜索栏在场 ✓' : '回顶后搜索栏仍隐藏（强制显示失效）');
+        // ⑤ 搜索词不清空（自洽探测：注入 A240 → 收起→呼回 → dump 回显比对；dump 不回显输入文本则 info 降级人工）
+        const box = findNodeHintAll(d3.text, '搜索标题')[0];
+        if (box) {
+          await uiInputText(serial, box.x, box.y, 'A240');
+          await sleep(700);
+          const dw = await dumpLayout(serial);
+          const shown0 = dw.text.includes('A240');
+          await sh(serial, upSwipe, 20000); await sleep(1000);
+          await sh(serial, downSwipe, 20000); await sleep(1100);
+          const dr = await dumpLayout(serial);
+          const shown1 = dr.text.includes('A240');
+          ctx.log('⑤ 搜索词保留', shown1 ? 'pass' : (shown0 ? 'fail' : 'info'),
+            shown0 ? `注入 A240 → 收起→呼回后词${shown1 ? '仍显示（不丢 ✓）' : '丢失（清空违规）'}` : 'dump 不回显输入框文本——本项人工抽查（呼回后框内词应原样在）');
+        }
+      }
+      ctx.log('备注', 'info', '10vp 轻蹭防抖为细粒度手势（自动化无法精确注入 <10vp 位移）——保留人工验收项「轻蹭不抖动」');
+    } },
+
+  { id: 'WB-SEARCH-HIDE', suite: 'kbview', name: '单词库搜索栏·手机上滑收起/下滑呼回/回顶强制显示+宽屏常驻红线（0.240.0 新功能）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '搜索栏断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '单词库', ctx.log);
+      if (!nav.ok) { ctx.log('★搜索栏', 'fail', '未能进入单词库页'); return; }
+      const d0 = await dumpLayout(serial);
+      const scrM = String((JSON.parse(d0.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+      const W = scrM ? +scrM[3] : 2560, H = scrM ? +scrM[4] : 1600;
+      const hint = (t) => findNodeHintAll(t, '搜索单词').length;
+      const base = hint(d0.text);
+      ctx.log('★① 搜索栏在场', base > 0 ? 'pass' : 'fail', base > 0 ? 'placeholder「搜索单词 / 音标 / 释义」在树 ✓' : '未见搜索框（hint 未捕获或未渲染）');
+      const pr = findTextRect(d0.text, '+');
+      const isWide = (pr ? pr.x2 + 40 : W) > 1800;
+      const upSwipe = `uitest uiInput swipe ${Math.round(W / 2)} ${Math.round(H * 0.72)} ${Math.round(W / 2)} ${Math.round(H * 0.25)} 600`;
+      const downSwipe = `uitest uiInput swipe ${Math.round(W / 2)} ${Math.round(H * 0.3)} ${Math.round(W / 2)} ${Math.round(H * 0.68)} 600`;
+      await sh(serial, upSwipe, 20000); await sleep(700);
+      await sh(serial, upSwipe, 20000); await sleep(1100);
+      const d1 = await dumpLayout(serial);
+      artSave('WB-SEARCH-HIDE', `after-up-${dev.id}.json`, d1.text);
+      if (isWide) {
+        ctx.log('★② 宽屏常驻红线', hint(d1.text) > 0 ? 'pass' : 'fail', hint(d1.text) > 0 ? '宽屏上滑后搜索栏仍在（常驻不动 ✓）' : '宽屏上滑后搜索栏消失（收放逻辑误挂宽屏——红线违规）');
+      } else {
+        let hid = hint(d1.text) === 0;
+        if (!hid) {
+          await sh(serial, `uitest uiInput swipe ${Math.round(W / 2)} ${Math.round(H * 0.85)} ${Math.round(W / 2)} ${Math.round(H * 0.12)} 500`, 20000); await sleep(1100);
+          const d1b = await dumpLayout(serial); hid = hint(d1b.text) === 0;
+        }
+        ctx.log('★② 上滑收起', hid ? 'pass' : 'fail', hid ? '上滑后搜索框出树（收起 ✓）' : '上滑后搜索框仍在（未收起——收放失效或列表不足一屏无法滚动，人工复核）');
+        await sh(serial, downSwipe, 20000); await sleep(1100);
+        const d2 = await dumpLayout(serial);
+        ctx.log('★③ 下滑呼回', hint(d2.text) > 0 ? 'pass' : 'fail', hint(d2.text) > 0 ? '下滑后搜索框回树 ✓' : '下滑后搜索框未回（呼回失效）');
+        await sh(serial, downSwipe, 20000); await sleep(600);
+        await sh(serial, downSwipe, 20000); await sleep(1100);
+        const d3 = await dumpLayout(serial);
+        ctx.log('★④ 回顶强制显示', hint(d3.text) > 0 ? 'pass' : 'fail', hint(d3.text) > 0 ? '滚回顶部搜索栏在场 ✓' : '回顶后搜索栏仍隐藏（强制显示失效）');
+        const box = findNodeHintAll(d3.text, '搜索单词')[0];
+        if (box) {
+          await uiInputText(serial, box.x, box.y, 'A240');
+          await sleep(700);
+          const dw = await dumpLayout(serial);
+          const shown0 = dw.text.includes('A240');
+          await sh(serial, upSwipe, 20000); await sleep(1000);
+          await sh(serial, downSwipe, 20000); await sleep(1100);
+          const dr = await dumpLayout(serial);
+          const shown1 = dr.text.includes('A240');
+          ctx.log('⑤ 搜索词保留', shown1 ? 'pass' : (shown0 ? 'fail' : 'info'),
+            shown0 ? `注入 A240 → 收起→呼回后词${shown1 ? '仍显示（不丢 ✓）' : '丢失（清空违规）'}` : 'dump 不回显输入框文本——本项人工抽查（呼回后框内词应原样在）');
+        }
+      }
+      ctx.log('备注', 'info', '10vp 轻蹭防抖为细粒度手势——保留人工验收项「轻蹭不抖动」');
     } },
 
   // ---------- 功能⑤ 云端语音朗读 API（★ 0.232.0；用户规则：没填 Key 的设备不测） ----------

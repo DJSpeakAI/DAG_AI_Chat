@@ -385,3 +385,23 @@
 | 弹出位置 | `placement: Placement.BottomRight` | 弹层右缘对齐按钮右缘、整体在按钮**左下方**；禁止弹层横向溢出屏幕右缘 |
 | 二级 drill-down | 知识库保留 | main → import(5)/export(4) + ‹ 返回；关闭弹层复位 main 级 |
 | 实现方式 | 两页各自实现同规格 builder，**不抽公共组件** | 跨文件导出 @Builder 有新雷风险（0.218.3 sortMenu 先例） |
+
+## 十六、顶栏搜索栏滚动隐藏 + 排序图标按钮（★ 0.240.0 用户定稿——两库同款）
+
+> 背景：手机端反馈知识库/单词库搜索栏挡内容；排序紫底文字按钮与顶栏图标家族不统一。定案=手机端搜索栏「上滑收起/下滑呼回」，两库排序按钮换 sort.svg 图标，PC/Pad 搜索栏常驻不动。
+
+### 16.1 手机端搜索栏滚动隐藏（仅手机生效）
+- 生效条件：`!isTablet && !isPcDevice()`；宽屏（Pad/PC，含 PC 窗口拖窄）搜索栏**常驻渲染、零收放逻辑**（红线：不加右上角搜索按钮）
+- 状态：`@Local searchBarVisible: boolean = true`（必须挂 @Local）；渲染条件 `searchBarVisible || isTablet || isPcDevice()`（宽屏兜底，防窗口模式切换后滞留隐藏）
+- 滚动判定（List 挂 `onDidScroll` + `scroller`）：
+  - 上滑（offset>0）同方向累计 **≥10vp** → 收起；下滑同方向累计 ≥10vp → 呼回；**方向反转即清零重计**（防轻蹭抖动）
+  - 滚回顶部（`scroller.currentOffset().yOffset ≤ 0.5`）→ **强制显示**（不管方向）
+  - 收放=直接赋值 + `transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: -8 })).animation({ duration: 200 }))`——**禁 animateTo 闭包内赋值**（畅享90pro 实锤 UI 不刷新，0.222.x 五轮破案）
+- 搜索词不清空：收起后 `searchKeyword` 原样保留，呼回过滤结果不变；多选模式搜索栏本就不渲染，与收放天然不冲突
+
+### 16.2 排序按钮图标化（两库同款）
+- 按钮：`Row { Image($r('app.media.sort')).width(20).height(20).objectFit(ImageFit.Contain) }`，容器 28×28 / `borderRadius(RADIUS_CONTROL)` / 透明底 / `margin({ right: 4 })`——与 grid 切换按钮、设置齿轮同规格
+- sort.svg 家族画风：viewBox 18×18、`fill="none"`、stroke `rgb(255,255,255)` / `stroke-opacity 0.650980413`（≈65% 白，透明度写死在 svg）、`stroke-width 1.500000`、round cap/join；图形=三横线长度递减（12/8/4）+ 右侧下箭头
+- bindPopup 配置原样（SURFACE_NODE / radius 12 / mask rgba(0,0,0,0.3) / 点选项不收起可连续切换）；按钮上不再显示排序文字，**当前排序状态看弹层紫色高亮**
+- 弹层当前项：紫字（BRAND_SECONDARY）+ **紫底 `SURFACE_HOVER` + borderRadius 8** 双标识（本铁律补齐执行）；非当前项透明底
+- 顶栏终态次序：宽屏=排序图标 → 视图切换 → 设置 → ＋；手机=排序图标 → 设置 → ＋（全图标 28×28 家族，无文字按钮）
