@@ -32,7 +32,7 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.236.0：getBuiltinQwenTtsKey（千问档 Key 预填）；★ 0.236.1：getBuiltinVolcanoTtsKey/Voice（火山档切回兜底回填）
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, ModelAliasStore, connectModelAlias } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.236.0：getBuiltinQwenTtsKey（千问档 Key 预填）；★ 0.236.1：getBuiltinVolcanoTtsKey/Voice（火山档切回兜底回填）；★ 0.238.1：ModelAliasStore/connectModelAlias（别名按模型 ID 一一对应）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
@@ -187,7 +187,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.238.0'; // ★ 0.238.0：测试连接+模型别名+信息行合并；上一版 0.237.4：AI 消息操作栏按钮重排
+const APP_VERSION: string = 'v0.238.1'; // ★ 0.238.1：模型别名按模型 ID 一一对应（切换自动带出）；上一版 0.238.0：测试连接+模型别名+信息行合并
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -274,7 +274,11 @@ export struct GlobalSettingsDialog {
   providerEndpointCache: Map<string, string> = new Map();
 
   // ★ 0.238.0：模型别名编辑副本（全局单值——不随提供商切换快照/恢复，4 提供商共用一份）
+  //   ★ 0.238.1：升级「按模型 ID 一一对应」——editAlias 仍单值（当前表单选中模型的别名），
+  //   切提供商/切模型时自动从 aliasStore 带出对应模型的别名（输入实时记录，跨重启保留）
   @Local editAlias: string = '';
+  // ★ 0.238.1：别名映射表（模型 ID→别名，独立 key 'model-alias-v1'——表单回显用）
+  @Local aliasStore: ModelAliasStore = connectModelAlias();
   // ★ 0.238.0：测试连接（表单当前值发一次最小真实请求；进行中按钮禁用防连点）
   @Local testing: boolean = false;      // 执行中（按钮禁用）
   @Local testResult: string = '';       // 结果文案（空=未测过）
@@ -368,7 +372,13 @@ export struct GlobalSettingsDialog {
     this.editKey = this.apiConfig.apiKey;
     this.editProvider = this.apiConfig.provider;
     // ★ 0.238.0：模型别名回显 + 测试结果复位（每次开弹窗清零上次结果）
+    // ★ 0.238.1：回显后同步把「当前生效模型的落盘别名」灌进映射表（0.238.0 用户已保存过的别名
+    //   在 map 里还没有记录——灌一次保证切换再切回能自动带出）
     this.editAlias = this.apiConfig.modelAlias;
+    if (this.apiConfig.model.length > 0 && this.apiConfig.modelAlias.length > 0 &&
+      this.aliasStore.aliasFor(this.apiConfig.model).length === 0) {
+      this.aliasStore.setAlias(this.apiConfig.model, this.apiConfig.modelAlias);
+    }
     this.testing = false;
     this.testResult = '';
     this.testOk = false;
@@ -1035,6 +1045,9 @@ export struct GlobalSettingsDialog {
     } else {
       this.editEndpoint = this.providerEndpointCache.get(target) ?? '';
     }
+    // ★ 0.238.1：别名跟随模型——切换后自动带出新表单当前模型的别名（一一对应，输入时已实时记录；
+    //   未设过=空串清空，用户原话「之前没设置过就变空」）
+    this.editAlias = this.aliasStore.aliasFor(this.currentModelValue());
   }
 
   // ★ 0.190.0：跳浏览器打开「获取 API Key」官网（openLink API12+；失败 toast 不崩溃）
@@ -1748,6 +1761,8 @@ export struct GlobalSettingsDialog {
               .onClick(() => {
                 this.selectedModelIndex = idx;
                 this.isModelDropdownOpen = false;
+                // ★ 0.238.1：别名跟随模型——切下拉自动带出该模型的别名（输入时已实时记录）
+                this.editAlias = this.aliasStore.aliasFor(this.currentModelValue());
               })
             }, (m: PresetModel) => m.id)
 
@@ -1768,6 +1783,8 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.selectedModelIndex = PROVIDER_PRESETS[this.curPresetIdx].models.length;
               this.isModelDropdownOpen = false;
+              // ★ 0.238.1：别名跟随模型——切「自定义…」模型 ID 待填，别名先清空（填入 ID 后带出）
+              this.editAlias = this.aliasStore.aliasFor(this.currentModelValue());
             })
           }
           .width('100%')
@@ -1810,6 +1827,10 @@ export struct GlobalSettingsDialog {
             .placeholderColor(TEXT_TERTIARY)
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(SURFACE_SOFT)
+            .onChange((value: string) => {
+              // ★ 0.238.1：手填模型 ID 变化→别名框带出该模型的别名（一一对应）
+              this.editAlias = this.aliasStore.aliasFor(value.trim());
+            })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -1849,6 +1870,7 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
 
       // ★ 0.238.0：模型别名（应用内展示名——4 提供商共用一份全局配置；留空显示官方模型名）
+      //   ★ 0.238.1：按模型 ID 一一对应——输入即实时记录进 aliasStore（切换提供商/模型自动带出）
       Column() {
         Text('模型别名')
           .fontSize(14)
@@ -1862,6 +1884,10 @@ export struct GlobalSettingsDialog {
           .placeholderColor(TEXT_TERTIARY)
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
+          .onChange((value: string) => {
+            // ★ 0.238.1：实时记录到当前表单模型名下（未保存也记——切走再切回自动带出）
+            this.aliasStore.setAlias(this.currentModelValue(), value);
+          })
         Text('给模型起个应用内展示名称，对话记录里会显示它（类似司忆区的展示名）；留空则显示官方模型名。')
           .fontSize(11)
           .lineHeight(18)
@@ -1922,6 +1948,10 @@ export struct GlobalSettingsDialog {
           .placeholderColor(TEXT_TERTIARY)
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
+          .onChange((value: string) => {
+            // ★ 0.238.1：手填模型 ID 变化→别名框带出该模型的别名（一一对应）
+            this.editAlias = this.aliasStore.aliasFor(value.trim());
+          })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -1952,6 +1982,7 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
 
       // ★ 0.238.0：模型别名（自定义配置=第 4 提供商同款；与预设共用全局单值 editAlias）
+      //   ★ 0.238.1：按模型 ID 一一对应——输入即实时记录，切提供商/模型自动带出
       Column() {
         Text('模型别名')
           .fontSize(14)
@@ -1965,6 +1996,10 @@ export struct GlobalSettingsDialog {
           .placeholderColor(TEXT_TERTIARY)
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
+          .onChange((value: string) => {
+            // ★ 0.238.1：实时记录到当前表单模型名下（未保存也记——切走再切回自动带出）
+            this.aliasStore.setAlias(this.currentModelValue(), value);
+          })
         Text('给模型起个应用内展示名称，对话记录里会显示它（类似司忆区的展示名）；留空则显示官方模型名。')
           .fontSize(11)
           .lineHeight(18)

@@ -287,6 +287,50 @@ export function connectApiConfig(): ApiConfig {
   }) as ApiConfig;
 }
 
+// ★ 0.238.1：模型别名映射表（按模型 ID 一一对应，用户拍板「别名跟模型绑定+自动记录」——
+//   设置表单里切提供商/切模型别名自动带出，不每次重打）。独立全新 key 'model-alias-v1'
+//   （Schema 铁律：全新 key 首次创建即含全部字段，零换 key 迁移负担，不动刚换的 api-config-v4）。
+//   存储形态=string 存 JSON（@Trace string 持久化可靠；空别名存空串=回落官方名，不删键）。
+//   消费分工：本表只服务设置表单回显与跨重启记忆；消息行展示仍走 apiConfig.modelAlias
+//   （编辑副本「保存才生效」语义不变——未保存的别名不会泄漏到对话界面）。
+@ObservedV2
+export class ModelAliasStore {
+  @Trace aliasMapJson: string = '{}'; // { "<模型ID>": "<别名>", ... }
+
+  aliasFor(modelId: string): string {
+    if (modelId.length === 0) {
+      return '';
+    }
+    try {
+      const map = JSON.parse(this.aliasMapJson) as Record<string, string>;
+      const v = map[modelId];
+      return v === undefined || v === null ? '' : v;
+    } catch (_e) {
+      return ''; // 坏数据兜底：视同无别名
+    }
+  }
+
+  setAlias(modelId: string, alias: string): void {
+    if (modelId.length === 0) {
+      return; // 模型 ID 未定（如自定义档空手填）不记录
+    }
+    try {
+      const map = JSON.parse(this.aliasMapJson) as Record<string, string>;
+      map[modelId] = alias; // 空别名=存空串（aliasFor 读空串返回 ''，等效回落官方名）
+      this.aliasMapJson = JSON.stringify(map);
+    } catch (_e) {
+      // 坏数据兜底：重建为只含当前键
+      const fresh: Record<string, string> = {};
+      fresh[modelId] = alias;
+      this.aliasMapJson = JSON.stringify(fresh);
+    }
+  }
+}
+
+export function connectModelAlias(): ModelAliasStore {
+  return PersistenceV2.connect(ModelAliasStore, 'model-alias-v1', () => new ModelAliasStore()) as ModelAliasStore;
+}
+
 // ============================================================
 // ★ 0.161.3：内置 API Key 本地配置（rawfile/config.json）
 // ============================================================
