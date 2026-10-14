@@ -148,7 +148,7 @@ const TTS_OFFICIAL_VOICE: string = 'zh_female_vv_uranus_bigtts';
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.235.0'; // ★ 0.235.0：划词高亮清除修复+划词引用；上一版 0.234.0：注意力锚点一期
+const APP_VERSION: string = 'v0.235.1'; // ★ 0.235.1：分章折叠行排版优化+设置弹窗滚动杠取消；上一版 0.235.0：划词高亮清除修复+划词引用
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -1280,7 +1280,7 @@ export struct GlobalSettingsDialog {
             Text('分章折叠')
               .fontSize(14)
               .fontColor(TEXT_PRIMARY)
-            Text('长回复生成完毕后自动按章节折叠呈现')
+            Text('中/长回复生成完毕后自动按章节折叠呈现')
               .fontSize(11)
               .lineHeight(18)
               .fontColor(TEXT_TERTIARY)
@@ -1295,7 +1295,7 @@ export struct GlobalSettingsDialog {
         }
         .width('100%')
 
-        Text('💡 长回复生成完毕后自动按章节折叠（默认展开前 1/3，其余收起），点章节行展开继续读；生成过程中仍为流式直显。与锚点卡片互相独立，可分别开关。')
+        Text('💡 中/长回复生成完毕后自动按章节折叠（默认展开前 1/3，其余收起），点章节行展开继续读；生成过程中仍为流式直显。与锚点卡片互相独立，可分别开关。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
@@ -2408,6 +2408,7 @@ export struct GlobalSettingsDialog {
         .width('100%')
         .layoutWeight(1)
         .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off) // ★ 0.235.1：右侧滚动杠取消（0.205.4 用户拍板「滚动杠不要」同族补齐——AI 偏好页右侧灰线难看，0.235.1 圈注）
         .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.Top)
 
@@ -2509,6 +2510,7 @@ export struct GlobalSettingsDialog {
           .width('100%')
           .layoutWeight(1)
           .scrollable(ScrollDirection.Vertical)
+          .scrollBar(BarState.Off) // ★ 0.235.1：滚动杠取消（0.205.4 拍板同族——法律条款纯阅读弹窗一并统一）
           .edgeEffect(EdgeEffect.Spring)
           .align(Alignment.Top)
 

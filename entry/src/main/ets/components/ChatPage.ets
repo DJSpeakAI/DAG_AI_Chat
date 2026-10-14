@@ -1295,26 +1295,24 @@ export struct ChatPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  // ★ 0.234.0：折叠行——整行可点 toggle（收起态整行卡片）：三角(16fp/宽22 项目定式) +
-  //   「第 X 节」序号（位置感即进度）+ 章节标题(14fp) + 右「共 N 节 · 约 X 字」(11fp/TEXT_SECONDARY)；
-  //   无 ## 兜底段显示「第 X 段 · 约 Y 字」（任务书 §2.3）
+  // ★ 0.235.1：折叠行——整行可点 toggle（收起态整行卡片）：三角(16fp/宽22 项目定式，translate 下移 1vp
+  //   修字形基线偏上=与标题垂直居中) + 章节标题(14fp，完整呈现可换行——禁截断省略号，0.235.1 用户拍板：
+  //   「标题一定要呈现完整，哪怕两行三行」) + 右「共 N 节 · 约 X 字」(11fp/TEXT_SECONDARY)；「第 X 节」序号
+  //   已删——AI 生成 MD 的 ## 标题自带 123 序号，UI 再加前缀=把标题拆开还挤占窄屏宽度（0.235.1）；
+  //   无 ## 兜底段显示「第 X 段 · 约 Y 字」（任务书 §2.3，兜底段无标题、序号是唯一标识故保留）
   @Builder
   FoldRow(msg: ChatMessage, sections: FoldSection[], sec: FoldSection, si: number) {
-    Row({ space: 6 }) {
+    Row({ space: 4 }) {
       Text(this.expandedSetFor(msg.messageId, sections).has(si) ? '▾' : '▸')
         .fontSize(16)
         .width(22)
         .fontColor(BRAND_SECONDARY)
+        .translate({ y: 1 })
       if (sec.numbered) {
-        Text(`第 ${sec.order} 节`)
-          .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
         Text(sec.title)
           .fontSize(14)
           .fontColor(TEXT_PRIMARY)
           .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`共 ${this.numberedSectionCount(sections)} 节 · 约 ${sec.charCount} 字`)
           .fontSize(11)
           .fontColor(TEXT_SECONDARY)
