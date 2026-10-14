@@ -258,7 +258,7 @@ export default function mdInlineTest() {
         items.push(it);
       }
       const sections = splitFoldSections(items);
-      expect(sections.length).assertEqual(3); // 300+300=600≥500 切 / 300+300=600 切 / 余 300 收尾
+      expect(sections.length).assertEqual(2); // ★ 0.235.0 修正期望：300+300=600≥500 切一段 / 余 300+300=600 收尾（末块不再切）——原断言 3 与实现语义矛盾（「余 300 收尾」需第 5 块），0.234.0 落地后未设备跑过、今日首跑暴露
       expect(sections[0].numbered).assertFalse(); // 兜底段非 ## 章节
       expect(sections[0].order).assertEqual(1);
       // 空输入边界

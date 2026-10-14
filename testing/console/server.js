@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.233.0.7'; // ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护 // ★ 四段制：前三段跟 APP（0.233.0=UI规范落地：三角放大/音色ID联动/弹窗留白/司忆区拆行/气泡拉满）、第四段=测试台工具版本 // ★ 0.233.0.1：跟 APP 0.233.0（A16/A17/A18/C1 四条 UI 审计断言）
+const VERSION = '0.235.0.1'; // ★ 四段制：前三段跟 APP（0.235.0=划词高亮清除修复+划词引用），第四段=测试台工具版本 // ★ 0.235.0.1：跟 APP 0.235.0（chat 套件新增 SEL-CLEAR/CHAT-QUOTE 两用例）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -322,6 +322,23 @@ function findNodeBoundsAll(jsonText, keyword) {
   return hits;
 }
 function findNodeBounds(jsonText, keyword) { const h = findNodeBoundsAll(jsonText, keyword); return h.length ? h[0] : null; }
+// ★ 0.235.0：含关键字节点的完整矩形（findNodeBoundsAll 只回中心——× 等右端子控件定位需要右缘坐标）
+function findTextRect(jsonText, keyword) {
+  let out = null;
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.attributes) {
+      const t = String(node.attributes.text || '');
+      if (t.includes(keyword)) {
+        const m = String(node.attributes.bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        if (m) out = { x1: +m[1], y1: +m[2], x2: +m[3], y2: +m[4], x: Math.round((+m[1] + +m[3]) / 2), y: Math.round((+m[2] + +m[4]) / 2), text: t.slice(0, 30) };
+      }
+    }
+    for (const k of Object.keys(node)) if (node[k] && typeof node[k] === 'object') walk(node[k]);
+  };
+  try { walk(JSON.parse(jsonText)); } catch (_) { /* dump 非 JSON 则放弃定位 */ }
+  return out;
+}
 // ★ 0.229.24 勾选框图标点击原语（盯屏破案实锤）：勾选行=Row[Image(无文字,onClick 承载体) + Text(文字仅展示)]——
 //   旧 uiClickText 点文字中心=点了个寂寞（首页文字无 onClick；弹窗文字 span 中心落在协议名上会误开正文）。
 //   必须点文字左侧的 Image 图标本体（dump 兄弟数组里文字前方最近的无文字节点）；兜底几何近似（文字左缘-40px）
@@ -882,6 +899,45 @@ async function probeCloudTts(key, model, voice) {
     return { ok: okBody(r2), fallback: true, usedVoice: 'zh_female_vv_uranus_bigtts', first, body: r2.body.slice(0, 150) };
   }
   return { ok: okBody(r), fallback, usedVoice, first, body: r.body.slice(0, 150) };
+}
+// ---------- ★ 0.235.0 划词两用例共用助手 ----------
+// 进对话页：冷启 → 画布 → 双击「N条对话」气泡（复刻 CHAT-KEEP ⓪①② 链路，返回 false=前置失败已记 log）
+async function navIntoChat(ctx, serial) {
+  let nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+  if (!nav.ok) nav = await uiClickText(serial, '进入气泡树', { waitMs: 2600 });
+  if (!nav.ok) {
+    await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+    await sleep(1500);
+    nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+  }
+  if (!nav.ok) { ctx.log('⓪ 进入气泡树画布', 'fail', '「气泡树」与「进入气泡树」均未命中（可能已在画布或首页改版）'); return false; }
+  ctx.log('⓪ 进入气泡树画布', 'pass', `已点击 (${nav.x},${nav.y})`);
+  const d = await dumpLayout(serial);
+  // ★ 0.235.0.1：取最后一个命中会撞画布信息条「N 个气泡 · N 条对话」（树序在气泡卡之后，双击它=点空）——
+  //   排除含「个气泡」的信息条，只留气泡卡「N 条对话 · X前」
+  const hits = findNodeBoundsAll(d.text, '条对话').filter((h) => !String(h.text).includes('个气泡'));
+  if (!hits.length) { ctx.log('① 定位有对话的气泡', 'fail', '画布未见「N条对话」气泡卡（信息条已排除）——先在某气泡发一条消息再跑本用例'); return false; }
+  const target = hits[hits.length - 1];
+  ctx.log('① 定位有对话的气泡', 'pass', `(${target.x},${target.y})「${String(target.text).slice(0, 24)}」`);
+  await uiDoubleClick(serial, target.x, target.y);
+  await sleep(2200);
+  const dc = await dumpLayout(serial);
+  const ok = /"text":\s*"\d+ 条对话"/.test(dc.text) || dc.text.includes('暂无对话');
+  ctx.log('② 双击进入对话页', ok ? 'pass' : 'fail', ok ? '对话页标题特征命中（顶栏「N 条对话」无时间后缀）' : '双击后仍在画布（双击未生效）');
+  return ok;
+}
+// 消息正文定位：app 窗口子树内取「文本最长」的可见节点（AI 回复正文天然最长；顶栏/按钮/提示均为短文本；
+// 输入框 placeholder 在 attributes.hint 不在 text）——CHROME 排除 UI 骨架文案防误取
+function pickBodyTextNode(nodes) {
+  const CHROME = ['条对话', '输入问题', '发送', '返回', '气泡', '朗读', '刷新', '条回复', '个模型'];
+  let best = null;
+  for (const n of nodes) {
+    const t = String(n.text || '').trim();
+    if (t.length < 12) continue;
+    if (CHROME.some((k) => t.includes(k))) continue;
+    if (!best || t.length > String(best.text || '').length) best = n;
+  }
+  return best;
 }
 const CASES = [
   // ---------- 功能⓪ 版本核验（用户需求 1/2：移到最上面，最先可见、可单独秒跑） ----------
@@ -1737,10 +1793,11 @@ const CASES = [
       }
       ctx.log('⓪ 进入气泡树画布', nav.ok ? 'pass' : 'fail',
         nav.ok ? `已点击 (${nav.x},${nav.y})——冷启首页→画布（找对话气泡的前提）` : '「气泡树」与「进入气泡树」均未命中（可能已在画布或首页改版）');
-      // ① 定位有对话的气泡（取最后一个命中=最新上层）
+      // ① 定位有对话的气泡（★ 0.235.0.1：排除画布信息条「N 个气泡 · N 条对话」——树序在气泡卡之后，
+      //   取最后命中会双击信息条=点空；只留气泡卡「N 条对话 · X前」）
       const d = await dumpLayout(serial);
-      const hits = findNodeBoundsAll(d.text, '条对话');
-      if (!hits.length) { ctx.log('① 定位有对话的气泡', 'fail', '画布未见「N条对话」标记——先在某气泡发一条消息再跑本用例'); return; }
+      const hits = findNodeBoundsAll(d.text, '条对话').filter((h) => !String(h.text).includes('个气泡'));
+      if (!hits.length) { ctx.log('① 定位有对话的气泡', 'fail', '画布未见「N条对话」气泡卡（信息条已排除）——先在某气泡发一条消息再跑本用例'); return; }
       const target = hits[hits.length - 1];
       ctx.log('① 定位有对话的气泡', 'pass', `(${target.x},${target.y})「${String(target.text).slice(0, 24)}」`);
       // ② 双击进对话页（0.173 双击语义）
@@ -1773,6 +1830,81 @@ const CASES = [
           : '热回后不在对话页——对话被清零/丢失（0.232.0 前旧病：refreshWorkspaceFromPools 清空 current.nodeID 复发）');
       const h = await hilogErrors(serial);
       ctx.log('链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'warn') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+    } },
+
+  // ---------- ★ 0.235.0 划词高亮清除回归（手机实测 bug：点空白高亮/工具栏滞留、两段同时高亮；Pad 保不回归） ----------
+  // dump 抓不到系统选中高亮属性（0.229.26 spike：26 属性键无 selection）——以自研悬浮工具栏
+  // 「入知识库」文案作为选中激活的可观测代理：长按出现 → 点空白必须消失（滞留=清除链失效）
+  { id: 'SEL-CLEAR', suite: 'chat', name: '划词清除·长按选词→点空白，工具栏/选中必须消失（0.235.0 修复回归）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '划词清除（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      if (!(await navIntoChat(ctx, serial))) return;
+      // ③ 长按消息正文进入划词态（悬浮工具栏弹出）
+      const nodes = await dumpAuditNodes(serial);
+      const body = pickBodyTextNode(nodes.nodes);
+      if (!body) { ctx.log('③ 定位消息正文', 'fail', '未见≥12字正文节点（消息过短或结构变化——先让 AI 回复一段长文本再跑）'); return; }
+      ctx.log('③ 定位消息正文', 'pass', `(${Math.round(body.xc)},${Math.round(body.yc)})「${String(body.text).slice(0, 20)}…」共 ${String(body.text).length} 字`);
+      await uiLongPress(serial, Math.round(body.xc), Math.round(body.yc), 1800);
+      const ds = await ctx.art.dump(`SEL-CLEAR-${dev.id}`, 'dump-sel.json', serial);
+      const toolbarOn = ds.text.includes('入知识库');
+      ctx.log('④ 长按后悬浮工具栏弹出', toolbarOn ? 'pass' : 'fail',
+        toolbarOn ? '「翻译/入知识库/引用/复制/删除」在屏——划词选中已激活' : '未见工具栏（长按未触发选择或正文定位偏移）');
+      if (!toolbarOn) return;
+      // ⑤ 点空白：顶栏标题「气泡」=无自身 onClick 的空白落点（点击落到根容器兜底 onClick → 清理链）
+      const blank = await uiClickText(serial, '气泡', { exact: true, waitMs: 1200 });
+      ctx.log('⑤ 点顶栏空白（标题区）', blank.ok ? 'pass' : 'warn', blank.ok ? `已点击 (${blank.x},${blank.y})` : (blank.err || '未定位到标题——点空白未执行，看最终断言'));
+      const de = await ctx.art.dump(`SEL-CLEAR-${dev.id}`, 'dump-cleared.json', serial);
+      const toolbarGone = !de.text.includes('入知识库') && !de.text.includes('引用到本聊天');
+      ctx.log('★点空白后工具栏/选中清除', toolbarGone ? 'pass' : 'fail',
+        toolbarGone ? '悬浮工具栏已消失——选中态被清理（0.235.0 修法 A/B/C 生效，无滞留）'
+          : '工具栏仍滞留——清除链失效（0.235.0 前「点空白无效」同族；手机复现路径的 Pad 回归红线）');
+    } },
+
+  // ---------- ★ 0.235.0 划词引用新功能（工具栏「引用」→ 二选一 → 引用栏 → × 撤销；零数据破坏路径） ----------
+  // 覆盖验收 Q1~Q4/Q8/Q9（引用按钮/二选一弹窗/引用栏出现/× 取消/纯提示不跳转/复习区与放大弹窗不显示）；
+  // Q5/Q6/Q7（新子气泡/发送注入/发送后清空）涉真实建气泡+消耗 AI 请求，归 Pad 人工验收（docs §五）
+  { id: 'CHAT-QUOTE', suite: 'chat', name: '划词引用·工具栏「引用」→二选一→引用栏→×撤销（0.235.0 新功能）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '划词引用（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      if (!(await navIntoChat(ctx, serial))) return;
+      // ① 长按正文 → 工具栏须含「引用」（Q1；入知识库右侧）
+      const nodes = await dumpAuditNodes(serial);
+      const body = pickBodyTextNode(nodes.nodes);
+      if (!body) { ctx.log('① 定位消息正文', 'fail', '未见≥12字正文节点（消息过短或结构变化）'); return; }
+      await uiLongPress(serial, Math.round(body.xc), Math.round(body.yc), 1800);
+      const d1 = await ctx.art.dump(`CHAT-QUOTE-${dev.id}`, 'dump-toolbar.json', serial);
+      const hasQuote = d1.text.includes('引用') && d1.text.includes('入知识库');
+      ctx.log('★① 工具栏含「引用」', hasQuote ? 'pass' : 'fail',
+        hasQuote ? '「引用」与「翻译/入知识库」同栏在屏（入知识库右侧，Q1 ✓）' : '工具栏未见「引用」（按钮未渲染或工具栏未弹出）');
+      if (!hasQuote) return;
+      // ② 点「引用」→ 二选一弹窗（Q2）
+      const q = await uiClickText(serial, '引用', { exact: true, waitMs: 1200 });
+      const d2 = await ctx.art.dump(`CHAT-QUOTE-${dev.id}`, 'dump-picker.json', serial);
+      const pickerOk = d2.text.includes('引用到本聊天') && d2.text.includes('引用为新子气泡');
+      ctx.log('★② 点「引用」弹二选一', pickerOk ? 'pass' : 'fail',
+        pickerOk ? `已点击 (${q.x},${q.y})——「引用到本聊天/引用为新子气泡」在屏（Q2 ✓）` : '二选一弹窗未出现（引用按钮点击未生效）');
+      if (!pickerOk) return;
+      // ③ 选「引用到本聊天」→ 输入框上方引用栏出现（Q3）
+      const c1 = await uiClickText(serial, '引用到本聊天', { exact: true, waitMs: 1200 });
+      const d3 = await ctx.art.dump(`CHAT-QUOTE-${dev.id}`, 'dump-quotebar.json', serial);
+      const barOk = d3.text.includes('引用：');
+      ctx.log('★③ 引用栏出现（输入框上方）', barOk ? 'pass' : 'fail',
+        barOk ? `已点击 (${c1.x},${c1.y})——「引用：前5字…」小栏在屏（Q3 ✓）` : '引用栏未出现（quoteText 未生效）');
+      if (!barOk) return;
+      // ④ 点引用栏右端 × 撤销 → 引用栏消失（Q4；引用栏 Text 因 layoutWeight 拉伸满行、右缘紧贴 × 图标，
+      //    bounds 右缘 +36px = 24vp × 图标中心——精确矩形定位，弃首轮 +120px 近似）
+      const bar = findTextRect(d3.text, '引用：');
+      if (!bar) { ctx.log('④ × 撤销引用', 'warn', '引用栏 bounds 解析失败'); return; }
+      await sh(serial, `uitest uiInput click ${bar.x2 + 36} ${bar.y}`, 15000);
+      await sleep(1200);
+      const d4 = await ctx.art.dump(`CHAT-QUOTE-${dev.id}`, 'dump-cancelled.json', serial);
+      const gone = !d4.text.includes('引用：');
+      ctx.log('★④ × 撤销引用栏消失', gone ? 'pass' : 'fail',
+        gone ? `已点 (${bar.x2 + 36},${bar.y})——引用栏已清（Q4 ✓，一次性会话态可重引）` : `引用栏仍在（× 未命中——点(${bar.x2 + 36},${bar.y})，dump 存证人工复核）`);
     } },
 
   // ---------- 功能⑤ 云端语音朗读 API（★ 0.232.0；用户规则：没填 Key 的设备不测） ----------
@@ -1984,7 +2116,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性（压后台热回保留；0.232.0 新增）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }

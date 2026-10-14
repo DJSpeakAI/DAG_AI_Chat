@@ -148,7 +148,7 @@ const TTS_OFFICIAL_VOICE: string = 'zh_female_vv_uranus_bigtts';
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.234.0'; // ★ 0.234.0：注意力锚点一期（锚点卡片+分章折叠+设置双开关）
+const APP_VERSION: string = 'v0.235.0'; // ★ 0.235.0：划词高亮清除修复+划词引用；上一版 0.234.0：注意力锚点一期
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

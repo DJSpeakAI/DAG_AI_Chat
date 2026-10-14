@@ -1156,7 +1156,10 @@ export struct BBTreeCanvas {
                 }
                 const now = Date.now();
                 // 双击路径：进入对话（导航前清本地选中，交棒 current 选中语义）
-                if (this.lastTapNodeId === bubble.nodeID && now - this.lastTapTime < 300) {
+                // ★ 0.235.0：窗口 300→600ms（用户拍板）——300ms 过紧：uitest 自动化两次注入间隔
+                //   实测 ~310-320ms 恒进不了窗（测试台 CHAT-KEEP/SEL-CLEAR/CHAT-QUOTE 双击步骤历史边缘通过）；
+                //   600ms 仍是自然双击节奏（Windows 默认 500ms），同卡 600ms 内连击无其他语义，无副作用
+                if (this.lastTapNodeId === bubble.nodeID && now - this.lastTapTime < 600) {
                   this.lastTapNodeId = '';
                   this.lastTapTime = 0;
                   this.selectedNodeId = '';

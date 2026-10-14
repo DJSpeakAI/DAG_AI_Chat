@@ -561,9 +561,19 @@ export struct ChatPage {
    private stickySelKey: string = '';
    private stickyStart: number = -1;
    private stickyEnd: number = -1;
-  @Local selKey: string = '';             // 当前激活选择的 Text 标识（`${msgId}|u` 用户消息 / `${msgId}|${segIdx}` AI 段）
-  @Local selectAllKey: string = '';       // 全选受控态标识（`${selKey}|${nonce}`，nonce 递增确保重复点击仍触发属性重应用）
-  @Local selectAllNonce: number = 0;      // 全选触发计数（配合 selectAllKey）
+   @Local selKey: string = '';             // 当前激活选择的 Text 标识（`${msgId}|u` 用户消息 / `${msgId}|${segIdx}` AI 段）
+   @Local selectAllKey: string = '';       // 全选受控态标识（`${selKey}|${nonce}`，nonce 递增确保重复点击仍触发属性重应用）
+   @Local selectAllNonce: number = 0;      // 全选触发计数（配合 selectAllKey）
+    // ★ 0.235.0 修法 B：最近一次有效选择的 key 副本（不被 clearSelectionState 清理）——
+    // selKey 已被 onDisappear 清空但系统高亮/菜单残留时，closeActiveSelectionMenu 退用它兜底关闭
+    private lastSelKey: string = '';
+    // ★ 0.235.0 修法 C：List onTouch Down 时刻的选中 key 快照——Up 时仅当「选中未变」才执行清除
+    // （长按新建选择会改变 selKey → 该次抬手不是「点空白收起」意图，误清会废掉整个划词功能）
+    private selKeyAtTouchDown: string = '';
+    // ★ 0.235.0：划词引用——选中内容挂输入区引用栏，发送时注入 prompt（一次性消费；不进草稿/Schema）
+    @Local quoteText: string = '';               // 当前生效的引用全文（''=无引用）
+    @Local quotePickerVisible: boolean = false;  // 二选一弹窗（引用到本聊天 / 引用为新子气泡）
+    private quotePendingText: string = '';       // 弹窗暂存（取消则丢弃，不入 quoteText）
   @Local wordPopupVisible: boolean = false;   // 翻译浮窗可见
   @Local wordPopupQuery: string = '';         // 浮窗展示的查询原文
   @Local wordPopupLoading: boolean = false;   // AI 查词进行中
@@ -1688,6 +1698,21 @@ export struct ChatPage {
     // ★ 替换为链路回溯 + 压缩（0.117）
     const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
 
+    // ★ 0.235.0：划词引用注入——引用块只拼进本次请求的上下文副本（气泡原文/持久化/后续轮次不动，
+    //   引用=一次性消费）；buildBranchMessageList 保底含最新一条 user 消息，从尾部找它替换为带引用块的副本
+    if (this.quoteText.length > 0) {
+      for (let i = messagesToSend.length - 1; i >= 0; i--) {
+        if (messagesToSend[i].role === 'user') {
+          const m = messagesToSend[i];
+          messagesToSend[i] = new ChatMessage(m.messageId, 'user',
+            `【用户引用了以下内容，请重点围绕这段内容回答】\n${this.quoteText}\n【引用内容结束】\n\n${m.content}`,
+            m.imageUrl, m.inputTokens, m.outputTokens, m.isPodcastMode, m.model);
+          break;
+        }
+      }
+      this.quoteText = ''; // 发送后引用栏清空（一次性消费）
+    }
+
     // ★ 0.144：按回复长度档位以 system 消息插入 prompt 约束（与播客 prompt 同机制，不持久化；长度在前、播客贴近 user 消息）
     if (this.replyLengthMode === 'short') {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', SHORT_REPLY_PROMPT));
@@ -2282,9 +2307,22 @@ export struct ChatPage {
   // 位置是「该 Text 内容内」的偏移，直接 substring 即得选中词。
   handleSelectionChange(key: string, content: string, start: number, end: number): void {
     if (start < 0 || end > content.length || start >= end) {
-      return; // 无效区间（取消选择时的 0,0 回调）——保留既有状态，由 onDisappear 统一清理
+      // ★ 0.235.0 修法 A：取消选择回调（0,0 / -1,-1 形态）纳入清理链路——原直接 return 全押 onDisappear，
+      //   手机端 onDisappear 不触发/晚触发时 selKey 残留、系统高亮滞留 → 两段同时高亮（用户实锤截图）；
+      //   sticky 三副本仍不清（0.191.0 表格粘性语义不回归，见下）
+      if (this.selKey.length > 0) {
+        this.clearSelectionState();
+      }
+      return;
+    }
+    // ★ 0.235.0：换段选择时显式关闭旧段菜单——长按 B 段时 A 段菜单/高亮由系统取消回调清理（修法 A），
+    //   但 A 段悬浮菜单若未被系统联动收起，此处主动关（closeSelectionMenu 只作用自己绑定的 Text）
+    if (this.selKey.length > 0 && this.selKey !== key) {
+      const oldCtrl = this.textControllers.get(this.selKey);
+      oldCtrl?.closeSelectionMenu();
     }
     this.selKey = key;
+    this.lastSelKey = key; // ★ 0.235.0 修法 B：key 副本（clearSelectionState 不清理）
     this.selText = content.substring(start, end);
     this.selStart = start; // ★ 0.191.0：记录偏移供划词级书签
     this.selEnd = end;
@@ -2328,9 +2366,11 @@ export struct ChatPage {
   }
 
   // 关闭当前激活 Text 的选择菜单（悬浮栏按钮点击后调用）
+  // ★ 0.235.0 修法 B：selKey 为空（onDisappear 先行清空）但系统菜单残留时，退用 lastSelKey 副本兜底关闭
   closeActiveSelectionMenu(): void {
-    if (this.selKey.length > 0) {
-      const ctrl = this.textControllers.get(this.selKey);
+    const key = this.selKey.length > 0 ? this.selKey : this.lastSelKey;
+    if (key.length > 0) {
+      const ctrl = this.textControllers.get(key);
       ctrl?.closeSelectionMenu();
     }
   }
@@ -2420,6 +2460,69 @@ export struct ChatPage {
     if (messageId.length > 0) {
       this.requestDeleteMessage(messageId);
     }
+  }
+
+  // ============================================================
+  // ★ 0.235.0：划词引用——选中内容挂输入区，发送时注入 prompt
+  // ============================================================
+
+  // 引用按钮显示条件：仅消息正文划词（用户消息/AI 段/折叠视图段）。
+  // 放大弹窗（cz 代码 / tzh·tzr 表格，无消息挂靠）与复习区 key（rw*/rk* 段前缀）不显示（需求 Q9）
+  isQuoteTargetKey(key: string): boolean {
+    const sep = key.indexOf('|');
+    if (sep <= 0) {
+      return false; // 表格放大弹窗 key（tzh*/tzr*，无 | 分隔）
+    }
+    const messageId = key.substring(0, sep);
+    if (messageId === 'cz') {
+      return false; // 代码放大弹窗内文本
+    }
+    const segPart = key.substring(sep + 1);
+    if (segPart.startsWith('rw') || segPart.startsWith('rk')) {
+      return false; // 复习区 key 防御性排除（ReviewSelectionToolbar 本无引用，兜底防误绑）
+    }
+    return true;
+  }
+
+  // 引用栏/弹窗短标签：前 5 字符 + 省略号（换行拍平为空格；用户拍板不铺满全文）
+  quoteShortLabel(): string {
+    const t = this.quoteText.length > 0 ? this.quoteText : this.quotePendingText;
+    const flat = t.replace(/\n/g, ' ');
+    return flat.length > 5 ? `${flat.substring(0, 5)}…` : flat;
+  }
+
+  // 「引用」：先取值再关菜单（同 onToolbarTranslate 模式——closeSelectionMenu 可能同步触发 onDisappear 清状态），
+  // 暂存 quotePendingText 后弹二选一；取消则丢弃不生效
+  onToolbarQuote(): void {
+    const text = this.selText.trim();
+    this.closeActiveSelectionMenu();
+    if (text.length === 0) {
+      return;
+    }
+    this.quotePendingText = text;
+    this.quotePickerVisible = true;
+  }
+
+  // 二选一确认：false=引用到本聊天（挂当前输入区）；true=创建新子气泡并进入，引用带入其输入区
+  // （复用 addBubble 成熟链路：ID/父子关系/埋点/保存/过渡动画全带，0.214.2 carryText/carryImages 同款第三参 carryQuote）
+  confirmQuote(asNewChild: boolean): void {
+    const text = this.quotePendingText;
+    this.quotePickerVisible = false;
+    this.quotePendingText = '';
+    if (text.length === 0) {
+      return;
+    }
+    if (asNewChild) {
+      this.addBubble([], '', text);
+    } else {
+      this.quoteText = text;
+    }
+  }
+
+  // 取消二选一（点遮罩/取消/返回键）——丢弃暂存
+  cancelQuotePicker(): void {
+    this.quotePickerVisible = false;
+    this.quotePendingText = '';
   }
 
   // ============================================================
@@ -2639,6 +2742,67 @@ export struct ChatPage {
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.wordFolderPickerVisible = false;
+    })
+  }
+
+  // ★ 0.235.0：划词引用二选一弹窗——「引用到本聊天 / 引用为新子气泡」；样式对齐 0.222.21 文件夹选择弹窗
+  //   （暗紫卡片 SURFACE_NODE+RADIUS_NAV+遮罩关闭=取消；宽度走确认类 400 断点制）；无参 @Builder 直读状态（0.190.1 铁律）
+  @Builder
+  quotePickerDialog() {
+    Column() {
+      Column() {
+        Text('引用选中内容')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(this.quoteShortLabel())
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 6, bottom: 14 })
+        Text('引用到本聊天')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .height(44)
+          .textAlign(TextAlign.Center)
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(SURFACE_HOVER)
+          .onClick(() => {
+            this.confirmQuote(false);
+          })
+        Text('引用为新子气泡')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .width('100%')
+          .height(44)
+          .textAlign(TextAlign.Center)
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(SURFACE_HOVER)
+          .margin({ top: 8 })
+          .onClick(() => {
+            this.confirmQuote(true);
+          })
+        Text('取消')
+          .fontSize(13)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 12 })
+          .onClick(() => {
+            this.cancelQuotePicker();
+          })
+      }
+      .width(this.isTablet ? 400 : '86%')
+      .padding(20)
+      .borderRadius(RADIUS_NAV)
+      .backgroundColor(SURFACE_NODE)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.cancelQuotePicker();
     })
   }
 
@@ -3233,6 +3397,21 @@ export struct ChatPage {
         .onClick(() => {
           this.onToolbarAddKnowledge();
         })
+      // ★ 0.235.0：引用——「入知识库」右侧新增（用户拍板）；仅消息正文划词显示（放大弹窗/复习区不显示）；
+      //   样式与相邻按钮一致（BRAND_SECONDARY、fontSize 14、padding 14/8、同款分隔线）
+      if (this.isQuoteTargetKey(this.selKey)) {
+        Divider()
+          .vertical(true)
+          .height(16)
+          .color(STROKE_CARD)
+        Text('引用')
+          .fontSize(14)
+          .fontColor(BRAND_SECONDARY)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarQuote();
+          })
+      }
       Divider()
         .vertical(true)
         .height(16)
@@ -3349,7 +3528,7 @@ export struct ChatPage {
     this.imageViewerVisible = true;
   }
 
-  addBubble(carryImages: string[] = [], carryText: string = ''): void {
+  addBubble(carryImages: string[] = [], carryText: string = '', carryQuote: string = ''): void {
     if (!this.currentBubble) {
       return;
     }
@@ -3391,6 +3570,8 @@ export struct ChatPage {
         this.inputText = carryText;  // ★ 0.184.0：携带补充要求带入新气泡（圈注「创建子气泡」）；默认空串 = 原清空行为不变
         // ★ 0.166.1：携带图片带入新气泡（圈注「创建子气泡」的标注图）；默认空数组 = 原清空行为不变
         this.pendingImages = carryImages;
+        // ★ 0.235.0：划词引用随「引用为新子气泡」带入新输入区；默认空串 = 切气泡即清（一次性会话态，不进草稿）
+        this.quoteText = carryQuote;
         // ★ 0.162 第三段：消息区淡入 300ms（EaseOut 减速浮现，模拟「页面打开」）；
         // 淡出 140ms + 淡入 300ms ≈ 440ms，落在用户要求的 0.3~0.5s 区间
         this.getUIContext().animateTo({
@@ -3685,6 +3866,10 @@ export struct ChatPage {
     }
     if (this.wordFolderPickerVisible) {
       this.wordFolderPickerVisible = false; // 加词目标文件夹选择弹窗（0.222.21）——返回键先关此弹窗
+      return true;
+    }
+    if (this.quotePickerVisible) {
+      this.cancelQuotePicker(); // ★ 0.235.0：划词引用二选一弹窗——返回键先关此弹窗
       return true;
     }
     if (this.wordPopupVisible) {
@@ -4428,7 +4613,20 @@ export struct ChatPage {
                   this.fontScaleStore.value = this.fontScale; // ★ 0.214.2：持久化缩放（退出/重启记住）
                 })
            )
-         }
+            // ★ 0.235.0 修法 C：触摸抬起草兜底——手机上根容器 onClick 常被滚动/fling 手势竞争吞掉（不派发），
+            //   高亮+工具栏滞留（用户实锤「点空白无效」）；onTouch 只读不拦截（不吞事件、不打断 List 滚动）。
+            //   仅当「Down 时刻已有选中且 Up 时选中未变」才清除——长按新建选择会改变 selKey，
+            //   该次抬手不是「点空白收起」意图（误清会废掉划词功能）
+            .onTouch((event: TouchEvent) => {
+              if (event.type === TouchType.Down) {
+                this.selKeyAtTouchDown = this.selKey;
+              } else if (event.type === TouchType.Up &&
+                this.selKeyAtTouchDown.length > 0 && this.selKey === this.selKeyAtTouchDown) {
+                this.closeActiveSelectionMenu();
+                this.clearSelectionState();
+              }
+            })
+          }
 
         // 图片预览区域
         if (this.pendingImages.length > 0) {
@@ -4472,6 +4670,36 @@ export struct ChatPage {
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 8 })
+        }
+
+        // ★ 0.235.0：引用栏——输入框上方小行（引用：前5字… + × 撤销），纯提示不可点跳转（用户拍板
+        //   「创建子气泡后再跳转很傻」）；宽度自适应不写死（Q10：跟随输入区 100% 弹性）
+        if (this.quoteText.length > 0) {
+          Row({ space: 6 }) {
+            Text(`引用：${this.quoteShortLabel()}`)
+              .fontSize(12)
+              .fontColor(BRAND_SECONDARY)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            Text('×')
+              .fontSize(15)
+              .fontWeight(600)
+              .fontColor(TEXT_TERTIARY)
+              .width(24)
+              .height(24)
+              .textAlign(TextAlign.Center)
+              .onClick(() => {
+                this.quoteText = ''; // 撤销引用（一次性会话态，撤销后可重新划词引用）
+              })
+          }
+          .width('100%')
+          .height(30)
+          .padding({ left: 12, right: 4 })
+          .margin({ left: 16, right: 16, top: 8 })
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+          .border({ width: 0.5, color: STROKE_BRAND })
         }
 
         // 输入区域 — ＋添加子气泡 + 输入框 + ✏️画画Icon + 发送▾（★ 0.152 需求重排：
@@ -5192,6 +5420,11 @@ export struct ChatPage {
         // 浮窗保持可见但被遮罩覆盖；选完文件夹浮窗按钮转「已加入」。
         if (this.wordFolderPickerVisible) {
           this.wordFolderPickerDialog()
+        }
+
+        // ★ 0.235.0：划词引用二选一弹窗（渲染在翻译浮窗/文件夹弹窗之后=同层后绘制在上）
+        if (this.quotePickerVisible) {
+          this.quotePickerDialog()
         }
 
         // ★ 0.150：删除确认弹窗（防误触）——首次点 × 弹出；勾选「此次对话不再提示」后本次会话内直接删；
