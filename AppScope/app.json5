@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000263, // ★ 0.236.0：千问TTS引擎接入（百炼CosyVoice复刻音色·三档互斥·试听·情感/语速/音量）；上一版 0.235.2：消息操作行复制全文+删除、滑动删除统一右滑、折叠三角统一术卡样式；更早历史见 MEMORY.md
+    "versionCode": 1000264, // ★ 0.236.1：TTS设置区体验修订（火山档切回Key/音色内置兜底回填/千问档删手动输入与外链/试听喇叭svg/自定义档删模型字段+接口地址占位符通用化）；上一版 0.236.0：千问TTS引擎接入；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

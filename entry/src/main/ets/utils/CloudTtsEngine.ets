@@ -87,9 +87,33 @@ export class CloudTtsEngine {
     return c.audioKey.trim().length > 0 && c.audioModel.trim().length > 0;
   }
 
-  // 发起朗读会话。返回 false = 未配置（调用方直落本地引擎）
+  // 发起朗读会话（读持久化配置）。返回 false = 未配置（调用方直落本地引擎）
+  // ★ 0.236.1：重构为显式传参单一管线（GSD 试听复用完整链路——对齐 QianwenTtsEngine 模式）
   speak(text: string, cacheDir: string, session: CloudTtsSession): boolean {
-    if (!this.configured()) {
+    const c = connectApiConfig();
+    const model = c.audioModel.trim();
+    if (c.audioKey.trim().length === 0 || model.length === 0) {
+      return false;
+    }
+    let endpoint = c.audioEndpoint.trim();
+    if (endpoint.length === 0 || !endpoint.startsWith('https://')) {
+      endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+    }
+    return this.speakWithParams(text, endpoint, c.audioKey.trim(), model, c.audioVoice.trim(),
+      cacheDir, session);
+  }
+
+  // ★ 0.236.1：显式传参合成（GSD 火山/自定义档试听用——表单未保存的编辑值直接验证）
+  speakWithParams(
+    text: string,
+    endpoint: string,
+    apiKey: string,
+    model: string,
+    voice: string,
+    cacheDir: string,
+    session: CloudTtsSession
+  ): boolean {
+    if (apiKey.length === 0 || model.length === 0 || endpoint.length === 0) {
       return false;
     }
     const trimmed = text.trim();
@@ -99,6 +123,10 @@ export class CloudTtsEngine {
     this.stop(); // 顶替旧会话
     this.session = session;
     this.cacheDir = cacheDir;
+    this.presetEndpoint = endpoint;
+    this.presetKey = apiKey;
+    this.presetModel = model;
+    this.presetVoice = voice;
     this.segments = splitTextForTts(trimmed, CLOUD_TTS_MAX_SEGMENT_LEN);
     if (this.segments.length === 0) {
       return false;
@@ -108,9 +136,16 @@ export class CloudTtsEngine {
     this.audioCache = [];
     this.waitingForAudio = true; // 首段到达立即开播（0.142 死锁教训）
     this.started = false;
+    this.voiceOverride = ''; // 显式会话音色即最终值（空值时合成层兜底官方音色）
     this.requestNextSegment();
     return true;
   }
+
+  // 会话级显式参数（speakWithParams 写入；speak 由配置换算后同走该通道，保持单一合成管线）
+  private presetEndpoint: string = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+  private presetKey: string = '';
+  private presetModel: string = '';
+  private presetVoice: string = '';
 
   // 停止整个会话（幂等）：代际号失效 + 取消在飞请求 + 释放播放器/临时文件 + 清队列
   stop(): void {
@@ -138,17 +173,16 @@ export class CloudTtsEngine {
     const gen = this.generation;
     const index = this.requestIndex;
     this.requestIndex++;
-    const cfg = connectApiConfig();
-    let endpoint = cfg.audioEndpoint.trim();
-    if (endpoint.length === 0 || !endpoint.startsWith('https://')) {
-      endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
-    }
-    // 音色：会话回退缓存 > 配置值；空值兜底官方音色
-    const configVoice = cfg.audioVoice.trim();
+    // ★ 0.236.1：会话参数走 preset* 显式值（speak/speakWithParams 统一管线）
+    const endpoint = this.presetEndpoint;
+    const apiKey = this.presetKey;
+    const model = this.presetModel;
+    // 音色：会话回退缓存 > 显式值；空值兜底官方音色
+    const configVoice = this.presetVoice.trim();
     const voice = this.voiceOverride.length > 0 ? this.voiceOverride :
       (configVoice.length > 0 ? configVoice : FALLBACK_OFFICIAL_VOICE);
     this.requestController = this.synthesizeSegment(
-      endpoint, cfg.audioKey.trim(), cfg.audioModel.trim(), voice,
+      endpoint, apiKey, model, voice,
       this.segments[index],
       (audioBase64: string): void => {
         if (gen !== this.generation) {

@@ -302,6 +302,20 @@ export function getBuiltinQwenTtsKey(): string {
   return builtinQwenTtsKey;
 }
 
+// ★ 0.236.1：内置火山 TTS Key/音色快照（loadBuiltinApiConfig 填充）——GSD 切火山档且
+// 无会话缓存时回填表单（audioKey/audioVoice 三档复用承载，千问档保存会覆盖火山值，
+// 切回火山档靠内置快照兜底显示，用户不再困惑"保存过的 Key 怎么没了"）
+let builtinVolcanoTtsKey: string = '';
+let builtinVolcanoTtsVoice: string = '';
+
+export function getBuiltinVolcanoTtsKey(): string {
+  return builtinVolcanoTtsKey;
+}
+
+export function getBuiltinVolcanoTtsVoice(): string {
+  return builtinVolcanoTtsVoice;
+}
+
 // ★ 0.161.3：从 rawfile/config.json 读取内置 Key，填充持久化配置的空位。
 // 仅填空位——用户在设置页自定义过的 Key（持久化非空）优先，不被内置值覆盖。
 // ★ 0.232.0：audioVoice 旧默认值迁移——该字段自 0.139 起从未开放编辑（0.139 注释「设置页
@@ -335,6 +349,9 @@ export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
     // ★ 0.236.0：千问 TTS 内置 Key 只存模块级变量（不写持久化）——GSD 切千问档且用户未自定义时
     // 预填表单；默认 ttsProvider 保持 'volcano' 不变，不打扰现有火山体验
     builtinQwenTtsKey = obj.qwenTtsKey ?? '';
+    // ★ 0.236.1：内置火山 Key/音色快照（切火山档兜底回填用——config.json audioKey/audioVoice）
+    builtinVolcanoTtsKey = obj.audioKey;
+    builtinVolcanoTtsVoice = obj.audioVoice ?? '';
   } catch (err) {
     // config.json 不存在或解析失败——保持空默认，设置页自填
   }
