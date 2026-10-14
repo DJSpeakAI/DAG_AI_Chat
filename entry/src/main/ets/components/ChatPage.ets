@@ -2485,6 +2485,15 @@ export struct ChatPage {
     }
   }
 
+  // ★ 0.238.0：模型显示文本——别名优先（消息模型与当前配置模型一致且别名非空），否则官方模型 ID；
+  //   拼接 token 统计（两段信息合并单一滑动区，格式「别名或模型ID · 输入 N · 输出 N」）
+  modelDisplayText(msg: ChatMessage): string {
+    const name = (msg.model === this.apiConfig.model && this.apiConfig.modelAlias.length > 0)
+      ? this.apiConfig.modelAlias : msg.model;
+    const tokenPart = msg.outputTokens > 0 ? ` 输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}` : '';
+    return tokenPart.length > 0 ? `${name} ·${tokenPart}` : name;
+  }
+
   // 「全选」：selection 属性受控驱动——nonce 递增拼进 key 使属性参数变化，
   // 确保全选后拖动手柄再点全选仍能重新应用 (0, len)。菜单保持显示（可继续翻译/复制全文）
   onToolbarSelectAll(): void {
@@ -4678,33 +4687,19 @@ export struct ChatPage {
                             })
                             // ★ 0.237.3：弹性占位——把右侧模型信息组推到行尾（右对齐）
                             Blank()
-                            // ★ 0.224.3：模型 ID 标识（"这个问答很漂亮，它是哪个模型的"）
-                            //   ★ 0.237.3：上限写死 100 → 百分比 35% 自适应 + flexShrink 窄屏收缩可滑
-                            if (msg.model.length > 0) {
+                            // ★ 0.238.0：模型名+token 合并单一滑动区（方案 1 拍板）——手机滑一次看全，
+                            //   割裂感根除；宽屏（Pad/PC）放得下时视觉与合并前一致（两段文字本就紧挨着）；
+                            //   上限 60%（合并后总内容更长给足空间）+ flexShrink 窄屏收缩兜底
+                            if (msg.model.length > 0 || msg.outputTokens > 0) {
                               Scroll() {
-                                Text(msg.model)
+                                Text(this.modelDisplayText(msg))
                                   .fontSize(11)
                                   .fontColor(TEXT_TERTIARY)
                                   .maxLines(1)
                               }
                               .scrollable(ScrollDirection.Horizontal)
                               .scrollBar(BarState.Off)
-                              .constraintSize({ maxWidth: '35%' })
-                              .flexShrink(1)
-                              .align(Alignment.Start)
-                            }
-                            // ★ 0.237.3：token 统计包横向 Scroll——5~6 位数（十几万 token）时可横滑看全、
-                            //   无滚动条横杠；上限 50% 自适应 + flexShrink 收缩兜底；内容贴右（末字贴行尾）
-                            if (msg.outputTokens > 0) {
-                              Scroll() {
-                                Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
-                                  .fontSize(11)
-                                  .fontColor(TEXT_TERTIARY)
-                                  .maxLines(1)
-                              }
-                              .scrollable(ScrollDirection.Horizontal)
-                              .scrollBar(BarState.Off)
-                              .constraintSize({ maxWidth: '50%' })
+                              .constraintSize({ maxWidth: '60%' })
                               .flexShrink(1)
                               .align(Alignment.End)
                             }

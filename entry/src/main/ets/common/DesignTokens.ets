@@ -30,6 +30,7 @@ export const EDGE_COLOR_HIGHLIGHT: string = '#A78BFA';
 // ── 语义色（★ 0.181.0 ChatPage 收敛：UI_GUIDELINES 14 token 未覆盖的内容语义色，
 //    按总则「未覆盖场景按同组件规格类推」收敛为常量，禁止页面散落写值）──
 export const DANGER: string = '#F44336';            // 删除/破坏性操作警示红
+export const SUCCESS: string = '#3BB273';           // ★ 0.238.0：成功态（测试连接通过；与熟知绿同值族）
 // ★ 0.230.0：复习评分三档色（ReviewPage 评分按钮——0.229.26 审计 A11 实锤散落色值，token 化收敛）
 export const REVIEW_HARD: string = '#E5484D';       // 生疏（红）
 export const REVIEW_GOOD: string = '#F5A623';       // 尚可（橙）

@@ -237,6 +237,9 @@ export class ApiConfig {
   // ttsSpeed：千问档语速（0.5~2.0，百炼 rate 参数）；ttsVolume：千问档音量（0~100，百炼 volume 参数）
   @Trace ttsSpeed: number = 1.0;
   @Trace ttsVolume: number = 50;
+  // ★ 0.238.0：模型别名（应用内展示名；空=显示官方模型 ID）——别名是全局单值跟随配置，
+  //   消息级不存别名（旧消息 model 与当前配置不同时自然回落官方名，零迁移）
+  @Trace modelAlias: string = '';
 }
 
 // ★ 0.190.0：由端点推断提供商（v2→v3 迁移用——存量用户只可能是火山默认端点或自定义端点；
@@ -261,18 +264,25 @@ export function inferProviderFromEndpoint(endpoint: string): string {
 // 迁移历史配置（对话 Key/端点/模型等），用户无需重填；audioKey 旧快照从未存成功，需重填一次。
 // ★ 0.190.0：key 再从 'api-config-v2' 换为 'api-config-v3'——同理（新增 provider 字段写不进
 // v2 旧快照）；v2 数据全量迁移（含休眠音频字段），provider 由端点推断（inferProviderFromEndpoint）。
+// ★ 0.238.0：key 再从 'api-config-v3' 换为 'api-config-v4'——同理（新增 modelAlias 字段写不进
+// v3 旧快照，0.143/0.190/0.224.1 三次实锤：不换 key=新增字段重启即丢）；v3 数据全量迁移
+// （含 0.236.0 千问 TTS 四字段），modelAlias 旧快照从未存在、走新默认空串。
 export function connectApiConfig(): ApiConfig {
-  return PersistenceV2.connect(ApiConfig, 'api-config-v3', () => {
-    const old = PersistenceV2.connect(ApiConfig, 'api-config-v2', () => new ApiConfig()) as ApiConfig;
+  return PersistenceV2.connect(ApiConfig, 'api-config-v4', () => {
+    const old = PersistenceV2.connect(ApiConfig, 'api-config-v3', () => new ApiConfig()) as ApiConfig;
     const fresh = new ApiConfig();
     fresh.apiKey = old.apiKey;
     fresh.endpoint = old.endpoint;
     fresh.model = old.model;
-    fresh.provider = inferProviderFromEndpoint(old.endpoint);
+    fresh.provider = old.provider;
     fresh.audioModel = old.audioModel;
     fresh.audioVoice = old.audioVoice;
     fresh.audioEndpoint = old.audioEndpoint;
     fresh.audioKey = old.audioKey;
+    fresh.ttsProvider = old.ttsProvider;
+    fresh.ttsEmotion = old.ttsEmotion;
+    fresh.ttsSpeed = old.ttsSpeed;
+    fresh.ttsVolume = old.ttsVolume;
     return fresh;
   }) as ApiConfig;
 }

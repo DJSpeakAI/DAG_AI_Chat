@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.237.2.2'; // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.238.0.1'; // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -1593,7 +1593,7 @@ const CASES = [
       }
       ctx.log('★巡检汇总', fails + warns === 0 ? 'pass' : (fails ? 'fail' : 'warn'), `7 页 ${pageSnap.length} 页成功，fail=${fails} warn=${warns}——warn 项为人工裁决候选（补 token/豁免清单），fail 项为规范硬违规（修复走 app 迭代）`);
     } },
-  { id: 'UI-AUDIT-DIALOGS', suite: 'ui-audit', name: '弹窗体系·B1/B2 宽度+B4 等宽+B5 层级色+B9 返回键+B11 键盘+B13 删除确认+A16 左右留白+A17 三角规格+A18 轨道留白+C0 默认档+C1 自定义模型三字段+C2 自定义档如式提示（0.237.2）', semi: false, scope: 'each',
+  { id: 'UI-AUDIT-DIALOGS', suite: 'ui-audit', name: '弹窗体系·B1/B2 宽度+B4 等宽+B5 层级色+B9 返回键+B11 键盘+B13 删除确认+A16 左右留白+A17 三角规格+A18 轨道留白+C0 默认档+C1 自定义模型三字段+C2 自定义档如式提示+C3 模型别名+C4 测试连接（0.238.0）', semi: false, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '弹窗审计（UI 断言）'); return; }
@@ -1824,6 +1824,43 @@ const CASES = [
           if (discard.ok) ctx.log('C1/C2 收尾·不保存关闭', 'pass', '已还原（切模型/切档未落盘，零数据破坏）');
         } else ctx.log('C0/C1/C2 TTS 折叠行', 'warn', '未见「语音朗读（TTS）」行——跳过 TTS 设置区测试');
         await backKey('全局设置弹窗', '全局设置');
+      }
+      // ── ④b 设置弹窗·API 表单尾（★ 0.238.0 C3/C4：测试连接+模型别名回归——§12.13 军令）──
+      //   独立重开（④ 段 TTS 测试已 backKey 关闭）：滚到 API Tab 表单尾断言 C3 别名字段（标签+灰提示）、
+      //   C4 测试连接按钮；C4 真点一次（表单当前值发最小请求 max_tokens 1——0.236.0 试听同哲学；
+      //   结果行三态「成功绿/失败红/Key 守卫」任一出现=按钮→请求→结果行全链路通；测试连接不改表单值=收尾无脏态）
+      nav = await navTo(serial, '设置', ctx.log);
+      if (nav.ok) {
+        await sleep(1200);
+        const db0 = await dumpAuditNodes(serial);
+        const rm2 = String((JSON.parse(db0.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        const sw2 = rm2 ? +rm2[3] : 1000;
+        const sh2 = rm2 ? +rm2[4] : 1600;
+        await sh(serial, `uitest uiInput swipe ${Math.round(sw2 / 2)} ${Math.round(sh2 * 0.68)} ${Math.round(sw2 / 2)} ${Math.round(sh2 * 0.3)} 700`, 15000);
+        await sleep(800);
+        const dA = await dumpAuditNodes(serial);
+        artSave('UI-AUDIT-DIALOGS', `dump-api-tail-${dev.id}.json`, dA.text);
+        const hasAliasLbl = dA.nodes.some((n) => n.text === '模型别名');
+        const aliasHint = dA.nodes.filter((n) => n.hint).map((n) => String(n.hint)).find((h) => h.includes('给模型起个展示名'));
+        ctx.log('★C3 模型别名字段（标签+灰提示）', hasAliasLbl && aliasHint ? 'pass' : 'fail',
+          `标签=${hasAliasLbl ? '✓' : '缺'} / placeholder=${aliasHint ? '「' + aliasHint + '」✓（留空显示官方模型名）' : '未命中（未滚到表单尾或字段缺失——对照 dump-api-tail 存证复核）'}`);
+        const testBtn = dA.nodes.find((n) => (n.text || '').includes('测试连接'));
+        if (testBtn) {
+          ctx.log('C4 测试连接按钮在场', 'pass', `已定位 (${testBtn.xc},${testBtn.yc})——presetFormContent 插一次覆盖预设 3 家`);
+          await sh(serial, `uitest uiInput click ${testBtn.xc} ${testBtn.yc}`, 15000);
+          let resNode = null;
+          for (let i = 0; i < 7 && !resNode; i++) {
+            await sleep(2500);
+            const dr = await dumpAuditNodes(serial);
+            resNode = dr.nodes.find((n) => ['连接成功', '连接失败', '连接超时', '请先填写 API Key'].some((k) => (n.text || '').includes(k)));
+            if (resNode) artSave('UI-AUDIT-DIALOGS', `dump-conn-result-${dev.id}.json`, dr.text);
+          }
+          if (resNode) {
+            ctx.log('★C4 测试连接·结果行出现', 'pass',
+              `「${(resNode.text || '').slice(0, 44)}」——三态（成功绿/失败红/Key 守卫）任一=表单当前值→最小真实请求→结果行全链路通（0.238.0）`);
+          } else ctx.log('★C4 测试连接·结果行', 'fail', '17.5s 内未见结果文本（15s 超时+2.5s 缓冲必出结果）——按钮点击无效或请求悬挂');
+        } else ctx.log('★C4 测试连接按钮', 'fail', 'API 表单尾未见「测试连接」按钮（0.238.0 新增缺失或未滚到位——对照 dump-api-tail 存证复核）');
+        await backKey('全局设置弹窗·API 尾段', '全局设置');
       }
       // ── ⑤ fresh 专属弹窗（协议/门禁/堆叠）非 fresh 态如实 skip（守卫基线对齐铁律 §12.11）──
       const dg = await dumpAuditNodes(serial);

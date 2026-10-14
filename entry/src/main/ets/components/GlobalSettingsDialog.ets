@@ -51,11 +51,13 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.2
 import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面变更即时推桌面卡片
 import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.236.1：火山/自定义档试听（speakWithParams 显式传参）
+import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流式轻量 POST，零侵入 streamChat 主链路）
 
 import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
-import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）
+import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER, SUCCESS } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）；★ 0.238.0：加 SUCCESS（测试连接成功绿）
 import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.230.0：GlobalSettingsSharedStore（开态跨页共享——返回键拦截）
+import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.238.0：测试连接 http 异常捕获
 
 // ============================================================
 // ★ 0.190.0/0.190.1：模型提供商预设（3 预设 + 自定义配置）
@@ -80,6 +82,18 @@ interface PresetModel {
   id: string;    // 模型 ID（传给 API 的值）
   name: string;  // 显示名称
   desc: string;  // 能力标注：多模态（可发图）/ 纯文本
+}
+
+// ★ 0.238.0：测试连接请求体（非流式最小请求——OpenAI 兼容 chat/completions）
+interface ConnTestMessage {
+  role: string;
+  content: string;
+}
+interface ConnTestRequestBody {
+  model: string;
+  messages: ConnTestMessage[];
+  max_tokens: number;
+  stream: boolean;
 }
 
 interface ProviderPreset {
@@ -173,7 +187,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.237.4'; // ★ 0.237.4：AI 消息操作栏按钮重排（喇叭→换一批→复制→删除→刷新，刷新挪第5收尾）；上一版 0.237.3：消息操作栏换一批与模型行对齐
+const APP_VERSION: string = 'v0.238.0'; // ★ 0.238.0：测试连接+模型别名+信息行合并；上一版 0.237.4：AI 消息操作栏按钮重排
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -258,6 +272,13 @@ export struct GlobalSettingsDialog {
   // ★ 0.190.0：会话级按提供商缓存 Key/URL——切换提供商不丢已输入内容（仅「保存」才落盘）
   providerKeyCache: Map<string, string> = new Map();
   providerEndpointCache: Map<string, string> = new Map();
+
+  // ★ 0.238.0：模型别名编辑副本（全局单值——不随提供商切换快照/恢复，4 提供商共用一份）
+  @Local editAlias: string = '';
+  // ★ 0.238.0：测试连接（表单当前值发一次最小真实请求；进行中按钮禁用防连点）
+  @Local testing: boolean = false;      // 执行中（按钮禁用）
+  @Local testResult: string = '';       // 结果文案（空=未测过）
+  @Local testOk: boolean = false;       // 结果着色（true 绿 / false 红）
 
   // ★ 0.232.0：TTS 编辑副本（API Tab 底部「语音朗读」区——点保存才落盘；提供商从端点推导，零新持久化字段）
   // ★ 0.236.0：提供商三档化（volcano / qianwen / custom 三引擎物理互斥——editTtsProvider 从
@@ -346,6 +367,11 @@ export struct GlobalSettingsDialog {
     // ★ 0.190.0：Tab1 提供商化初始化——回显持久化配置
     this.editKey = this.apiConfig.apiKey;
     this.editProvider = this.apiConfig.provider;
+    // ★ 0.238.0：模型别名回显 + 测试结果复位（每次开弹窗清零上次结果）
+    this.editAlias = this.apiConfig.modelAlias;
+    this.testing = false;
+    this.testResult = '';
+    this.testOk = false;
     // 0.206.0：体验改进计划开关回显（默认关）
     this.trkEnabled = isTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext);
     // provider 合法性兜底（防异常值；不合法按端点重新推断）
@@ -470,6 +496,7 @@ export struct GlobalSettingsDialog {
       this.editKey.trim() !== this.apiConfig.apiKey ||
       this.currentModelValue() !== this.apiConfig.model ||
       this.currentEndpointValue() !== this.apiConfig.endpoint ||
+      this.editAlias.trim() !== this.apiConfig.modelAlias || // ★ 0.238.0：模型别名
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
       this.editEncourageMode !== this.aiPreference.encourageMode || // ★ 0.191.0：鼓励三档
       this.editAnchorMode !== this.anchorPref.anchorMode || // ★ 0.234.0：锚点卡片开关
@@ -811,6 +838,7 @@ export struct GlobalSettingsDialog {
     this.apiConfig.apiKey = this.editKey.trim();
     this.apiConfig.model = this.currentModelValue();
     this.apiConfig.endpoint = this.currentEndpointValue();
+    this.apiConfig.modelAlias = this.editAlias.trim(); // ★ 0.238.0：模型别名（空=回落官方模型 ID）
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageMode = this.editEncourageMode;
@@ -898,6 +926,86 @@ export struct GlobalSettingsDialog {
       return this.editEndpoint.trim();
     }
     return PROVIDER_PRESETS[idx].endpoint;
+  }
+
+  // ★ 0.238.0：测试连接——用表单当前值（未保存也可测）发一次最小真实请求（非流式 + max_tokens 1
+  //   + 一句 ping，消耗仅几个 token），成功=配置可用；15s 超时（连接测试不等长请求）；零侵入
+  //   streamChat 流式主链路；错误一律中文（项目网络规范 §4 铁律）；testing 状态防连点
+  async testConnection(): Promise<void> {
+    if (this.testing) {
+      return;
+    }
+    const key = this.editKey.trim();
+    if (key.length === 0) {
+      this.testOk = false;
+      this.testResult = '请先填写 API Key';
+      return;
+    }
+    const endpoint = this.currentEndpointValue();
+    const modelId = this.currentModelValue();
+    if (endpoint.length === 0 || modelId.length === 0) {
+      this.testOk = false;
+      this.testResult = '请先填写完整的接口地址与模型';
+      return;
+    }
+    this.testing = true;
+    this.testResult = '';
+    const start = Date.now();
+    const pingMsg: ConnTestMessage = { role: 'user', content: 'ping' };
+    const body: ConnTestRequestBody = { model: modelId, messages: [pingMsg], max_tokens: 1, stream: false };
+    const req = http.createHttp();
+    req.request(endpoint, {
+      method: http.RequestMethod.POST,
+      header: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      extraData: JSON.stringify(body),
+      expectDataType: http.HttpDataType.STRING,
+      connectTimeout: 15000,
+      readTimeout: 15000
+    }).then((resp: http.HttpResponse) => {
+      req.destroy();
+      const code = resp.responseCode;
+      if (code >= 200 && code < 300) {
+        this.testOk = true;
+        this.testResult = `✓ 连接成功（耗时 ${Date.now() - start} ms）`;
+      } else {
+        this.testOk = false;
+        this.testResult = this.connErrorText(code, '');
+      }
+    }).catch((err: BusinessError) => {
+      req.destroy();
+      this.testOk = false;
+      this.testResult = this.connErrorText(0, `${err.code} ${err.message}`);
+    }).finally(() => {
+      this.testing = false;
+    });
+  }
+
+  // ★ 0.238.0：测试连接错误中文化映射（禁止展示原始英文报错）
+  connErrorText(code: number, detail: string): string {
+    if (code === 401 || code === 403) {
+      return 'API Key 无效或无权限';
+    }
+    if (code === 404) {
+      return '模型 ID 或接口地址不存在';
+    }
+    if (code === 429) {
+      return '请求过于频繁或额度不足';
+    }
+    if (code >= 500 && code < 600) {
+      return '服务商服务异常，稍后再试';
+    }
+    if (code === 0) {
+      // 网络层异常（BusinessError）——超时单列，其余附简短原因（40 字内）
+      if (detail.includes('timeout') || detail.includes('2300028')) {
+        return '连接超时，请检查网络或接口地址';
+      }
+      const brief = detail.trim().length > 0 ? detail.trim().substring(0, 40) : '';
+      return brief.length > 0 ? `连接失败（${brief}）` : '连接失败，请检查网络与配置';
+    }
+    return `连接失败（HTTP ${code}）`;
   }
 
   // ★ 0.190.0：切换提供商——会话级缓存当前 Key/URL（切换不丢输入，仅「保存」才落盘）
@@ -1739,6 +1847,33 @@ export struct GlobalSettingsDialog {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
+
+      // ★ 0.238.0：模型别名（应用内展示名——4 提供商共用一份全局配置；留空显示官方模型名）
+      Column() {
+        Text('模型别名')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        TextInput({ text: $$this.editAlias, placeholder: '给模型起个展示名（可留空）' })
+          .width('100%')
+          .height(48)
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+        Text('给模型起个应用内展示名称，对话记录里会显示它（类似司忆区的展示名）；留空则显示官方模型名。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ top: 16 })
+
+      // ★ 0.238.0：测试连接（表单当前值发最小真实请求——未保存也可测；4 提供商共用块）
+      this.testConnectionBlock()
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -1815,9 +1950,66 @@ export struct GlobalSettingsDialog {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
+
+      // ★ 0.238.0：模型别名（自定义配置=第 4 提供商同款；与预设共用全局单值 editAlias）
+      Column() {
+        Text('模型别名')
+          .fontSize(14)
+          .fontColor(TEXT_SECONDARY)
+          .margin({ bottom: 6 })
+        TextInput({ text: $$this.editAlias, placeholder: '给模型起个展示名（可留空）' })
+          .width('100%')
+          .height(48)
+          .fontSize(14)
+          .fontColor(TEXT_PRIMARY)
+          .placeholderColor(TEXT_TERTIARY)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+        Text('给模型起个应用内展示名称，对话记录里会显示它（类似司忆区的展示名）；留空则显示官方模型名。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ top: 16 })
+
+      // ★ 0.238.0：测试连接（自定义配置同款；Key 允许为空的本地网关守卫文案见函数内）
+      this.testConnectionBlock()
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  // ★ 0.238.0：测试连接按钮+结果行（无参 @Builder 直读状态——预设 3 家与自定义两处共用一份逻辑；
+  //   成功绿/失败红；进行中按钮禁用防连点；结果行未测时不渲染）
+  @Builder
+  testConnectionBlock() {
+    Column() {
+      Button(this.testing ? '测试中…' : '测试连接')
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .height(40)
+        .padding({ left: 20, right: 20 })
+        .backgroundColor(this.testing ? SURFACE_HOVER : BRAND_PRIMARY)
+        .fontColor(TEXT_PRIMARY)
+        .borderRadius(RADIUS_CONTROL)
+        .enabled(!this.testing)
+        .onClick(() => {
+          this.testConnection();
+        })
+      if (this.testResult.length > 0) {
+        Text(this.testResult)
+          .fontSize(12)
+          .lineHeight(18)
+          .fontColor(this.testOk ? SUCCESS : DANGER)
+          .margin({ top: 6 })
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .margin({ top: 16 })
   }
 
   // ★ 0.150：Tab2 内容——AI 对话偏好表单（自定义称呼 + 自动鼓励开关）
