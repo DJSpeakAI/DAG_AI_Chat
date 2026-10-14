@@ -381,14 +381,14 @@ function renderDevices(devices) {
       cancel.onclick = () => { ed.style.display = 'none'; };
       row.appendChild(save); row.appendChild(cancel); ed.appendChild(row);
       box.appendChild(ed);
-    }
-    async function doSave() {
-      try {
-        const r = await api('/api/devices/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: dev.id, serial: inp.value.trim() }) });
-        renderDevices(r.devices);
-        addLn('设备地址更新 ' + dev.id, 'pass', inp.value.trim() || '（清空）' + (r.connect ? ' · hdc tconn：' + r.connect : ''));
-        toast('已保存' + (r.connect ? '，连接结果：' + r.connect.slice(0, 60) : ''));
-      } catch (e) { toast('保存失败：' + e.message); }
+      async function doSave() {
+        try {
+          const r = await api('/api/devices/update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: dev.id, serial: inp.value.trim() }) });
+          renderDevices(r.devices);
+          addLn('设备地址更新 ' + dev.id, 'pass', inp.value.trim() || '（清空）' + (r.connect ? ' · hdc tconn：' + r.connect : ''));
+          toast('已保存' + (r.connect ? '，连接结果：' + r.connect.slice(0, 60) : ''));
+        } catch (e) { toast('保存失败：' + e.message); }
+      }
     }
     box.onclick = () => { cb.checked = !cb.checked; cb.onchange(); };
     el.appendChild(box);

@@ -35,7 +35,7 @@
     {
       "id": "phone",
       "label": "手机（WiFi，注册后入列）",
-      "serial": "192.168.2.16:38611",
+      "serial": "192.168.2.14:38611",
       "conn": "WiFi",
       "optional": true,
       "caps": {
