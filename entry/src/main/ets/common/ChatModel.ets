@@ -363,6 +363,22 @@ export function connectAiPreference(): AiPreference {
   return PersistenceV2.connect(AiPreference, 'ai-preference-v2', () => new AiPreference()) as AiPreference;
 }
 
+// ★ 0.234.0：注意力锚点偏好（锚点卡片/密度/分章折叠三字段）——独立全新 key 'anchor-pref-v1'
+// （0.143 铁律：绝不往 ai-preference-v2 旧快照类加字段；独立 key 让称呼/鼓励零迁移零风险）
+// anchorMode：锚点卡片开关（off/on，默认开=钩子模式）；anchorDensity：本地保底密度档
+// （dense 密 400 / standard 中 550 / sparse 疏 700 字）；foldMode：长文分章折叠开关（off/on，默认开）
+@ObservedV2
+export class AnchorPref {
+  @Trace anchorMode: string = 'on';
+  @Trace anchorDensity: string = 'standard';
+  @Trace foldMode: string = 'on';
+}
+
+// ★ 0.234.0：连接注意力锚点偏好持久化实例
+export function connectAnchorPref(): AnchorPref {
+  return PersistenceV2.connect(AnchorPref, 'anchor-pref-v1', () => new AnchorPref()) as AnchorPref;
+}
+
 // ★ 0.232.0：云端语音朗读首次配置提示 flag（用户要求：第一次填写音频配置时提示一次，
 // 之后不再提示；独立全新 key——0.143 教训：不往旧快照类尾追字段）
 @ObservedV2

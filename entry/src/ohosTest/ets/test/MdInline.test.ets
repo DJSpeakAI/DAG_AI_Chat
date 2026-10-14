@@ -1,8 +1,9 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText } from '../../../main/ets/utils/MdInline';
+import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock } from '../../../main/ets/utils/MdInline';
 
 // ★ 0.231.0：Markdown 行内/块级解析器单元断言（project_rule §12.13 测试覆盖军令——
 //   新功能必须带测试项；纯函数模块=ChatPage 渲染与本断言双消费）
+// ★ 0.234.0：注意力锚点+分章折叠断言（任务书 §8.1 六组——标记解析/清洗/breath 保底/章节切分/展开集）
 export default function mdInlineTest() {
   describe('DAGAI_MdInlineTest', () => {
     // ---- 行内：标记配对与样式归位 ----
@@ -123,6 +124,193 @@ export default function mdInlineTest() {
       // 非 Markdown 纯文本零损耗（3*4*5 数学表达保持字面）
       const out = mdToSpeakableText('3*4*5 等于 60，普通中文句子。');
       expect(out).assertEqual('3*4*5 等于 60，普通中文句子。');
+    })
+    // ---- ★ 0.234.0：锚点标记解析（§8.1-1）----
+    it('anchor_legal_line', 0, () => {
+      const blocks = parseBlockMd(['前文', '', '[[anchor:quiz|刚讲的三种类型是什么？]]', '', '后文']);
+      expect(blocks.length).assertEqual(3);
+      expect(blocks[1].kind).assertEqual('anchor');
+      expect(blocks[1].anchorType).assertEqual('quiz');
+      expect(blocks[1].anchorText).assertEqual('刚讲的三种类型是什么？');
+    })
+    it('anchor_case_insensitive_type', 0, () => {
+      const blocks = parseBlockMd(['[[anchor:HOOK|下一节有惊喜]]']);
+      expect(blocks[0].kind).assertEqual('anchor');
+      expect(blocks[0].anchorType).assertEqual('hook'); // 大小写不敏感归一小写
+    })
+    it('anchor_invalid_variants_plain', 0, () => {
+      // 半标记（流式截断）/非独占行/非法类型/缺竖线/空文案 → 普通文本
+      const half = parseBlockMd(['正文 [[anchor:qu']);
+      expect(half[0].kind).assertEqual('p');
+      const inline = parseBlockMd(['前文 [[anchor:quiz|文案]] 后文']); // 非独占行
+      expect(inline[0].kind).assertEqual('p');
+      const badType = parseBlockMd(['[[anchor:warn|文案]]']);
+      expect(badType[0].kind).assertEqual('p');
+      const noBar = parseBlockMd(['[[anchor:quiz 文案]]']);
+      expect(noBar[0].kind).assertEqual('p');
+      const empty = parseBlockMd(['[[anchor:quiz|   ]]']);
+      expect(empty[0].kind).assertEqual('p');
+    })
+    // ---- stripAnchorMarks 两种模式（§8.1-3）----
+    it('strip_keep_and_drop', 0, () => {
+      const src = '第一段\n\n[[anchor:quiz|考考你刚看的]]\n\n第二段';
+      const keep = stripAnchorMarks(src, true);
+      expect(keep.includes('[[anchor')).assertFalse();
+      expect(keep.includes('考考你刚看的')).assertTrue();
+      const drop = stripAnchorMarks(src, false);
+      expect(drop.includes('[[anchor')).assertFalse();
+      expect(drop.includes('考考你刚看的')).assertFalse();
+      expect(drop.includes('第一段')).assertTrue();
+      expect(drop.includes('第二段')).assertTrue();
+    })
+    // ---- insertLocalAnchors：超阈值补插 / 区间有 AI 锚点不补 / 确定性（§8.1-4）----
+    it('local_anchor_insert_rules', 0, () => {
+      const mkPara = (ch: string): FoldItem => {
+        const b = new MdBlock();
+        b.kind = 'p';
+        b.lines = [ch.repeat(300)];
+        const it = new FoldItem();
+        it.kind = 'text';
+        it.block = b;
+        return it;
+      };
+      const mkItems = (): FoldItem[] => {
+        return [mkPara('a'), mkPara('b'), mkPara('c')];
+      };
+      const countBreath = (items: FoldItem[]): number => {
+        let n = 0;
+        for (let i = 0; i < items.length; i++) {
+          const b = items[i].block;
+          if (items[i].kind === 'anchor' && b !== null && b.anchorType === 'breath') {
+            n++;
+          }
+        }
+        return n;
+      };
+      // a(300)+b(300)=600≥550 → b 后补 1 个 breath；c 是末条不插
+      const out = insertLocalAnchors(mkItems(), 550);
+      expect(out.length).assertEqual(4);
+      expect(out[2].kind).assertEqual('anchor');
+      expect(countBreath(out)).assertEqual(1);
+      // 确定性：同输入同输出
+      const again = insertLocalAnchors(mkItems(), 550);
+      const b1 = out[2].block;
+      const b2 = again[2].block;
+      expect(again.length).assertEqual(4);
+      expect(b1 !== null && b2 !== null && b1.anchorText === b2.anchorText).assertTrue();
+      // 区间有 AI 锚点重置累计 → 全程不补 breath
+      const withAi = mkItems();
+      const ai = new MdBlock();
+      ai.kind = 'anchor';
+      ai.anchorType = 'quiz';
+      ai.anchorText = 'AI 锚点';
+      const aiItem = new FoldItem();
+      aiItem.kind = 'anchor';
+      aiItem.block = ai;
+      withAi.splice(1, 0, aiItem); // a, AI, b, c → 累计被 AI 锚点清零，各 300 < 550
+      const out2 = insertLocalAnchors(withAi, 550);
+      expect(out2.length).assertEqual(4);
+      expect(countBreath(out2)).assertEqual(0);
+      // 密度档阈值
+      expect(breathThreshold('dense')).assertEqual(400);
+      expect(breathThreshold('standard')).assertEqual(550);
+      expect(breathThreshold('sparse')).assertEqual(700);
+    })
+    // ---- splitFoldSections：## 切分 / ### 归上节 / 引言第 0 节 / 无 ## 兜底（§8.1-5）----
+    it('sections_split_by_h2', 0, () => {
+      const blocks = parseBlockMd(['引言段落', '## 一、概念', '概念正文', '### 深入', '深入正文', '## 二、应用', '应用正文']);
+      const items: FoldItem[] = blocks.map((b: MdBlock): FoldItem => {
+        const it = new FoldItem();
+        it.kind = b.kind === 'anchor' ? 'anchor' : 'text';
+        it.block = b;
+        return it;
+      });
+      const sections = splitFoldSections(items);
+      expect(sections.length).assertEqual(3); // 引言 + 两章
+      expect(sections[0].order).assertEqual(0); // 引言第 0 节
+      expect(sections[1].order).assertEqual(1);
+      expect(sections[1].title).assertEqual('一、概念');
+      expect(sections[1].items.length).assertEqual(3); // 概念正文 + ### 标题 + 深入正文（### 归属上一章）
+      expect(sections[2].order).assertEqual(2);
+      expect(sections[2].title).assertEqual('二、应用');
+      // 代码内 ## 不成章节：code 条目内容不参与切分
+      const codeItem = new FoldItem();
+      codeItem.kind = 'code';
+      codeItem.code = '## 注释里的二级标题\nconst x = 1;';
+      const p = new MdBlock();
+      p.kind = 'p';
+      p.lines = ['正文'];
+      const textItem = new FoldItem();
+      textItem.kind = 'text';
+      textItem.block = p;
+      const secs2 = splitFoldSections([textItem, codeItem]);
+      expect(secs2.length).assertEqual(1); // 全文无 ## → 单段（不足 500 字不切）
+    })
+    it('sections_no_h2_chunk_500', 0, () => {
+      const items: FoldItem[] = [];
+      for (let i = 0; i < 4; i++) {
+        const b = new MdBlock();
+        b.kind = 'p';
+        b.lines = ['字'.repeat(300)];
+        const it = new FoldItem();
+        it.kind = 'text';
+        it.block = b;
+        items.push(it);
+      }
+      const sections = splitFoldSections(items);
+      expect(sections.length).assertEqual(3); // 300+300=600≥500 切 / 300+300=600 切 / 余 300 收尾
+      expect(sections[0].numbered).assertFalse(); // 兜底段非 ## 章节
+      expect(sections[0].order).assertEqual(1);
+      // 空输入边界
+      expect(splitFoldSections([]).length).assertEqual(0);
+    })
+    // ---- initExpandedSet：≥3 节前 ceil(N/3)+引言；<3 节 null（§8.1-6）----
+    it('expanded_set_rules', 0, () => {
+      const mkSections = (n: number): FoldSection[] => {
+        const secs: FoldSection[] = [];
+        const intro = new FoldSection();
+        intro.order = 0;
+        const introP = new MdBlock();
+        introP.kind = 'p';
+      introP.lines = ['引言'];
+        const introItem = new FoldItem();
+        introItem.kind = 'text';
+        introItem.block = introP;
+        intro.items.push(introItem);
+        secs.push(intro);
+        for (let i = 1; i <= n; i++) {
+          const s = new FoldSection();
+          s.order = i;
+          s.numbered = true;
+          s.title = `第${i}章`;
+          const b = new MdBlock();
+          b.kind = 'p';
+          b.lines = ['x'.repeat(100)];
+          const it = new FoldItem();
+          it.kind = 'text';
+          it.block = b;
+          s.items.push(it);
+          secs.push(s);
+        }
+        for (let i = 0; i < secs.length; i++) {
+          secs[i].index = i;
+        }
+        return secs;
+      };
+      // 5 节：ceil(5/3)=2 → 展开引言(0)+前 2 章
+      const set5 = initExpandedSet(mkSections(5));
+      expect(set5 !== null).assertTrue();
+      expect(set5!.size).assertEqual(3);
+      expect(set5!.has(0)).assertTrue();
+      expect(set5!.has(1)).assertTrue();
+      expect(set5!.has(2)).assertTrue();
+      expect(set5!.has(3)).assertFalse();
+      // 3 节：ceil(3/3)=1 → 引言+第 1 章
+      const set3 = initExpandedSet(mkSections(3));
+      expect(set3 !== null).assertTrue();
+      expect(set3!.size).assertEqual(2);
+      // 2 节：null（不折叠）
+      expect(initExpandedSet(mkSections(2))).assertNull();
     })
   })
 }

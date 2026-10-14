@@ -21,12 +21,15 @@ export class MdSpan {
   url: string = '';
 }
 
-// 块级单元（kind：p 段落 / h1~h6 标题 / li 无序列表 / oli 有序列表 / quote 引用 / hr 分割线）
+// 块级单元（kind：p 段落 / h1~h6 标题 / li 无序列表 / oli 有序列表 / quote 引用 / hr 分割线 /
+//   anchor 注意力锚点 ★ 0.234.0）
 export class MdBlock {
   kind: string = 'p';
   order: string = ''; // oli 序号文本（如 '3.'）
   depth: number = 0; // 列表缩进层级（2 空格一级）
   lines: string[] = []; // 该块的原始行（p/quote 可多行；单行块=1 行）
+  anchorType: string = ''; // ★ 0.234.0：锚点类型（quiz/hook/link/breath；kind='anchor' 时有效）
+  anchorText: string = ''; // ★ 0.234.0：锚点文案（lines 同步存一份，保 blockPlainText/降级渲染兼容）
 }
 
 // 链接解析中间产物（ArkTS 无元组，用类承载）
@@ -233,6 +236,28 @@ const RE_HEADER: RegExp = /^(#{1,6}) +(.*?)\s*#* *$/;
 const RE_UL: RegExp = /^( {0,12})([-*•]) +(.*)$/;
 const RE_OL: RegExp = /^( {0,12})(\d{1,3})[.)] +(.*)$/;
 const RE_QUOTE: RegExp =/^> ?(.*)$/;
+// ★ 0.234.0：锚点标记行——[[anchor:类型|文案]] 独占一行（前后空行由块级空行切分天然保证）
+const RE_ANCHOR: RegExp = /^\[\[anchor:([a-zA-Z]+)\|(.+)\]\]$/;
+
+// ★ 0.234.0：解析独占行锚点标记（宽容协议：类型大小写不敏感；白名单 quiz/hook/link + breath
+// 保留位——AI 误输出 breath 按转本地 breath 处理）；非法类型/缺竖线/空文案/非独占行 → null=普通文本
+function parseAnchorLine(line: string): MdBlock | null {
+  const m = RE_ANCHOR.exec(line.trim());
+  if (m === null) {
+    return null;
+  }
+  const type = m[1].toLowerCase();
+  const text = m[2].trim();
+  if ((type !== 'quiz' && type !== 'hook' && type !== 'link' && type !== 'breath') || text.length === 0) {
+    return null;
+  }
+  const b = new MdBlock();
+  b.kind = 'anchor';
+  b.anchorType = type;
+  b.anchorText = text;
+  b.lines = [text];
+  return b;
+}
 
 // 块级解析：标题/分割线/引用/有序无序列表/段落（连续普通行合并为一个 p 块）
 export function parseBlockMd(lines: string[]): MdBlock[] {
@@ -262,6 +287,14 @@ export function parseBlockMd(lines: string[]): MdBlock[] {
     if (line.trim() === '') {
       flushPara();
       flushQuote();
+      continue;
+    }
+    // ★ 0.234.0：独占行锚点标记 → 锚点块（半标记/非法 → null 走普通文本，流式截断安全）
+    const anchor = parseAnchorLine(line);
+    if (anchor !== null) {
+      flushPara();
+      flushQuote();
+      blocks.push(anchor);
       continue;
     }
     const hr = RE_HR.exec(line);
@@ -421,4 +454,216 @@ export function mdToSpeakableText(content: string): string {
     }
   }
   return out.join('\n').trim();
+}
+
+// ============================================================
+// ★ 0.234.0 注意力锚点 + 长文分章折叠（docs/0.165+/0.234.0 注意力锚点一期.md §5.1）
+// 全部纯函数（ohosTest 双消费）：标记清洗 / breath 本地保底 / 章节切分 / 默认展开集
+// ============================================================
+
+// 锚点标记整行清洗：keepText=true 去 [[anchor:type| 与 ]] 留文案（TTS 用）；
+//   false 整行删（复制/链路摘要上下文用——防标记污染送 LLM 的内容）
+export function stripAnchorMarks(content: string, keepText: boolean): string {
+  const lines = content.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = RE_ANCHOR.exec(lines[i].trim());
+    if (m !== null) {
+      if (keepText) {
+        out.push(m[2].trim());
+      }
+      continue; // keepText=false：整行丢弃
+    }
+    out.push(lines[i]);
+  }
+  return out.join('\n');
+}
+
+// breath 本地保底文案池（确定性轮换——同输入同输出；禁止 emoji，项目图标规范）
+export const BREATH_POOL: string[] = [
+  '歇口气，消化一下刚看的',
+  '停一秒，刚才那段说的是什么？',
+  '深呼吸，把它和前面的知识连起来',
+  '看到这里，你已经走了很远了'
+];
+
+// 密度档 → 本地保底阈值（密 400 / 中 550 / 疏 700 字；AI 侧密度联动=二期）
+export function breathThreshold(density: string): number {
+  if (density === 'dense') {
+    return 400;
+  }
+  if (density === 'sparse') {
+    return 700;
+  }
+  return 550;
+}
+
+// 消息渲染条目——统一承载文本块/锚点/代码块/表格（ChatPage 由 parseMarkdown 段落展开；
+//   章节切分与锚点保底在此流上运行，代码块/表格天然不被截断）
+export class FoldItem {
+  kind: string = 'text';        // 'text'（block 承载）| 'anchor' | 'code' | 'table'
+  block: MdBlock | null = null; // text/anchor 条目的块
+  lang: string = '';            // code 语言
+  code: string = '';            // code 内容
+  header: string[] = [];        // table 表头
+  rows: string[][] = [];        // table 数据行
+  segIdx: number = 0;           // 来源段落号（平铺渲染按段重组用；折叠视图不依赖）
+}
+
+// 条目字符量（正文块取纯文本；代码取内容长；表格取单元格合计；锚点不计——间距按正文字数）
+export function foldItemCharCount(item: FoldItem): number {
+  if (item.kind === 'text' && item.block !== null) {
+    return blockPlainText(item.block).length;
+  }
+  if (item.kind === 'code') {
+    return item.code.length;
+  }
+  if (item.kind === 'table') {
+    let n = 0;
+    for (let i = 0; i < item.header.length; i++) {
+      n += item.header[i].length;
+    }
+    for (let r = 0; r < item.rows.length; r++) {
+      const row = item.rows[r];
+      for (let c = 0; c < row.length; c++) {
+        n += row[c].length;
+      }
+    }
+    return n;
+  }
+  return 0;
+}
+
+// 本地 breath 保底插入：累计正文 ≥ threshold 且区间无 AI 锚点时在文本块边界补 1 个 breath；
+//   相邻锚点最小间距 200 字由 threshold≥400 天然满足；只在文本块后插（代码/表格边界不插，
+//   免平铺渲染按段重组复杂化）；末条后不插（避免消息尾巴突兀）；确定性=同输入同输出
+export function insertLocalAnchors(items: FoldItem[], threshold: number): FoldItem[] {
+  const out: FoldItem[] = [];
+  let since = 0;
+  let pool = 0;
+  for (let i = 0; i < items.length; i++) {
+    out.push(items[i]);
+    if (items[i].kind === 'anchor') {
+      since = 0; // AI 锚点重置累计
+      continue;
+    }
+    since += foldItemCharCount(items[i]);
+    if (since >= threshold && i < items.length - 1 && items[i].kind === 'text') {
+      const b = new MdBlock();
+      b.kind = 'anchor';
+      b.anchorType = 'breath';
+      b.anchorText = BREATH_POOL[pool % BREATH_POOL.length];
+      b.lines = [b.anchorText];
+      const it = new FoldItem();
+      it.kind = 'anchor';
+      it.block = b;
+      it.segIdx = items[i].segIdx;
+      out.push(it);
+      pool++;
+      since = 0;
+    }
+  }
+  return out;
+}
+
+// 章节：title 空=开篇引言（order 0，不占章节序号）；numbered=true 为 ## 章节；
+//   无 ## 兜底切段时 numbered=false（显示「第 X 段」）
+export class FoldSection {
+  title: string = '';
+  items: FoldItem[] = [];
+  charCount: number = 0;
+  index: number = 0;   // 在 sections 数组中的下标（折叠状态 Set 存此值）
+  order: number = 0;   // 章节序号（1 起；0=开篇引言）
+  numbered: boolean = false; // true=## 章节（「第 X 节」）；false=无 ## 兜底段（「第 X 段」）
+}
+
+// 章节切分（本期核心）：## h2 块开新章（块级归属——### 以下/列表/代码/表格全部归属最近上一章，
+//   天然不截断）；开头到首个 ## 为开篇引言（第 0 节）；全文无 ## 时按块累计 ~500 字切段兜底
+export function splitFoldSections(items: FoldItem[]): FoldSection[] {
+  const sections: FoldSection[] = [];
+  let hasH2 = false;
+  let order = 0;
+  let cur = new FoldSection();
+  const closeCur = (): void => {
+    if (cur.items.length > 0) {
+      sections.push(cur);
+    }
+    cur = new FoldSection();
+  };
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'text' && item.block !== null && item.block.kind === 'h2') {
+      hasH2 = true;
+      closeCur();
+      order += 1;
+      cur.title = blockPlainText(item.block);
+      cur.order = order;
+      cur.numbered = true;
+      continue; // h2 块本体由折叠行承载，不重复渲染
+    }
+    cur.items.push(item);
+    cur.charCount += foldItemCharCount(item);
+  }
+  closeCur();
+  if (!hasH2) {
+    // 无 ## 兜底：全部条目按累计 ~500 字切块（块边界切，不拆代码/表格）
+    if (sections.length === 0) {
+      return sections; // 空输入
+    }
+    const all = sections[0].items;
+    const chunks: FoldSection[] = [];
+    let chunk = new FoldSection();
+    let co = 0;
+    for (let i = 0; i < all.length; i++) {
+      chunk.items.push(all[i]);
+      chunk.charCount += foldItemCharCount(all[i]);
+      if (chunk.charCount >= 500 && i < all.length - 1) {
+        co += 1;
+        chunk.order = co;
+        chunks.push(chunk);
+        chunk = new FoldSection();
+      }
+    }
+    if (chunk.items.length > 0) {
+      co += 1;
+      chunk.order = co;
+      chunks.push(chunk);
+    }
+    for (let c = 0; c < chunks.length; c++) {
+      chunks[c].index = c;
+    }
+    return chunks;
+  }
+  for (let s = 0; s < sections.length; s++) {
+    sections[s].index = s;
+  }
+  return sections;
+}
+
+// 默认展开集：≥3 节（order>0 的章/段计数）返回 前 ceil(N/3) 节 + 开篇引言 的 index 集；
+//   <3 节返回 null（折叠无意义，平铺全显）
+export function initExpandedSet(sections: FoldSection[]): Set<number> | null {
+  let numberedCount = 0;
+  for (let i = 0; i < sections.length; i++) {
+    if (sections[i].order > 0) {
+      numberedCount++;
+    }
+  }
+  if (numberedCount < 3) {
+    return null;
+  }
+  const take = Math.ceil(numberedCount / 3);
+  const set = new Set<number>();
+  let taken = 0;
+  for (let i = 0; i < sections.length; i++) {
+    if (sections[i].order === 0) {
+      set.add(i); // 开篇引言恒展开
+      continue;
+    }
+    if (taken < take) {
+      set.add(i);
+      taken++;
+    }
+  }
+  return set;
 }

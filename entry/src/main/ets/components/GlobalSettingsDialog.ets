@@ -32,7 +32,7 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
@@ -148,7 +148,7 @@ const TTS_OFFICIAL_VOICE: string = 'zh_female_vv_uranus_bigtts';
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.233.0'; // ★ 0.233.0：UI规范落地（三角放大/音色ID联动/弹窗留白/司忆区拆行/气泡拉满）
+const APP_VERSION: string = 'v0.234.0'; // ★ 0.234.0：注意力锚点一期（锚点卡片+分章折叠+设置双开关）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -202,6 +202,7 @@ export struct GlobalSettingsDialog {
 
   apiConfig: ApiConfig = connectApiConfig();       // ★ 0.143：换 key 'api-config-v2' 工厂
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：全新 key 'ai-preference-v1'
+  anchorPref: AnchorPref = connectAnchorPref(); // ★ 0.234.0：全新 key 'anchor-pref-v1'（锚点卡片/密度/分章折叠）
   wordBank = connectWordBank(); // ★ 0.205.0：备份恢复合并写词库
   knowledgeBank = connectKnowledgeBank(); // ★ 0.205.0：备份恢复合并写知识库
   // ★ 0.205.0 备份 Tab 状态快照（进 Tab 时从 preferences 刷新——非响应式存储，手动同步）
@@ -253,6 +254,10 @@ export struct GlobalSettingsDialog {
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
+  // ★ 0.234.0：注意力锚点编辑副本（锚点卡片开关/密度档/分章折叠开关——保存模式同称呼/鼓励）
+  @Local editAnchorMode: string = 'on';       // off / on（默认开=钩子模式）
+  @Local editAnchorDensity: string = 'standard'; // dense 密 / standard 中（默认）/ sparse 疏
+  @Local editFoldMode: string = 'on';         // off / on（默认开=折叠模式）
   // ★ 0.196.10：云同步状态改响应式——permGranted（系统权限，开弹窗时异步查一次）&&
   //   cloudSwitch.enabled（应用级开关 @Trace，登录弹窗开启/退出强制关时**实时刷新**状态卡，
   //   不用重开设置弹窗；原 @Local syncGranted 开弹窗快照一次，开启后状态卡滞留「未开启」）
@@ -337,6 +342,10 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
+    // ★ 0.234.0：注意力锚点编辑副本回显
+    this.editAnchorMode = this.anchorPref.anchorMode;
+    this.editAnchorDensity = this.anchorPref.anchorDensity;
+    this.editFoldMode = this.anchorPref.foldMode;
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
     // ★ 0.232.1：模型改下拉预设回显（icl/tts 两预设 + 清单外手填落「自定义…」）
     this.editTtsKey = this.apiConfig.audioKey;
@@ -370,6 +379,9 @@ export struct GlobalSettingsDialog {
       this.currentEndpointValue() !== this.apiConfig.endpoint ||
       this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
       this.editEncourageMode !== this.aiPreference.encourageMode || // ★ 0.191.0：鼓励三档
+      this.editAnchorMode !== this.anchorPref.anchorMode || // ★ 0.234.0：锚点卡片开关
+      this.editAnchorDensity !== this.anchorPref.anchorDensity || // ★ 0.234.0：密度档
+      this.editFoldMode !== this.anchorPref.foldMode || // ★ 0.234.0：分章折叠开关
       this.editReviewLearn !== this.learnCountStore.learnCount || // ★ 0.197.2：复习显示（保存模式）
       this.editReviewKnowledge !== this.knowledgeCountStore.knowledgeCount ||
       this.currentTtsModelValue() !== this.apiConfig.audioModel || // ★ 0.232.0/0.232.1：TTS 配置（模型下拉+音色联动+Key+端点）
@@ -449,6 +461,10 @@ export struct GlobalSettingsDialog {
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageMode = this.editEncourageMode;
+    // ★ 0.234.0：注意力锚点写入（独立 key anchor-pref-v1 即时落盘；ChatPage 读 @Trace 即时生效）
+    this.anchorPref.anchorMode = this.editAnchorMode;
+    this.anchorPref.anchorDensity = this.editAnchorDensity;
+    this.anchorPref.foldMode = this.editFoldMode;
     // ★ 0.197.2：Tab5 复习显示写入（编辑副本→store，PersistenceV2 即时落盘，两处复习区即时生效）
     this.learnCountStore.learnCount = this.editReviewLearn;
     this.knowledgeCountStore.knowledgeCount = this.editReviewKnowledge;
@@ -1183,8 +1199,113 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .margin({ bottom: 24 })
 
-      // 自动鼓励三档（★ 0.191.0：开关→分段控件，用户定稿）
-      // ★ 0.190.5：排版对齐「自定义称呼」区节奏——label 行（14/TEXT_SECONDARY）+ 下方提示小字
+      // ★ 0.234.0 ②：注意力锚点（钩子模式）——开关 + 密度档 + 提示小字（任务书 §6.3）
+      Column() {
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('锚点卡片')
+              .fontSize(14)
+              .fontColor(TEXT_PRIMARY)
+            Text('中/长回复中插入考考你、悬念、联想等锚点卡片')
+              .fontSize(11)
+              .lineHeight(18)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.editAnchorMode === 'on' })
+            .selectedColor(BRAND_PRIMARY)
+            .onChange((on: boolean) => {
+              this.editAnchorMode = on ? 'on' : 'off';
+            })
+        }
+        .width('100%')
+
+        // 密度分段控件（密 / 中 / 疏——只调本地保底阈值 400/550/700 字；SEGMENTED_TRACK 轨道+激活段主紫）
+        Row() {
+          Text('密')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editAnchorDensity === 'dense' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editAnchorDensity === 'dense' ? BRAND_PRIMARY : Color.Transparent)
+            .onClick(() => {
+              this.editAnchorDensity = 'dense';
+            })
+          Text('中')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editAnchorDensity === 'standard' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editAnchorDensity === 'standard' ? BRAND_PRIMARY : Color.Transparent)
+            .onClick(() => {
+              this.editAnchorDensity = 'standard';
+            })
+          Text('疏')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editAnchorDensity === 'sparse' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .backgroundColor(this.editAnchorDensity === 'sparse' ? BRAND_PRIMARY : Color.Transparent)
+            .onClick(() => {
+              this.editAnchorDensity = 'sparse';
+            })
+        }
+        .width('100%')
+        .padding(4)
+        .margin({ top: 10 })
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(SEGMENTED_TRACK)
+
+        Text('💡 开启后，中/长回复中会插入考考你、悬念、联想等锚点卡片，读长文时轻轻拉回注意力；关闭后 AI 按原文回复。短回复与听播模式不插入。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
+      // ★ 0.234.0 ③：长文分章折叠（折叠模式）——开关 + 提示小字（与锚点卡片互相独立，可分别开关）
+      Column() {
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('分章折叠')
+              .fontSize(14)
+              .fontColor(TEXT_PRIMARY)
+            Text('长回复生成完毕后自动按章节折叠呈现')
+              .fontSize(11)
+              .lineHeight(18)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.editFoldMode === 'on' })
+            .selectedColor(BRAND_PRIMARY)
+            .onChange((on: boolean) => {
+              this.editFoldMode = on ? 'on' : 'off';
+            })
+        }
+        .width('100%')
+
+        Text('💡 长回复生成完毕后自动按章节折叠（默认展开前 1/3，其余收起），点章节行展开继续读；生成过程中仍为流式直显。与锚点卡片互相独立，可分别开关。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
+      // ★ 0.234.0 ④：自动鼓励（移到第四位，三档控件不动，仅改说明小字——只在学习统计页/复习完成页出现）
       Column() {
         Text('自动鼓励')
           .fontSize(14)
@@ -1232,7 +1353,7 @@ export struct GlobalSettingsDialog {
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(SEGMENTED_TRACK)
 
-        Text('💡 轻度：回复开头 1~2 句温和鼓励；重度：2~4 句热情夸张的喝彩（「未来的爱因斯坦」式吹捧）；关闭：不生成鼓励。仅中/长回复模式生成，短回复模式不生成。') // ★ 0.191.0：三档说明
+        Text('💡 轻度：1~2 句温和鼓励；重度：2~4 句热情喝彩；关闭：不生成。仅在学习统计页与复习完成页出现，不插入 AI 回复。') // ★ 0.234.0：改口——鼓励不再进 AI 回复
           .fontSize(11)
           .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(TEXT_TERTIARY)

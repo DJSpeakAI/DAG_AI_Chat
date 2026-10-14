@@ -649,7 +649,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.233.0') // ★ 0.233.0：UI规范落地（三角放大/音色ID联动/弹窗留白/司忆区拆行/气泡拉满）；更早历史见 MEMORY.md
+        Text('v0.234.0') // ★ 0.234.0：注意力锚点一期（锚点卡片+分章折叠+设置双开关）；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
