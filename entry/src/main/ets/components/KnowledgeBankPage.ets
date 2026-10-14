@@ -50,7 +50,20 @@ import { AppSideBar } from './AppSideBar'; // ★ 0.222.0 手机知识库页边�
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.18：设备类型判定（仅手机去掉知识库空白处长按创建菜单，PC 右键/Pad 长按保留）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
+import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.239.0：知识库视图模式 store（跨页面记忆，复刻 WordViewModeStore）
 const TREE_CELL: number = 14; // ★ 0.222.17：树形连接线每层缩进宽度（vp）
+
+// ★ 0.239.0：知识库视图模式（AppStorageV2 共享 @Trace grid）——复刻单词库 WordViewModeStore（0.219.2）：
+//   页面组件销毁重建（切其他页面再回来）grid 不回弹列表（跨页面记忆）；key 独立 'knowledge-view-mode'
+//   勿与 'word-view-mode' 冲突；AppStorageV2 会话级共享（重启恢复默认列表可接受，与单词库同语义）
+@ObservedV2
+export class KnowledgeViewModeStore {
+  @Trace grid: boolean = false;
+}
+
+export function connectKnowledgeViewMode(): KnowledgeViewModeStore {
+  return AppStorageV2.connect(KnowledgeViewModeStore, 'knowledge-view-mode', () => new KnowledgeViewModeStore()) as KnowledgeViewModeStore;
+}
 
 @ComponentV2
 export struct KnowledgeBankPage {
@@ -116,6 +129,28 @@ export struct KnowledgeBankPage {
   @Local windowMode: WindowMode = connectWindowMode(); // ★ 0.222.1 挂 @Local（@ObservedV2 实例须挂 @Local 才可靠响应 @Trace，isTablet @Computed 依赖链真机不可靠）
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
+  }
+
+  // ── ★ 0.239.0：列表/网格双视图（复刻单词库 0.218.x 已验证方案）──
+  @Local viewMode: KnowledgeViewModeStore = connectKnowledgeViewMode(); // 挂 @Local（@ObservedV2 实例响应 @Trace 的可靠姿势）
+  @Local gridCols: number = 4; // ★ 0.239.0：网格列数随容器宽连续自适应（禁写死档位军令）——封面卡目标格宽 200（卡片比单词卡高，格宽放宽）
+  @Local gridGap: number = 12; // ★ 0.239.0：间距随格宽连续缩放（8~14 连续区间，与单词库同式）
+
+  /** ★ 0.239.0 设备三档判定（照抄 WordBankPage.ets 0.218.8 先例）：phone/tablet/tv/car/wearable
+   *  之外全算 PC 档——PC 窗口拖到多窄都是 PC 档（网格与切换按钮保持，不退化手机列表） */
+  isPcDevice(): boolean {
+    const t = deviceInfo.deviceType;
+    return t !== 'phone' && t !== 'tablet' && t !== 'tv' && t !== 'car' && t !== 'wearable';
+  }
+
+  /** ★ 0.239.0：封面图优先级——标题图首张 → 内容图首张 → ''（无图走紫渐变占位） */
+  cardCoverImage(c: KnowledgeCard): string {
+    const t = getTitleImages(c);
+    if (t.length > 0) {
+      return t[0];
+    }
+    const g = getCardImages(c);
+    return g.length > 0 ? g[0] : '';
   }
 
   aboutToAppear(): void {
@@ -775,6 +810,26 @@ export struct KnowledgeBankPage {
         .onClick(() => {
           this.sortMenuVisible = !this.sortMenuVisible;
         })
+      // ★ 0.239.0：宽屏视图切换（grid 四宫格图标 / 默认列表）——复刻单词库同款同位置同交互；
+      //   单图标开关式（无 list 图标，靠底色表达状态）；手机端不渲染（既定设计，与单词库一致）
+      if (this.isTablet || this.isPcDevice()) {
+        Row() {
+          Image($r('app.media.grid'))
+            .width(20)
+            .height(20)
+            .objectFit(ImageFit.Contain)
+        }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .height(28)
+        .width(28)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.viewMode.grid ? SURFACE_HOVER : Color.Transparent)
+        .margin({ right: 4 })
+        .onClick(() => {
+          this.viewMode.grid = !this.viewMode.grid;
+        })
+      }
       // ★ 0.161.2: card-count settings button — left of "+", visible in both normal & multi-select modes
       // ★ 0.195.0：⚙ emoji 换 settings.svg 单色图标（UI 统一——与边栏/ChatPage 顶栏同款）
       Row() {
@@ -803,7 +858,7 @@ export struct KnowledgeBankPage {
           .padding({ left: 8, right: 8 })
           .bindPopup(this.plusMenuVisible, {
             builder: this.kbPlusMenuBuilder(),
-            placement: Placement.Bottom,
+            placement: Placement.BottomRight, // ★ 0.239.0：Bottom→BottomRight——弹层右缘对齐按钮右缘、整体在按钮左下方（用户拍板"放到左边去"）
             popupColor: SURFACE_NODE,
             radius: 12,
             mask: { color: 'rgba(0,0,0,0.3)' },
@@ -1953,6 +2008,8 @@ export struct KnowledgeBankPage {
   // ★ 0.225.0：+ 菜单 builder（无参直读状态 0.190.1 铁律）——三主项 drill-down：
   //   main=新建卡片/导入›/导出›；import=DAG/APKG/TXT/CSV/XLSX；export=DAG/TXT/CSV/XLSX。
   //   选项紫字 BRAND_SECONDARY（用户拍板「变紫色」）；返回行 TEXT_TERTIARY；样式复刻 sortMenu 规格
+  // ★ 0.239.0 双库统一规格（用户拍板）：全部菜单项删 .width('100%')（弹层宽度按最长项文字自适应收窄，
+  //   不再铺满可用宽）；padding 上下 12→10/左右 16→14（对齐单词库系统菜单观感）；Column 左对齐
   @Builder
   kbPlusMenuBuilder() {
     Column() {
@@ -1960,9 +2017,7 @@ export struct KnowledgeBankPage {
         Text('新建卡片')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.openAddEditor();
@@ -1971,9 +2026,7 @@ export struct KnowledgeBankPage {
         Text('导入 ›')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'import';
           })
@@ -1981,9 +2034,7 @@ export struct KnowledgeBankPage {
         Text('导出 ›')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'export';
           })
@@ -1991,9 +2042,7 @@ export struct KnowledgeBankPage {
         Text('‹ 返回')
           .fontSize(13)
           .fontColor(TEXT_TERTIARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 10, bottom: 10, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'main';
           })
@@ -2001,9 +2050,7 @@ export struct KnowledgeBankPage {
         Text('DAG（知识库包）')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickPackFile();
@@ -2012,9 +2059,7 @@ export struct KnowledgeBankPage {
         Text('APKG（Anki 包）')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickApkgFile();
@@ -2023,9 +2068,7 @@ export struct KnowledgeBankPage {
         Text('TXT')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickImportFile('txt');
@@ -2034,9 +2077,7 @@ export struct KnowledgeBankPage {
         Text('CSV')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickImportFile('csv');
@@ -2045,9 +2086,7 @@ export struct KnowledgeBankPage {
         Text('XLSX')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickImportFile('xlsx');
@@ -2056,9 +2095,7 @@ export struct KnowledgeBankPage {
         Text('‹ 返回')
           .fontSize(13)
           .fontColor(TEXT_TERTIARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 10, bottom: 10, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'main';
           })
@@ -2066,9 +2103,7 @@ export struct KnowledgeBankPage {
         Text('DAG（知识库包）')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.exportDagPack(this.folderNav.folderId);
@@ -2077,9 +2112,7 @@ export struct KnowledgeBankPage {
         Text('TXT')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.doExportTxt();
@@ -2088,9 +2121,7 @@ export struct KnowledgeBankPage {
         Text('CSV')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.doExportCsv();
@@ -2099,15 +2130,16 @@ export struct KnowledgeBankPage {
         Text('XLSX')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.doExportXlsx();
           })
       }
     }
+    .width(150) // ★ 0.239.0：弹层定宽收窄——Divider 无固有宽会把无约束 Column 撑满可用宽（Pad 实测 2798px 全屏面板），
+                //   显式定宽 150vp=最长项「DAG（知识库包）」≈134vp+余量（紧凑贴内容，无右侧大片留白）
+    .alignItems(HorizontalAlign.Start) // ★ 0.239.0：各项左对齐（Column 默认居中会参差）
   }
 
   // ★ 0.220.2：PC 右键/Pad 长按创建菜单（两项：新卡片/新文件夹）——无参 @Builder 直读状态（0.190.1 铁律）
@@ -2854,6 +2886,145 @@ export struct KnowledgeBankPage {
             .width('100%')
             .layoutWeight(1)
             .justifyContent(FlexAlign.Center)
+          } else if (this.viewMode.grid && (this.isTablet || this.isPcDevice())) {
+            // ★ 0.239.0：网格视图（图片浏览模式）——封面卡：首图（标题图优先→内容图）占上半当封面，
+            //   无图卡紫渐变底+居中标题首字占位（解决 0 图卡空单调）；下半标题+标签+复习状态（描述不放）；
+            //   等高 Grid（禁瀑布流——单词库 0.218.9 定案"整齐即正义"）；滑动删除不挂（swipeAction 是
+            //   ListItem 专属）；单击（双击进编辑与列表一致）/长按多选/右键菜单与列表一致
+            Grid() {
+              ForEach(this.filteredCards, (c: KnowledgeCard) => {
+                GridItem() {
+                  Column() {
+                    Stack() {
+                      if (this.cardCoverImage(c).length > 0) {
+                        Image(this.cardCoverImage(c))
+                          .width('100%')
+                          .height('100%')
+                          .objectFit(ImageFit.Cover)
+                          .borderRadius(RADIUS_CONTROL)
+                          .onClick(() => {
+                            // 单击封面=全屏预览（与列表图片单击预览一致；自消费不冒泡防误进编辑）
+                            const t = getTitleImages(c);
+                            const g = getCardImages(c);
+                            this.openImagePreview(t.length > 0 ? t : g, 0);
+                          })
+                      } else {
+                        // 无图占位：深紫渐变底 + 居中标题首字（克制设计，禁彩色 emoji）
+                        Column() {
+                          Text(c.title.length > 0 ? c.title.charAt(0) : '知')
+                            .fontSize(34)
+                            .fontWeight(700)
+                            .fontColor(TEXT_PRIMARY)
+                        }
+                        .width('100%')
+                        .height('100%')
+                        .justifyContent(FlexAlign.Center)
+                        .borderRadius(RADIUS_CONTROL)
+                        .linearGradient({
+                          angle: 135,
+                          colors: [[BRAND_PRIMARY, 0], [SURFACE_HOVER, 1]]
+                        })
+                      }
+                    }
+                    .width('100%')
+                    .height(104) // 封面区 ≈ 卡高 55%（190×0.55≈104）
+                    Row() {
+                      Text(c.title)
+                        .fontSize(14)
+                        .fontWeight(600)
+                        .fontColor(TEXT_PRIMARY)
+                        .maxLines(2)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                      if (this.multiSelectMode) {
+                        Image(this.selectedIds.includes(c.id) ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off'))
+                          .width(18)
+                          .height(18)
+                          .margin({ left: 6 })
+                      }
+                    }
+                    .width('100%')
+                    .margin({ top: 8 })
+                    if (parseTags(c.tags).length > 0) {
+                      // 标签 pill：最多 2 个，单标签超长省略（横向不滑——网格卡空间有限）
+                      Row({ space: 4 }) {
+                        ForEach(parseTags(c.tags).slice(0, 2), (t: string) => {
+                          Text(t)
+                            .fontSize(10)
+                            .fontColor(BRAND_SECONDARY)
+                            .maxLines(1)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .height(18)
+                            .padding({ left: 6, right: 6 })
+                            .borderRadius(4)
+                            .border({ width: 1, color: BRAND_SECONDARY })
+                        }, (t: string) => t)
+                      }
+                      .width('100%')
+                      .margin({ top: 6 })
+                    }
+                    Text(this.nextReviewLabel(c))
+                      .fontSize(11)
+                      .fontColor(this.nextReviewColor(c))
+                      .margin({ top: 4 })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+                  .height(190) // ★ 0.239.0：封面卡固定格高（规格 180~200 取中）
+                  .padding(12)
+                  .borderRadius(RADIUS_CONTROL)
+                  .backgroundColor(SURFACE_NODE)
+                  .borderColor(STROKE_CARD)
+                  .borderWidth(1)
+                  .onClick(() => {
+                    this.onItemTap(c);
+                  })
+                  .gesture(
+                    LongPressGesture()
+                      .onAction(() => {
+                        if (!this.multiSelectMode) {
+                          this.enterMultiSelect(c.id);
+                        }
+                      })
+                  )
+                  .bindContextMenuByResponseType([
+                    { value: '移动', action: () => { this.moveOrCopyMode = 'move'; this.selectedIds = [c.id]; this.folderPickerVisible = true; } },
+                    { value: '复制', action: () => { this.moveOrCopyMode = 'copy'; this.selectedIds = [c.id]; this.folderPickerVisible = true; } },
+                    { value: '修改', action: () => { this.openEditEditor(c); } },
+                    { value: '删除', action: () => { this.requestDeleteCard(c); } }
+                  ], ResponseType.RightClick)
+                }
+              }, (c: KnowledgeCard) => c.id)
+            }
+            .columnsTemplate(`repeat(${this.gridCols}, 1fr)`)
+            .columnsGap(this.gridGap)
+            .rowsGap(this.gridGap)
+            .width('100%')
+            .layoutWeight(1)
+            .padding({ left: 16, right: 16, top: 12 })
+            .onClick(() => {
+              // 与列表一致：点空白区退出多选（200ms 窗口内是冒泡的卡片点击）
+              if (Date.now() - this.lastEntryTapAt < 200) {
+                return;
+              }
+              if (this.multiSelectMode) {
+                this.exitMultiSelect();
+              }
+            })
+            .onAreaChange((_o: Area, n: Area) => {
+              // ★ 0.239.0 用户军令"列数禁止写死档位"——连续自适应（复刻单词库 0.218.8 式）：
+              //   列数 round 进位 + 间距随格宽 6% 连续缩放（8~14）；封面卡目标格宽 200（卡高比单词卡高，格宽放宽）
+              const availW = Number(n.width) - 32; // 减左右 padding 16×2
+              if (availW > 0) {
+                const cols = Math.max(2, Math.round(availW / 200));
+                const cell = availW / cols;
+                const gap = Math.min(14, Math.max(8, Math.round(cell * 0.06)));
+                if (cols !== this.gridCols || gap !== this.gridGap) {
+                  this.gridCols = cols;
+                  this.gridGap = gap;
+                }
+              }
+            })
           } else {
             List({ space: 8 }) {
               ForEach(this.filteredCards, (c: KnowledgeCard) => {

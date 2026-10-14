@@ -345,3 +345,43 @@
 - **落点清单（0.237.0 已统一 ✅）**：章节折叠行 FoldRow（ChatPage）/ 边栏导航条+文件夹树（AppSideBar）/ 移动·复制·加词·入库四弹窗树（ChatPage×2 + KnowledgeBankPage + WordBankPage）/ 复习区·编辑器生词与知识卡词行（ChatPage×4）/ TTS 配置区折叠行（GlobalSettingsDialog）
 - 树行叶子节点（无子级）用同宽空占位（12vp）保持文本同轴线；`@Param expanded` 驱动，原无动画处可 `animate:false`（静态角度仍全项目统一）
 - 配套测试台断言：ui-audit A17 + CHAT-FOLD（折叠指示器=SVG 同源 + 字符三角清零——军令在测试台的落地，改过必须可被复核）
+
+## 十四、知识库双视图与封面卡网格（★ 0.239.0 用户定稿——对齐单词库 0.218.x 先例）
+
+> 背景：知识库原一行通栏卡片，图片少时单调。用户看到单词库「网格排列」按钮拍板知识库同做——**列表模式现状完全不动（红线），网格模式为知识库特化封面卡**（非照搬单词库）。
+
+### 14.1 视图切换按钮（与单词库同款同位置）
+- 位置：顶栏**排序按钮之后、⚙ 设置图标之前**（次序=排序 → 视图切换 → 设置 → ＋，两库一致）
+- 样式：`Image($r('app.media.grid'))` 20×20，容器 28×28、圆角 `RADIUS_CONTROL`；**单图标开关式**（无 list 图标，激活态靠底色表达）
+- 激活态：`backgroundColor(SURFACE_HOVER)`；非激活 `Color.Transparent`
+- 渲染条件：`isTablet || isPcDevice()`——**手机端不渲染**（手机恒列表）；PC 窗口缩窄不消失（deviceType 是设备属性与窗口无关）
+- 视图模式跨页面记忆：`KnowledgeViewModeStore`（@ObservedV2 + AppStorageV2，key `knowledge-view-mode`，勿与 `word-view-mode` 冲突）——切网格退出页面再进保持
+
+### 14.2 封面卡网格（知识库特化）
+- 容器：等高 `Grid`（**禁 WaterFlow 瀑布流**——单词库 0.218.9 定案「整齐即正义」）；`columnsTemplate(repeat(N, 1fr))`
+- 列数/间距：**禁止写死档位**（用户军令）——`onAreaChange` 连续自适应：`cols = Math.max(2, Math.round(availW / 200))`（封面卡目标格宽 200，比单词卡 170 宽——卡片更高）；`gap = Math.min(14, Math.max(8, Math.round(cell * 0.06)))`；`gridCols`/`gridGap` 必须挂 `@Local`
+- 卡片结构（固定高 **190vp**，padding 12 + `RADIUS_CONTROL` + `SURFACE_NODE` 底 + `STROKE_CARD` 描边，与单词库网格卡同规格）：
+  - **封面区**（高 104vp ≈ 卡高 55%）：封面图优先级 = `getTitleImages(c)[0]` → `getCardImages(c)[0]` → 无图占位；`objectFit(Cover)`；单击封面=全屏预览
+  - **无图占位**：深紫渐变底（`linearGradient` angle 135：`BRAND_PRIMARY` → `SURFACE_HOVER`）+ 居中标题首字（34fp/700/TEXT_PRIMARY；空标题兜底「知」）——克制设计，**禁彩色 emoji**
+  - **标题**：14fp/600，最多 2 行省略（多选模式标题行右端叠勾选框 svg）
+  - **标签 pill**：有则显示最多 2 个（10fp/`BRAND_SECONDARY` 描边胶囊，单标签超长省略）
+  - **复习状态小字**：11fp，复用 `nextReviewLabel/Color`（未学习灰/已到期红）
+  - **描述不放**（网格=图片浏览模式）
+- 网格交互取舍（对齐单词库先例）：**滑动删除（swipeAction）网格模式不挂**（ListItem 专属+与网格拖动冲突，删除走长按多选批量）；保留单击（双击进编辑，与列表一致）/长按多选/右键菜单（`bindContextMenuByResponseType` 移动/复制/修改/删除）
+- **列表模式红线（不可回退）**：宽屏标题行 Stack 叠层终式（11a）、图片横滑条、滑动删除面板、右键菜单、多选勾选框全部原样保留
+
+## 十五、+ 弹出菜单（bindPopup 双库统一规格，★ 0.239.0 用户定稿）
+
+> 背景：单词库 + 菜单观感「舒服」但系统 bindMenu 配色不可换/宽度不可定制；知识库 bindPopup 弹层铺满全宽+偏右。定案=**两库统一**：单词库观感基准 + 主题配色 + 宽度收窄 + 左下方弹出。
+
+| 项 | 取值 | 说明 |
+|---|---|---|
+| 菜单项字号 | 14 | 单词库系统菜单观感基准（用户认可） |
+| 菜单项内边距 | 上下 10、左右 14 | 贴近系统菜单行高 |
+| 返回行（‹ 返回） | fontSize 13、TEXT_TERTIARY | 知识库 drill-down 二级保留规格 |
+| 弹层底色/圆角 | `SURFACE_NODE`、radius 12、`STROKE_CARD` 描边分隔线 | 主题配色（系统默认底色禁用） |
+| 菜单项文字色 | `BRAND_SECONDARY` 紫 | 两库一致 |
+| 弹层宽度 | **定宽收窄**（知识库 150vp / 单词库 210vp，= 各自最长项文字宽+余量） | **菜单项禁 `.width('100%')`**（会把弹层撑满可用宽）；⚠️ 实测坑（0.239.0 Pad 实锤）：**`Divider()` 无固有宽，会把无约束的 builder 根 Column 撑满全屏**（面板 2798px 全宽）——根 Column 必须**显式 `.width(N)`** 定宽（N=本菜单最长项实测宽+~15vp 余量，改菜单文案须同步核宽） |
+| 弹出位置 | `placement: Placement.BottomRight` | 弹层右缘对齐按钮右缘、整体在按钮**左下方**；禁止弹层横向溢出屏幕右缘 |
+| 二级 drill-down | 知识库保留 | main → import(5)/export(4) + ‹ 返回；关闭弹层复位 main 级 |
+| 实现方式 | 两页各自实现同规格 builder，**不抽公共组件** | 跨文件导出 @Builder 有新雷风险（0.218.3 sortMenu 先例） |

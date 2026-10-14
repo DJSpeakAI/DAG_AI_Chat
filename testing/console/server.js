@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.238.0.1'; // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.239.0.1'; // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -949,6 +949,33 @@ function pickBodyTextNode(nodes) {
     if (!best || t.length > String(best.text || '').length) best = n;
   }
   return best;
+}
+// ---------- ★ 0.239.0 kbview 套件助手（KB-VIEW/KB-PLUS/WB-PLUS 共用） ----------
+// 顶栏 ＋ 按钮 Text 节点（exact '+'）
+function o0plus(nodes) {
+  const hits = nodes.filter((n) => String(n.text || '').trim() === '+');
+  return hits.length ? hits[0] : null;
+}
+// 排序文字右缘与＋左缘之间的 20vp 图标（w 30~80px 覆盖 1.5~3.5 密度；左一枚=视图切换）
+function o0icons(nodes, sortNode, plusNode) {
+  return nodes.filter((n) => String(n.type || '').toLowerCase() === 'image'
+    && n.x > sortNode.x2 && n.x2 < plusNode.x && Math.abs(n.yc - sortNode.yc) < 40 && n.w >= 30 && n.w <= 80)
+    .sort((a, b) => a.x - b.x);
+}
+// 网格多列判定：复习状态小字里存在「同一横带（yc 差<60px）且横向错开（x 差>150px）」的两条=多列铁证
+function gridColsOf(d) {
+  const labels = d.nodes.filter((n) => /^(未学习|需复习|下次复习：)/.test(String(n.text || '').trim()));
+  let multi = false; let pair = '';
+  outer:
+  for (let i = 0; i < labels.length; i++) {
+    for (let j = i + 1; j < labels.length; j++) {
+      if (Math.abs(labels[i].yc - labels[j].yc) < 60 && Math.abs(labels[i].x - labels[j].x) > 150) {
+        multi = true; pair = `(${Math.round(labels[i].x)},${Math.round(labels[i].yc)})↔(${Math.round(labels[j].x)},${Math.round(labels[j].yc)})`;
+        break outer;
+      }
+    }
+  }
+  return { labels: labels.length, multi, pair };
 }
 const CASES = [
   // ---------- 功能⓪ 版本核验（用户需求 1/2：移到最上面，最先可见、可单独秒跑） ----------
@@ -2347,6 +2374,158 @@ const CASES = [
     } },
 
 
+  // ---------- ★ 0.239.0 知识库双视图 + 加号菜单双库统一（kbview 套件；Pad 专属——手机端不渲染切换按钮、PC 无 uiClick 通道） ----------
+  { id: 'KB-VIEW', suite: 'kbview', name: '双视图·切换按钮在场+网格封面卡多列+无图占位+跨页记忆+切回列表（0.239.0 新功能）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '双视图断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      if (dev.id === 'phone') { ctx.log('★双视图', 'skip', '手机端不渲染切换按钮（0.239.0 既定设计，与单词库一致——手机恒列表）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '知识库', ctx.log);
+      if (!nav.ok) { ctx.log('★双视图', 'fail', '未能进入知识库页（边栏「知识库」未命中）'); return; }
+      const d0 = await dumpAuditNodes(serial);
+      if (!d0.ok) { ctx.log('① dump', 'fail', 'dumpLayout -a 失败'); return; }
+      if (d0.text.includes('知识库为空')) { ctx.log('★双视图', 'skip', '设备知识库为空——先导入/新建卡片再跑本用例'); return; }
+      // ① 切换按钮定位：排序文字（最新/需复习）与 ＋ 之间的 Image 图标（左一枚=视图切换，右一枚=⚙ 设置）
+      const sortT = d0.nodes.filter((n) => /^(最新|需复习) [↑↓]$/.test(String(n.text || '').trim()));
+      const plusT = o0plus(d0.nodes);
+      if (!sortT.length || !plusT) { ctx.log('★① 切换按钮定位', 'fail', `排序文字×${sortT.length} / ＋×${plusT ? 1 : 0}——锚点缺失`); return; }
+      const s = sortT[0]; const p = plusT;
+      const icons = o0icons(d0.nodes, s, p);
+      if (!icons.length) { ctx.log('★① 切换按钮在场', 'fail', `排序与＋之间未找到 28vp 图标（仅 ${icons.length} 枚）——视图切换按钮未渲染（宽屏条件 isTablet||isPcDevice 未满足？）`); return; }
+      const toggle = icons[0];
+      ctx.log('★① 切换按钮在场', 'pass', `排序与＋之间 ${icons.length} 枚图标，左一枚=视图切换 (${Math.round(toggle.xc)},${Math.round(toggle.yc)}) ${Math.round(toggle.w)}px——次序=排序→视图→设置→＋`);
+      artSave('KB-VIEW', `anchors-${dev.id}.json`, { sort: [s.x, s.y, s.w, s.h], plus: [p.x, p.y, p.w, p.h], icons: icons.map((i) => [i.x, i.y, i.w, i.h]) });
+      // ② 点切换 → 网格断言：复习状态小字同行 ≥2 列（多列布局铁证）
+      await sh(serial, `uitest uiInput click ${Math.round(toggle.xc)} ${Math.round(toggle.yc)}`, 15000);
+      await sleep(1600);
+      const d2 = await dumpAuditNodes(serial);
+      if (!d2.ok) { ctx.log('② 网格 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      artSave('KB-VIEW', `grid-${dev.id}.json`, d2.nodes.map((n) => ({ t: n.text, x: n.x, y: n.y, w: n.w, h: n.h })));
+      const g = gridColsOf(d2);
+      if (g.labels === 0) { ctx.log('★② 网格多列封面卡', 'fail', '网格下未见复习状态小字（未学习/需复习/下次复习：）——网格未渲染'); return; }
+      ctx.log('★② 网格多列封面卡', g.multi ? 'pass' : 'fail',
+        g.multi ? `同一横带两列复习状态 ${g.pair}——多列网格生效（${g.labels} 条状态在屏）` : `复习状态 ${g.labels} 条但全在同一竖列——仍是列表布局（切换未生效？）`);
+      // ③ 无图占位：34vp 大号单字 Text（高 ≥60px；库内卡全有图=skip）
+      const ph = d2.nodes.filter((n) => /^.{1}$/.test(String(n.text || '').trim()) && n.h >= 60);
+      ctx.log('③ 无图卡紫渐变占位', ph.length ? 'pass' : 'skip',
+        ph.length ? `${ph.length} 处大号首字占位（高 ${Math.round(ph[0].h)}px=34vp 档）——无图卡不空不单调` : '在屏卡片全有封面图（占位分支本轮未覆盖——留一张无图卡再跑可验）');
+      // ④ 跨页记忆：Back 退出 → 重进 → 仍多列
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(1600);
+      const nav2 = await navTo(serial, '知识库', ctx.log);
+      if (!nav2.ok) { ctx.log('★④ 跨页记忆', 'fail', '退出后重进知识库失败'); return; }
+      const d3 = await dumpAuditNodes(serial);
+      const g3 = d3.ok ? gridColsOf(d3) : { labels: 0, multi: false, pair: '' };
+      ctx.log('★④ 跨页记忆', g3.multi ? 'pass' : 'fail',
+        g3.multi ? '退出重进后仍多列网格——knowledge-view-mode 跨页面记忆生效（AppStorageV2）' : `重进后回到单列（${g3.labels} 条状态）——跨页面记忆失效`);
+      // ⑤ 切回列表：再点切换 → 复习状态全部左对齐同列
+      await sh(serial, `uitest uiInput click ${Math.round(toggle.xc)} ${Math.round(toggle.yc)}`, 15000);
+      await sleep(1600);
+      const d4 = await dumpAuditNodes(serial);
+      const labels4 = d4.ok ? d4.nodes.filter((n) => /^(未学习|需复习|下次复习：)/.test(String(n.text || '').trim())) : [];
+      const xs = labels4.map((n) => n.x);
+      const spread = xs.length > 1 ? Math.max(...xs) - Math.min(...xs) : -1;
+      ctx.log('★⑤ 切回列表', (labels4.length > 0 && spread >= 0 && spread < 60) ? 'pass' : 'fail',
+        labels4.length === 0 ? '列表下未见复习状态（dump 异常？）' : `复习状态 x 极差 ${Math.round(spread)}px（<60=全部左对齐同列）——列表模式完整恢复`);
+    } },
+
+  { id: 'KB-PLUS', suite: 'kbview', name: '知识库+菜单·紧凑宽度+左下方弹出+二级drill-down往返（0.239.0 双库统一）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '+菜单断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '知识库', ctx.log);
+      if (!nav.ok) { ctx.log('★+菜单', 'fail', '未能进入知识库页'); return; }
+      const dRaw = await dumpLayout(serial);
+      const pr = findTextRect(dRaw.text, '+');
+      if (!pr) { ctx.log('★+菜单', 'fail', '未找到 ＋ 按钮'); return; }
+      const estW = pr.x2 + 40; // 顶栏右 padding ≈14vp → 屏宽近似
+      const open = await uiClickText(serial, '+', { exact: true, waitMs: 1300 });
+      if (!open.ok) { ctx.log('★① 菜单弹出', 'fail', open.err || '点击 ＋ 后未弹出'); return; }
+      const d1 = await dumpAuditNodes(serial);
+      artSave('KB-PLUS', `menu-${dev.id}.json`, d1.nodes.map((n) => ({ t: n.text, x: n.x, y: n.y, w: n.w, h: n.h })));
+      const items = ['新建卡片', '导入 ›', '导出 ›'].filter((k) => d1.text.includes(k));
+      if (items.length < 3) { ctx.log('★① 菜单弹出', 'fail', `三主项只命中 ${items.length}/3（${items.join('/')}）——弹层未开或文案变了`); return; }
+      // ② 紧凑宽度 + BottomRight 左下方（菜单文字并集矩形 vs ＋ 矩形）
+      const mNodes = d1.nodes.filter((n) => ['新建卡片', '导入 ›', '导出 ›'].includes(String(n.text || '').trim()));
+      const minL = Math.min(...mNodes.map((n) => n.x)); const maxR = Math.max(...mNodes.map((n) => n.x2));
+      const minT = Math.min(...mNodes.map((n) => n.y));
+      const menuW = maxR - minL;
+      const narrow = menuW < estW * 0.42;
+      ctx.log('★② 宽度收窄', narrow ? 'pass' : 'fail',
+        narrow ? `菜单宽 ${Math.round(menuW)}px ≈ ${Math.round(menuW / estW * 100)}% 屏宽（<42%）——按最长项自适应，无全宽铺满` : `菜单宽 ${Math.round(menuW)}px（≥42% 屏宽 ${Math.round(estW)}）——仍是全宽弹层（.width('100%') 未删净？）`);
+      const below = minT > pr.y2 - 10;
+      // ★ 面板右缘断言（文字右缘≠面板右缘——文字受左右 padding 内缩；面板=SURFACE_NODE 底色容器）：
+      //   dump -a 的 backgroundColor 归一化小写 #ff241640，取＋正下方、宽 <45% 屏的最大命中=弹层面板
+      const panel = d1.nodes.filter((n) => String(n.backgroundColor || '').toLowerCase() === '#ff241640'
+        && n.y >= pr.y2 - 10 && (n.x2 - n.x) > 50 && (n.x2 - n.x) < estW * 0.45)
+        .sort((a, b) => (b.x2 - b.x) - (a.x2 - a.x))[0];
+      const rightAlign = panel ? Math.abs(panel.x2 - pr.x2) <= 60 : false;
+      ctx.log('★③ 左下方弹出', (below && rightAlign) ? 'pass' : 'fail',
+        panel
+          ? `面板 ${Math.round(panel.x2 - panel.x)}×${Math.round(panel.y2 - panel.y)}px 右缘 ${Math.round(panel.x2)} vs ＋右缘 ${Math.round(pr.x2)}（差 ${Math.round(Math.abs(panel.x2 - pr.x2))}px ≤60=右缘对齐）；面板顶 ${Math.round(panel.y)} > ＋底 ${Math.round(pr.y2)}=${below ? '在下方 ✓' : '未在下方 ✗'}——Placement.BottomRight`
+          : `未定位到弹层面板（SURFACE_NODE 底色容器）——人工复核 dump 存证`);
+      // ④ 二级 drill-down 往返：导入 › → 5 项 + ‹ 返回 → 回主级
+      await uiClickText(serial, '导入 ›', { exact: true, waitMs: 1300 });
+      const d2 = await dumpAuditNodes(serial);
+      const impItems = ['DAG（知识库包）', 'APKG（Anki 包）', 'TXT', 'CSV', 'XLSX'].filter((k) => d2.text.includes(k));
+      const hasBack = d2.text.includes('‹ 返回');
+      ctx.log('★④ 二级导入菜单', (impItems.length === 5 && hasBack) ? 'pass' : 'fail',
+        `导入 5 项命中 ${impItems.length}/5${hasBack ? ' + ‹返回 ✓' : '（无返回行）'}——drill-down 层级正常`);
+      if (hasBack) {
+        await uiClickText(serial, '‹ 返回', { exact: true, waitMs: 1300 });
+        const d3 = await dumpAuditNodes(serial);
+        ctx.log('★⑤ 返回主级', d3.text.includes('新建卡片') ? 'pass' : 'fail', d3.text.includes('新建卡片') ? '‹ 返回回主级三主项 ✓' : '返回后未见主级（drill-down 状态错乱）');
+      }
+      // ⑥ 点遮罩关闭（几何点击＋左下方内容区——TextInput placeholder 在 attributes.hint 不在 text，findTextRect 定位不到搜索框）
+      await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - 300)} ${Math.round(pr.y2 + 300)}`, 15000);
+      await sleep(1000);
+      const d4 = await dumpLayout(serial);
+      ctx.log('⑥ 遮罩关闭', !d4.text.includes('新建卡片') ? 'pass' : 'warn', !d4.text.includes('新建卡片') ? '点遮罩后菜单收起 ✓（重开应从 main 开始）' : '菜单仍在屏（点击未落遮罩——人工复核）');
+    } },
+
+  { id: 'WB-PLUS', suite: 'kbview', name: '单词库+菜单·bindPopup 统一规格三项+紧凑+左下方（0.239.0 换掉系统 bindMenu）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '+菜单断言（UI 断言专属，PC 无 uiClick 通道）'); return; }
+      await coldStart(serial);
+      const nav = await navTo(serial, '单词库', ctx.log);
+      if (!nav.ok) { ctx.log('★+菜单', 'fail', '未能进入单词库页'); return; }
+      const dRaw = await dumpLayout(serial);
+      const pr = findTextRect(dRaw.text, '+');
+      if (!pr) { ctx.log('★+菜单', 'fail', '未找到 ＋ 按钮'); return; }
+      const estW = pr.x2 + 40;
+      const open = await uiClickText(serial, '+', { exact: true, waitMs: 1300 });
+      if (!open.ok) { ctx.log('★① 菜单弹出', 'fail', open.err || '点击 ＋ 后未弹出'); return; }
+      const d1 = await dumpAuditNodes(serial);
+      artSave('WB-PLUS', `menu-${dev.id}.json`, d1.nodes.map((n) => ({ t: n.text, x: n.x, y: n.y, w: n.w, h: n.h })));
+      const want = ['新建单词', '导入 DagPack（单词包）', '导出 DagPack（整库单词）'];
+      const items = want.filter((k) => d1.text.includes(k));
+      if (items.length < 3) { ctx.log('★① 三项在场', 'fail', `三项只命中 ${items.length}/3（${items.join('/')}）——bindPopup 菜单未弹出或文案变了`); return; }
+      ctx.log('★① 三项在场', 'pass', `${items.join(' / ')}——系统 bindMenu 已换 bindPopup 且文字 action 原样保留`);
+      const mNodes = d1.nodes.filter((n) => want.includes(String(n.text || '').trim()));
+      const minL = Math.min(...mNodes.map((n) => n.x)); const maxR = Math.max(...mNodes.map((n) => n.x2));
+      const minT = Math.min(...mNodes.map((n) => n.y));
+      const menuW = maxR - minL;
+      ctx.log('★② 宽度收窄', menuW < estW * 0.42 ? 'pass' : 'fail',
+        `菜单宽 ${Math.round(menuW)}px ≈ ${Math.round(menuW / estW * 100)}% 屏宽${menuW < estW * 0.42 ? '（<42%）——内容自适应，无系统菜单右侧大留白' : '——仍偏宽（复核）'}`);
+      const below = minT > pr.y2 - 10;
+      const panel = d1.nodes.filter((n) => String(n.backgroundColor || '').toLowerCase() === '#ff241640'
+        && n.y >= pr.y2 - 10 && (n.x2 - n.x) > 50 && (n.x2 - n.x) < estW * 0.45)
+        .sort((a, b) => (b.x2 - b.x) - (a.x2 - a.x))[0];
+      const rightAlign = panel ? Math.abs(panel.x2 - pr.x2) <= 60 : false;
+      ctx.log('★③ 左下方弹出', (below && rightAlign) ? 'pass' : 'fail',
+        panel
+          ? `面板 ${Math.round(panel.x2 - panel.x)}px 右缘 vs ＋右缘差 ${Math.round(Math.abs(panel.x2 - pr.x2))}px（≤60=右缘对齐）；在＋下方=${below ? '✓' : '✗'}——BottomRight 统一规格`
+          : `未定位到弹层面板（SURFACE_NODE 底色容器）——人工复核 dump 存证`);
+      // ④ 点遮罩关闭（点 ＋ 左下方内容区）
+      await sh(serial, `uitest uiInput click ${Math.round(pr.x1 - 300)} ${Math.round(pr.y2 + 300)}`, 15000);
+      await sleep(1000);
+      const d2 = await dumpLayout(serial);
+      ctx.log('④ 遮罩关闭', !d2.text.includes('新建单词') ? 'pass' : 'warn', !d2.text.includes('新建单词') ? '点遮罩后菜单收起 ✓' : '菜单仍在屏（点击未落遮罩——人工复核）');
+    } },
+
   // ---------- 功能⑤ 云端语音朗读 API（★ 0.232.0；用户规则：没填 Key 的设备不测） ----------
   { id: 'TTS-API', suite: 'tts', name: '云端TTS·openspeech 直打验证（读设备已填配置；未填 Key=skip；55000000 自动官方音色回退）', semi: false, scope: 'each',
     run: async (ctx) => {
@@ -2556,7 +2735,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }

@@ -113,6 +113,7 @@ export struct WordBankPage {
   // ── ★ 0.222.19：文件夹弹窗态（对标知识库 KnowledgeBankPage）──
   @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
   @Local createMenuVisible: boolean = false;    // PC 右键/Pad 长按创建菜单开关
+  @Local plusMenuVisible: boolean = false;      // ★ 0.239.0：+ 菜单 bindPopup 开关（系统 bindMenu 换双库统一规格）
   @Local folderDialogIsRename: boolean = false;
   @Local folderDialogTargetId: string = '';
   @Local folderDialogName: string = '';
@@ -677,6 +678,45 @@ export struct WordBankPage {
   // ★ 0.218.3：排序选项菜单（bindPopup 自定义 builder）——无参 @Builder 内部直读 sortMode
   //   （0.190.1 铁律）；三项=最新/需复习/字母，各带当前方向箭头，激活项品牌紫高亮；
   //   点击只改 sortMode **不收起**（用户拍板：连续切换不退弹层，点遮罩才收）
+
+  // ★ 0.239.0：+ 菜单（bindPopup 双库统一规格）——系统 bindMenu 换自定义弹层：字体/行距对齐系统
+  //   菜单"舒服"观感（14fp/上下10左右14），配色改主题（SURFACE_NODE 底+紫字+STROKE_CARD 分隔线），
+  //   宽度按最长项自适应收窄（系统菜单右侧大片留白就此根治）；placement BottomRight=按钮左下方；
+  //   三项文字与 action 原样保留（新建/导入 DagPack/导出 DagPack）
+  @Builder
+  wbPlusMenuBuilder() {
+    Column() {
+      Text('新建单词')
+        .fontSize(14)
+        .fontColor(BRAND_SECONDARY)
+        .padding({ top: 10, bottom: 10, left: 14, right: 14 })
+        .onClick(() => {
+          this.plusMenuVisible = false;
+          this.openAddEditor();
+        })
+      Divider().color(STROKE_CARD)
+      Text('导入 DagPack（单词包）')
+        .fontSize(14)
+        .fontColor(BRAND_SECONDARY)
+        .padding({ top: 10, bottom: 10, left: 14, right: 14 })
+        .onClick(() => {
+          this.plusMenuVisible = false;
+          this.pickWordPackFile();
+        })
+      Divider().color(STROKE_CARD)
+      Text('导出 DagPack（整库单词）')
+        .fontSize(14)
+        .fontColor(BRAND_SECONDARY)
+        .padding({ top: 10, bottom: 10, left: 14, right: 14 })
+        .onClick(() => {
+          this.plusMenuVisible = false;
+          this.doExportWordPack();
+        })
+    }
+    .width(210) // ★ 0.239.0：弹层定宽收窄（Divider 会把无约束 Column 撑满可用宽——最长项「导出 DagPack（整库单词）」≈195vp+余量）
+    .alignItems(HorizontalAlign.Start)
+  }
+
   @Builder
   sortMenuBuilder() {
     Column() {
@@ -940,17 +980,27 @@ export struct WordBankPage {
         })
       if (!this.multiSelectMode) {
         // ★ 0.208.0：+ 升级菜单（新建单词/单词库 DagPack 导入导出——用户拍板单词库只走 DagPack）
+        // ★ 0.239.0：系统 bindMenu → bindPopup 双库统一规格（与知识库 kbPlusMenu 同款：主题配色+
+        //   宽度收窄+BottomRight 左下方弹出；字体行距对齐系统菜单观感——用户认可的"舒服"基准）
         Button('+')
           .fontSize(20)
           .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
           .fontColor(TEXT_PRIMARY)
           .padding({ left: 8, right: 8 })
-          .bindMenu([
-            { value: '新建单词', action: () => { this.openAddEditor(); } },
-            { value: '导入 DagPack（单词包）', action: () => { this.pickWordPackFile(); } },
-            { value: '导出 DagPack（整库单词）', action: () => { this.doExportWordPack(); } }
-          ])
+          .bindPopup(this.plusMenuVisible, {
+            builder: this.wbPlusMenuBuilder(),
+            placement: Placement.BottomRight,
+            popupColor: SURFACE_NODE,
+            radius: 12,
+            mask: { color: 'rgba(0,0,0,0.3)' },
+            onStateChange: (e: PopupStateChangeParam) => {
+              this.plusMenuVisible = e.isVisible;
+            }
+          })
+          .onClick(() => {
+            this.plusMenuVisible = !this.plusMenuVisible;
+          })
       } else {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
