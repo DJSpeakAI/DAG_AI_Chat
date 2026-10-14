@@ -32,7 +32,7 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）
+import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.236.0：getBuiltinQwenTtsKey（千问档 Key 预填）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
@@ -48,6 +48,7 @@ import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.232.1：弹窗宽度断点制（PC/Pad 固定 560 不做屏宽自适应——用户拍板「配置类 UI 自适应宽度难看」）
 import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面变更即时推桌面卡片
+import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
 
 import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
@@ -146,9 +147,29 @@ const TTS_MODEL_PRESETS: TtsModelPreset[] = [
 // 官方音色（seed-tts-2.0 专用——2.0 模型只能用 2.0 官方音色，0.139 教训）
 const TTS_OFFICIAL_VOICE: string = 'zh_female_vv_uranus_bigtts';
 
+// ★ 0.236.0：千问 TTS（百炼 CosyVoice 复刻音色）预设
+const TTS_PROVIDER_QWEN: string = 'qianwen'; // ttsProvider 三值之一（volcano/qianwen/custom 三引擎物理互斥）
+const TTS_QWEN_DEFAULT_MODEL: string = 'cosyvoice-v3.5-plus'; // 空值兜底（引擎内同款常量）
+const TTS_QWEN_PLATFORM_URL: string = 'https://maas.qianwenaiapi.com'; // 千问平台控制台（获取 Key / 复刻音色入口）
+// 情感档位（引擎内映射百炼 instruction 自然语言指令——2026-10-14 实测无 emotion 枚举字段）
+const TTS_EMOTION_PRESETS: string[] = ['默认', '开心', '中立', '生气', '悲伤', '惊讶'];
+
+// ★ 0.236.0：TTS 三档会话级缓存（切档快照/恢复——档内编辑值不丢；仅会话存活不持久化）
+class TtsTabCache {
+  key: string = '';
+  voice: string = '';
+  endpoint: string = '';
+  modelSel: number = 0;      // 火山/自定义档：模型下拉选中（TTS_MODEL_PRESETS.length=自定义…）
+  modelText: string = '';    // 火山/自定义档：「自定义…」手填模型资源 ID
+  qwenModel: string = TTS_QWEN_DEFAULT_MODEL; // 千问档：模型 TextInput
+  emotion: string = '开心';  // 千问档：情感档位
+  speed: number = 1.0;       // 千问档：语速
+  volume: number = 50;       // 千问档：音量
+}
+
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.235.2'; // ★ 0.235.2：消息操作行复制全文+删除、滑动删除统一右滑、折叠三角统一术卡样式；上一版 0.235.1：分章折叠行排版优化+设置弹窗滚动杠取消
+const APP_VERSION: string = 'v0.236.0'; // ★ 0.236.0：千问TTS引擎接入（百炼CosyVoice复刻音色·三档互斥·试听·情感/语速/音量）；上一版 0.235.2：消息操作行复制全文+删除、滑动删除统一右滑、折叠三角统一术卡样式
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -235,19 +256,32 @@ export struct GlobalSettingsDialog {
   providerEndpointCache: Map<string, string> = new Map();
 
   // ★ 0.232.0：TTS 编辑副本（API Tab 底部「语音朗读」区——点保存才落盘；提供商从端点推导，零新持久化字段）
-  @Local editTtsProvider: string = 'volcano'; // volcano（端点内置）/ custom（URL 可填）
+  // ★ 0.236.0：提供商三档化（volcano / qianwen / custom 三引擎物理互斥——editTtsProvider 从
+  //   apiConfig.ttsProvider 直读，端点推导仅作旧数据首迁兜底）
+  @Local editTtsProvider: string = 'volcano'; // volcano / qianwen / custom
   @Local editTtsModelSel: number = 0;         // 模型下拉选中（0=声音复刻2.0 默认 / 1=豆包语音合成2.0 / 2=自定义…）
   @Local editTtsModel: string = '';           // 「自定义…」模型资源 ID（手填；sel=2 时生效）
-  @Local editTtsKey: string = '';             // 豆包语音 API Key（用户自填）
-  @Local editTtsVoice: string = '';           // 音色 ID（声音复刻/自定义模型可填；豆包合成2.0 置灰强制官方音色）
-  @Local editTtsEndpoint: string = '';        // 自定义端点 URL
+  @Local editTtsKey: string = '';             // API Key（三档各自语义：火山=豆包语音 Key / 千问=sk-ws- Key / 自定义）
+  @Local editTtsVoice: string = '';           // 音色 ID（火山=S_ 合成音色 / 千问=复刻 voice_id；自定义隐藏）
+  @Local editTtsEndpoint: string = '';        // 自定义端点 URL（千问/火山端点内置）
   @Local isTtsModelDropdownOpen: boolean = false; // 模型下拉面板展开状态
+  // ★ 0.236.0：千问档专属字段（情感/语速/音量只给千问档暴露——用户拍板 #4）
+  @Local editTtsQwenModel: string = TTS_QWEN_DEFAULT_MODEL; // 千问模型 TextInput（默认 cosyvoice-v3.5-plus）
+  @Local editTtsEmotion: string = '开心';     // 情感档位（默认开心——用户拍板）
+  @Local editTtsSpeed: number = 1.0;          // 语速 0.5~2.0 步进 0.05
+  @Local editTtsVolume: number = 50;          // 音量 0~100 步进 5
+  // ★ 0.236.0：千问档音色拉取（会话内存——每次开弹窗重拉，音色列表不是持久数据）
+  @Local ttsVoiceList: QwenVoiceItem[] = []; // 拉取到的复刻音色（status=OK）
+  @Local ttsVoiceLoading: boolean = false;   // 拉取中
+  @Local isTtsVoiceDropdownOpen: boolean = false; // 音色下拉面板展开
+  @Local ttsVoiceManual: boolean = false;    // 手动输入模式（未选列表项）
+  @Local isTtsEmotionDropdownOpen: boolean = false; // 情感下拉面板展开
+  // ★ 0.236.0：千问档试听（以当前表单值走引擎完整链路——出声=配置即验）
+  @Local ttsPreviewing: boolean = false;
+  // ★ 0.236.0：三档会话级缓存（切档快照恢复——取代 0.232.2 火山双字段缓存）
+  ttsTabCaches: Map<string, TtsTabCache> = new Map();
   // ★ 0.232.2：TTS 区折叠态（默认收起——低频功能不占屏，用户拍板：一行提示+小三角点击展开）
   @Local ttsCollapsed: boolean = true;
-  // ★ 0.232.2：火山档位值缓存（切「自定义」=干净起点清空表单，切回火山恢复——用户拍板
-  //   「都已经自定义了就不用管火山的预填值」）
-  @Local ttsVolcanoCacheKey: string = '';
-  @Local ttsVolcanoCacheVoice: string = '';
   // ★ 0.232.1：窗口宽度共享真相源（弹窗宽度断点制；@Local 接管 0.221.4 铁律，分档直读实例字段）
   @Local windowMode: WindowMode = connectWindowMode();
 
@@ -268,9 +302,24 @@ export struct GlobalSettingsDialog {
     return this.permGranted && this.cloudSwitch.enabled;
   }
   // ★ 0.232.0：云端朗读已启用（读持久化真值——保存后即时翻转状态标签）
+  // ★ 0.236.0：三档分判 + 显示引擎名（volcano/qianwen=Key+模型（qwen 另需音色——cosyvoice 无系统音色）；custom=端点+模型+Key）
   @Computed
   get ttsCloudOn(): boolean {
+    if (this.apiConfig.ttsProvider === TTS_PROVIDER_QWEN) {
+      return this.apiConfig.audioKey.trim().length > 0 && this.apiConfig.audioVoice.trim().length > 0;
+    }
     return this.apiConfig.audioKey.trim().length > 0 && this.apiConfig.audioModel.trim().length > 0;
+  }
+
+  // ★ 0.236.0：云端引擎名（状态卡标签用——「云端已启用·千问/火山/自定义」）
+  ttsProviderLabel(): string {
+    if (this.apiConfig.ttsProvider === TTS_PROVIDER_QWEN) {
+      return '云端已启用·千问';
+    }
+    if (this.apiConfig.ttsProvider === 'custom') {
+      return '云端已启用·自定义';
+    }
+    return '云端已启用·火山';
   }
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.194.0：云同步 VIP 守卫
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.196.8：云同步↔账号绑定——未登录拦截「开启」
@@ -348,18 +397,43 @@ export struct GlobalSettingsDialog {
     this.editFoldMode = this.anchorPref.foldMode;
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
     // ★ 0.232.1：模型改下拉预设回显（icl/tts 两预设 + 清单外手填落「自定义…」）
+    // ★ 0.236.0：三档化——editTtsProvider 从 apiConfig.ttsProvider 直读（非法值→端点推导兜底）；
+    //   持久化只存当前档的值（audioKey/audioModel/audioVoice 三档复用承载），非当前档字段用档默认
+    const savedTtsProvider = this.apiConfig.ttsProvider;
+    this.editTtsProvider = (savedTtsProvider === 'volcano' || savedTtsProvider === TTS_PROVIDER_QWEN ||
+      savedTtsProvider === 'custom') ? savedTtsProvider :
+      (this.apiConfig.audioEndpoint.includes('bytedance.com') ? 'volcano' : 'custom');
     this.editTtsKey = this.apiConfig.audioKey;
     this.editTtsVoice = this.apiConfig.audioVoice;
     this.editTtsEndpoint = this.apiConfig.audioEndpoint.trim().length > 0
       ? this.apiConfig.audioEndpoint : TTS_VOLCANO_ENDPOINT;
-    this.editTtsProvider = this.editTtsEndpoint.includes('bytedance.com') ? 'volcano' : 'custom';
-    if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[1].id) {
-      this.editTtsModelSel = 1;
-    } else if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[0].id) {
+    if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+      // 千问档回显：模型（空值兜底默认）/情感/语速/音量；火山下拉侧留默认（值在切档时靠缓存/重填）
+      this.editTtsQwenModel = this.apiConfig.audioModel.trim().length > 0
+        ? this.apiConfig.audioModel : TTS_QWEN_DEFAULT_MODEL;
+      this.editTtsEmotion = this.apiConfig.ttsEmotion;
+      this.editTtsSpeed = this.apiConfig.ttsSpeed;
+      this.editTtsVolume = this.apiConfig.ttsVolume;
       this.editTtsModelSel = 0;
+      this.editTtsModel = '';
     } else {
-      this.editTtsModelSel = 2;
-      this.editTtsModel = this.apiConfig.audioModel;
+      // 火山/自定义档：模型下拉回显（icl/tts 两预设 + 清单外手填落「自定义…」）；千问侧字段留默认
+      if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[1].id) {
+        this.editTtsModelSel = 1;
+      } else if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[0].id) {
+        this.editTtsModelSel = 0;
+      } else {
+        this.editTtsModelSel = 2;
+        this.editTtsModel = this.apiConfig.audioModel;
+      }
+      if (this.editTtsProvider === 'custom') {
+        // ★ 0.236.0 bug 修复：自定义档音色隐藏——回显为空（存盘侧本就存空串）
+        this.editTtsVoice = '';
+      }
+    }
+    // 千问档首次进入预填内置 Key（用户自定义值优先纪律——仅表单预填不写持久化）
+    if (this.editTtsProvider === TTS_PROVIDER_QWEN && this.editTtsKey.length === 0) {
+      this.editTtsKey = getBuiltinQwenTtsKey();
     }
     this.ttsCollapsed = true; // ★ 0.232.2：每次开弹窗 TTS 区默认收起（低频功能）
     // ★ 0.195.0：复习显示 Tab 编辑副本回显（0.197.2 保存模式——脏检查对比副本 vs store）
@@ -384,12 +458,34 @@ export struct GlobalSettingsDialog {
       this.editFoldMode !== this.anchorPref.foldMode || // ★ 0.234.0：分章折叠开关
       this.editReviewLearn !== this.learnCountStore.learnCount || // ★ 0.197.2：复习显示（保存模式）
       this.editReviewKnowledge !== this.knowledgeCountStore.knowledgeCount ||
-      this.currentTtsModelValue() !== this.apiConfig.audioModel || // ★ 0.232.0/0.232.1：TTS 配置（模型下拉+音色联动+Key+端点）
-      this.editTtsKey.trim() !== this.apiConfig.audioKey ||
-      // ★ 0.232.2：自定义档音色字段隐藏——不参与脏检查/保存（火山音色体系不适用）
-      (this.editTtsProvider === 'volcano' && this.ttsVoiceEditable() &&
-        this.editTtsVoice.trim() !== this.apiConfig.audioVoice) ||
-      this.currentTtsEndpointValue() !== this.apiConfig.audioEndpoint;
+      this.editTtsProvider !== this.apiConfig.ttsProvider || // ★ 0.236.0：TTS 提供商三档
+      this.hasUnsavedTtsChanges(); // ★ 0.232.0/0.236.0：TTS 档内字段分档比较（见方法）
+  }
+
+  // ★ 0.236.0：TTS 档内字段脏检查（分档比较——audioKey/audioModel/audioVoice 三档复用承载，
+  //   持久化值属当前生效档，跨档直比会误报恒脏）
+  hasUnsavedTtsChanges(): boolean {
+    if (this.editTtsKey.trim() !== this.apiConfig.audioKey) {
+      return true;
+    }
+    if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+      const modelVal = this.editTtsQwenModel.trim().length > 0
+        ? this.editTtsQwenModel.trim() : TTS_QWEN_DEFAULT_MODEL;
+      return modelVal !== this.apiConfig.audioModel ||
+        this.editTtsVoice.trim() !== this.apiConfig.audioVoice ||
+        this.editTtsEmotion !== this.apiConfig.ttsEmotion ||
+        this.editTtsSpeed !== this.apiConfig.ttsSpeed ||
+        this.editTtsVolume !== this.apiConfig.ttsVolume;
+    }
+    if (this.currentTtsModelValue() !== this.apiConfig.audioModel) {
+      return true;
+    }
+    // ★ 0.232.2：自定义档音色字段隐藏——不参与脏检查/保存（火山音色体系不适用）
+    if (this.editTtsProvider === 'volcano' && this.ttsVoiceEditable() &&
+      this.editTtsVoice.trim() !== this.apiConfig.audioVoice) {
+      return true;
+    }
+    return this.currentTtsEndpointValue() !== this.apiConfig.audioEndpoint;
   }
 
   // ★ 0.232.0：当前 TTS 表单端点（火山=内置端点；自定义=手填 URL）
@@ -411,6 +507,156 @@ export struct GlobalSettingsDialog {
   // ★ 0.232.1：音色可填判定（豆包语音合成2.0=官方音色体系，音色置灰；声音复刻/自定义模型可填 S_ 音色）
   ttsVoiceEditable(): boolean {
     return this.editTtsModelSel !== 1;
+  }
+
+  // ★ 0.236.0：切 TTS 档——三档会话级缓存快照/恢复（切换不丢输入，仅「保存」才落盘）
+  //   目标档无缓存=干净起点：火山=模型下拉默认 / 千问=cosyvoice-v3.5-plus+内置 Key 预填 /
+  //   自定义=清空+模型落「自定义…」（0.236.0 bug 修复：切自定义 editTtsModelSel 重置，
+  //   此前残留火山下拉值会把 seed-icl-2.0 存进自定义档 audioModel）
+  onTtsProviderTap(target: string): void {
+    if (target === this.editTtsProvider) {
+      return;
+    }
+    // 1) 快照当前档
+    const snap = new TtsTabCache();
+    snap.key = this.editTtsKey;
+    snap.voice = this.editTtsVoice;
+    snap.endpoint = this.editTtsEndpoint;
+    snap.modelSel = this.editTtsModelSel;
+    snap.modelText = this.editTtsModel;
+    snap.qwenModel = this.editTtsQwenModel;
+    snap.emotion = this.editTtsEmotion;
+    snap.speed = this.editTtsSpeed;
+    snap.volume = this.editTtsVolume;
+    this.ttsTabCaches.set(this.editTtsProvider, snap);
+    // 2) 恢复目标档（无缓存=档默认值）
+    const cached = this.ttsTabCaches.get(target);
+    this.editTtsProvider = target;
+    this.isTtsModelDropdownOpen = false;
+    this.isTtsVoiceDropdownOpen = false;
+    this.isTtsEmotionDropdownOpen = false;
+    this.ttsVoiceManual = false;
+    if (cached !== undefined) {
+      this.editTtsKey = cached.key;
+      this.editTtsVoice = cached.voice;
+      this.editTtsEndpoint = cached.endpoint;
+      this.editTtsModelSel = cached.modelSel;
+      this.editTtsModel = cached.modelText;
+      this.editTtsQwenModel = cached.qwenModel;
+      this.editTtsEmotion = cached.emotion;
+      this.editTtsSpeed = cached.speed;
+      this.editTtsVolume = cached.volume;
+    } else {
+      this.editTtsKey = '';
+      this.editTtsVoice = '';
+      this.editTtsEndpoint = TTS_VOLCANO_ENDPOINT;
+      this.editTtsModel = '';
+      this.editTtsQwenModel = TTS_QWEN_DEFAULT_MODEL;
+      this.editTtsEmotion = '开心';
+      this.editTtsSpeed = 1.0;
+      this.editTtsVolume = 50;
+      if (target === 'volcano') {
+        this.editTtsModelSel = 0;
+      } else if (target === 'custom') {
+        this.editTtsModelSel = TTS_MODEL_PRESETS.length; // bug 修复：自定义档干净起点落「自定义…」
+      } else {
+        this.editTtsModelSel = 0;
+        const builtinKey = getBuiltinQwenTtsKey(); // 千问档：内置 Key 预填（开发期；用户自定义值优先）
+        if (builtinKey.length > 0) {
+          this.editTtsKey = builtinKey;
+        }
+      }
+    }
+  }
+
+  // ★ 0.236.0：拉取千问复刻音色列表（官方 customization 接口；失败中文提示）
+  fetchTtsVoices(): void {
+    const key = this.editTtsKey.trim();
+    if (key.length === 0) {
+      this.showToastSafe('请先填写 API Key 再拉取音色');
+      return;
+    }
+    if (this.ttsVoiceLoading) {
+      return;
+    }
+    this.ttsVoiceLoading = true;
+    fetchQwenVoiceList(key).then((list: QwenVoiceItem[]) => {
+      this.ttsVoiceLoading = false;
+      this.ttsVoiceList = list;
+      if (list.length === 0) {
+        this.showToastSafe('该 Key 下暂无复刻音色——可先选「手动输入」或去千问平台复刻');
+        return;
+      }
+      // 默认选中列表第一个复刻音色（用户拍板 #5）；当前值恰在列表中则保持
+      const cur = this.editTtsVoice.trim();
+      let hit = false;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].voiceId === cur) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) {
+        this.editTtsVoice = list[0].voiceId;
+      }
+      this.ttsVoiceManual = false;
+    }).catch((err: string) => {
+      this.ttsVoiceLoading = false;
+      this.showToastSafe(err.length > 0 ? err : '拉取失败：请检查 API Key');
+    });
+  }
+
+  // ★ 0.236.0：音色下拉开合（打开时 Key 非空且列表未拉过→自动拉取——少一次手动点击）
+  onTtsVoiceDropdownTap(): void {
+    if (this.isTtsVoiceDropdownOpen) {
+      this.isTtsVoiceDropdownOpen = false;
+      return;
+    }
+    this.isTtsVoiceDropdownOpen = true;
+    if (this.ttsVoiceList.length === 0 && !this.ttsVoiceLoading && this.editTtsKey.trim().length > 0) {
+      this.fetchTtsVoices();
+    }
+  }
+
+  // ★ 0.236.0：千问档试听（当前表单值直接走引擎完整合成+播放链路——未保存也可验证）
+  onTtsPreviewTap(): void {
+    if (this.ttsPreviewing) {
+      qianwenTts.stop(); // 复用引擎 stop 幂等——按钮态变「停止」再点即停
+      this.ttsPreviewing = false;
+      return;
+    }
+    const key = this.editTtsKey.trim();
+    if (key.length === 0) {
+      this.showToastSafe('请先填写千问 API Key');
+      return;
+    }
+    const voice = this.editTtsVoice.trim();
+    if (voice.length === 0) {
+      this.showToastSafe('请先选择复刻音色');
+      return;
+    }
+    const ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined || ctx === null) {
+      this.showToastSafe('试听失败：上下文不可用');
+      return;
+    }
+    this.ttsPreviewing = true;
+    const started = qianwenTts.speakWithParams('你好，这是千问语音试听。', key,
+      this.editTtsQwenModel.trim(), voice, this.editTtsEmotion,
+      this.editTtsSpeed, this.editTtsVolume, ctx.cacheDir, {
+      onStart: () => {},
+      onComplete: () => {
+        this.ttsPreviewing = false; // 试听播完自动复位
+      },
+      onError: (message: string) => {
+        this.ttsPreviewing = false;
+        this.showToastSafe(message.substring(0, 80)); // 引擎已转友好中文（401/418 等）
+      }
+    });
+    if (!started) {
+      this.ttsPreviewing = false;
+      this.showToastSafe('试听失败：参数不完整');
+    }
   }
 
   // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
@@ -470,14 +716,26 @@ export struct GlobalSettingsDialog {
     this.knowledgeCountStore.knowledgeCount = this.editReviewKnowledge;
     // ★ 0.232.0：TTS 配置写入（火山=端点强制回内置值，防旧数据残留——与 LLM 预设同款纪律）
     // ★ 0.232.1：豆包语音合成2.0 强制官方音色（2.0 模型只能用 2.0 官方音色，0.139 教训；置灰输入框的落盘侧闭环）
-    this.apiConfig.audioModel = this.currentTtsModelValue();
+    // ★ 0.236.0：三档分写——ttsProvider 落盘；千问档写 Key/模型/音色/情感/语速/音量
+    //   （audioEndpoint 不动——该字段留给火山/自定义体系）；三引擎物理互斥（引擎只认 ttsProvider）
+    this.apiConfig.ttsProvider = this.editTtsProvider;
     this.apiConfig.audioKey = this.editTtsKey.trim();
-    // ★ 0.232.2：自定义提供商音色不适用（字段已隐藏）——存空串，引擎空值自动兜底官方音色；
-    //   豆包语音合成2.0 仍强制官方音色（0.232.1 置灰闭环）
-    // ★ 0.233.0：音频模型选「自定义…」时音色同样不适用（UI 已隐藏）——存空串兜底官方音色
-    this.apiConfig.audioVoice = (this.editTtsProvider !== 'volcano' || this.editTtsModelSel >= TTS_MODEL_PRESETS.length) ? '' :
-      (this.ttsVoiceEditable() ? this.editTtsVoice.trim() : TTS_OFFICIAL_VOICE);
-    this.apiConfig.audioEndpoint = this.currentTtsEndpointValue();
+    if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+      this.apiConfig.audioModel = this.editTtsQwenModel.trim().length > 0
+        ? this.editTtsQwenModel.trim() : TTS_QWEN_DEFAULT_MODEL;
+      this.apiConfig.audioVoice = this.editTtsVoice.trim();
+      this.apiConfig.ttsEmotion = this.editTtsEmotion;
+      this.apiConfig.ttsSpeed = this.editTtsSpeed;
+      this.apiConfig.ttsVolume = this.editTtsVolume;
+    } else {
+      this.apiConfig.audioModel = this.currentTtsModelValue();
+      // ★ 0.232.2：自定义提供商音色不适用（字段已隐藏）——存空串，引擎空值自动兜底官方音色；
+      //   豆包语音合成2.0 仍强制官方音色（0.232.1 置灰闭环）
+      // ★ 0.233.0：音频模型选「自定义…」时音色同样不适用（UI 已隐藏）——存空串兜底官方音色
+      this.apiConfig.audioVoice = (this.editTtsProvider !== 'volcano' || this.editTtsModelSel >= TTS_MODEL_PRESETS.length) ? '' :
+        (this.ttsVoiceEditable() ? this.editTtsVoice.trim() : TTS_OFFICIAL_VOICE);
+      this.apiConfig.audioEndpoint = this.currentTtsEndpointValue();
+    }
     // ★ 0.232.0：首次启用云端朗读一次性提示（用户规则：第一次填写音频配置时提示，之后不再）
     const ttsHint = connectTtsHint();
     if (!ttsHint.cloudHintShown && this.ttsCloudOn) {
@@ -643,7 +901,7 @@ export struct GlobalSettingsDialog {
           .fontColor(TEXT_SECONDARY)
         Blank()
           .layoutWeight(1)
-        Text(this.ttsCloudOn ? '云端已启用' : '本机语音')
+        Text(this.ttsCloudOn ? this.ttsProviderLabel() : '本机语音')
           .fontSize(11)
           .fontColor(this.ttsCloudOn ? BRAND_SECONDARY : TEXT_TERTIARY)
       }
@@ -663,7 +921,7 @@ export struct GlobalSettingsDialog {
 
       // ★ 0.232.2：以下配置表单仅在展开态渲染（默认收起）
       if (!this.ttsCollapsed) {
-      // 提供商分段：火山引擎 / 自定义
+      // ★ 0.236.0：提供商三段：火山引擎 / 通义千问 / 自定义（三引擎物理互斥——切档走会话级缓存）
       Row({ space: 8 }) {
         Text('火山引擎')
           .fontSize(13)
@@ -674,39 +932,36 @@ export struct GlobalSettingsDialog {
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(this.editTtsProvider === 'volcano' ? BRAND_PRIMARY : SURFACE_SOFT)
           .onClick(() => {
-            // ★ 0.232.2：从自定义切回火山——恢复切走时缓存的 Key/音色（清空的值回填）
-            if (this.editTtsProvider !== 'volcano') {
-              this.editTtsProvider = 'volcano';
-              this.editTtsKey = this.ttsVolcanoCacheKey;
-              this.editTtsVoice = this.ttsVolcanoCacheVoice;
-            }
+            this.onTtsProviderTap('volcano');
           })
-        Text('自定义')
+        Text('通义千问')
           .fontSize(13)
-          .fontColor(this.editTtsProvider !== 'volcano' ? Color.White : TEXT_SECONDARY)
+          .fontColor(this.editTtsProvider === TTS_PROVIDER_QWEN ? Color.White : TEXT_SECONDARY)
           .layoutWeight(1)
           .height(40)
           .textAlign(TextAlign.Center)
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(this.editTtsProvider !== 'volcano' ? BRAND_PRIMARY : SURFACE_SOFT)
+          .backgroundColor(this.editTtsProvider === TTS_PROVIDER_QWEN ? BRAND_PRIMARY : SURFACE_SOFT)
           .onClick(() => {
-            // ★ 0.232.2：切自定义=干净起点（用户拍板「都已自定义就不用管预填值」）——
-            //   缓存火山 Key/音色后清空接口地址/Key/音色，自定义填自己的
-            if (this.editTtsProvider === 'volcano') {
-              this.ttsVolcanoCacheKey = this.editTtsKey;
-              this.ttsVolcanoCacheVoice = this.editTtsVoice;
-              this.editTtsProvider = 'custom';
-              this.editTtsKey = '';
-              this.editTtsEndpoint = '';
-              this.editTtsVoice = '';
-            }
+            this.onTtsProviderTap(TTS_PROVIDER_QWEN);
+          })
+        Text('自定义')
+          .fontSize(13)
+          .fontColor(this.editTtsProvider === 'custom' ? Color.White : TEXT_SECONDARY)
+          .layoutWeight(1)
+          .height(40)
+          .textAlign(TextAlign.Center)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(this.editTtsProvider === 'custom' ? BRAND_PRIMARY : SURFACE_SOFT)
+          .onClick(() => {
+            this.onTtsProviderTap('custom');
           })
       }
       .width('100%')
       .margin({ bottom: 12 })
 
-      // 自定义端点（仅自定义提供商显示；火山端点内置）
-      if (this.editTtsProvider !== 'volcano') {
+      // 自定义端点（仅自定义提供商显示；火山/千问端点内置）
+      if (this.editTtsProvider === 'custom') {
         Column() {
           Text('接口地址')
             .fontSize(14)
@@ -728,6 +983,8 @@ export struct GlobalSettingsDialog {
 
       // 音频模型下拉（★ 0.232.1 用户拍板：两预设——声音复刻 2.0 默认 / 豆包语音合成 2.0 + 「自定义…」；
       //   复刻可填 S_ 音色，豆包合成音色置灰——两种音色体系的入口分岔）
+      // ★ 0.236.0：火山/自定义档模型下拉（千问档改用 TextInput——平台模型迭代快，手填最灵活）
+      if (this.editTtsProvider !== TTS_PROVIDER_QWEN) {
       Column() {
         Text('音频模型')
           .fontSize(14)
@@ -803,9 +1060,10 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 12 })
+      } // ★ 0.236.0：非千问档模型下拉块结束
 
-      // 「自定义…」模型资源 ID（选中时显示）
-      if (this.editTtsModelSel >= TTS_MODEL_PRESETS.length) {
+      // 「自定义…」模型资源 ID（选中时显示；千问档不渲染——档内模型走 TextInput）
+      if (this.editTtsProvider !== TTS_PROVIDER_QWEN && this.editTtsModelSel >= TTS_MODEL_PRESETS.length) {
         Column() {
           Text('模型资源 ID')
             .fontSize(14)
@@ -825,13 +1083,18 @@ export struct GlobalSettingsDialog {
         .margin({ bottom: 12 })
       }
 
-      // 音频 API Key（豆包语音 Key，与对话 Key 相互独立）
+      // 音频 API Key（三档各自语义：火山=豆包语音 Key / 千问=sk-ws- Key / 自定义；均与对话 Key 相互独立）
       Column() {
         Text('音频 API Key')
           .fontSize(14)
           .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
-        TextInput({ text: $$this.editTtsKey, placeholder: '填入豆包语音 API Key（与对话 Key 相互独立）' })
+        TextInput({
+          text: $$this.editTtsKey,
+          placeholder: this.editTtsProvider === TTS_PROVIDER_QWEN
+            ? '填入千问平台 API Key（sk-ws- 开头）'
+            : '填入豆包语音 API Key（与对话 Key 相互独立）'
+        })
           .width('100%')
           .height(48)
           .fontSize(14)
@@ -844,9 +1107,161 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 12 })
 
+      // ★ 0.236.0：千问档模型 TextInput（默认 cosyvoice-v3.5-plus；空值引擎兜底该常量——
+      //   平台模型迭代快不做下拉，手填最灵活）
+      if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+        Column() {
+          Text('合成模型')
+            .fontSize(14)
+            .fontColor(TEXT_SECONDARY)
+            .margin({ bottom: 6 })
+          TextInput({ text: $$this.editTtsQwenModel, placeholder: TTS_QWEN_DEFAULT_MODEL })
+            .width('100%')
+            .height(48)
+            .fontSize(14)
+            .fontColor(TEXT_PRIMARY)
+            .placeholderColor(TEXT_TERTIARY)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_SOFT)
+          Text('CosyVoice 复刻音色专用模型；留空默认 cosyvoice-v3.5-plus。')
+            .fontSize(11)
+            .lineHeight(18)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 4 })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 12 })
+      }
+
+      // ★ 0.236.0：千问档复刻音色（拉取式下拉——cosyvoice 无系统音色，voice 必须是复刻 voice_id；
+      //   下拉=复刻音色列表（默认第一个）+ 手动输入… + 去千问平台复刻外链）
+      if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+        Column() {
+          Row() {
+            Text('复刻音色')
+              .fontSize(14)
+              .fontColor(TEXT_SECONDARY)
+              .layoutWeight(1)
+            Text('拉取')
+              .fontSize(12)
+              .fontColor(BRAND_SECONDARY)
+              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+              .onClick(() => {
+                this.fetchTtsVoices();
+              })
+          }
+          .width('100%')
+          .margin({ bottom: 6 })
+
+          Row() {
+            Text(this.ttsVoiceManual ? '手动输入…'
+              : (this.editTtsVoice.trim().length > 0 ? this.editTtsVoice.trim() : '点击拉取选择复刻音色'))
+              .fontSize(12)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontColor(this.editTtsVoice.trim().length > 0 || !this.ttsVoiceManual ? TEXT_PRIMARY : TEXT_TERTIARY)
+              .layoutWeight(1)
+            Text(this.ttsVoiceLoading ? '拉取中…' : (this.isTtsVoiceDropdownOpen ? '▲' : '▼'))
+              .fontSize(14)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .width('100%')
+          .height(48)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+          .padding({ left: 12, right: 12 })
+          .onClick(() => {
+            this.onTtsVoiceDropdownTap();
+          })
+
+          if (this.isTtsVoiceDropdownOpen) {
+            Column() {
+              ForEach(this.ttsVoiceList, (v: QwenVoiceItem, idx: number) => {
+                Column() {
+                  Text(v.voiceId)
+                    .fontSize(12)
+                    .fontColor(TEXT_PRIMARY)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(v.targetModel)
+                    .fontSize(11)
+                    .fontColor(TEXT_TERTIARY)
+                    .margin({ top: 2 })
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Start)
+                .padding(10)
+                .backgroundColor(!this.ttsVoiceManual && this.editTtsVoice === v.voiceId ? SURFACE_HOVER : SURFACE_NODE)
+                .onClick(() => {
+                  this.editTtsVoice = v.voiceId;
+                  this.ttsVoiceManual = false;
+                  this.isTtsVoiceDropdownOpen = false;
+                })
+              }, (v: QwenVoiceItem) => v.voiceId)
+
+              Column() {
+                Text('手动输入…')
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                Text('直接填 voice_id（兜底）')
+                  .fontSize(11)
+                  .fontColor(TEXT_TERTIARY)
+                  .margin({ top: 2 })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+              .padding(10)
+              .backgroundColor(this.ttsVoiceManual ? SURFACE_HOVER : SURFACE_NODE)
+              .onClick(() => {
+                this.ttsVoiceManual = true;
+                this.isTtsVoiceDropdownOpen = false;
+              })
+
+              Text('去千问平台复刻音色 →')
+                .fontSize(12)
+                .fontColor(BRAND_SECONDARY)
+                .width('100%')
+                .padding(10)
+                .onClick(() => {
+                  this.isTtsVoiceDropdownOpen = false;
+                  this.openApiKeyUrl(TTS_QWEN_PLATFORM_URL);
+                })
+            }
+            .width('100%')
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: 1, color: STROKE_CARD })
+            .margin({ top: 4 })
+          }
+
+          // 手动输入模式：voice_id TextInput
+          if (this.ttsVoiceManual) {
+            TextInput({ text: $$this.editTtsVoice, placeholder: 'cosyvoice-v3.5-plus-bailian-…' })
+              .width('100%')
+              .height(48)
+              .fontSize(13)
+              .fontColor(TEXT_PRIMARY)
+              .placeholderColor(TEXT_TERTIARY)
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(SURFACE_SOFT)
+              .margin({ top: 8 })
+          }
+          Text('复刻音色须与 API Key 属同一工作空间；列表为空=先去平台复刻或检查 Key。')
+            .fontSize(11)
+            .lineHeight(18)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 4 })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 12 })
+      }
+
       // 音色 ID（★ 0.232.1 联动：声音复刻/自定义模型可填 S_ 音色；豆包语音合成2.0 置灰=官方音色体系）
       // ★ 0.232.2：自定义提供商整块隐藏（火山音色体系不适用——用户拍板「自定义了音色 ID 就取消掉」）
       // ★ 0.233.0：音频模型选「自定义…」时同样隐藏（模型都自定义了音色 ID 不用填——用户拍板；仅预设模型显示）
+      // ★ 0.236.0：千问档不渲染（上方千问专属拉取式下拉承担）
       if (this.editTtsProvider === 'volcano' && this.editTtsModelSel < TTS_MODEL_PRESETS.length) {
       Column() {
         Text('音色 ID')
@@ -878,10 +1293,146 @@ export struct GlobalSettingsDialog {
       .margin({ bottom: 8 })
       }
 
-      Text('填写 Key 和模型后朗读优先走云端（自动跳过 Markdown 符号，代码块不朗读）；未配置或请求失败自动使用本机语音。合成音色需在火山控制台开通对应资源，未开通时自动回退官方音色。')
-        .fontSize(11)
-        .lineHeight(18)
-        .fontColor(TEXT_TERTIARY)
+      // ★ 0.236.0：千问档专属——情感下拉（引擎内映射百炼 instruction 自然语言指令）
+      if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+        Column() {
+          Text('情感')
+            .fontSize(14)
+            .fontColor(TEXT_SECONDARY)
+            .margin({ bottom: 6 })
+          Row() {
+            Text(this.editTtsEmotion)
+              .fontSize(14)
+              .fontColor(TEXT_PRIMARY)
+              .layoutWeight(1)
+            Text(this.isTtsEmotionDropdownOpen ? '▲' : '▼')
+              .fontSize(16)
+              .fontColor(TEXT_TERTIARY)
+          }
+          .width('100%')
+          .height(48)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(SURFACE_SOFT)
+          .padding({ left: 12, right: 12 })
+          .onClick(() => {
+            this.isTtsEmotionDropdownOpen = !this.isTtsEmotionDropdownOpen;
+          })
+
+          if (this.isTtsEmotionDropdownOpen) {
+            Column() {
+              ForEach(TTS_EMOTION_PRESETS, (e: string, idx: number) => {
+                Text(e)
+                  .fontSize(14)
+                  .fontColor(idx === 0 ? TEXT_TERTIARY : TEXT_PRIMARY)
+                  .width('100%')
+                  .padding(12)
+                  .backgroundColor(e === this.editTtsEmotion ? SURFACE_HOVER : SURFACE_NODE)
+                  .onClick(() => {
+                    this.editTtsEmotion = e;
+                    this.isTtsEmotionDropdownOpen = false;
+                  })
+              }, (e: string) => e)
+            }
+            .width('100%')
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: 1, color: STROKE_CARD })
+            .margin({ top: 4 })
+          }
+          Text('「默认」=不带情感指令；其余档位转自然语言指令（复刻音色支持指令控情）。')
+            .fontSize(11)
+            .lineHeight(18)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 4 })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 12 })
+
+        // 语速滑条（0.5~2.0 步进 0.05；旁显 ×倍速）
+        Column() {
+          Row() {
+            Text('语速')
+              .fontSize(14)
+              .fontColor(TEXT_SECONDARY)
+              .layoutWeight(1)
+            Text(`×${this.editTtsSpeed.toFixed(2)}`)
+              .fontSize(13)
+              .fontColor(BRAND_SECONDARY)
+          }
+          .width('100%')
+          .margin({ bottom: 2 })
+          Slider({ value: this.editTtsSpeed, min: 0.5, max: 2.0, step: 0.05 })
+            .width('100%')
+            .blockColor(BRAND_PRIMARY)
+            .trackColor(SURFACE_SOFT)
+            .selectedColor(BRAND_PRIMARY)
+            .onChange((value: number) => {
+              this.editTtsSpeed = Math.round(value * 100) / 100;
+            })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 10 })
+
+        // 音量滑条（0~100 步进 5）
+        Column() {
+          Row() {
+            Text('音量')
+              .fontSize(14)
+              .fontColor(TEXT_SECONDARY)
+              .layoutWeight(1)
+            Text(`${this.editTtsVolume}`)
+              .fontSize(13)
+              .fontColor(BRAND_SECONDARY)
+          }
+          .width('100%')
+          .margin({ bottom: 2 })
+          Slider({ value: this.editTtsVolume, min: 0, max: 100, step: 5 })
+            .width('100%')
+            .blockColor(BRAND_PRIMARY)
+            .trackColor(SURFACE_SOFT)
+            .selectedColor(BRAND_PRIMARY)
+            .onChange((value: number) => {
+              this.editTtsVolume = Math.round(value / 5) * 5;
+            })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 12 })
+
+        // 试听按钮（当前表单值走引擎完整链路——出声=配置即验；试听中变「停止」）
+        Row({ space: 10 }) {
+          Button(this.ttsPreviewing ? '■ 停止试听' : '▶ 试听')
+            .fontSize(14)
+            .fontColor(Color.White)
+            .height(40)
+            .layoutWeight(1)
+            .backgroundColor(this.ttsPreviewing ? SURFACE_HOVER : BRAND_PRIMARY)
+            .onClick(() => {
+              this.onTtsPreviewTap();
+            })
+          Text('打开千问平台 →')
+            .fontSize(13)
+            .fontColor(BRAND_SECONDARY)
+            .padding({ left: 4, right: 4 })
+            .onClick(() => {
+              this.openApiKeyUrl(TTS_QWEN_PLATFORM_URL);
+            })
+        }
+        .width('100%')
+        .margin({ bottom: 8 })
+
+        Text('千问档走百炼 CosyVoice 复刻音色（仅支持复刻音色，无官方音色）；情感/语速/音量即时生效于下次朗读。未配置或失败自动使用本机语音。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+      } else {
+        Text('填写 Key 和模型后朗读优先走云端（自动跳过 Markdown 符号，代码块不朗读）；未配置或请求失败自动使用本机语音。合成音色需在火山控制台开通对应资源，未开通时自动回退官方音色。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+      }
       } // ★ 0.232.2：展开态表单块结束（与上方 if (!this.ttsCollapsed) 配对）
     }
     .width('100%')

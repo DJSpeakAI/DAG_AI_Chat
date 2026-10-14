@@ -227,6 +227,16 @@ export class ApiConfig {
   // ★ 0.161.3：TTS 专用 Key 同样改 rawfile/config.json 读取（与方舟对话 Key 相互独立——两套体系
   // Key 不通用，0.139 拿方舟 Key 实测 401 Invalid X-Api-Key）
   @Trace audioKey: string = '';
+  // ★ 0.236.0：千问 TTS 专属字段（Schema 铁律——只尾部追加，不改不删前三字段）
+  // ttsProvider：'volcano' | 'qianwen' | 'custom' 三引擎物理互斥（用户铁律：选了哪个只调哪个，
+  //   禁止按 Key 存在自动切换）；audioKey/audioModel/audioVoice 三档复用承载当前生效引擎的值
+  @Trace ttsProvider: string = 'volcano';
+  // ttsEmotion：千问档情感档位（'默认'=不带 instruction；'开心'/'中立'/'生气'/'悲伤'/'惊讶'
+  //   引擎内映射为百炼 instruction 自然语言指令——2026-10-14 实测 cosyvoice-v3.5-plus 无 emotion 枚举字段）
+  @Trace ttsEmotion: string = '开心';
+  // ttsSpeed：千问档语速（0.5~2.0，百炼 rate 参数）；ttsVolume：千问档音量（0~100，百炼 volume 参数）
+  @Trace ttsSpeed: number = 1.0;
+  @Trace ttsVolume: number = 50;
 }
 
 // ★ 0.190.0：由端点推断提供商（v2→v3 迁移用——存量用户只可能是火山默认端点或自定义端点；
@@ -281,6 +291,15 @@ export interface BuiltinConfig {
   audioKey: string;
   audioModel?: string; // ★ 0.232.1：内置音频模型（可选——缺省不动 audioModel）
   audioVoice?: string; // ★ 0.232.0：内置合成音色（可选——缺省不动 audioVoice）
+  qwenTtsKey?: string; // ★ 0.236.0：千问 TTS 内置 Key（开发测试期预填千问档——上架前必删该字段）
+}
+
+// ★ 0.236.0：千问 TTS 内置 Key 模块级缓存（loadBuiltinApiConfig 填充一次；GSD 切千问档时
+// 经 getBuiltinQwenTtsKey() 取用预填表单——不写持久化，用户自定义值优先纪律不变）
+let builtinQwenTtsKey: string = '';
+
+export function getBuiltinQwenTtsKey(): string {
+  return builtinQwenTtsKey;
 }
 
 // ★ 0.161.3：从 rawfile/config.json 读取内置 Key，填充持久化配置的空位。
@@ -313,6 +332,9 @@ export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
       (cfg.audioVoice.length === 0 || cfg.audioVoice === 'zh_female_vv_uranus_bigtts')) {
       cfg.audioVoice = builtinVoice;
     }
+    // ★ 0.236.0：千问 TTS 内置 Key 只存模块级变量（不写持久化）——GSD 切千问档且用户未自定义时
+    // 预填表单；默认 ttsProvider 保持 'volcano' 不变，不打扰现有火山体验
+    builtinQwenTtsKey = obj.qwenTtsKey ?? '';
   } catch (err) {
     // config.json 不存在或解析失败——保持空默认，设置页自填
   }

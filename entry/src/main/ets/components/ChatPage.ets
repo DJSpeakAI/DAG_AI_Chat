@@ -48,6 +48,7 @@ import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
  import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
+import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
@@ -1939,9 +1940,26 @@ export struct ChatPage {
     this.playingMessageId = msg.messageId;
     this.ttsLoadingMessageId = msg.messageId;
     // ★ 0.232.0：云端优先（audioKey+audioModel 已配置）→ 失败回退本地 CoreSpeechKit（用户规则）
+    // ★ 0.236.0：三引擎物理互斥（用户铁律）——ttsProvider='qianwen' 只发千问、'volcano'/'custom'
+    //   只发火山系，哪怕另一引擎 Key 填得再全也绝不发请求；未配置/失败 → 本地兜底链不动
     const ctx = this.getUIContext().getHostContext();
     const cacheDir = ctx !== undefined && ctx !== null ? ctx.cacheDir : '';
-    const cloudStarted = cloudTts.speak(speakText, cacheDir, {
+    const useQwen = this.apiConfig.ttsProvider === 'qianwen';
+    const cloudStarted = useQwen
+      ? qianwenTts.speak(speakText, cacheDir, {
+        onStart: () => {
+          this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
+        },
+        onComplete: () => {
+          this.stopTTS(); // 全部段播完——恢复正常态
+        },
+        onError: (message: string) => {
+          // 云端失败（网络/Key/音色）——本机语音兜底 + 轻提示（友好中文，规则#4）
+          this.showToastSafe(`云端朗读失败，已切换本机语音（${message.substring(0, 60)}）`);
+          this.startLocalTts(speakText);
+        }
+      })
+      : cloudTts.speak(speakText, cacheDir, {
       onStart: () => {
         this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
       },
@@ -1981,9 +1999,11 @@ export struct ChatPage {
     });
   }
 
-  // 停止整个朗读会话（★ 0.232.0：云端+本地双引擎一起停，幂等，可安全重复调用）
+  // 停止整个朗读会话（★ 0.232.0：云端+本地双引擎一起停，幂等，可安全重复调用；
+  // ★ 0.236.0：千问引擎同列——三引擎一起停，幂等无害）
   stopTTS(): void {
     cloudTts.stop();
+    qianwenTts.stop();
     localTts.stop();
     this.playingMessageId = '';
     this.ttsLoadingMessageId = '';
