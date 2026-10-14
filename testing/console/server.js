@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.237.1.1'; // ★ 四段制：前三段跟 APP（0.237.1=划词取词基准修复 blockRenderedText），第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.237.2.1'; // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -1593,7 +1593,7 @@ const CASES = [
       }
       ctx.log('★巡检汇总', fails + warns === 0 ? 'pass' : (fails ? 'fail' : 'warn'), `7 页 ${pageSnap.length} 页成功，fail=${fails} warn=${warns}——warn 项为人工裁决候选（补 token/豁免清单），fail 项为规范硬违规（修复走 app 迭代）`);
     } },
-  { id: 'UI-AUDIT-DIALOGS', suite: 'ui-audit', name: '弹窗体系·B1/B2 宽度+B4 等宽+B5 层级色+B9 返回键+B11 键盘+B13 删除确认+A16 左右留白+A17 三角规格+A18 轨道留白+C1 音色ID联动（0.233.0）', semi: false, scope: 'each',
+  { id: 'UI-AUDIT-DIALOGS', suite: 'ui-audit', name: '弹窗体系·B1/B2 宽度+B4 等宽+B5 层级色+B9 返回键+B11 键盘+B13 删除确认+A16 左右留白+A17 三角规格+A18 轨道留白+C0 默认档+C1 自定义模型三字段+C2 自定义档如式提示（0.237.2）', semi: false, scope: 'each',
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '弹窗审计（UI 断言）'); return; }
@@ -1734,13 +1734,17 @@ const CASES = [
         report2(ctx, AUDIT.auditCollapseTriangle(d.nodes, c, '语音朗读（TTS）'));
         // ★ 0.233.0 A18 Tab 轨道两端留白 12vp（用户拍板「导航栏左右留空地」）
         report2(ctx, AUDIT.auditTabTrackPadding(d.nodes, c, '全局设置弹窗', '全局设置'));
-        // ★ 0.233.0 C1 音色 ID 联动（音频模型=「自定义…」→ 音色 ID 整块隐藏；用户拍板「模型都自定义了音色取消」）
+        // ★ 0.237.2 C0/C1/C2 TTS 设置区三 bug 回归（app 0.237.2 配套——§12.11 基线对齐/§12.13 军令）：
+        //   C0 音频模型默认档（空值/异档残留默认回「声音复刻 2.0」，不落「自定义模型」）
+        //   C1 音频模型=「自定义模型」→ 三字段齐全（模型 ID/音频 API Key/音色 ID）+「如 …」灰提示
+        //      （★ 0.237.2 反转 0.233.0 旧断言：音色 ID 从「必须隐藏」改「必须显示」——用户改拍板三字段）
+        //   C2 自定义提供商档 → 接口地址空值露「如 https://…」灰提示（0.236.2 前预填真地址占位=bug）
         const ttsRow = d.nodes.find((n) => (n.text || '').includes('语音朗读（TTS）'));
         if (ttsRow) {
           await sh(serial, `uitest uiInput click ${ttsRow.xc} ${ttsRow.yc}`, 15000);
           await sleep(1300);
           // ★ 0.233.0.2：展开表单在弹窗 Scroll 视口下方（dump 只含可视节点，首轮 C1 实锤）——上滑滚到底再 dump
-          // ★ 0.233.0.4：滚到底后「音频模型」贴视口底缘，下拉面板向下弹出仍超出可视区（二轮实锤「自定义…」
+          // ★ 0.233.0.4：滚到底后「音频模型」贴视口底缘，下拉面板向下弹出仍超出可视区（二轮实锤「自定义模型」
           //   定位失败）——再小幅下滑让下拉行居于视口中部，面板向下弹有半屏空间
           const scrH = scrM ? +scrM[4] : 1600;
           await sh(serial, `uitest uiInput swipe ${Math.round(screenW / 2)} ${Math.round(scrH * 0.72)} ${Math.round(screenW / 2)} ${Math.round(scrH * 0.2)} 800`, 15000);
@@ -1749,29 +1753,76 @@ const CASES = [
           await sleep(900);
           const d2 = await dumpAuditNodes(serial);
           artSave('UI-AUDIT-DIALOGS', `dump-tts-open-${dev.id}.json`, d2.text);
-          const hasVoiceBefore = d2.nodes.some((n) => n.text === '音色 ID');
+          // ★ C0 默认档断言：期望值从持久化真值推导（prefField 读 persistent_storage 的 audioModel，
+          //   XML 实体转义已处理——比裸 grep 稳），与 app 回显逻辑逐字对齐（§12.11）——
+          //   seed-tts-2.0→豆包；空/seed-icl-2.0/cosyvoice 残留→声音复刻2.0；其他非空→自定义模型
+          const pref = await prefField(serial, 'audioModel');
+          let expectModel = '声音复刻 2.0';
+          let prefNote = '持久化通道不可读——按默认档「声音复刻 2.0」断言（尽力通道）';
+          if (pref.found) {
+            const am = pref.value;
+            if (am === 'seed-tts-2.0') expectModel = '豆包语音合成 2.0';
+            else if (am === '' || am === 'seed-icl-2.0' || am === 'cosyvoice-v3.5-plus') expectModel = '声音复刻 2.0';
+            else expectModel = '自定义模型';
+            prefNote = `持久化 audioModel=${am === '' ? '（空）' : am}`;
+          }
+          const modelShown = d2.nodes.find((n) => n.text === expectModel);
+          const shownCustom = d2.nodes.some((n) => n.text === '自定义模型');
+          if (modelShown) {
+            ctx.log('★C0 音频模型默认档', 'pass',
+              `下拉显示「${expectModel}」✓（${prefNote}）` + (expectModel === '声音复刻 2.0' && shownCustom ? '（注意：同屏另有「自定义模型」文本，人工复核 dump）' : ''));
+          } else {
+            ctx.log('★C0 音频模型默认档', 'fail',
+              `期望「${expectModel}」（${prefNote}）实际未命中——` + (shownCustom ? '显示「自定义模型」=bug1 复现（空值/残留落自定义未回默认）' : 'dump 未见任何预设名（结构变化复核）'));
+          }
           const lbl = d2.nodes.find((n) => n.text === '音频模型');
           const row = lbl ? d2.nodes.filter((n) => n.y >= lbl.y2 && n.y - lbl.y2 < 60 && n.h > 30 && n.h < 70).sort((a, b) => a.y - b.y)[0] : null;
           if (row) {
             await sh(serial, `uitest uiInput click ${row.xc} ${row.yc}`, 15000);
             await sleep(1000);
-            // ★ 0.233.0.5：下拉面板向下弹出且「自定义…」是面板最后一项——Scroll 裁剪致其落在可视区外
+            // ★ 0.233.0.5：下拉面板向下弹出且「自定义模型」是面板最后一项——Scroll 裁剪致其落在可视区外
             //   （三轮 dump 存证实锤）——展开后再上滑一段把面板尾部滚进视口
             await sh(serial, `uitest uiInput swipe ${Math.round(screenW / 2)} ${Math.round(scrH * 0.7)} ${Math.round(screenW / 2)} ${Math.round(scrH * 0.35)} 600`, 15000);
             await sleep(700);
-            const cust = await uiClickText(serial, '自定义…', { exact: true, waitMs: 1500 });
+            const cust = await uiClickText(serial, '自定义模型', { exact: true, waitMs: 1500 });
             if (cust.ok) {
               const d3 = await dumpAuditNodes(serial);
               artSave('UI-AUDIT-DIALOGS', `dump-tts-custom-model-${dev.id}.json`, d3.text);
+              // C1a 三字段齐全（0.237.2 用户拍板：模型 ID + 音频 API Key + 音色 ID）
+              const hasModelId = d3.nodes.some((n) => n.text === '模型 ID');
+              const hasKey = d3.nodes.some((n) => n.text === '音频 API Key');
               const hasVoiceAfter = d3.nodes.some((n) => n.text === '音色 ID');
-              ctx.log('★C1 音色ID联动·音频模型=自定义…', hasVoiceAfter ? 'fail' : 'pass',
-                `音色 ID 切前=${hasVoiceBefore ? '显示' : '不显示'} → 切后=${hasVoiceAfter ? '仍显示（违规——用户拍板「都自定义了音色 ID 就取消掉」）' : '已隐藏 ✓（0.233.0 规范生效）'}`);
-            } else ctx.log('C1 下拉「自定义…」', 'warn', (cust.err || '') + '——下拉面板定位失败（结构变化人工复核 dump 存证）');
+              const threeOk = hasModelId && hasKey && hasVoiceAfter;
+              ctx.log('★C1a 自定义模型·三字段齐全', threeOk ? 'pass' : 'fail',
+                `模型 ID=${hasModelId ? '✓' : '缺'} / 音频 API Key=${hasKey ? '✓' : '缺'} / 音色 ID=${hasVoiceAfter ? '✓（0.237.2 恢复显示，推翻 0.233.0 隐藏）' : '缺（仍隐藏=旧版行为）'}`);
+              // C1b 三字段「如 …」灰提示（placeholder 在 attributes.hint——dump -a 可读）
+              const hints = d3.nodes.filter((n) => n.hint).map((n) => String(n.hint));
+              const hintModel = hints.find((h) => h.startsWith('如 seed-tts-2.0'));
+              const hintKey = hints.find((h) => h.startsWith('如 d30edab3') || h.startsWith('填入豆包语音'));
+              const hintVoice = hints.find((h) => h.startsWith('如 S_'));
+              const hintOk = hintModel && hintKey && hintVoice;
+              ctx.log('★C1b 自定义模型·如式灰提示', hintOk ? 'pass' : 'fail',
+                `模型 ID=${hintModel ? '✓' : '缺'} / Key=${hintKey ? (hintKey.startsWith('如') ? '✓' : '回退文案（内置 Key 快照缺失——config.json 未打包）') : '缺'} / 音色 ID=${hintVoice ? '✓' : '缺'}`);
+            } else ctx.log('C1 下拉「自定义模型」', 'warn', (cust.err || '') + '——下拉面板定位失败（结构变化人工复核 dump 存证）');
+            // C2 自定义提供商档：接口地址「如 https://…」灰提示（0.237.2 bug4 回归——
+            //   旧版切档预填火山真地址占位，placeholder 永不露出）
+            await sh(serial, `uitest uiInput swipe ${Math.round(screenW / 2)} ${Math.round(scrH * 0.3)} ${Math.round(screenW / 2)} ${Math.round(scrH * 0.6)} 600`, 15000);
+            await sleep(800);
+            const segCustom = await uiClickText(serial, '自定义', { exact: true, waitMs: 1500 });
+            if (segCustom.ok) {
+              const d4 = await dumpAuditNodes(serial);
+              artSave('UI-AUDIT-DIALOGS', `dump-tts-custom-provider-${dev.id}.json`, d4.text);
+              const hasEpLabel = d4.nodes.some((n) => n.text === '接口地址');
+              const epHint = d4.nodes.filter((n) => n.hint).map((n) => String(n.hint)).find((h) => h.startsWith('如 https://'));
+              const c2Ep = hasEpLabel && epHint;
+              ctx.log('★C2 自定义档·接口地址如式提示', c2Ep ? 'pass' : 'fail',
+                `字段=${hasEpLabel ? '✓' : '缺'} / placeholder=${epHint ? '「' + epHint.slice(0, 24) + '…」✓' : '未命中「如 https://」灰提示'}`);
+            } else ctx.log('C2 切「自定义」分段', 'warn', (segCustom.err || '') + '——分段行定位失败（可能滚出视口，人工复核 dump 存证）');
           } else ctx.log('C1 音频模型下拉行', 'warn', '未定位到下拉触发行（TTS 未展开或结构变化）');
-          // 收尾·还原：不保存关闭（切了模型未保存——backKey 会弹「修改未保存」，先主动点掉防卡）
+          // 收尾·还原：不保存关闭（切了模型/档位未保存——backKey 会弹「修改未保存」，先主动点掉防卡）
           const discard = await uiClickText(serial, '不保存关闭', { exact: true, waitMs: 1200 });
-          if (discard.ok) ctx.log('C1 收尾·不保存关闭', 'pass', '已还原（切模型未落盘，零数据破坏）');
-        } else ctx.log('C1 TTS 折叠行', 'warn', '未见「语音朗读（TTS）」行——跳过联动测试');
+          if (discard.ok) ctx.log('C1/C2 收尾·不保存关闭', 'pass', '已还原（切模型/切档未落盘，零数据破坏）');
+        } else ctx.log('C0/C1/C2 TTS 折叠行', 'warn', '未见「语音朗读（TTS）」行——跳过 TTS 设置区测试');
         await backKey('全局设置弹窗', '全局设置');
       }
       // ── ⑤ fresh 专属弹窗（协议/门禁/堆叠）非 fresh 态如实 skip（守卫基线对齐铁律 §12.11）──

@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000267, // ★ 0.237.1：划词取词基准修复（blockRenderedText=渲染态文本，根治富文本消息划词整体前移选错词）；上一版 0.237.0：锚点二期钩子树重构与折叠三角统一；更早历史见 MEMORY.md
+    "versionCode": 1000268, // ★ 0.237.2：TTS 设置区三 bug（音频模型默认回声音复刻2.0/选中回填内置 Key+默认音色/自定义模型三字段如式灰提示+自定义档端点干净起点）；上一版 0.237.1：划词取词基准修复；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

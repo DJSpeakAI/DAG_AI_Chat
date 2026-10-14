@@ -163,8 +163,8 @@ class TtsTabCache {
   key: string = '';
   voice: string = '';
   endpoint: string = '';
-  modelSel: number = 0;      // 火山/自定义档：模型下拉选中（TTS_MODEL_PRESETS.length=自定义…）
-  modelText: string = '';    // 火山/自定义档：「自定义…」手填模型资源 ID
+  modelSel: number = 0;      // 火山/自定义档：模型下拉选中（TTS_MODEL_PRESETS.length=自定义模型）
+  modelText: string = '';    // 火山/自定义档：「自定义模型」手填模型 ID
   qwenModel: string = TTS_QWEN_DEFAULT_MODEL; // 千问档：模型 TextInput
   emotion: string = '开心';  // 千问档：情感档位
   speed: number = 1.0;       // 千问档：语速
@@ -173,7 +173,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.237.1'; // ★ 0.237.1：划词取词基准修复（富文本消息划词整体前移选错词根治）；上一版 0.237.0：锚点二期钩子树重构与折叠三角统一
+const APP_VERSION: string = 'v0.237.2'; // ★ 0.237.2：TTS 设置区三 bug（音频模型默认回声音复刻2.0/选中回填内置 Key+默认音色/自定义模型三字段如式灰提示）；上一版 0.237.1：划词取词基准修复
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -263,8 +263,8 @@ export struct GlobalSettingsDialog {
   // ★ 0.236.0：提供商三档化（volcano / qianwen / custom 三引擎物理互斥——editTtsProvider 从
   //   apiConfig.ttsProvider 直读，端点推导仅作旧数据首迁兜底）
   @Local editTtsProvider: string = 'volcano'; // volcano / qianwen / custom
-  @Local editTtsModelSel: number = 0;         // 模型下拉选中（0=声音复刻2.0 默认 / 1=豆包语音合成2.0 / 2=自定义…）
-  @Local editTtsModel: string = '';           // 「自定义…」模型资源 ID（手填；sel=2 时生效）
+  @Local editTtsModelSel: number = 0;         // 模型下拉选中（0=声音复刻2.0 默认 / 1=豆包语音合成2.0 / 2=自定义模型（0.237.2 改名））
+  @Local editTtsModel: string = '';           // 「自定义模型」模型 ID（手填；sel=2 时生效）
   @Local editTtsKey: string = '';             // API Key（三档各自语义：火山=豆包语音 Key / 千问=sk-ws- Key / 自定义）
   @Local editTtsVoice: string = '';           // 音色 ID（火山=S_ 合成音色 / 千问=复刻 voice_id；自定义隐藏）
   @Local editTtsEndpoint: string = '';        // 自定义端点 URL（千问/火山端点内置）
@@ -400,7 +400,7 @@ export struct GlobalSettingsDialog {
     this.editAnchorDensity = this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse';
     this.editFoldMode = this.anchorPref.foldMode;
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
-    // ★ 0.232.1：模型改下拉预设回显（icl/tts 两预设 + 清单外手填落「自定义…」）
+    // ★ 0.232.1：模型改下拉预设回显（icl/tts 两预设 + 清单外手填落「自定义模型」）
     // ★ 0.236.0：三档化——editTtsProvider 从 apiConfig.ttsProvider 直读（非法值→端点推导兜底）；
     //   持久化只存当前档的值（audioKey/audioModel/audioVoice 三档复用承载），非当前档字段用档默认
     const savedTtsProvider = this.apiConfig.ttsProvider;
@@ -409,8 +409,9 @@ export struct GlobalSettingsDialog {
       (this.apiConfig.audioEndpoint.includes('bytedance.com') ? 'volcano' : 'custom');
     this.editTtsKey = this.apiConfig.audioKey;
     this.editTtsVoice = this.apiConfig.audioVoice;
-    this.editTtsEndpoint = this.apiConfig.audioEndpoint.trim().length > 0
-      ? this.apiConfig.audioEndpoint : TTS_VOLCANO_ENDPOINT;
+    // ★ 0.237.2：端点回显不再预填火山地址——自定义档空值露出「如 …」灰提示（用户拍板）；
+    //   火山档端点内置不走此值（currentTtsEndpointValue 恒返内置常量）
+    this.editTtsEndpoint = this.apiConfig.audioEndpoint;
     if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
       // 千问档回显：模型（空值兜底默认）/情感/语速/音量；火山下拉侧留默认（值在切档时靠缓存/重填）
       this.editTtsQwenModel = this.apiConfig.audioModel.trim().length > 0
@@ -431,7 +432,11 @@ export struct GlobalSettingsDialog {
       } else {
         if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[1].id) {
           this.editTtsModelSel = 1;
-        } else if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[0].id) {
+        } else if (this.apiConfig.audioModel === TTS_MODEL_PRESETS[0].id ||
+          this.apiConfig.audioModel.trim().length === 0 ||
+          this.apiConfig.audioModel === TTS_QWEN_DEFAULT_MODEL) {
+          // ★ 0.237.2：空值/异档残留默认回「声音复刻 2.0」（用户拍板——此前空值落「自定义模型」
+          //   显示不对；qwen 模型值=三档复用 audioModel 的千问档存储残留，非火山自定义模型）
           this.editTtsModelSel = 0;
         } else {
           this.editTtsModelSel = 2;
@@ -439,11 +444,11 @@ export struct GlobalSettingsDialog {
         }
       }
     }
-    // ★ 0.236.2：音色 ID 默认回填（开发期临时——持久化旧官方音色/空值时强制回填用户复刻音色，
-    //   杜绝官方音色配声音复刻 2.0 模型的 55000000 资源不匹配报错；上线前随 TTS_DEFAULT_VOICE 一起删）
-    if (this.editTtsProvider === 'volcano' && this.editTtsModelSel === 0 &&
-      (this.editTtsVoice.trim().length === 0 || this.editTtsVoice.trim() === TTS_OFFICIAL_VOICE)) {
-      this.editTtsVoice = TTS_DEFAULT_VOICE;
+    // ★ 0.237.2：火山档空值回填收口（用户拍板：选「声音复刻 2.0」即见内置 Key d30edab3…与默认音色
+    //   S_bv8H32Sg2——回显入口统一走 refillVolcanoDefaults，切档/下拉选中另两入口同函数；
+    //   0.236.2 音色回填与 0.236.1 切档 Key 回填一并收编；用户已填值不动）
+    if (this.editTtsProvider === 'volcano') {
+      this.refillVolcanoDefaults();
     }
     // 千问档首次进入预填内置 Key（用户自定义值优先纪律——仅表单预填不写持久化）
     if (this.editTtsProvider === TTS_PROVIDER_QWEN && this.editTtsKey.length === 0) {
@@ -515,7 +520,7 @@ export struct GlobalSettingsDialog {
     return this.editTtsEndpoint.trim();
   }
 
-  // ★ 0.232.1：当前 TTS 表单模型（预设下拉或「自定义…」手填）
+  // ★ 0.232.1：当前 TTS 表单模型（预设下拉或「自定义模型」手填）
   // ★ 0.236.1：自定义档=空手填模型资源 ID（无火山预设下拉——用户拍板「变空」；试听/合成必填）
   currentTtsModelValue(): string {
     if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
@@ -535,9 +540,37 @@ export struct GlobalSettingsDialog {
     return this.editTtsModelSel !== 1;
   }
 
+  // ★ 0.237.2：音频 API Key 占位示例「如 + 内置 Key 快照」（用户拍板三字段如式灰提示；
+  //   不在源码硬编码 Key 明文——config.json 本就不进 git，快照缺失时回退普通提示）
+  ttsKeyPlaceholder(): string {
+    if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+      return '填入千问平台 API Key（sk-ws- 开头）';
+    }
+    const builtinKey = getBuiltinVolcanoTtsKey();
+    return builtinKey.length > 0 ? `如 ${builtinKey}（与对话 Key 相互独立）` : '填入豆包语音 API Key（与对话 Key 相互独立）';
+  }
+
+  // ★ 0.237.2：火山档空值回填（回显/切档/下拉选中「声音复刻 2.0」三入口统一——用户拍板：
+  //   选声音复刻 2.0 即见内置 Key 与默认音色；仅在空值时补位，用户自定义值优先）
+  //   ★ 开发期临时纪律：TTS_DEFAULT_VOICE（含本函数音色回填）上线前随用户命令删除（0.236.2 定稿）
+  refillVolcanoDefaults(): void {
+    if (this.editTtsKey.trim().length === 0) {
+      const builtinKey = getBuiltinVolcanoTtsKey();
+      if (builtinKey.length > 0) {
+        this.editTtsKey = builtinKey;
+      }
+    }
+    // 音色回填仅「声音复刻 2.0」档（豆包合成=官方音色固定；自定义模型音色用户自填不干预）
+    if (this.editTtsModelSel === 0 &&
+      (this.editTtsVoice.trim().length === 0 || this.editTtsVoice.trim() === TTS_OFFICIAL_VOICE)) {
+      const builtinVoice = getBuiltinVolcanoTtsVoice();
+      this.editTtsVoice = builtinVoice.length > 0 ? builtinVoice : TTS_DEFAULT_VOICE;
+    }
+  }
+
   // ★ 0.236.0：切 TTS 档——三档会话级缓存快照/恢复（切换不丢输入，仅「保存」才落盘）
   //   目标档无缓存=干净起点：火山=模型下拉默认 / 千问=cosyvoice-v3.5-plus+内置 Key 预填 /
-  //   自定义=清空+模型落「自定义…」（0.236.0 bug 修复：切自定义 editTtsModelSel 重置，
+  //   自定义=清空+模型落「自定义模型」（0.236.0 bug 修复：切自定义 editTtsModelSel 重置，
   //   此前残留火山下拉值会把 seed-icl-2.0 存进自定义档 audioModel）
   onTtsProviderTap(target: string): void {
     if (target === this.editTtsProvider) {
@@ -574,7 +607,8 @@ export struct GlobalSettingsDialog {
     } else {
       this.editTtsKey = '';
       this.editTtsVoice = '';
-      this.editTtsEndpoint = TTS_VOLCANO_ENDPOINT;
+      // ★ 0.237.2：自定义档端点干净起点改空串——不预填火山地址，空值露出「如 …」灰提示
+      this.editTtsEndpoint = '';
       this.editTtsModel = '';
       this.editTtsQwenModel = TTS_QWEN_DEFAULT_MODEL;
       this.editTtsEmotion = '开心';
@@ -583,17 +617,11 @@ export struct GlobalSettingsDialog {
       if (target === 'volcano') {
         this.editTtsModelSel = 0;
         // ★ 0.236.1：内置 Key/音色兜底回填（用户实测痛点：切回火山档 Key/音色 ID 全空——
-        //   audioKey/audioVoice 被千问档保存覆盖，config.json 内置快照补位显示）
-        const builtinKey = getBuiltinVolcanoTtsKey();
-        const builtinVoice = getBuiltinVolcanoTtsVoice();
-        if (builtinKey.length > 0) {
-          this.editTtsKey = builtinKey;
-        }
-        if (builtinVoice.length > 0) {
-          this.editTtsVoice = builtinVoice;
-        }
+        //   audioKey/audioVoice 被千问档保存覆盖，config.json 内置快照补位显示）；
+        //   ★ 0.237.2：统一收口 refillVolcanoDefaults
+        this.refillVolcanoDefaults();
       } else if (target === 'custom') {
-        this.editTtsModelSel = TTS_MODEL_PRESETS.length; // bug 修复：自定义档干净起点落「自定义…」
+        this.editTtsModelSel = TTS_MODEL_PRESETS.length; // bug 修复：自定义档干净起点落「自定义模型」
       } else {
         this.editTtsModelSel = 0;
         const builtinKey = getBuiltinQwenTtsKey(); // 千问档：内置 Key 预填（开发期；用户自定义值优先）
@@ -810,8 +838,8 @@ export struct GlobalSettingsDialog {
       this.apiConfig.audioModel = this.currentTtsModelValue();
       // ★ 0.232.2：自定义提供商音色不适用（字段已隐藏）——存空串，引擎空值自动兜底官方音色；
       //   豆包语音合成2.0 仍强制官方音色（0.232.1 置灰闭环）
-      // ★ 0.233.0：音频模型选「自定义…」时音色同样不适用（UI 已隐藏）——存空串兜底官方音色
-      this.apiConfig.audioVoice = (this.editTtsProvider !== 'volcano' || this.editTtsModelSel >= TTS_MODEL_PRESETS.length) ? '' :
+      // ★ 0.237.2：音频模型选「自定义模型」音色恢复可填（推翻 0.233.0 存空串——三字段配套落盘）
+      this.apiConfig.audioVoice = this.editTtsProvider !== 'volcano' ? '' :
         (this.ttsVoiceEditable() ? this.editTtsVoice.trim() : TTS_OFFICIAL_VOICE);
       this.apiConfig.audioEndpoint = this.currentTtsEndpointValue();
     }
@@ -1057,9 +1085,9 @@ export struct GlobalSettingsDialog {
         .margin({ bottom: 12 })
 
         // ★ 0.236.1：自定义档模型资源 ID（空手填 TextInput——不带火山预设下拉，用户拍板「变空」；
-        //   openspeech 协议资源 ID 必填，试听/朗读生效都需要它）
+        //   openspeech 协议资源 ID 必填，试听/朗读生效都需要它；★ 0.237.2 label 改「模型 ID」统一命名）
         Column() {
-          Text('模型资源 ID')
+          Text('模型 ID')
             .fontSize(14)
             .fontColor(TEXT_SECONDARY)
             .margin({ bottom: 6 })
@@ -1077,7 +1105,7 @@ export struct GlobalSettingsDialog {
         .margin({ bottom: 12 })
       }
 
-      // 音频模型下拉（★ 0.232.1 用户拍板：两预设——声音复刻 2.0 默认 / 豆包语音合成 2.0 + 「自定义…」；
+      // 音频模型下拉（★ 0.232.1 用户拍板：两预设——声音复刻 2.0 默认 / 豆包语音合成 2.0 + 「自定义模型」（0.237.2 改名）；
       //   复刻可填 S_ 音色，豆包合成音色置灰——两种音色体系的入口分岔）
       // ★ 0.236.0：火山档模型下拉（★ 0.236.1：自定义档删模型字段——用户拍板「音频模型也是不应该
       //   啊」，火山预设（声音复刻/豆包2.0）与自定义端点无关；千问档模型走 TextInput）
@@ -1091,7 +1119,7 @@ export struct GlobalSettingsDialog {
         Row() {
           Text(this.editTtsModelSel < TTS_MODEL_PRESETS.length
             ? TTS_MODEL_PRESETS[this.editTtsModelSel].name
-            : '自定义…')
+            : '自定义模型')
             .fontSize(14)
             .fontColor(TEXT_PRIMARY)
             .layoutWeight(1)
@@ -1126,11 +1154,15 @@ export struct GlobalSettingsDialog {
               .onClick(() => {
                 this.editTtsModelSel = idx;
                 this.isTtsModelDropdownOpen = false;
+                // ★ 0.237.2：选「声音复刻 2.0」即回填默认 Key/音色（空值补位——用户拍板）
+                if (idx === 0) {
+                  this.refillVolcanoDefaults();
+                }
               })
             }, (m: TtsModelPreset) => m.id)
 
             Column() {
-              Text('自定义…')
+              Text('自定义模型')
                 .fontSize(14)
                 .fontColor(TEXT_PRIMARY)
               Text('填入列表外的模型资源 ID')
@@ -1159,10 +1191,11 @@ export struct GlobalSettingsDialog {
       .margin({ bottom: 12 })
       } // ★ 0.236.0：非千问档模型下拉块结束（★ 0.236.1：仅火山档）
 
-      // 「自定义…」模型资源 ID（火山档选中「自定义…」时显示；★ 0.236.1：自定义/千问档不渲染）
+      // 「自定义模型」模型 ID（火山档选中「自定义模型」时显示；★ 0.236.1：自定义/千问档不渲染）
+      // ★ 0.237.2：label 模型资源 ID→模型 ID（与音色 ID/音频 API Key 三字段统一命名——用户拍板）
       if (this.editTtsProvider === 'volcano' && this.editTtsModelSel >= TTS_MODEL_PRESETS.length) {
         Column() {
-          Text('模型资源 ID')
+          Text('模型 ID')
             .fontSize(14)
             .fontColor(TEXT_SECONDARY)
             .margin({ bottom: 6 })
@@ -1188,9 +1221,7 @@ export struct GlobalSettingsDialog {
           .margin({ bottom: 6 })
         TextInput({
           text: $$this.editTtsKey,
-          placeholder: this.editTtsProvider === TTS_PROVIDER_QWEN
-            ? '填入千问平台 API Key（sk-ws- 开头）'
-            : '填入豆包语音 API Key（与对话 Key 相互独立）'
+          placeholder: this.ttsKeyPlaceholder()
         })
           .width('100%')
           .height(48)
@@ -1324,9 +1355,9 @@ export struct GlobalSettingsDialog {
 
       // 音色 ID（★ 0.232.1 联动：声音复刻/自定义模型可填 S_ 音色；豆包语音合成2.0 置灰=官方音色体系）
       // ★ 0.232.2：自定义提供商整块隐藏（火山音色体系不适用——用户拍板「自定义了音色 ID 就取消掉」）
-      // ★ 0.233.0：音频模型选「自定义…」时同样隐藏（模型都自定义了音色 ID 不用填——用户拍板；仅预设模型显示）
-      // ★ 0.236.0：千问档不渲染（上方千问专属拉取式下拉承担）
-      if (this.editTtsProvider === 'volcano' && this.editTtsModelSel < TTS_MODEL_PRESETS.length) {
+      // ★ 0.237.2：音频模型选「自定义模型」时恢复显示（推翻 0.233.0 隐藏——用户拍板自定义模型下
+      //   三字段齐全：模型 ID / 音频 API Key / 音色 ID，各带「如 …」灰提示；仅豆包合成置灰）
+      if (this.editTtsProvider === 'volcano') {
       Column() {
         Text('音色 ID')
           .fontSize(14)
@@ -1334,7 +1365,7 @@ export struct GlobalSettingsDialog {
           .margin({ bottom: 6 })
         TextInput({
           text: this.ttsVoiceEditable() ? this.editTtsVoice : TTS_OFFICIAL_VOICE,
-          placeholder: 'S_ 前缀=合成音色，如 S_bv8H32Sg2'
+          placeholder: '如 S_bv8H32Sg2'
         })
           .width('100%')
           .height(48)
@@ -1344,9 +1375,10 @@ export struct GlobalSettingsDialog {
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
           .enabled(this.ttsVoiceEditable())
-        Text(this.ttsVoiceEditable()
-          ? '声音复刻 2.0 的合成音色 ID（火山控制台·声音复刻获取）。'
-          : '豆包语音合成 2.0 使用官方音色（音色 ID 固定，不可自定义）。')
+        Text(this.editTtsModelSel === 1 ? '豆包语音合成 2.0 使用官方音色（音色 ID 固定，不可自定义）。'
+          : (this.editTtsModelSel >= TTS_MODEL_PRESETS.length
+            ? '自定义模型的音色 ID；留空自动使用官方音色。'
+            : '声音复刻 2.0 的合成音色 ID（火山控制台·声音复刻获取）。'))
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
