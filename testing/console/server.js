@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.235.0.1'; // ★ 四段制：前三段跟 APP（0.235.0=划词高亮清除修复+划词引用），第四段=测试台工具版本 // ★ 0.235.0.1：跟 APP 0.235.0（chat 套件新增 SEL-CLEAR/CHAT-QUOTE 两用例）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.235.2.1'; // ★ 四段制：前三段跟 APP（0.235.2=消息操作行复制全文+删除/滑动删除统一右滑/折叠三角统一术卡），第四段=测试台工具版本 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）（chat 套件新增 SEL-CLEAR/CHAT-QUOTE 两用例）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -265,6 +265,15 @@ async function dumpLayout(serial) {
   await sh(serial, `rm -f ${CFG.dumpRemote}`);
   const r = await sh(serial, `uitest dumpLayout -p ${CFG.dumpRemote}`, 20000);
   await sleep(1500);
+  const text = await sh(serial, `cat ${CFG.dumpRemote}`);
+  return { ok: text.length > 100 && !/DumpLayout fail|No such file/.test(r + text), text };
+}
+// ★ 0.235.2.1 快捕 dump（toast 仅显 ~1500ms——dumpLayout 内含 sleep1500 必错过）：命令本身同步落盘，
+//   点完按钮 +400ms 即读；未读到再补一次（覆盖 0~5s 两个窗口）
+async function dumpFast(serial) {
+  await sh(serial, `rm -f ${CFG.dumpRemote}`);
+  const r = await sh(serial, `uitest dumpLayout -p ${CFG.dumpRemote}`, 20000);
+  await sleep(400);
   const text = await sh(serial, `cat ${CFG.dumpRemote}`);
   return { ok: text.length > 100 && !/DumpLayout fail|No such file/.test(r + text), text };
 }
@@ -915,7 +924,9 @@ async function navIntoChat(ctx, serial) {
   const d = await dumpLayout(serial);
   // ★ 0.235.0.1：取最后一个命中会撞画布信息条「N 个气泡 · N 条对话」（树序在气泡卡之后，双击它=点空）——
   //   排除含「个气泡」的信息条，只留气泡卡「N 条对话 · X前」
-  const hits = findNodeBoundsAll(d.text, '条对话').filter((h) => !String(h.text).includes('个气泡'));
+  //   ★ 0.235.2.1：再排除「0 条对话」空气泡（R20261014144610 实锤：SYNC-FLOW 遗留空气泡被取 last 命中，
+  //   双击进空对话页→无正文→后续全 fail）——只进有对话的气泡
+  const hits = findNodeBoundsAll(d.text, '条对话').filter((h) => !String(h.text).includes('个气泡') && !String(h.text).startsWith('0 条对话'));
   if (!hits.length) { ctx.log('① 定位有对话的气泡', 'fail', '画布未见「N条对话」气泡卡（信息条已排除）——先在某气泡发一条消息再跑本用例'); return false; }
   const target = hits[hits.length - 1];
   ctx.log('① 定位有对话的气泡', 'pass', `(${target.x},${target.y})「${String(target.text).slice(0, 24)}」`);
@@ -1906,6 +1917,237 @@ const CASES = [
       ctx.log('★④ × 撤销引用栏消失', gone ? 'pass' : 'fail',
         gone ? `已点 (${bar.x2 + 36},${bar.y})——引用栏已清（Q4 ✓，一次性会话态可重引）` : `引用栏仍在（× 未命中——点(${bar.x2 + 36},${bar.y})，dump 存证人工复核）`);
     } },
+
+  // ---------- ★ 0.235.2 消息操作行（AI/用户消息下方「复制全文+删除」按钮；用户拍板刷新左边第 1 复制第 2 删除+整行左对齐） ----------
+  // 操作行按钮=无文字 svg 图标（dump 无 text）——几何聚类定位：与正文左缘对齐、成行排列的近正方形小节点群
+  //   （AI 行 4：复制/删除/刷新/喇叭；用户行恰 2：复制/删除）；fontSize dump 不可达（0.229.26 实证），
+  //   左对齐断言用行首按钮 x ≈ 正文左缘 x 的相对几何（±60px 容 density 与半像素误差）
+  // ★ 首轮盯屏三实锤（R20261014143634）：①按钮=容器(55px)+图标(35px)两层嵌套节点——去重合并（xc 差<25px 同一按钮）
+  //   ②toast「已复制全文」仅显 1500ms——dumpLayout 内含 sleep1500 太慢，点后走 dumpFast 快捕（+400ms 即读）
+  //   ③对话页大屏边栏常驻（x<480px 是边栏）——用户消息在列表上方常滚出屏，先测完 AI 行再下滑露出用户行
+  // 数据安全红线（project_rule 持久化铁律）：删除只断言到「确认弹窗出现+取消保留」，不真删设备上的用户对话数据
+  { id: 'CHAT-ACTIONS', suite: 'chat', name: '操作行·AI/用户消息下复制全文+删除按钮存在、左对齐、点击链路（0.235.2 新功能）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '操作行断言（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      if (!(await navIntoChat(ctx, serial))) return;
+      const d = await dumpAuditNodes(serial);
+      if (!d.ok) { ctx.log('① 审计 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      const body = pickBodyTextNode(d.nodes);
+      if (!body) { ctx.log('① 定位 AI 正文', 'fail', '未见≥12字正文节点（消息过短或结构变化）'); return; }
+      ctx.log('① 定位 AI 正文', 'pass', `左缘 x=${Math.round(body.x)}——0.235.2 操作行应与其左对齐（margin left 10 = 气泡 padding 10）`);
+      // ② 操作行聚类（去重版）：无文字近正方形小节点按 y 聚行；行内 xc 差<25px 的节点=同一按钮容器+图标嵌套，
+      //   合并取外层（容器 x1 更小者）——首轮 8 节点实为 4 按钮×2 层
+      const clusterRows = (nodes) => {
+        const cands = nodes.filter((n) => !String(n.text || '').trim() && n.w >= 12 && n.h >= 12 && n.w <= 60 && n.h <= 60
+          && Math.abs(n.w - n.h) <= Math.max(n.w, n.h) * 0.35).sort((a, b) => a.yc - b.yc);
+        const raw = [];
+        for (const n of cands) {
+          const r = raw[raw.length - 1];
+          if (r && Math.abs(n.yc - r.yc) <= Math.max(n.h, r.items[0].h) * 0.6) r.items.push(n);
+          else raw.push({ items: [n], yc: n.yc });
+        }
+        return raw.filter((r) => r.items.length >= 2).map((r) => {
+          const btns = [];
+          for (const n of r.items.sort((a, b) => a.x - b.x)) {
+            const last = btns[btns.length - 1];
+            if (last && Math.abs(n.xc - last.xc) < 25) continue; // 容器+图标嵌套去重
+            btns.push(n);
+          }
+          return { items: btns, yc: r.yc };
+        }).filter((r) => r.items.length >= 2);
+      };
+      const rows = clusterRows(d.nodes);
+      const aligned = rows.filter((r) => Math.abs(r.items[0].x - body.x) < 60); // 左对齐筛：行首与正文左缘对齐（边栏/顶栏图标 x 分散两侧天然出局）
+      const aiRow = aligned.filter((r) => r.yc > body.y2).sort((a, b) => a.yc - b.yc)[0] || null;
+      artSave('CHAT-ACTIONS', `rows-${dev.id}.json`, { body: { x: body.x, y2: body.y2 }, aligned });
+      if (!aiRow) { ctx.log('★② AI 操作行存在', 'fail', '正文下方未找到与正文左对齐的按钮行（0.235.2 应有复制/删除/刷新/喇叭 4 按钮）'); return; }
+      ctx.log('★② AI 操作行存在', aiRow.items.length >= 4 ? 'pass' : (aiRow.items.length === 3 ? 'warn' : 'fail'),
+        `${aiRow.items.length} 个图标按钮在行（期望 4：复制+删除+刷新+喇叭；容器/图标嵌套已去重），行首 x=${Math.round(aiRow.items[0].x)} vs 正文左缘 ${Math.round(body.x)}（左对齐 0.235.2 拍板 ✓）`);
+      // ③ 功能·AI 复制全文：点行首按钮（顺序=复制→删除→刷新）→ toast「已复制全文」（1500ms 短命——快捕）
+      const copyBtn = aiRow.items[0];
+      await sh(serial, `uitest uiInput click ${Math.round(copyBtn.xc)} ${Math.round(copyBtn.yc)}`, 15000);
+      const t1 = await dumpFast(serial);
+      let toastOk = t1.ok && t1.text.includes('已复制全文');
+      if (!toastOk) { await sleep(600); const t2 = await dumpFast(serial); toastOk = t2.ok && t2.text.includes('已复制全文'); }
+      artSave('CHAT-ACTIONS', `dump-copy-toast-${dev.id}.json`, t1.text);
+      ctx.log('★③ AI 复制全文点击', toastOk ? 'pass' : 'fail',
+        toastOk ? `已点 (${Math.round(copyBtn.xc)},${Math.round(copyBtn.yc)})——toast「已复制全文」在屏（copyFullMessage 链路活）` : '快捕×2 未见 toast「已复制全文」（按钮顺序变化或复制链路死——dump 已存证）');
+      // ④ 功能·AI 删除确认弹窗：点第 2 按钮（删除）→「删除这条消息？」→ 取消（数据安全红线：不真删）
+      if (aiRow.items.length >= 2) {
+        const delBtn = aiRow.items[1];
+        await sleep(800); // 等 toast 落幕防叠屏
+        await sh(serial, `uitest uiInput click ${Math.round(delBtn.xc)} ${Math.round(delBtn.yc)}`, 15000);
+        await sleep(1200);
+        const dd = await ctx.art.dump(`CHAT-ACTIONS-${dev.id}`, 'dump-del-dialog.json', serial);
+        const dlgOk = dd.text.includes('删除这条消息？') && dd.text.includes('此次对话不再提示');
+        ctx.log('★④ AI 删除确认弹窗', dlgOk ? 'pass' : 'fail',
+          dlgOk ? `已点 (${Math.round(delBtn.xc)},${Math.round(delBtn.yc)})——防误触确认弹窗在屏（复用 requestDeleteMessage 原链路）` : '未见删除确认弹窗（第 2 按钮非删除或链路断）');
+        if (dlgOk) {
+          const c = await uiClickText(serial, '取消', { exact: true, waitMs: 1000 });
+          const dc2 = await dumpLayout(serial);
+          ctx.log('⑤ 取消保留消息', !dc2.text.includes('删除这条消息？') ? 'pass' : 'fail',
+            `已点「取消」(${c.x},${c.y})——弹窗关闭、消息保留（数据安全红线：自动用例不真删用户对话）`);
+        }
+      }
+      // ⑥ 用户消息操作行（滚出屏补救）：列表默认滚到底，用户消息在上方——下滑×2 露出后重新 dump 聚类
+      //    ★二轮实锤：行首 x=553 是复习区图标列（缩进不同）非用户行——收紧 x 差 <20px（真实用户行首
+      //    =气泡 padding+margin 同链路，必与正文左缘 585 同 x）；dump 存证供盯屏
+      const scrM = String((JSON.parse(d.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+      const scrW = scrM ? +scrM[3] : 2560, scrH = scrM ? +scrM[4] : 1700;
+      const scrollUp = `uitest uiInput swipe ${Math.round(scrW / 2)} ${Math.round(scrH * 0.35)} ${Math.round(scrW / 2)} ${Math.round(scrH * 0.8)} 500`;
+      await sh(serial, scrollUp, 20000);
+      await sleep(900);
+      await sh(serial, scrollUp, 20000);
+      await sleep(1200);
+      const dU = await dumpAuditNodes(serial);
+      artSave('CHAT-ACTIONS', `dump-scrolled-${dev.id}.json`, dU.text);
+      const rowsU = dU.ok ? clusterRows(dU.nodes) : [];
+      artSave('CHAT-ACTIONS', `rowsU-${dev.id}.json`, rowsU.map((r) => ({ n: r.items.length, yc: Math.round(r.yc), xs: r.items.map((i) => Math.round(i.x)) })));
+      const userRow = rowsU.filter((r) => r.items.length === 2 && Math.abs(r.items[0].x - body.x) < 20).sort((a, b) => b.yc - a.yc)[0] || null;
+      if (!userRow) {
+        ctx.log('★⑥ 用户操作行存在', 'fail', '下滑露出上方后仍未找到左对齐 2 按钮行（0.235.2 用户消息下方应有复制+删除两按钮）');
+      } else {
+        ctx.log('★⑥ 用户操作行存在', 'pass',
+          `下滑后 ${userRow.items.length} 个图标按钮在行（复制+删除；用户消息无刷新/喇叭/token），行首 x=${Math.round(userRow.items[0].x)}（左对齐 ✓）`);
+        // ⑦ 功能·用户消息复制全文（同 toast 文案——用户分支 content 直取）
+        const uBtn = userRow.items[0];
+        await sh(serial, `uitest uiInput click ${Math.round(uBtn.xc)} ${Math.round(uBtn.yc)}`, 15000);
+        const tu = await dumpFast(serial);
+        let toast2 = tu.ok && tu.text.includes('已复制全文');
+        if (!toast2) { await sleep(600); const tu2 = await dumpFast(serial); toast2 = tu2.ok && tu2.text.includes('已复制全文'); }
+        artSave('CHAT-ACTIONS', `dump-user-copy-toast-${dev.id}.json`, tu.text);
+        ctx.log('★⑦ 用户消息复制全文', toast2 ? 'pass' : 'fail',
+          toast2 ? `已点 (${Math.round(uBtn.xc)},${Math.round(uBtn.yc)})——toast 在屏（用户消息操作行链路活）` : '快捕×2 未见 toast（用户行首按钮非复制或链路断）');
+        // ⑧ 用户消息删除弹窗→取消
+        await sleep(800);
+        await sh(serial, `uitest uiInput click ${Math.round(userRow.items[1].xc)} ${Math.round(userRow.items[1].yc)}`, 15000);
+        await sleep(1200);
+        const dd2 = await dumpLayout(serial);
+        const dlg2 = dd2.text.includes('删除这条消息？');
+        ctx.log('⑧ 用户消息删除弹窗', dlg2 ? 'pass' : 'fail', dlg2 ? '确认弹窗在屏（与 AI 删除同一确认链路 ✓）' : '未见确认弹窗');
+        if (dlg2) await uiClickText(serial, '取消', { exact: true, waitMs: 900 });
+      }
+      const h = await hilogErrors(serial);
+      ctx.log('链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'warn') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+    } },
+
+  // ---------- ★ 0.235.2 滑动删除方向统一（用户拍板「往右滑」——AI 消息 swipeAction end→start，用户/AI 同向） ----------
+  // ★ 首轮盯屏实锤：对话页大屏边栏常驻（x<480px 是边栏导航，点 72=跳页）——swipeAction start 面板出现在
+  //   **列表区左缘**（边栏右侧），圆钮 44vp≈88px 独特大节点（普通按钮 55px 容器）——swipe 后 dump 找
+  //   70~120px 方形节点即圆钮，点其中心弹防误触确认；取消保留（数据安全红线：不真删）
+  { id: 'CHAT-SWIPE', suite: 'chat', name: '滑动删除·AI/用户消息右滑出回收站面板+确认链路（0.235.2 方向统一回归）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '滑动删除（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      if (!(await navIntoChat(ctx, serial))) return;
+      const d = await dumpAuditNodes(serial);
+      if (!d.ok) { ctx.log('① 审计 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      const body = pickBodyTextNode(d.nodes);
+      if (!body) { ctx.log('① 定位 AI 正文', 'fail', '未见≥12字正文节点'); return; }
+      ctx.log('① 定位 AI 正文', 'pass', `中心 (${Math.round(body.xc)},${Math.round(body.yc)})——右滑目标行`);
+      // ② 右滑 AI 消息（0.235.2 统一方向：start 侧面板从左滑出）
+      // ★ 三轮盯屏实锤：①快速 swipe 在 Markdown 富文本正文上被 Text 手势拦截——必须 drag（velocity 300 慢拖）
+      //   且起点避开正文区（body.y2 下方气泡底/操作行区）；②圆钮实测 110px（44vp×2.5）——判定窗 90~130px
+      //   独尺寸（旧 70~130 误中复习区 80px 缩略图）；③紫色 #FF7C4DFF 圆钮在 (595,856) 类位置（列表左缘）
+      const dragY = Math.round(body.y2 + 80);
+      await sh(serial, `uitest uiInput drag ${Math.round(body.xc)} ${dragY} ${Math.round(body.xc + 560)} ${dragY} 300`, 20000);
+      await sleep(1200);
+      const dp = await dumpAuditNodes(serial);
+      artSave('CHAT-SWIPE', `dump-ai-swiped-${dev.id}.json`, dp.text);
+      // ★ 四轮实锤：拖拽过渡态圆钮可能非正方（110×55 压扁态）——判定改抓紫色 #FF7C4DFF 节点本体
+      //   （BRAND_PRIMARY 圆钮/面板唯一紫；复习区缩略图是深紫 #FF2C1B4D 不误中），功能证据=点击后弹确认弹窗
+      const knob = dp.ok ? dp.nodes.find((n) => !String(n.text || '').trim()
+        && String(n.backgroundColor || '').toUpperCase() === '#FF7C4DFF' && n.x > 480 && n.x < 1500 && n.w >= 60) : null;
+      let dlg = false;
+      if (knob) {
+        await sh(serial, `uitest uiInput click ${Math.round(knob.xc)} ${Math.round(knob.yc)}`, 15000);
+        await sleep(1200);
+        const dd = await dumpLayout(serial);
+        dlg = dd.text.includes('删除这条消息？');
+      }
+      ctx.log('★② AI 消息右滑→面板→确认弹窗', dlg ? 'pass' : 'fail',
+        dlg ? `右滑出回收站圆钮(${Math.round(knob.xc)},${Math.round(knob.yc)})、点击弹防误触确认（0.235.2 end→start 统一生效）`
+            : knob ? '面板圆钮在屏但点击未弹确认（圆钮定位偏差或点击失效——dump 已存证）'
+                   : '右滑后未找到 44vp 回收站圆钮（面板未出——0.235.2 方向统一回归红线；dump 已存证）');
+      if (dlg) {
+        const c = await uiClickText(serial, '取消', { exact: true, waitMs: 1000 });
+        ctx.log('③ 取消保留消息', 'pass', `已点「取消」(${c.x},${c.y})——消息保留（数据安全红线）`);
+        await sleep(600);
+        await sh(serial, `uitest uiInput click ${Math.round(body.xc)} ${Math.round(body.y2 + 80)}`, 15000); // 点气泡底空白收面板
+        await sleep(700);
+      }
+      // ④ 用户消息右滑（同面板同链路）：下滑×2 露出用户消息区，取左对齐 2 按钮行 y 为滑动手势 y
+      const scrM = String((JSON.parse(d.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+      const scrW = scrM ? +scrM[3] : 2560, scrH = scrM ? +scrM[4] : 1700;
+      const scrollUpS = `uitest uiInput swipe ${Math.round(scrW / 2)} ${Math.round(scrH * 0.35)} ${Math.round(scrW / 2)} ${Math.round(scrH * 0.8)} 500`;
+      await sh(serial, scrollUpS, 20000);
+      await sleep(900);
+      await sh(serial, scrollUpS, 20000);
+      await sleep(1200);
+      const dU = await dumpAuditNodes(serial);
+      const candsU = dU.ok ? dU.nodes.filter((n) => !String(n.text || '').trim() && n.w >= 12 && n.h >= 12 && n.w <= 60 && n.h <= 60
+        && Math.abs(n.w - n.h) <= Math.max(n.w, n.h) * 0.35 && Math.abs(n.x - body.x) < 20) : [];
+      const uY = candsU.length ? Math.round(candsU.map((n) => n.yc).sort((a, b) => a - b)[Math.floor(candsU.length / 2)]) : 0;
+      if (!uY) {
+        ctx.log('★④ 用户消息右滑→面板→确认弹窗', 'skip', '下滑后未找到用户消息操作行（无法定位用户消息行 y）——用户行存在性已由 CHAT-ACTIONS ⑥ 断言');
+      } else {
+        await sh(serial, `uitest uiInput drag ${Math.round(body.xc)} ${uY} ${Math.round(body.xc + 560)} ${uY} 300`, 20000);
+        await sleep(1200);
+        const du = await dumpAuditNodes(serial);
+        const knob2 = du.ok ? du.nodes.find((n) => !String(n.text || '').trim()
+          && String(n.backgroundColor || '').toUpperCase() === '#FF7C4DFF' && n.x > 480 && n.x < 1500 && n.w >= 60) : null;
+        let dlg2 = false;
+        if (knob2) {
+          await sh(serial, `uitest uiInput click ${Math.round(knob2.xc)} ${Math.round(knob2.yc)}`, 15000);
+          await sleep(1200);
+          const dd2 = await dumpLayout(serial);
+          dlg2 = dd2.text.includes('删除这条消息？');
+        }
+        ctx.log('★④ 用户消息右滑→面板→确认弹窗', dlg2 ? 'pass' : 'fail',
+          `用户行 y=${uY} 右滑——` + (dlg2 ? '面板+确认链路通（用户消息 start 侧原有行为保持 ✓）' : '未见确认弹窗（面板未出或圆钮定位偏差；dump 已存证）'));
+        if (dlg2) await uiClickText(serial, '取消', { exact: true, waitMs: 900 });
+      }
+    } },
+
+  // ---------- ★ 0.235.2 折叠三角统一（用户拍板「折叠行小三角和背单词卡左边的小三角应该一样」） ----------
+  // fontSize dump 不可达（0.229.26 实证）→ 相对几何断言：屏内 ▶/▼/▲ 三角 Text 节点高度全族一致（max/min<1.35）；
+  //   旧版折叠行 ▸/▾ 16fp 高度≈1.6×fs(10) 三角必被抓。'▸'/'▾' 字形残留=直接 fail（0.235.2 起消息区禁用细小字形）
+  { id: 'CHAT-FOLD', suite: 'chat', name: '折叠三角·章节折叠行与术卡三角同大小、无旧字形残留（0.235.2 统一回归）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '折叠三角断言（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      if (!(await navIntoChat(ctx, serial))) return;
+      const d = await dumpAuditNodes(serial);
+      if (!d.ok) { ctx.log('① 审计 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      // ① 折叠行存在性（「共 N 节」=章节折叠行特征文案；无=当前对话无 ≥3 节长回复或折叠开关关，如实 skip）
+      const foldRow = d.nodes.find((n) => /共 \d+ 节/.test(String(n.text || '')));
+      if (!foldRow) { ctx.log('★折叠行三角统一', 'skip', '当前对话无章节折叠行（无 ≥3 节长回复或折叠开关关）——换有长 AI 回复的气泡再跑本用例'); return; }
+      ctx.log('① 折叠行在屏', 'pass', `「${String(foldRow.text).slice(0, 24)}」(${Math.round(foldRow.x)},${Math.round(foldRow.y)})`);
+      // ② 旧字形清零（0.235.1 折叠行 ▸/▾ 已换实心 ▶/▼）——★首轮盯屏修正：发送 ▾ 下拉（输入区常驻）合法
+      //   保留 1 处、文件夹树 picker 不在对话页——'▸' 应零残留；'▾' 允许 ≤1（恰=发送下拉）
+      const legacyTri = (d.text.match(/▸/g) || []).length;
+      const legacyDown = (d.text.match(/▾/g) || []).length;
+      ctx.log('★② 旧字形 ▸ 清零', legacyTri === 0 ? 'pass' : 'fail',
+        legacyTri === 0 ? `全屏无 ▸（0.235.2 折叠行实心 ▶ 已全量替换；▾=${legacyDown} 处${legacyDown <= 1 ? '（=发送下拉，合法）' : '（>1 需盯屏复核）'}）` : `残留 ${legacyTri} 处 ▸（折叠行旧字形未清干净——0.235.2 UI_GUIDELINES §13 红线）`);
+      // ③ 三角大小全族一致（▶ 折叠收起 / ▼ 折叠展开 / ▲▼ 复习区术卡+编辑器卡，全 fs(10) 同族）
+      const tris = d.nodes.filter((n) => ['▶', '▼', '▲'].includes(String(n.text || '').trim()));
+      artSave('CHAT-FOLD', `tris-${dev.id}.json`, tris.map((n) => ({ t: n.text, x: n.x, y: n.y, w: n.w, h: n.h })));
+      if (tris.length === 0) {
+        ctx.log('★③ 三角大小一致', 'fail', '折叠行在屏但未找到任何 ▶/▼ 三角节点（三角未渲染或 dump 缺失）');
+      } else if (tris.length === 1) {
+        ctx.log('★③ 三角大小一致', 'warn', `仅 1 个三角（${tris[0].text} ${Math.round(tris[0].h)}px）在屏——无第二对象可比对（复习区词库空时术卡三角不出现），单对象存在性 ✓`);
+      } else {
+        const hs = tris.map((n) => n.h);
+        const ratio = Math.max(...hs) / Math.min(...hs);
+        ctx.log('★③ 三角大小一致', ratio < 1.35 ? 'pass' : 'fail',
+          `${tris.length} 个三角（${tris.map((n) => String(n.text)).join(' ')}）高度 ${Math.round(Math.min(...hs))}~${Math.round(Math.max(...hs))}px，max/min=${ratio.toFixed(2)}（<1.35=同字号族；旧版 16fp vs fs(10)≈1.6 必被抓）——验收线：折叠行与术卡三角放一起看不出大小差异`);
+      }
+    } },
+
 
   // ---------- 功能⑤ 云端语音朗读 API（★ 0.232.0；用户规则：没填 Key 的设备不测） ----------
   { id: 'TTS-API', suite: 'tts', name: '云端TTS·openspeech 直打验证（读设备已填配置；未填 Key=skip；55000000 自动官方音色回退）', semi: false, scope: 'each',

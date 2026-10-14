@@ -1295,19 +1295,20 @@ export struct ChatPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  // ★ 0.235.1：折叠行——整行可点 toggle（收起态整行卡片）：三角(16fp/宽22 项目定式，translate 下移 1vp
-  //   修字形基线偏上=与标题垂直居中) + 章节标题(14fp，完整呈现可换行——禁截断省略号，0.235.1 用户拍板：
-  //   「标题一定要呈现完整，哪怕两行三行」) + 右「共 N 节 · 约 X 字」(11fp/TEXT_SECONDARY)；「第 X 节」序号
-  //   已删——AI 生成 MD 的 ## 标题自带 123 序号，UI 再加前缀=把标题拆开还挤占窄屏宽度（0.235.1）；
+  // ★ 0.235.1：折叠行——整行可点 toggle（收起态整行卡片）：章节标题(14fp，完整呈现可换行——禁截断省略号，
+  //   0.235.1 用户拍板：「标题一定要呈现完整，哪怕两行三行」) + 右「共 N 节 · 约 X 字」(11fp/TEXT_SECONDARY)；
+  //   「第 X 节」序号已删——AI 生成 MD 的 ## 标题自带 123 序号，UI 再加前缀=把标题拆开还挤占窄屏宽度（0.235.1）；
   //   无 ## 兜底段显示「第 X 段 · 约 Y 字」（任务书 §2.3，兜底段无标题、序号是唯一标识故保留）
+  // ★ 0.235.2：三角统一术卡样式（用户拍板「折叠行小三角和背单词卡左边的小三角应该一样」）——
+  //   实心字形 ▼展开/▶收起 + fs(10) + 紧贴式 margin right 4（对齐 4206 复习区词行三角，
+  //   推翻 0.235.1 的 ▸/▾ 16fp+width(22) 固定宽容器=字形细小+视觉 7vp 松间距）
   @Builder
   FoldRow(msg: ChatMessage, sections: FoldSection[], sec: FoldSection, si: number) {
     Row({ space: 4 }) {
-      Text(this.expandedSetFor(msg.messageId, sections).has(si) ? '▾' : '▸')
-        .fontSize(16)
-        .width(22)
+      Text(this.expandedSetFor(msg.messageId, sections).has(si) ? '▼' : '▶')
+        .fontSize(this.fs(10))
         .fontColor(BRAND_SECONDARY)
-        .translate({ y: 1 })
+        .margin({ right: 4 })
       if (sec.numbered) {
         Text(sec.title)
           .fontSize(14)
@@ -2416,6 +2417,25 @@ export struct ChatPage {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
       pasteboard.getSystemPasteboard().setData(data).catch((err: Error) => {
         // 写入失败静默忽略（复制为辅助功能，不打断主流程）
+      });
+    } catch (e) {
+      // 复制异常静默忽略（防崩溃）
+    }
+  }
+
+  // ★ 0.235.2：复制全文——消息操作行按钮（AI 消息 stripAnchorMarks 剥锚点标记防污染剪贴板，
+  //   用户消息原文直取）；成功 toast「已复制全文」，失败静默（与 onToolbarCopy 同口径）
+  copyFullMessage(msg: ChatMessage): void {
+    const text = msg.role === 'assistant' ? stripAnchorMarks(msg.content, false) : msg.content;
+    if (text.length === 0) {
+      return;
+    }
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      pasteboard.getSystemPasteboard().setData(data).then(() => {
+        this.showToastSafe('已复制全文');
+      }).catch((err: Error) => {
+        // 写入失败静默忽略
       });
     } catch (e) {
       // 复制异常静默忽略（防崩溃）
@@ -4009,8 +4029,8 @@ export struct ChatPage {
             ForEach(this.currentMessages, (msg: ChatMessage) => {
               ListItem() {
                 Row() {
-                  // ★ 0.218.5 用户拍板：AI 消息常驻红 × 撤除——删除入口改为左滑露回收站圆钮面板
-                  //   （ListItem.swipeAction end 侧），点击走原确认链路
+                  // ★ 0.218.5 用户拍板：AI 消息常驻红 × 撤除——删除入口改为滑出回收站圆钮面板；
+                  //   ★ 0.235.2：滑动方向统一右滑（start 侧，与用户消息一致）
                   Column() {
                     // 图片缩略图（在文字上方）
                     if (msg.imageUrl.length > 0) {
@@ -4033,6 +4053,9 @@ export struct ChatPage {
                       if (msg.role === 'user') {
                         // 用户消息：纯文本渲染（保持原有逻辑）
                         // ★ 0.145：划词翻译——controller 供关闭菜单；长按进入系统选择模式并弹自研悬浮操作栏（替代原「选择文本/删除」弹窗，禁用小艺原生菜单）
+                        // ★ 0.235.2：包 Column 加操作行（复制全文+删除，与 AI 操作行同款同左对齐——用户拍板
+                        //   「我人类发给 AI 的那个段落下面的东西也得有这两个小按钮」）
+                        Column() {
                         Text(msg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|u`) })
                           .fontSize(this.fs(16))
                           .lineHeight(this.fs(24))
@@ -4061,7 +4084,34 @@ export struct ChatPage {
                             this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? 0 : 1,
                             this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? msg.content.length : 0
                           )
-                       } else {
+                        // ★ 0.235.2：用户消息操作行——复制全文+删除（无刷新/喇叭/token，AI 消息专属）；
+                        //   左对齐 margin left 10 = 气泡 padding 10，与 AI 操作行同款定式（space 8、图标 14、padding 4）
+                        Row({ space: 8 }) {
+                          Row() {
+                            Image($r('app.media.copy'))
+                              .width(14)
+                              .height(14)
+                              .objectFit(ImageFit.Contain)
+                          }
+                          .padding(4)
+                          .onClick(() => {
+                            this.copyFullMessage(msg);
+                          })
+                          Row() {
+                            Image($r('app.media.trash'))
+                              .width(14)
+                              .height(14)
+                              .objectFit(ImageFit.Contain)
+                          }
+                          .padding(4)
+                          .onClick(() => {
+                            this.requestDeleteMessage(msg.messageId);
+                          })
+                        }
+                        .margin({ top: 4, left: 10 })
+                        }
+                        .alignItems(HorizontalAlign.Start)
+                        } else {
                          // ★ 0.146：包裹容器——气泡与操作行组成同宽块，token 统计行左缘对齐气泡左缘（用户要求）
                          Column() {
                          // ★ AI 消息：Markdown 分段渲染（0.121）
@@ -4476,10 +4526,34 @@ export struct ChatPage {
                         if (msg.role === 'assistant') {
                           // ★ 0.224.4：操作行整齐划一（用户三要求）——①统一间隙 Row({space:8})（原各元素自定义
                           //   padding 参差不齐：喇叭 left 8/right 4、刷新 left 0/right 4）②对称边距：刷新左
-                          //   padding 4 = 喇叭右 padding 4（按钮自身触摸热区对称，行右缘 margin 10 与气泡
-                          //   内文字右缘对齐维持 0.148 定稿）③模型名横向滑动区（maxWidth 100 钳制+可滑看
-                          //   全名+滚动条隐藏——小字元数据不配滚动条；行总宽恒不超气泡宽度）
+                          //   padding 4 = 喇叭右 padding 4（按钮自身触摸热区对称）③模型名横向滑动区
+                          //   （maxWidth 100 钳制+可滑看全名+滚动条隐藏——小字元数据不配滚动条；行总宽恒不超气泡宽度）
+                          // ★ 0.235.2：①新增复制全文+删除按钮（用户拍板「刷新左边第 1 个复制全文、第 2 个删除」，
+                          //   删除走 requestDeleteMessage 确认链路=与右滑删除同一逻辑）②整行左对齐（用户拍板
+                          //   「贴边放左边、左对齐」——推翻 0.148「统计行右对齐」旧定稿，margin right 10 → left 10）
                           Row({ space: 8 }) {
+                            // ★ 0.235.2：复制全文——本条 AI 回复剥锚点标记后整段写剪贴板
+                            Row() {
+                              Image($r('app.media.copy'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding(4)
+                            .onClick(() => {
+                              this.copyFullMessage(msg);
+                            })
+                            // ★ 0.235.2：删除本条回复——复用滑动删除同一确认链路
+                            Row() {
+                              Image($r('app.media.trash'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding(4)
+                            .onClick(() => {
+                              this.requestDeleteMessage(msg.messageId);
+                            })
                             // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
                             // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
                             Row() {
@@ -4526,10 +4600,10 @@ export struct ChatPage {
                               this.startTTS(msg);
                             })
                           }
-                          .margin({ top: 4, right: 10 }) // ★ 0.148：右对齐后 right 10 = 气泡 padding 10，喇叭与气泡内文字右缘对齐；★ 0.224.4：元素间隙统一 space 8、两侧按钮 padding 对称 4
+                          .margin({ top: 4, left: 10 }) // ★ 0.235.2：左对齐——left 10 = 气泡 padding 10，行首按钮与气泡内文字左缘对齐（用户拍板，推翻 0.148 右对齐定稿）；★ 0.224.4：元素间隙统一 space 8、按钮 padding 对称 4
                         }
                         }
-                        .alignItems(HorizontalAlign.End) // ★ 0.148：包裹容器内操作行贴气泡右缘（用户要求统计行+喇叭右对齐）；气泡为最宽子元素不受影响
+                        .alignItems(HorizontalAlign.Start) // ★ 0.235.2：操作行贴气泡左缘（用户拍板「其他几个按钮都是左对齐」——推翻 0.148 右对齐）；气泡为最宽子元素不受影响
                       }
                       }
                   }
@@ -4543,17 +4617,14 @@ export struct ChatPage {
                 // ★ 0.145：移除整行长按手势——划词改为长按气泡文本本身（bindSelectionMenu 自研悬浮栏），
                 // 原「选择文本/删除」二级弹窗随之移除
               }
-              // ★ 0.218.5 用户拍板：消息删除改滑出式，且**单向滑动**——用户消息（靠左）只能**右滑**露面板、
-              //   AI 消息（靠右）只能**左滑**露面板（面板出现在消息外侧空隙，不遮挡内容）；样式对齐知识库/
-              //   单词库终式（44×44 品牌紫圆钮+白 trash 20，外容器 72 满高 Center）；点击走原确认链路；
-              //   swipeAction start/end 传 undefined=该方向禁用滑动（用户消息禁左滑、AI 禁右滑）
+              // ★ 0.235.2 用户拍板：滑动删除方向统一「往右滑」——用户消息与 AI 消息都从 start 侧滑出
+              //   回收站圆钮面板（推翻 0.218.5「方向分治」：原用户=start/AI=end 双向分治，用户嫌冗余
+              //   「都是一模一样的逻辑」）；样式对齐知识库/单词库终式（44×44 品牌紫圆钮+白 trash 20，
+              //   外容器 72 满高 Center）；点击走原确认链路；swipeAction end 不再传=左滑禁用
               .swipeAction({
-                start: msg.role === 'user' ? (): void => {
+                start: (): void => {
                   this.swipeDeleteMessagePanel(msg)
-                } : undefined,
-                end: msg.role === 'assistant' ? (): void => {
-                  this.swipeDeleteMessagePanel(msg)
-                } : undefined
+                }
               })
             }, (msg: ChatMessage) => msg.messageId)
           }
