@@ -57,3 +57,4 @@ testing/console/results.json
 testing/console/artifacts/
 testing/console/server.log
 testing/console/server.pid
+testing/console/.watchdog-skip
