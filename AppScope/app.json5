@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000266, // ★ 0.237.0：锚点二期钩子树重构与折叠三角统一（钩子六类砍link加rephrase/predict/recap/折叠三角SVG军令统一/小标题品牌色+术语荧光底/密度两档疏密默认疏）；上一版 0.236.2：试听55000000根因修复；更早历史见 MEMORY.md
+    "versionCode": 1000267, // ★ 0.237.1：划词取词基准修复（blockRenderedText=渲染态文本，根治富文本消息划词整体前移选错词）；上一版 0.237.0：锚点二期钩子树重构与折叠三角统一；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

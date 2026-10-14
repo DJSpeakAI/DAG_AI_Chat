@@ -46,7 +46,7 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
- import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）
+  import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）；★ 0.237.1：blockRenderedText（划词取词基准=渲染态文本）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
@@ -1105,11 +1105,13 @@ export struct ChatPage {
         }
       })
       .onTextSelectionChange((start: number, end: number) => {
-        this.handleSelectionChange(selKey, blockPlainText(blk), start, end);
+        // ★ 0.237.1：取词基准=渲染态文本（前缀+剥行内标记）——选区偏移按渲染 Span 序列计，
+        //   用 blockPlainText（原始行含 **）会整体前移选错词
+        this.handleSelectionChange(selKey, blockRenderedText(blk), start, end);
       })
       .selection(
         this.selectAllKey.startsWith(selKey + '|') ? 0 : 1,
-        this.selectAllKey.startsWith(selKey + '|') ? blockPlainText(blk).length : 0
+        this.selectAllKey.startsWith(selKey + '|') ? blockRenderedText(blk).length : 0
       )
   }
 

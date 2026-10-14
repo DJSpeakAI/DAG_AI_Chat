@@ -373,6 +373,30 @@ export function blockPlainText(block: MdBlock): string {
   return block.lines.join('\n');
 }
 
+// ★ 0.237.1：块的「渲染态文本」——与 ChatPage.MdBlockText 实际渲染的 Span 序列逐字符一致：
+//   li 前缀 '• '、oli 前缀 order+' '、行内 parseInlineMd 剥 **/~~/`/[链](url) 标记、行间 '\n'。
+//   划词选区偏移（onTextSelectionChange）按渲染文本计，取词/全选长度必须用同一字符串——
+//   此前误用 blockPlainText（原始行含标记、无列表前缀），凡消息带行内标记，划词取词整体前移（用户实锤）。
+//   纯函数=ChatPage 划词基准 + ohosTest 断言双消费（§12.13）。
+export function blockRenderedText(block: MdBlock): string {
+  let prefix = '';
+  if (block.kind === 'li') {
+    prefix = '• ';
+  } else if (block.kind === 'oli') {
+    prefix = block.order + ' ';
+  }
+  const renderedLines: string[] = [];
+  for (let i = 0; i < block.lines.length; i++) {
+    const spans = parseInlineMd(block.lines[i]);
+    let t = '';
+    for (let s = 0; s < spans.length; s++) {
+      t += spans[s].text;
+    }
+    renderedLines.push(t);
+  }
+  return prefix + renderedLines.join('\n');
+}
+
 // 标题字号映射（基准 16 正文——ChatPage fs() 缩放前的 vp 值）
 export function headerFontSize(kind: string): number {
   switch (kind) {

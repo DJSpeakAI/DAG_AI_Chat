@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.237.0.1'; // ★ 四段制：前三段跟 APP（0.237.0=锚点二期钩子树重构与折叠三角统一），第四段=测试台工具版本 // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.237.1.1'; // ★ 四段制：前三段跟 APP（0.237.1=划词取词基准修复 blockRenderedText），第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -1918,6 +1918,108 @@ const CASES = [
         gone ? `已点 (${bar.x2 + 36},${bar.y})——引用栏已清（Q4 ✓，一次性会话态可重引）` : `引用栏仍在（× 未命中——点(${bar.x2 + 36},${bar.y})，dump 存证人工复核）`);
     } },
 
+  // ---------- ★ 0.237.1 划词取词准确性回归（用户实锤：划词没对准划选的词、反而取到前面几个词） ----------
+  // 根因：MdBlockText 取词基准=blockPlainText（原始行含 **/~~/[链](url) 标记、无列表前缀），而选区偏移按
+  //   渲染 Span 序列计（剥标记+前缀 '• '/'1. '）→ 凡消息带行内标记，取词整体前移。修复=blockRenderedText。
+  // 测法（自洽对照，无需固定 fixture）：长按正文行尾附近字符 → 系统按渲染文本选中该词 → 点「翻译」→
+  //   浮窗标题（wordPopupQuery）=取词结果 → 与 dump 实录的渲染文本对照：①必须是渲染文本的子串
+  //   ②必须落在行尾窗口内（旧 bug 整体前移=取到前面的词，必出窗）③不得含 markdown 标记字符。
+  //   确定性保证由 ohosTest MdInline.test（rendered_* 三断言）承担；本用例=设备端真链路回归。
+  // 收尾：点遮罩关浮窗（closeWordPopup 同时取消查词请求——token 消耗≈0；零数据写入）。
+  { id: 'SEL-ACCURACY', suite: 'chat', name: '划词取词·长按行尾词→翻译浮窗原文=所划之词（0.237.1 修复回归）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '划词取词（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      if (!(await navIntoChat(ctx, serial))) return;
+      // ① 选目标正文节点：单行（origBounds 全高≤80px≈1 行 lineHeight）、≥8 字、CJK 为主（字宽可估）——取最长者（偏 AI 消息）
+      //    ★ R20261014194848 首跑实锤坑：司忆区词条行=单行省略号节点（dump text 含全文但屏显截断「…」）→ 排除尾部省略号
+      //    ★ R20261014195159 二跑实锤坑：多行正文块滚出屏只剩「残条」（bounds h=19px、origBounds h=120px）——
+      //      bounds 是可视残条高度，单行判定/字宽估算全错 → 必须用 origBounds 全高判单行 + bounds≈origBounds（完全可见）
+      const nodes = await dumpAuditNodes(serial);
+      const CHROME = ['条对话', '输入问题', '发送', '返回', '气泡', '朗读', '刷新', '条回复', '个模型', '引用：', '复制全文'];
+      const cjkOf = (t) => (String(t).match(/[\u4e00-\u9fff\uff00-\uffef\u3000-\u303f]/g) || []).length;
+      const isCjkCh = (ch) => /[\u4e00-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch);
+      const parseRect = (s) => { const m = String(s || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/); return m ? { h: +m[4] - +m[2], w: +m[3] - +m[1] } : null; };
+      const estW = (t, fs) => { let w = 0; for (let i = 0; i < t.length; i++) w += isCjkCh(t.charAt(i)) ? fs : fs * 0.55; return w; };
+      const cand = nodes.nodes.filter((n) => {
+        const t = String(n.text || '').trim();
+        if (t.length < 8) return false;
+        const ob = parseRect(n.origBounds);
+        const fullH = ob ? ob.h : n.h;                                       // origBounds=完整高度（bounds=可视残条）
+        if (fullH <= 0 || fullH > 80) return false;                          // 单行（按完整高度判）
+        if (ob && n.h < fullH - 2) return false;                             // 滚出屏残条——只测完全可见的行
+        if (cjkOf(t) / t.length < 0.5) return false;
+        if (CHROME.some((k) => t.includes(k))) return false;
+        if (t.endsWith('…') || t.endsWith('...')) return false;               // 省略号截断行（司忆区词条行同款）
+        if (estW(t, Math.max(14, fullH / 1.5)) > n.w * 1.06) return false;    // 全文宽超节点宽=显示不全（横滑/截断）
+        return true;
+      }).sort((a, b) => String(b.text).length - String(a.text).length);
+      if (!cand.length) { ctx.log('① 定位单行正文节点', 'fail', '未见「单行完整显示」的正文节点（司忆区截断行/滚屏残条已排除）——下滑露出更多正文再跑'); return; }
+      const body = cand[0];
+      const bodyText = String(body.text).trim();
+      const L = bodyText.length;
+      ctx.log('① 定位单行正文节点', 'pass', `(${Math.round(body.xc)},${Math.round(body.yc)})「${bodyText.slice(0, 18)}…」共 ${L} 字（h=${Math.round(body.h)}px 宽${Math.round(body.w)}px）`);
+      // ② 按字符宽度估算行尾第 L-2 字的落点（CJK≈fontSizePx、其他≈0.55×；fontSizePx≈完整高/1.5——lineHeight=1.5×fontSize）
+      const fsPx = (() => { const ob = parseRect(body.origBounds); return Math.max(14, (ob ? ob.h : body.h) / 1.5); })();
+      const wOf = (ch) => (/[\u4e00-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? fsPx : fsPx * 0.55);
+      let cum = 0;
+      for (let i = 0; i < L - 2; i++) cum += wOf(bodyText.charAt(i));
+      const pressX = Math.min(body.x + cum + wOf(bodyText.charAt(L - 2)) / 2, body.x2 - 8);
+      const pressY = Math.round(body.yc);
+      ctx.log('② 估算行尾字符落点', 'pass', `长按 (${Math.round(pressX)},${pressY})（目标=倒数第 2 字「${bodyText.charAt(L - 2)}」附近，字宽≈${Math.round(fsPx)}px）`);
+      await uiLongPress(serial, Math.round(pressX), pressY, 1600);
+      // ③ 工具栏弹出（选中激活的可观测代理——同 SEL-CLEAR）
+      const d1 = await ctx.art.dump(`SEL-ACCURACY-${dev.id}`, 'dump-toolbar.json', serial);
+      const toolbarOn = d1.text.includes('入知识库');
+      ctx.log('③ 长按后悬浮工具栏弹出', toolbarOn ? 'pass' : 'fail', toolbarOn ? '划词选中已激活' : '未见工具栏（长按未触发选择或落点在字外）');
+      if (!toolbarOn) return;
+      // ④ 点「翻译」→ 浮窗标题（wordPopupQuery）立即显示取词结果（不等 AI 返回）
+      await uiClickText(serial, '翻译', { exact: true, waitMs: 900 });
+      const d2 = await dumpFast(serial);
+      await ctx.art.save(`SEL-ACCURACY-${dev.id}`, 'dump-popup.json', d2.text);
+      const titleAndLoading = (() => {
+        const hits = [];
+        try {
+          const walk = (n) => {
+            if (!n || typeof n !== 'object') return;
+            if (n.attributes) {
+              const t = String(n.attributes.text || '').trim();
+              const m = String(n.attributes.bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+              if (t && m) hits.push({ t, y: (+m[2] + +m[4]) / 2, x: (+m[1] + +m[3]) / 2 });
+            }
+            for (const k of Object.keys(n)) if (n[k] && typeof n[k] === 'object') walk(n[k]);
+          };
+          walk(JSON.parse(d2.text));
+        } catch (_) { /* dump 非 JSON */ }
+        const loading = hits.find((h) => h.t === '查询中...');
+        if (!loading) return { loading: null, title: null };
+        const above = hits.filter((h) => h.t !== '查询中...' && h.y < loading.y && Math.abs(h.x - loading.x) < 260 && h.t.length <= 12 && h.t !== bodyText);
+        above.sort((a, b) => b.y - a.y);
+        return { loading, title: above.length ? above[0] : null };
+      })();
+      if (!titleAndLoading.loading) { ctx.log('④ 翻译浮窗出现', 'fail', '未见「查询中...」（浮窗未弹出或翻译点击未生效）'); return; }
+      if (!titleAndLoading.title) { ctx.log('④ 浮窗标题定位', 'fail', '浮窗在屏但标题节点未定位到（dump 存证人工复核）'); return; }
+      const got = titleAndLoading.title.t;
+      // ⑤ 三断言：子串 / 行尾窗口 / 无标记字符（重复字词取最后出现位置判尾部窗口——首次出现会误判）
+      const isSub = bodyText.includes(got);
+      const tailWin = Math.max(5, Math.ceil(L * 0.25));
+      const pos = isSub ? bodyText.lastIndexOf(got) : -1;
+      const inTail = pos >= L - tailWin;
+      const noMark = !/[*~`\[]/.test(got);
+      ctx.log('★取词=所划之词（渲染文本子串）', isSub ? 'pass' : 'fail',
+        isSub ? `「${got}」∈ 渲染正文 ✓` : `取词「${got}」不是渲染文本的子串（取到标记/跨界文本——取词基准错位实锤）`);
+      ctx.log('★取词落在划选位置（行尾窗口）', inTail ? 'pass' : 'fail',
+        inTail ? `「${got}」位于倒数 ${L - pos}/${tailWin} 字窗口内（划哪取哪 ✓）` : `「${got}」位于第 ${pos + 1} 字——整体前移到划选位置之前（0.237.1 前「取到前面几个词」用户实锤复现）`);
+      ctx.log('★取词无 markdown 标记残留', noMark ? 'pass' : 'warn',
+        noMark ? '不含 * ~ ` [ 等标记字符 ✓' : `「${got}」含标记字符（旧基准=原始行含 ** 的直接证据）`);
+      // ⑥ 收尾：点浮窗上方遮罩关闭（closeWordPopup 同时 cancel 查词请求——省 token + 零数据写入）
+      await sh(serial, `uitest uiInput click ${Math.round(titleAndLoading.loading.x)} ${Math.round(Math.max(120, titleAndLoading.loading.y - 420))}`, 15000);
+      await sleep(900);
+      const d3 = await dumpFast(serial);
+      ctx.log('⑥ 收尾关浮窗（取消查词）', d3.text.includes('查询中') ? 'warn' : 'pass', d3.text.includes('查询中') ? '浮窗仍在（遮罩点击未关——人工关一下，不阻断结果）' : '浮窗已关闭，查词请求已取消 ✓');
+    } },
+
   // ---------- ★ 0.235.2 消息操作行（AI/用户消息下方「复制全文+删除」按钮；用户拍板刷新左边第 1 复制第 2 删除+整行左对齐） ----------
   // 操作行按钮=无文字 svg 图标（dump 无 text）——几何聚类定位：与正文左缘对齐、成行排列的近正方形小节点群
   //   （AI 行 4：复制/删除/刷新/喇叭；用户行恰 2：复制/删除）；fontSize dump 不可达（0.229.26 实证），
@@ -2366,7 +2468,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }

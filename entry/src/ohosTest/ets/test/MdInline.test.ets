@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseInlineMd, parseBlockMd, blockPlainText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, BREATH_POOL, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock } from '../../../main/ets/utils/MdInline';
+import { parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, BREATH_POOL, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock } from '../../../main/ets/utils/MdInline';
 
 // ★ 0.231.0：Markdown 行内/块级解析器单元断言（project_rule §12.13 测试覆盖军令——
 //   新功能必须带测试项；纯函数模块=ChatPage 渲染与本断言双消费）
@@ -96,6 +96,41 @@ export default function mdInlineTest() {
       expect(blocks[0].kind).assertEqual('p');
       const spans = parseInlineMd('**要点说明** 正文');
       expect(spans[0].bold).assertTrue();
+    })
+    // ---- ★ 0.237.1：blockRenderedText 划词取词基准（渲染态文本——修「划词取词整体前移」bug 的回归断言）----
+    it('rendered_text_strips_inline_markers', 0, () => {
+      const blocks = parseBlockMd(['这是**重点**内容和[链接](https://example.com)尾部']);
+      expect(blocks[0].kind).assertEqual('p');
+      // 渲染文本剥 ** 与链接 url（保留锚文本）——与 Span 渲染序列逐字符一致
+      expect(blockRenderedText(blocks[0])).assertEqual('这是重点内容和链接尾部');
+      // blockPlainText 保留原始行（含标记）——两者不同=bug 复现基线（旧代码拿它当取词基准）
+      expect(blockPlainText(blocks[0])).assertEqual('这是**重点**内容和[链接](https://example.com)尾部');
+    })
+    it('rendered_text_list_prefix_offset_basis', 0, () => {
+      // ★ 输入注意：标记前必须是 CJK/空格——ASCII 字母数字后跟 ** 按 canOpenMarker 设计=字面量（3*4*5 防线）
+      const blocks = parseBlockMd(['- 单词甲**加粗**单词乙']);
+      expect(blocks[0].kind).assertEqual('li');
+      // 渲染文本含 '• ' 前缀（前缀 Span 承列表符号）——选区偏移含前缀，取词基准必须同构
+      expect(blockRenderedText(blocks[0])).assertEqual('• 单词甲加粗单词乙');
+      // 偏移一致性：在渲染文本上划选「单词乙」，按渲染偏移取词必须命中「单词乙」
+      //（旧基准=原始行，同偏移取到「粗单词」=「往前面选择」用户实锤）
+      const rendered = blockRenderedText(blocks[0]);
+      const selStart = rendered.indexOf('单词乙');
+      expect(rendered.substring(selStart, selStart + 3)).assertEqual('单词乙');
+      // 有序列表前缀=序号+空格
+      const oli = parseBlockMd(['3. 有序**加粗**项']);
+      expect(blockRenderedText(oli[0])).assertEqual('3. 有序加粗项');
+      // 引用多行：行间 '\n' 拼接、无前缀
+      const q = parseBlockMd(['>引用一**粗**', '>引用二']);
+      expect(blockRenderedText(q[0])).assertEqual('引用一粗\n引用二');
+    })
+    it('rendered_text_plain_and_unclosed_passthrough', 0, () => {
+      // 无标记段落：渲染态=纯文本零损耗（普通消息划词不受影响）
+      const blocks = parseBlockMd(['普通中文句子。']);
+      expect(blockRenderedText(blocks[0])).assertEqual('普通中文句子。');
+      // 未闭合标记=字面量（流式安全），渲染态同样原样保留
+      const stream = parseBlockMd(['未闭合**加粗']);
+      expect(blockRenderedText(stream[0])).assertEqual('未闭合**加粗');
     })
     // ---- ★ 0.232.0：mdToSpeakableText（TTS 朗读文本清洗——「星号都读进去」根治） ----
     it('speak_strips_inline_markers', 0, () => {

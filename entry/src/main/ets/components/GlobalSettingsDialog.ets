@@ -173,7 +173,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.237.0'; // ★ 0.237.0：锚点二期钩子树重构与折叠三角统一（钩子六类砍link加rephrase/predict/recap/折叠三角SVG军令统一/小标题品牌色+术语荧光底/密度两档疏密）；上一版 0.236.2：试听55000000根因修复
+const APP_VERSION: string = 'v0.237.1'; // ★ 0.237.1：划词取词基准修复（富文本消息划词整体前移选错词根治）；上一版 0.237.0：锚点二期钩子树重构与折叠三角统一
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
