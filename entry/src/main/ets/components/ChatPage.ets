@@ -38,7 +38,7 @@ import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFold
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
-import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）
+import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, orderedReviewWords, orderedReviewCards, rotateSlice, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）；★ 0.237.3：换一批（orderedReviewWords/Cards 全序视图 + rotateSlice 环绕轮换）
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：司忆区跟随全局卡面模式（单面/双面）
 import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
@@ -601,6 +601,12 @@ export struct ChatPage {
   private textControllers: Map<string, TextController> = new Map(); // 每个 Text 独立 controller（关闭选择菜单用）
   private wordQueryController: StreamController | null = null;      // 进行中的查词请求（浮窗关闭时取消）
   private reviewCache: Map<string, ReviewCacheEntry> = new Map();   // 生词复习缓存（msgId → 随机词组）
+  // ★ 0.237.3：换一批——复习区整批轮换（AI 回复操作栏 shuffle 按钮）
+  //   rerollSeq 挂 @Local：ForEach 数据源以第二参读到它建立渲染依赖（漏挂 @Local 依赖链真机不可靠——历史雷）；
+  //   两 offset Map 记录各消息已轮换偏移（确定性排序下直接重抽=同一批，必须偏移环绕）
+  @Local rerollSeq: number = 0;
+  private rerollWordOffsets: Map<string, number> = new Map();   // 生词轮换偏移（msgId → 跳过词数）
+  private rerollCardOffsets: Map<string, number> = new Map();  // 知识卡轮换偏移（msgId → 跳过卡数）
   // ★ 0.146：知识库卡片编辑弹窗状态（AI 生成草稿 → 用户编辑确认 → 入库；AI 不直接入库）
   @Local knowledgeEditVisible: boolean = false;  // 编辑弹窗可见
   @Local knowledgeCardTitle: string = '';        // 标题输入框内容（AI 草稿自动填充，可自由编辑）
@@ -2865,12 +2871,20 @@ export struct ChatPage {
   // ★ 0.187.0：选词改走记忆算法（到期词按遗忘风险 R 升序 → 新词 → 未来词，替换纯随机）；
   // 缓存按消息 ID 永久固定（历史消息稳定），已删除的词读取时滤除；
   // 展示即复习——真到期的词计数 + 顺延 6h（未到期不计数：防重启重抽虚增，到期闸门防抖）
-  getReviewWords(messageId: string): WordItem[] {
+  // ★ 0.237.3：第二参 rerollSeq 仅为让 ForEach 渲染闭包建立依赖（换一批触发重算）；
+  // 重抽走轮换分支——全序环绕取批，零复习副作用（不计数/不顺延/不埋点，防刷学习统计）
+  getReviewWords(messageId: string, rerollSeq: number = 0): WordItem[] {
     const cached = this.reviewCache.get(messageId);
     if (cached) {
       return cached.items.filter((w: WordItem) => this.wordBank.words.includes(w));
     }
     const now = Date.now();
+    const cachedOffset = this.rerollWordOffsets.get(messageId);
+    if (cachedOffset !== undefined && cachedOffset > 0) {
+      const rerolled = rotateSlice(orderedReviewWords(this.wordBank, now), cachedOffset, this.learnCountStore.learnCount);
+      this.reviewCache.set(messageId, new ReviewCacheEntry(0, rerolled));
+      return rerolled;
+    }
     const items = pickReviewWords(this.wordBank, this.learnCountStore.learnCount, now);
     let mutated = false; // ★ 0.223.0：展示即复习进度变更追踪（未到期不虚报）
     for (let i = 0; i < items.length; i++) {
@@ -2884,6 +2898,23 @@ export struct ChatPage {
     recordStat(this.statStore, 'siyi', items.length, 0); // ★ 0.202.3：司忆量埋点
     this.reviewCache.set(messageId, new ReviewCacheEntry(0, items));
     return items;
+  }
+
+  // ★ 0.237.3：换一批——本条 AI 回复下方生词/知识卡复习区整批轮换。
+  //   连点连换：offset 每次跳过当前批大小（在记忆算法全序上环绕轮换全库）；
+  //   删两缓存 + rerollSeq++ 触发两区 ForEach 重算（重抽命中轮换分支写回新缓存）。
+  //   语义备案：覆盖「缓存按消息 ID 永久固定」旧语义——换批结果仅本会话内生效，
+  //   重启 app 回遗忘曲线默认首批（可接受，不额外持久化）。
+  shuffleReviewBatch(messageId: string): void {
+    const wordBatch = Math.max(1, this.learnCountStore.learnCount);
+    const cardBatch = Math.max(1, this.knowledgeCountStore.knowledgeCount);
+    const wPrev = this.rerollWordOffsets.get(messageId);
+    this.rerollWordOffsets.set(messageId, (wPrev === undefined ? 0 : wPrev) + wordBatch);
+    const cPrev = this.rerollCardOffsets.get(messageId);
+    this.rerollCardOffsets.set(messageId, (cPrev === undefined ? 0 : cPrev) + cardBatch);
+    this.reviewCache.delete(messageId);
+    this.knowledgeReviewCache.delete(messageId);
+    this.rerollSeq++;
   }
 
   // ============================================================
@@ -3382,12 +3413,19 @@ export struct ChatPage {
   // ★ 0.188.0：知识库复刻记忆算法——选卡改走遗忘曲线（到期卡按 R 升序 → 新卡 → 未来卡）；
   // 缓存按消息 ID 永久固定（同 0.187.0 单词库修复：杜绝加卡触发全量重抽的虚假复习），
   // 已删除的卡读取时滤除；展示即复习（到期闸门防抖）。
-  getKnowledgeCards(messageId: string): KnowledgeCard[] {
+  // ★ 0.237.3：第二参 rerollSeq 同 getReviewWords（换一批渲染依赖）；重抽走轮换分支零副作用
+  getKnowledgeCards(messageId: string, rerollSeq: number = 0): KnowledgeCard[] {
     const cached = this.knowledgeReviewCache.get(messageId);
     if (cached) {
       return cached.items.filter((c: KnowledgeCard) => this.knowledgeBank.cards.includes(c));
     }
     const now = Date.now();
+    const cachedOffset = this.rerollCardOffsets.get(messageId);
+    if (cachedOffset !== undefined && cachedOffset > 0) {
+      const rerolled = rotateSlice(orderedReviewCards(this.knowledgeBank, now), cachedOffset, this.knowledgeCountStore.knowledgeCount);
+      this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(0, rerolled));
+      return rerolled;
+    }
     const items = pickReviewCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount, now);
     let mutated = false; // ★ 0.223.0：展示即复习进度变更追踪
     for (let i = 0; i < items.length; i++) {
@@ -4122,9 +4160,22 @@ export struct ChatPage {
                             this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? 0 : 1,
                             this.selectAllKey.startsWith(`${msg.messageId}|u|`) ? msg.content.length : 0
                           )
-                        // ★ 0.235.2：用户消息操作行——复制全文+删除（无刷新/喇叭/token，AI 消息专属）；
+                        // ★ 0.235.2：用户消息操作行——复制全文+删除（无刷新/换一批/token，AI 消息专属）；
                         //   左对齐 margin left 10 = 气泡 padding 10，与 AI 操作行同款定式（space 8、图标 14、padding 4）
+                        // ★ 0.237.3：加喇叭（用户要求「我发的内容也能朗读」，无换一批/刷新）——
+                        //   三态图标逻辑与 AI 行同款；ttsLoadingMessageId/playingMessageId 消息级单值
+                        //   天然互斥（同一时间只读一条），startTTS 对 user 消息无 role 限制
                         Row({ space: 8 }) {
+                          Row() {
+                            Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                              .width(14)
+                              .height(14)
+                              .objectFit(ImageFit.Contain)
+                          }
+                          .padding(4)
+                          .onClick(() => {
+                            this.startTTS(msg);
+                          })
                           Row() {
                             Image($r('app.media.copy'))
                               .width(14)
@@ -4282,7 +4333,7 @@ export struct ChatPage {
                              .color(STROKE_CARD)
                              .margin({ top: 8, bottom: 6 })
                            Column() {
-                              ForEach(this.getReviewWords(msg.messageId), (w: WordItem, idx: number) => {
+                               ForEach(this.getReviewWords(msg.messageId, this.rerollSeq), (w: WordItem, idx: number) => {
                                 // ★ 0.233.0：单词词条拆两行（用户拍板「不能把单词和下面的解释内容放在一起一起滑——
                                 //   拆开来」；体验对齐知识卡 0.232.1 标题/内容行分离）：词行（三角+词+音标+喇叭）常驻
                                 //   独立横滑，全称+释义内容行独立横滑——滑解释时单词始终可见不动
@@ -4440,7 +4491,7 @@ export struct ChatPage {
                               .color(STROKE_CARD)
                               .margin({ top: 6, bottom: 6 })
                             Column() {
-                              ForEach(this.getKnowledgeCards(msg.messageId), (card: KnowledgeCard, idx: number) => {
+                               ForEach(this.getKnowledgeCards(msg.messageId, this.rerollSeq), (card: KnowledgeCard, idx: number) => {
                                 // ★ 0.232.1 标题/内容行分离（用户需求锚点：定义很长横滑时标题跟着滑走被覆盖——
                                 //   拆开=标题行常驻不动，仅定义行独立横滑，看内容时标题始终可见）
                                 Column() {
@@ -4556,14 +4607,51 @@ export struct ChatPage {
                         // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
                         // ★ 0.146：移入包裹容器——行宽自适应，左缘对齐气泡内文字（margin left 10 = 气泡 padding 10）
                         if (msg.role === 'assistant') {
-                          // ★ 0.224.4：操作行整齐划一（用户三要求）——①统一间隙 Row({space:8})（原各元素自定义
-                          //   padding 参差不齐：喇叭 left 8/right 4、刷新 left 0/right 4）②对称边距：刷新左
-                          //   padding 4 = 喇叭右 padding 4（按钮自身触摸热区对称）③模型名横向滑动区
-                          //   （maxWidth 100 钳制+可滑看全名+滚动条隐藏——小字元数据不配滚动条；行总宽恒不超气泡宽度）
-                          // ★ 0.235.2：①新增复制全文+删除按钮（用户拍板「刷新左边第 1 个复制全文、第 2 个删除」，
-                          //   删除走 requestDeleteMessage 确认链路=与右滑删除同一逻辑）②整行左对齐（用户拍板
-                          //   「贴边放左边、左对齐」——推翻 0.148「统计行右对齐」旧定稿，margin right 10 → left 10）
+                          // ★ 0.224.4：操作行整齐划一（用户三要求）——统一间隙 Row({space:8})、按钮 padding 对称 4
+                          // ★ 0.235.2：新增复制全文+删除按钮（复制走 copyFullMessage、删除走 requestDeleteMessage 确认链路）
+                          // ★ 0.237.3：操作行重排+右对齐（用户语音八要求）——①按钮组固定顺序：
+                          //   喇叭→刷新→换一批→复制→删除（喇叭挪最前、换一批插复制左边）②模型名+token
+                          //   右对齐贴行尾（Blank 弹性占位推开）③左右边距对称：padding left/right 10——
+                          //   最左喇叭离气泡内容左缘 = 「输出 N」末字离气泡内容右缘（width 100% 内 padding，
+                          //   margin 会叠加在 100% 之外致溢出）④模型名/token 上限改百分比自适应（35%/50%
+                          //   替代写死 100）+flexShrink 收缩兜底——宽屏静态铺开、窄屏自动可滑，滚动条横杠全隐藏
                           Row({ space: 8 }) {
+                            // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态：
+                            //   cone=空闲 / dots=合成中 / waves=播放中（★ 0.237.3 从行尾挪最前）
+                            Row() {
+                              Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding(4)
+                            .onClick(() => {
+                              this.startTTS(msg);
+                            })
+                            // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
+                            // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
+                            Row() {
+                              Image($r('app.media.refresh'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding(4)
+                            .onClick(() => {
+                              this.regenerateMessage(msg);
+                            })
+                            // ★ 0.237.3：换一批——本条回复下方生词/知识卡复习区整批轮换
+                            //   （shuffle 交叉双箭头，非刷新语义；图标白 65% 与全行统一）
+                            Row() {
+                              Image($r('app.media.shuffle'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                            }
+                            .padding(4)
+                            .onClick(() => {
+                              this.shuffleReviewBatch(msg.messageId);
+                            })
                             // ★ 0.235.2：复制全文——本条 AI 回复剥锚点标记后整段写剪贴板
                             Row() {
                               Image($r('app.media.copy'))
@@ -4586,21 +4674,10 @@ export struct ChatPage {
                             .onClick(() => {
                               this.requestDeleteMessage(msg.messageId);
                             })
-                            // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
-                            // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
-                            Row() {
-                              Image($r('app.media.refresh'))
-                                .width(14)
-                                .height(14)
-                                .objectFit(ImageFit.Contain)
-                            }
-                            .padding(4)
-                            .onClick(() => {
-                              this.regenerateMessage(msg);
-                            })
-                            // ★ 0.224.3：模型 ID 标识（用户需求：刷新与 token 之间——"这个问答很漂亮，它是哪个模型的"）
-                            //   ★ 0.224.4：请求发出时打标、刷新随新配置更新、旧消息空串不显示；长 ID 超宽→
-                            //   横向滑动看全名（无滚动条小字）、行宽恒钳制不超气泡
+                            // ★ 0.237.3：弹性占位——把右侧模型信息组推到行尾（右对齐）
+                            Blank()
+                            // ★ 0.224.3：模型 ID 标识（"这个问答很漂亮，它是哪个模型的"）
+                            //   ★ 0.237.3：上限写死 100 → 百分比 35% 自适应 + flexShrink 窄屏收缩可滑
                             if (msg.model.length > 0) {
                               Scroll() {
                                 Text(msg.model)
@@ -4610,29 +4687,29 @@ export struct ChatPage {
                               }
                               .scrollable(ScrollDirection.Horizontal)
                               .scrollBar(BarState.Off)
-                              .constraintSize({ maxWidth: 100 })
+                              .constraintSize({ maxWidth: '35%' })
+                              .flexShrink(1)
                               .align(Alignment.Start)
                             }
+                            // ★ 0.237.3：token 统计包横向 Scroll——5~6 位数（十几万 token）时可横滑看全、
+                            //   无滚动条横杠；上限 50% 自适应 + flexShrink 收缩兜底；内容贴右（末字贴行尾）
                             if (msg.outputTokens > 0) {
-                              Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
-                                .fontSize(11)
-                                .fontColor(TEXT_TERTIARY)
-                                .maxLines(1)
+                              Scroll() {
+                                Text(`输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}`)
+                                  .fontSize(11)
+                                  .fontColor(TEXT_TERTIARY)
+                                  .maxLines(1)
+                              }
+                              .scrollable(ScrollDirection.Horizontal)
+                              .scrollBar(BarState.Off)
+                              .constraintSize({ maxWidth: '50%' })
+                              .flexShrink(1)
+                              .align(Alignment.End)
                             }
-                            // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态：
-                            //   cone=空闲 / dots=合成中 / waves=播放中
-                            Row() {
-                              Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
-                                .width(14)
-                                .height(14)
-                                .objectFit(ImageFit.Contain)
-                            }
-                            .padding(4)
-                            .onClick(() => {
-                              this.startTTS(msg);
-                            })
                           }
-                          .margin({ top: 4, left: 10 }) // ★ 0.235.2：左对齐——left 10 = 气泡 padding 10，行首按钮与气泡内文字左缘对齐（用户拍板，推翻 0.148 右对齐定稿）；★ 0.224.4：元素间隙统一 space 8、按钮 padding 对称 4
+                          .width('100%') // ★ 0.237.3：铺满气泡宽（Blank 推右对齐的前提）
+                          .padding({ left: 10, right: 10 }) // ★ 0.237.3：左右边距对称（padding 计入 100% 内，margin 会外溢）；左 10 = 气泡 padding 10
+                          .margin({ top: 4 })
                         }
                         }
                         .alignItems(HorizontalAlign.Start) // ★ 0.235.2：操作行贴气泡左缘（用户拍板「其他几个按钮都是左对齐」——推翻 0.148 右对齐）；气泡为最宽子元素不受影响

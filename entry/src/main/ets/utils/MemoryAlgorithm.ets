@@ -149,11 +149,9 @@ export function formatIntervalDays(days: number): string {
   return `${Math.max(1, Math.round(days / 30))} 个月`;
 }
 
-// 选词（替换纯随机——量大后随机不靠谱，用户拍板）：
-//   ① 到期老词（reviewCount>0 且 nextReviewAt≤now）按 R 升序——遗忘风险最高优先
-//   ② 不够补新词（reviewCount=0）按加入时间升序——公平轮转
-//   ③ 再不够补未来词按 nextReviewAt 升序——最快到期优先
-export function pickReviewWords(store: WordBankStore, count: number, now: number): WordItem[] {
+// ★ 0.237.3：全序视图——三段排序与 pickReviewWords 完全一致但不截取；
+// 「换一批」在此全序上做环绕轮换（确定性排序下直接重抽会得到同一批，必须靠偏移轮换）
+export function orderedReviewWords(store: WordBankStore, now: number): WordItem[] {
   const due: WordItem[] = [];
   const fresh: WordItem[] = [];
   const future: WordItem[] = [];
@@ -170,15 +168,34 @@ export function pickReviewWords(store: WordBankStore, count: number, now: number
   due.sort((a: WordItem, b: WordItem) => retention(a, now) - retention(b, now));
   fresh.sort((a: WordItem, b: WordItem) => a.createTime - b.createTime);
   future.sort((a: WordItem, b: WordItem) => a.nextReviewAt - b.nextReviewAt);
-  return [...due, ...fresh, ...future].slice(0, count);
+  return [...due, ...fresh, ...future];
 }
 
-// ★ 0.188.0：知识卡选词（与 pickReviewWords 同构，新卡按 createdAt 升序）——
-// 到期卡按 R 升序 → 新卡 → 未来卡，替换纯随机。
-// ★ 0.202.0：注意力提权——命中热标签且 S<30 天的卡在各自段内排最前
-//   （「注意力在哪记忆曲线就变在哪」：问"幺半群"→ 抽象代数域的卡优先浮上来；很熟的卡不打扰）。
-//   heat 内部自取（调用方零改动）；排序键 = (提权降序, 原排序键)。
-export function pickReviewCards(store: KnowledgeBankStore, count: number, now: number): KnowledgeCard[] {
+// 选词（替换纯随机——量大后随机不靠谱，用户拍板）：
+//   ① 到期老词（reviewCount>0 且 nextReviewAt≤now）按 R 升序——遗忘风险最高优先
+//   ② 不够补新词（reviewCount=0）按加入时间升序——公平轮转
+//   ③ 再不够补未来词按 nextReviewAt 升序——最快到期优先
+export function pickReviewWords(store: WordBankStore, count: number, now: number): WordItem[] {
+  return orderedReviewWords(store, now).slice(0, count);
+}
+
+// ★ 0.237.3：换一批轮换切片——从全序数组 offset 位置环绕取 count 个（连点连换；
+// 库小于一批时环绕必然重复=没得换，属正常）。零复习副作用（不计数/不顺延）。
+export function rotateSlice<T>(arr: T[], offset: number, count: number): T[] {
+  const total = arr.length;
+  if (total === 0) {
+    return [];
+  }
+  const start = offset % total;
+  const n = Math.min(count, total);
+  const out: T[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push(arr[(start + i) % total]);
+  }
+  return out;
+}
+
+export function orderedReviewCards(store: KnowledgeBankStore, now: number): KnowledgeCard[] {
   const heat = getTagHeat(connectAttention() as AttentionStore);
   const due: KnowledgeCard[] = [];
   const fresh: KnowledgeCard[] = [];
@@ -208,7 +225,17 @@ export function pickReviewCards(store: KnowledgeBankStore, count: number, now: n
     const hb = isAttentionHot(b, heat) ? 1 : 0;
     return ha !== hb ? hb - ha : a.nextReviewAt - b.nextReviewAt;
   });
-  return [...due, ...fresh, ...future].slice(0, count);
+  return [...due, ...fresh, ...future];
+}
+
+// ★ 0.188.0：知识卡选词（与 pickReviewWords 同构，新卡按 createdAt 升序）——
+// 到期卡按 R 升序 → 新卡 → 未来卡，替换纯随机。
+// ★ 0.202.0：注意力提权——命中热标签且 S<30 天的卡在各自段内排最前
+//   （「注意力在哪记忆曲线就变在哪」：问"幺半群"→ 抽象代数域的卡优先浮上来；很熟的卡不打扰）。
+//   heat 内部自取（调用方零改动）；排序键 = (提权降序, 原排序键)。
+// ★ 0.237.3：排序体迁 orderedReviewCards（全序视图，「换一批」轮换共用）
+export function pickReviewCards(store: KnowledgeBankStore, count: number, now: number): KnowledgeCard[] {
+  return orderedReviewCards(store, now).slice(0, count);
 }
 
 // 下次复习时间的中文短标签（复习区结果行与单词本列表共用）。

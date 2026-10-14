@@ -173,7 +173,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.237.2'; // ★ 0.237.2：TTS 设置区三 bug（音频模型默认回声音复刻2.0/选中回填内置 Key+默认音色/自定义模型三字段如式灰提示）；上一版 0.237.1：划词取词基准修复
+const APP_VERSION: string = 'v0.237.3'; // ★ 0.237.3：消息操作栏换一批与模型行对齐（AI 行重排喇叭→刷新→换一批→复制→删除+模型信息右对齐自适应、用户行加喇叭、复习区整批轮换）；上一版 0.237.2：TTS 设置区三 bug
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
