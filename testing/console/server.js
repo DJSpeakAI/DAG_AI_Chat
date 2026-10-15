@@ -3649,8 +3649,8 @@ function afStatusLite() {
 const GIT_SUBCMDS = new Set(['rev-parse', 'add', 'commit', 'status', 'diff', 'reset', 'clean']);
 function git(args, timeoutMs = 30000) {
   if (!GIT_SUBCMDS.has(args[0])) return Promise.resolve({ code: -1, out: '', err: 'git subcommand not allowed: ' + args[0] });
-  // commit 身份用命令级 -c（不动仓库/全局 git config）
-  if (args[0] === 'commit') args = ['-c', 'user.name=autofix', '-c', 'user.email=autofix@local', ...args];
+  // commit 身份=仓库默认（DJ_ShangGanLing）；显式带 -c 兜底防环境缺省（勿用 autofix@local——codearts pre-receive 拒非法邮箱作者，0.243.0.1 实锤）
+  if (args[0] === 'commit') args = ['-c', 'user.name=DJ_ShangGanLing', '-c', 'user.email=1725912449@qq.com', ...args];
   return runCmd('git', args, PROJECT, timeoutMs);
 }
 async function gitAvailable() {
