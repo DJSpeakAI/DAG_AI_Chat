@@ -142,6 +142,7 @@ export struct KnowledgeBankPage {
   private listScroller: Scroller = new Scroller();
   private scrollAccum: number = 0; // 同方向累计量（≥10vp 才收/放，防轻蹭抖动）
   private scrollDir: number = 0;   // 0=无 / 1=上滑（收） / -1=下滑（放）；方向反转即清零重计
+  private lastToggleAt: number = 0; // ★ 0.241.0：上次收/放切换时间戳——300ms 冷却期掐断滚到底回弹横跳
 
   /** ★ 0.239.0 设备三档判定（照抄 WordBankPage.ets 0.218.8 先例）：phone/tablet/tv/car/wearable
    *  之外全算 PC 档——PC 窗口拖到多窄都是 PC 档（网格与切换按钮保持，不退化手机列表） */
@@ -307,6 +308,9 @@ export struct KnowledgeBankPage {
 
   // ★ 0.240.0：手机端搜索栏滚动隐藏防抖逻辑（onDidScroll 每 tick 调用，纯轻量计算）——
   //   上滑累计 >10vp 收起 / 下滑累计 >10vp 呼回 / 方向反转清零重计 / 滚回顶部（≤0.5vp）强制显示
+  // ★ 0.241.0：滚到底「鬼畜抖动」修复（用户真机实锤：收起→弹出→又收起来回横跳）——
+  //   ①冷却期 300ms：收/放切换后 300ms 内丢弃一切偏移信号（触底回弹的反向信号进不来）
+  //   ②不对称阈值：收起仍 10vp；唤回须 ≥24vp——小回弹唤不回，掐断循环（回顶强制显示保留不动）
   handleSearchScroll(offset: number): void {
     if (this.isTablet || this.isPcDevice()) {
       if (!this.searchBarVisible) {
@@ -325,18 +329,26 @@ export struct KnowledgeBankPage {
     if (offset === 0) {
       return;
     }
+    const now: number = Date.now();
+    if (now - this.lastToggleAt < 300) {
+      this.scrollAccum = 0; // 冷却期内偏移全部丢弃——回弹尾巴不带进冷却结束后的判定
+      return;
+    }
     const dir: number = offset > 0 ? 1 : -1;
     if (dir !== this.scrollDir) {
       this.scrollDir = dir;
       this.scrollAccum = 0;
     }
     this.scrollAccum += Math.abs(offset);
-    if (this.scrollAccum >= 10) {
+    const threshold: number = dir > 0 ? 10 : 24; // ★ 0.241.0 不对称阈值：收 10 / 唤回 24
+    if (this.scrollAccum >= threshold) {
       this.scrollAccum = 0;
       if (dir > 0 && this.searchBarVisible) {
         this.searchBarVisible = false; // 直接赋值 + transition 动画（禁 animateTo 闭包——畅享90pro UI 不刷新雷）
+        this.lastToggleAt = now;
       } else if (dir < 0 && !this.searchBarVisible) {
         this.searchBarVisible = true;
+        this.lastToggleAt = now;
       }
     }
   }
@@ -789,6 +801,70 @@ export struct KnowledgeBankPage {
       .width('100%')
       .height('100%')
     }  }
+
+  // ★ 0.241.0：左下角浮动导航胶囊条（仅手机端）——单手可达的边栏入口 + 目录面包屑
+  //   （点任意一级直接跳转该文件夹；随滚动与搜索栏同向联动收放；多选模式不渲染；PC/Pad 完全不动）
+  //   ⚠️ 全屏定位容器 hitTestBehavior(None)：自身穿透、不拦列表触摸，胶囊本体照常可点（0.200.0 变暗层同款范式）
+  @Builder
+  kbNavCapsule() {
+    if (!this.windowMode.isTablet && !this.isPcDevice() && !this.multiSelectMode && this.searchBarVisible) {
+      Stack({ alignContent: Alignment.BottomStart }) {
+        Row({ space: 8 }) {
+          Image($r('app.media.sidebar'))
+            .width(20)
+            .height(20)
+            .objectFit(ImageFit.Contain)
+            .onClick(() => {
+              this.openSidebar();
+            })
+          Column()
+            .width(1)
+            .height(16)
+            .backgroundColor(STROKE_CARD)
+          Scroll() {
+            Row({ space: 4 }) {
+              Text('全部卡片')
+                .fontSize(12)
+                .fontColor(this.folderNav.folderId.length === 0 ? BRAND_SECONDARY : TEXT_SECONDARY)
+                .onClick(() => {
+                  this.folderNav.folderId = ''; // 与边栏树点击同源——直接赋值即切主内容区
+                })
+              ForEach(this.currentChain, (f: KFolder, idx: number) => {
+                Row({ space: 4 }) {
+                  Image($r('app.media.chevronright'))
+                    .width(16)
+                    .height(16)
+                    .objectFit(ImageFit.Contain)
+                  Text(f.name)
+                    .fontSize(12)
+                    .fontColor(idx === this.currentChain.length - 1 ? BRAND_SECONDARY : TEXT_SECONDARY)
+                    .onClick(() => {
+                      this.folderNav.folderId = f.id;
+                    })
+                }
+                .alignItems(VerticalAlign.Center)
+              }, (f: KFolder) => f.id)
+            }
+            .alignItems(VerticalAlign.Center)
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxWidth: 230 }) // 长路径横向滚动，胶囊不顶满屏（横向 Scroll 子项自然宽铁律合规）
+        }
+        .alignItems(VerticalAlign.Center)
+        .height(40)
+        .padding({ left: 12, right: 12 })
+        .borderRadius(20)
+        .backgroundColor(SURFACE_NODE)
+        .border({ width: 1, color: STROKE_CARD })
+        .margin({ left: 14, bottom: 14 }) // 贴屏幕左下角
+        .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 8 })).animation({ duration: 200 })) // 出场向下（与搜索栏 y:-8 镜像，同向联动）
+      }
+      .width('100%')
+      .height('100%')
+      .hitTestBehavior(HitTestMode.None)
+    }
+  }
   @Builder
   topBar() {
     Row() {
@@ -2820,7 +2896,6 @@ export struct KnowledgeBankPage {
         Column() {
           this.topBar()
 
-          // ★ 0.207.0：面包屑（非根目录显示；点级名跳转，点「知识库」回根）
           if (!this.multiSelectMode) {
             // ★ 0.148: search box + sort toggle (live filtering via @Computed)
             // ★ 0.240.0：手机端滚动隐藏——宽屏（isTablet/isPcDevice）常驻兜底；条件渲染 + transition（0.222.7/0.222.8 已验证范式）
@@ -2848,7 +2923,7 @@ export struct KnowledgeBankPage {
                 }
               }
               .width('100%')
-              .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+              .padding({ left: 16, right: 16, top: (this.isTablet || this.isPcDevice()) ? 4 : 2, bottom: (this.isTablet || this.isPcDevice()) ? 4 : 2 }) // ★ 0.241.0：手机端收紧对称——标题↔搜索栏 8+2=10 / 搜索栏↔首卡 2+8=10（顶栏 56 与宽屏间距原样不动）
               .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: -8 })).animation({ duration: 200 }))
             }
           } else {
@@ -3296,7 +3371,7 @@ export struct KnowledgeBankPage {
             }
             .width('100%')
             .layoutWeight(1)
-            .padding({ left: 16, right: 16, top: 12 })
+            .padding({ left: 16, right: 16, top: (this.isTablet || this.isPcDevice()) ? 12 : 8 }) // ★ 0.241.0：手机端 12→8（与搜索栏收紧配套，上下各 10 对称；宽屏原样）
             .onDidScroll((offset: number, state: ScrollState) => { // ★ 0.240.0：手机端搜索栏滚动隐藏（宽屏在方法内短路）
               if (state !== ScrollState.Idle) {
                 this.handleSearchScroll(offset);
@@ -3317,6 +3392,9 @@ export struct KnowledgeBankPage {
         }
         .width('100%')
         .height('100%')
+
+        // ★ 0.241.0：左下角导航胶囊条（仅手机端；声明在弹窗层之前=弹窗盖胶囊、抽屉在最后盖一切）
+        this.kbNavCapsule()
 
         // ★ 0.200.0: 问 AI 二选一面板（最顶层）
         if (this.askSheetVisible) {

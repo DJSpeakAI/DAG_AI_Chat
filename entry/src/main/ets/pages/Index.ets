@@ -649,7 +649,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.240.2') // ★ 0.240.2：方案B拍平存储（api-config-v5 单string JSON——绕开 PersistenceV2 B1/B2/B3 全部黑盒）；上一版 0.240.1：快照自愈；更早历史见 MEMORY.md
+        Text('v0.241.0') // ★ 0.241.0：手机端导航胶囊条+滚动隐藏抖动修复+间距收紧对称（两库同款）；上一版 0.240.2：方案B拍平存储；更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000280, // ★ 0.240.2：方案B拍平存储（api-config-v5 单string JSON 主真相源+运行时视图+迁移链 backup>v4>v3——豆包+华为AI双评审共同方案，绕开 PersistenceV2 B1/B2/B3 全部黑盒）；上一版 0.240.1：快照自愈（部分生效）；更早历史见 MEMORY.md
+    "versionCode": 1000281, // ★ 0.241.0：手机端导航胶囊条+滚动隐藏抖动修复+间距收紧对称（两库同款）；上一版 0.240.2：方案B拍平存储；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

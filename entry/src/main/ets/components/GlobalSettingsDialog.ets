@@ -187,7 +187,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.240.2'; // ★ 0.240.2：方案B拍平存储（api-config-v5 单string JSON——豆包+华为AI双评审共同方案，绕开 PersistenceV2 B1/B2/B3 全部黑盒）；上一版 0.240.1：快照自愈（部分生效）；更早历史见 MEMORY.md
+const APP_VERSION: string = 'v0.241.0'; // ★ 0.241.0：手机端导航胶囊条+滚动隐藏抖动修复+间距收紧对称（两库同款）；上一版 0.240.2：方案B拍平存储；更早历史见 MEMORY.md
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
