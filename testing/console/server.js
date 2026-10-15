@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.240.0.1'; // ★ 0.240.0.1：跟 APP 0.240.0（手机端搜索栏滚动隐藏+排序按钮图标化）+ kbview 新增 KB-SORT-ICON/WB-SORT-ICON/KB-SEARCH-HIDE/WB-SEARCH-HIDE 四用例（图标试探定位/弹层紫底高亮断言/上滑收起下滑呼回回顶强制显示/宽屏常驻红线） // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.240.2.1'; // ★ 0.240.2.1：跟 APP 0.240.2（方案B拍平存储——api-config-v5 单string JSON 主真相源，豆包+华为AI双评审共同方案）——④ 保存生效校验改读 v5（provider+apiKey 含唯一 KMARK）+ Key 框注入、⑤ 重启存活加 Key 框回显断言（别名+档位+Key 三重——验收标准 1 全覆盖） // ★ 0.240.1.4：跟 app 终案（v5 换 key 三版真机证伪弃用、回 v4+别名持久化走 map）——④ 保存生效校验改读 v4.provider、删「v5 出生」断言、MARK 断言改「别名 map 落盘」 // ★ 0.240.1.1：跟 APP 0.240.1（模型别名保存→重启丢失修复）+ ui-audit 新增 ALIAS-KEEP（别名注入→保存→落盘双断言→冷启重开→存活断言→献祭模型法零污染收尾还原） // ★ 0.240.0.1：跟 APP 0.240.0（手机端搜索栏滚动隐藏+排序按钮图标化）+ kbview 新增 KB-SORT-ICON/WB-SORT-ICON/KB-SEARCH-HIDE/WB-SEARCH-HIDE 四用例（图标试探定位/弹层紫底高亮断言/上滑收起下滑呼回回顶强制显示/宽屏常驻红线） // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -533,6 +533,35 @@ async function grepPref(serial, needle) {
     if (out.trim() !== '') return { found: true, path: full, sample: out.trim().slice(0, 300) };
   }
   return { found: false, tried: PREF_CANDIDATES };
+}
+
+// ★ 0.240.2 拉盘全量解析通道：persistent_storage 的 v5 值=XML 实体（&quot;）+ 双层 JSON.stringify
+//   三层转义膨胀——BusyBox grep BRE 量词上限 256，240 字符窗口到不了 provider 字段（首跑实锤：
+//   KMARK 在 apiKey 命中而 provider 恒空）。拉到本地 node 解析：去实体→剥两层 stringify 包裹→
+//   cfgJson 再 parse，直接拿全 13 字段（provider/apiKey/modelAlias 等全字段断言一次到位）。
+async function pullPrefCfg(serial, key) {
+  for (const p of PREF_CANDIDATES) {
+    const tmp = path.join(ART_DIR, `pref-${serial.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now()}.xml`);
+    const r = await hdcSpawn(serial, ['file', 'recv', `${CFG.sandboxBase}/${p}`, tmp], 20000);
+    if (r.code === 0 && fs.existsSync(tmp) && fs.statSync(tmp).size > 0) {
+      try {
+        const raw = fs.readFileSync(tmp, 'utf8');
+        const m = raw.match(new RegExp(`key="${key}">([^<]*)<`));
+        if (!m) return { ok: false, err: `盘上无 ${key} 条目`, sample: raw.slice(0, 200) };
+        let v = m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        let parsed = JSON.parse(v); // 剥第一层 stringify 包裹（字符串形态）
+        if (typeof parsed === 'string') parsed = JSON.parse(parsed); // 双层包裹形态再剥一层
+        const cfg = typeof parsed === 'object' && parsed !== null && typeof parsed.cfgJson === 'string'
+          ? JSON.parse(parsed.cfgJson) : parsed;
+        return { ok: typeof cfg === 'object' && cfg !== null, cfg, path: `${CFG.sandboxBase}/${p}` };
+      } catch (e) {
+        return { ok: false, err: '解析失败: ' + String(e && e.message) };
+      } finally {
+        try { fs.unlinkSync(tmp); } catch (_e) { /* 临时文件清理尽力 */ }
+      }
+    }
+  }
+  return { ok: false, err: 'persistent_storage 全候选路径 file recv 失败' };
 }
 
 // ---------- bm / aa 环境动作 ----------
@@ -1893,6 +1922,263 @@ const CASES = [
       const dg = await dumpAuditNodes(serial);
       const agreed = !dg.nodes.some((n) => (n.text || '').includes('同意并继续'));
       if (agreed) ctx.log('B3/B7/B16 协议族弹窗', 'skip', '协议已同意态（非 fresh）——宽度/门禁/首启弹窗链须「全新安装」模式跑（fresh 轮覆盖，如实跳过不虚构断言）');
+    } },
+
+  // ---------- ★ 0.240.2 ALIAS-KEEP：配置三件套·保存→重启存活回归（0.240.1 用户实锤 bug：别名/Key/提供商保存后重启丢）----------
+  // 根因终案（0.240.2 方案B拍平存储，豆包+华为AI双评审）：PersistenceV2「带 factory 的 connect」对多
+  // @Trace 字段类冷启盘值被工厂值回滚（B1）+嵌套 connect 毒害水合（B2）+行为自相矛盾（B3）——换 key
+  // 四连败后放弃对象映射，api-config 整体改「单 string 存 JSON」（'api-config-v5'，model-alias-v1 同款
+  // 全天唯一 100% 可靠实证模式）。本用例复刻用户真实路径断言三件套重启存活：①别名（map+v5 双通道）
+  // ②API Key（v5 JSON+回显）③提供商档位（v5 JSON+回显高亮）。「献祭模型」法零污染：切非当前提供商
+  // 档做注入/断言，收尾完整还原提供商+模型+别名+Key（Key 经 providerKeyCache 会话缓存自动还原）。
+  // ★ 实测注入语义：inputText=追加（X1+Y2=X1Y2）——断言用 contains；清空=注空格（app 侧 trim 落空串）。
+  // ★ 假绿纪律（0.240.1 血泪）：KMARK 用唯一时间戳（防历史残留命中）；断言=盘值生效校验+回显档位双保险。
+  { id: 'ALIAS-KEEP', suite: 'ui-audit', name: '配置三件套·保存→重启存活（0.240.2 方案B拍平存储回归——别名+Key+提供商档位）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '配置三件套重启存活（UI 断言专属，PC 无 UI 通道）'); return; }
+      const MARK = 'AKT'; // 固定短标记（★实测 inputText=纯追加、keyEvent DEL/Ctrl+A/双击选区全无效——UI 无删除
+      // 通道，献祭模型名下标记逐轮累积不可清；固定标记让 contains 断言跨轮恒真，累积+3字符/轮可容忍）
+      const KMARK = 'K' + String(Date.now()).slice(-5); // ★ 0.240.2：Key 注入唯一时间戳标记（追加语义累积不可清——唯一防历史残留假绿）
+      const PROVIDERS = ['华为云 MaaS', '火山方舟', 'DeepSeek', '自定义配置'];
+      // 别名输入框定位（hint 通道；未命中先上滑一段再试——弹窗 Scroll 视口裁剪）
+      const aliasBox = async () => {
+        let d = await dumpAuditNodes(serial);
+        let hit = findNodeHintAll(d.text, '给模型起个展示名')[0];
+        if (!hit) {
+          const rm = String((JSON.parse(d.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+          const sw = rm ? +rm[3] : 1000, shh = rm ? +rm[4] : 1600;
+          await sh(serial, `uitest uiInput swipe ${Math.round(sw / 2)} ${Math.round(shh * 0.6)} ${Math.round(sw / 2)} ${Math.round(shh * 0.3)} 600`, 15000);
+          await sleep(900);
+          d = await dumpAuditNodes(serial);
+          hit = findNodeHintAll(d.text, '给模型起个展示名')[0];
+        }
+        return { d, hit };
+      };
+      const fieldText = (d) => { const n = d.nodes.find((x) => String(x.hint || '').includes('给模型起个展示名')); return { text: String((n && n.text) || '').trim(), node: n }; };
+      // ★ 0.240.1.2 状态三读 helper（防漂移假绿）：当前高亮提供商（品牌容器 containment）/当前模型触发器名
+      const curProvider = (d) => {
+        const sel = d.nodes.find((t) => PROVIDERS.includes(String(t.text)) && d.nodes.some(
+          (c) => /7c4dff/i.test(String(c.backgroundColor || '')) && c.x <= t.x && c.x2 >= t.x2 && c.y <= t.y && c.y2 >= t.y2));
+        return sel ? String(sel.text) : '';
+      };
+      const curModelName = (d) => {
+        const t = d.nodes.find((n) => n.text === '▼');
+        if (!t) return '';
+        const mn = d.nodes.filter((n) => n.text && n !== t && n.y < t.y2 && n.y2 > t.y && n.x2 <= t.x).sort((a, b) => b.x2 - a.x2)[0];
+        return mn ? String(mn.text) : '';
+      };
+      await coldStart(serial);
+      // ① 开设置（默认 API Tab）+ 记录原状态（提供商/模型触发器名/自定义模型 ID/别名原值——收尾还原用）
+      let nav = await navTo(serial, '设置', ctx.log);
+      if (!nav.ok) { ctx.log('① 打开设置弹窗', 'fail', '边栏「设置」未命中——' + (nav.err || '')); return; }
+      await sleep(1800);
+      const d0 = await dumpAuditNodes(serial);
+      artSave('ALIAS-KEEP', `dump-open-${dev.id}.json`, d0.text);
+      // ★ 0.240.1.1 提供商高亮检测：品牌紫在父容器（文字节点 bg 恒透明 #00000000——dump-open 实锤），
+      //   改「品牌色容器的 bounds 包住哪家提供商文字」 containment 检测（遍历四家文字找被品牌容器包裹者）
+      const provEntries = d0.nodes.filter((n) => PROVIDERS.includes(String(n.text)));
+      const provSel = provEntries.find((t) => d0.nodes.some(
+        (c) => /7c4dff/i.test(String(c.backgroundColor || '')) && c.x <= t.x && c.x2 >= t.x2 && c.y <= t.y && c.y2 >= t.y2));
+      const origProvider = provSel ? String(provSel.text) : '';
+      const tri = d0.nodes.find((n) => n.text === '▼');
+      const origModelName = tri ? (d0.nodes.filter((n) => n.text && n !== tri && n.y < tri.y2 && n.y2 > tri.y && n.x2 <= tri.x).sort((a, b) => b.x2 - a.x2)[0] || {}).text : '';
+      const customField = d0.nodes.find((n) => String(n.hint || '').includes('填入模型 ID'));
+      const origCustomModel = customField ? String(customField.text || '').trim() : '';
+      const origV = fieldText(d0);
+      if (!origProvider || !tri) { ctx.log('① 记录原状态', 'fail', `提供商高亮卡=${JSON.stringify(origProvider)} / 模型触发器=${tri ? '✓' : '缺'}——结构变化对照 dump-open 存证复核`); return; }
+      ctx.log('① 记录原状态', 'pass', `提供商=${origProvider} / 模型=${JSON.stringify(origModelName)}${origCustomModel ? '（自定义 ID ' + origCustomModel + '）' : ''} / 别名原值=${JSON.stringify(origV.text)}`);
+      // ② 切献祭提供商（≠当前；预设二选一——自定义档模型 ID 空手填无法断言）+ 记录其原别名
+      const sacrifice = origProvider === '华为云 MaaS' ? 'DeepSeek' : '华为云 MaaS';
+      const sw1 = await uiClickText(serial, sacrifice, { exact: true, waitMs: 2000 });
+      if (!sw1.ok) { ctx.log('② 切献祭提供商', 'fail', `「${sacrifice}」卡片未命中——` + (sw1.err || '')); return; }
+      await sleep(1300);
+      const d1 = await dumpAuditNodes(serial);
+      const sacOld = fieldText(d1).text;
+      ctx.log('② 切献祭提供商', 'pass', `已切「${sacrifice}」（默认模型档 ${JSON.stringify(curModelName(d1))}）——该模型原别名=${JSON.stringify(sacOld)}${sacOld ? '（测试后将清空——测试副作用）' : '（空，零污染）'}`);
+      // ③ 前防漂移校验（★ 0.240.1.2：首轮实锤 provider 在 ②③ 间漂回原档致「标记记到原模型名下」假绿——
+      //    注入前必须确认献祭档在场；献祭默认模型与原模型同名（跨提供商同 ID）时换选下拉另一预设项）
+      let a1 = await aliasBox();
+      if (!a1.hit) { ctx.log('③ 定位别名输入框', 'fail', 'hint「给模型起个展示名」未命中——对照 dump 存证复核'); return; }
+      let guard = curProvider(a1.d) === sacrifice && curModelName(a1.d) !== origModelName;
+      if (!guard) {
+        ctx.log('③ 防漂移·重切献祭档', 'warn', `校验时 provider=${JSON.stringify(curProvider(a1.d))} / 模型=${JSON.stringify(curModelName(a1.d))}（期望 ${sacrifice} 且 ≠${JSON.stringify(origModelName)}）——重新点击后重试`);
+        const sw2 = await uiClickText(serial, sacrifice, { exact: true, waitMs: 2000 });
+        await sleep(1400);
+        a1 = await aliasBox();
+        guard = sw2.ok && a1.hit && curProvider(a1.d) === sacrifice;
+        if (guard && curModelName(a1.d) === origModelName) {
+          // 献祭默认模型与原模型同名（跨提供商同 ID）——下拉换选一个不同的预设模型项
+          const t2 = a1.d.nodes.find((n) => n.text === '▼');
+          if (t2) {
+            await sh(serial, `uitest uiInput click ${Math.round(t2.xc)} ${Math.round(t2.yc)}`, 15000);
+            await sleep(1100);
+            const dd = await dumpAuditNodes(serial);
+            const items = dd.nodes.filter((n) => n.text && n.y > t2.y2 && String(n.text) !== '自定义…'
+              && String(n.text) !== origModelName && !String(n.text).includes('填入列表外')
+              && !String(n.text).includes('强烈推荐') && !String(n.text).includes('可发图'));
+            const pick = items.length ? await uiClickText(serial, String(items[0].text), { exact: true, waitMs: 2000 }) : { ok: false };
+            guard = pick.ok;
+            await sleep(700);
+          }
+        }
+        if (!guard) {
+          const dchk = await dumpAuditNodes(serial);
+          ctx.log('③ 防漂移校验', 'fail', `献祭档未能稳定在场（provider=${JSON.stringify(curProvider(dchk))} / 模型=${JSON.stringify(curModelName(dchk))}）——环境不稳定，本条中止防污染用户配置`);
+          return;
+        }
+      }
+      // 注入唯一标记 + ★ 0.240.2 Key 框注入 KMARK（献祭档 placeholder 定位；表单上部不在视口则下滑露出）
+      //   + 收键盘（IME 候选条遮挡保存按钮）+ 保存（按钮随滚动位移——dump 实时定位）
+      await uiInputText(serial, a1.hit.x, a1.hit.y, MARK);
+      await sleep(800);
+      const keyHint = sacrifice === '华为云 MaaS' ? '填入华为云 MaaS API Key' : '填入 DeepSeek API Key';
+      const keyBox = async () => {
+        let d = await dumpAuditNodes(serial);
+        let hit = findNodeHintAll(d.text, keyHint)[0];
+        if (!hit) {
+          const rm = String((JSON.parse(d.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+          const sw = rm ? +rm[3] : 1000, shh = rm ? +rm[4] : 1600;
+          await sh(serial, `uitest uiInput swipe ${Math.round(sw / 2)} ${Math.round(shh * 0.35)} ${Math.round(sw / 2)} ${Math.round(shh * 0.65)} 600`, 15000);
+          await sleep(900);
+          d = await dumpAuditNodes(serial);
+          hit = findNodeHintAll(d.text, keyHint)[0];
+        }
+        return { d, hit };
+      };
+      const kb = await keyBox();
+      let keyNote = '';
+      if (kb.hit) {
+        await uiInputText(serial, kb.hit.x, kb.hit.y, KMARK);
+        await sleep(800);
+        keyNote = ` / Key 框已注「${KMARK}」`;
+      } else {
+        keyNote = ' / ⚠️ Key 框未命中（KMARK 未注入——⑤ Key 断言将如实红）';
+      }
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(1000);
+      const preSave = await dumpAuditNodes(serial);
+      const sv = await uiClickText(serial, '保存', { exact: true, waitMs: 2500 });
+      const saveCtx = `provider=${JSON.stringify(curProvider(preSave))} / 模型=${JSON.stringify(curModelName(preSave))}`;
+      ctx.log('③ 注入标记并保存', sv.ok ? 'pass' : 'fail', sv.ok ? `已输入「${MARK}」${keyNote}（追加语义）→点「保存」(${sv.x},${sv.y})·保存时表单=${saveCtx}` : `「保存」按钮未命中（键盘未收/滚动位移——人工复核）·表单=${saveCtx}`);
+      if (!sv.ok) return;
+      await sleep(1800);
+      // ④ 写通道断言：v5 落盘三校验（★ 0.240.2 方案B——api-config-v5 单string JSON 为唯一主真相源：
+      //   provider=献祭档 + apiKey 含本轮唯一 KMARK + modelAlias 含标记；防「保存点击落空+残留子串」
+      //   双假绿，未生效重试保存≤3 次。拉盘本地 node 解析——三层转义膨胀后 BusyBox grep 240 窗口
+      //   到不了 provider（首跑实锤），file recv 全量解析一次拿全字段）
+      const SAC_ID = sacrifice === '华为云 MaaS' ? 'huawei' : 'deepseek';
+      const v5OnDisk = async () => {
+        const r = await pullPrefCfg(serial, 'api-config-v5');
+        if (!r.ok) return { ok: false, why: r.err || '解析失败' };
+        const c = r.cfg || {};
+        return {
+          ok: String(c.provider || '') === SAC_ID && String(c.apiKey || '').includes(KMARK),
+          provider: String(c.provider || ''), apiKeyHas: String(c.apiKey || '').includes(KMARK),
+          aliasHas: String(c.modelAlias || '').includes(MARK), model: String(c.model || '')
+        };
+      };
+      let v5Saved = await v5OnDisk();
+      for (let t = 0; t < 3 && !v5Saved.ok; t++) {
+        ctx.log('④ 保存生效校验·重试', 'warn', `盘上 v5=${JSON.stringify(v5Saved)}（期望 provider=${SAC_ID}+Key含「${KMARK}」）——保存点击疑似落空，重点「保存」第 ${t + 1} 次`);
+        const retry = await uiClickText(serial, '保存', { exact: true, waitMs: 2500 });
+        await sleep(2200);
+        const again = await v5OnDisk();
+        v5Saved = again.ok ? again : (retry.ok ? again : v5Saved);
+      }
+      ctx.log('④ 保存生效校验（v5 主真相源·全字段）', v5Saved.ok ? 'pass' : 'fail',
+        v5Saved.ok ? `盘上 api-config-v5：provider=${SAC_ID} + apiKey 含本轮唯一「${KMARK}」${v5Saved.aliasHas ? ' + modelAlias 含「' + MARK + '」' : ''}（方案B 单string JSON 真实落盘——防「点击落空+残留巧合」双假绿）` : `3 次保存后 v5=${JSON.stringify(v5Saved)}——保存链路异常（点击落空或 saveAll 未写 v5），本条中止防污染`);
+      if (!v5Saved.ok) return;
+      let diskHit = false, diskNote = '';
+      for (const p of PREF_CANDIDATES) {
+        const full = `${CFG.sandboxBase}/${p}`;
+        const c1 = await sh(serial, `grep -c '${MARK}' '${full}' 2>/dev/null`, 15000);
+        if (c1.trim() !== '' && Number(c1.trim()) > 0) diskHit = true;
+        if (c1.trim() !== '') diskNote += `${p.split('/').slice(-2).join('/')}:mark=${c1.trim()}; `;
+      }
+      ctx.log('④ 写通道·别名 map 落盘含标记', diskHit ? 'pass' : 'fail', diskHit ? `persistent_storage 命中「${MARK}」×≥1（别名持久化真相=map，onChange 实时落盘）` : `全候选路径未命中标记（map 写通道坏=新 bug）——${diskNote || '通道不可读'}`);
+      // ⑤ 核心：force-stop 冷启 → 重开设置 → 三件套必须全存活（用户所见=读通道；0.240.2 前此处必红）
+      //   ★ 0.240.2 三重校验：别名框含标记 + 回显 provider=献祭档（防「标记追加进原模型名下」漂移假绿）
+      //   + Key 框含本轮唯一 KMARK（用户报障症状②「Key 保存→重启变空」的直接断言）
+      await coldStart(serial);
+      nav = await navTo(serial, '设置', ctx.log);
+      if (!nav.ok) { ctx.log('⑤ 重启后打开设置', 'fail', '「设置」未命中——' + (nav.err || '')); return; }
+      await sleep(1800);
+      const a2 = await aliasBox();
+      artSave('ALIAS-KEEP', `dump-restart-${dev.id}.json`, a2.d.text);
+      if (!a2.hit) { ctx.log('★⑤ 重启后配置存活', 'fail', '别名输入框未命中（结构变化对照 dump-restart 存证）'); return; }
+      const now = fieldText(a2.d).text;
+      const provNow = curProvider(a2.d);
+      let keyNode = a2.d.nodes.find((x) => String(x.hint || '').includes('API Key'));
+      if (!keyNode) {
+        // 别名框在上部滚动后 Key 框被滚出视口——回滚顶部重找（keyBox 含下滑重试逻辑）
+        const kb2 = await keyBox();
+        keyNode = kb2.hit ? { text: String((kb2.d.nodes.find((x) => String(x.hint || '').includes('API Key')) || {}).text || '') } : null;
+      }
+      const keyNow = keyNode ? String(keyNode.text || '') : '';
+      const aliasOk = now.includes(MARK);
+      const provOk = provNow === sacrifice;
+      const keyOk = keyNode ? keyNow.includes(KMARK) : false;
+      const alive = aliasOk && provOk && keyOk;
+      ctx.log('★⑤ 重启后配置存活（别名+档位+Key 三重）', alive ? 'pass' : 'fail',
+        alive ? `别名框=「${now.slice(0, 30)}」含「${MARK}」+ 回显「${sacrifice}」档 + Key 框含本轮唯一「${KMARK}」——保存→重启→回显全链路通（0.240.2 方案B拍平存储生效；修前实测=回滚/恒空）`
+          : `别名=${aliasOk ? '✓' : '✗(' + JSON.stringify(now.slice(0, 30)) + ')'} / 档位=${provOk ? '✓' : '✗(' + JSON.stringify(provNow) + ')'} / Key=${keyOk ? '✓' : keyNode ? '✗(' + JSON.stringify(keyNow.slice(0, 20)) + ')' : '✗框未命中'}——${aliasOk ? 'Key/档位重启丢失（0.240.1 前实测形态：保存→重启回滚/变空）' : '别名重启丢失 bug 复现'}`);
+      // ★ 0.240.2 取证探针：⑤ 失败时立即 force-stop 拉盘存 v5 快照——定性「冷启覆写盘」（v5≠④保存值）
+      //   还是「读侧读旧值」（v5=④保存值但表单回显旧值）。修绿后此步静默保留（artifacts 常规存证）。
+      if (!alive) {
+        await sh(serial, 'aa force-stop com.dagaichat.app', 15000);
+        await sleep(1200);
+        const probe = await pullPrefCfg(serial, 'api-config-v5');
+        const probeStr = probe.ok ? JSON.stringify(probe.cfg) : String(probe.err);
+        artSave('ALIAS-KEEP', `v5-probe-restart-${dev.id}.json`, probeStr);
+        ctx.log('⑤·取证 v5 盘值（回显后 force-stop 拉盘）', 'info',
+          `v5=${probeStr.slice(0, 220)} —— 对比④保存值（provider=${SAC_ID}+K${KMARK}）：盘≠保存值=冷启期间被覆写（写回/迁移落盘嫌疑）；盘=保存值=纯读侧问题（水合/回显读了旧源）`);
+      }
+      // ⑥ 收尾还原：切回原提供商→重选原模型（含自定义 ID 回填）→保存→关弹窗
+      //   ★ 0.240.1.2 实测放弃「清空献祭别名」：inputText 纯追加、keyEvent DEL/Ctrl+A/双击选区全无效
+      //   （TextInput 编辑不吃注入——0.200.0「真 Button 不吃注入」同族）——献祭模型名下残留 'AKT' 标记
+      //   （固定短标记，纯测试副作用、仅切到该模型时表单可见；原模型别名全程未被触碰）
+      ctx.log('⑥ 献祭模型残留声明', 'info', `「${sacrifice}」当前模型名下残留测试标记「AKT」（UI 无删除通道不可自动清——用户长按手动删或无视）；Key 标记「${KMARK}」仅存于测试轮 v5 快照、收尾保存即被原档覆盖（零残留）；原模型「${origModelName}」别名与原档 Key 未被本用例触碰`);
+      const back = await uiClickText(serial, origProvider, { exact: true, waitMs: 2000 });
+      if (back.ok) {
+        await sleep(1300);
+        let modelOk = false;
+        if (origModelName && origModelName !== '自定义…') {
+          const trig = (await dumpAuditNodes(serial)).nodes.find((n) => n.text === '▼');
+          if (trig) {
+            await sh(serial, `uitest uiInput click ${Math.round(trig.xc)} ${Math.round(trig.yc)}`, 15000);
+            await sleep(1100);
+            const pick = await uiClickText(serial, origModelName, { exact: true, waitMs: 2000 });
+            modelOk = pick.ok;
+            await sleep(700);
+          }
+          if (modelOk) await sleep(700);
+        } else if (origModelName === '自定义…' && origCustomModel) {
+          const trig = (await dumpAuditNodes(serial)).nodes.find((n) => n.text === '▼');
+          if (trig) {
+            await sh(serial, `uitest uiInput click ${Math.round(trig.xc)} ${Math.round(trig.yc)}`, 15000);
+            await sleep(1100);
+            const pick = await uiClickText(serial, '自定义…', { exact: true, waitMs: 2000 });
+            if (pick.ok) {
+              await sleep(900);
+              const cid = findNodeHintAll((await dumpAuditNodes(serial)).text, '填入模型 ID')[0];
+              if (cid) { await uiInputText(serial, cid.x, cid.y, origCustomModel); await sleep(700); modelOk = true; }
+            }
+          }
+        } else modelOk = true; // 无模型名记录（兜底：默认档即原档）
+        const sv3 = await uiClickText(serial, '保存', { exact: true, waitMs: 2500 });
+        await sleep(1400);
+        // ★ 0.240.1.2 还原结果改实测回读（旧版打的是 ① 记录的 origV 变量=文案自说自话）
+        const dEnd = await dumpAuditNodes(serial);
+        const endV = fieldText(dEnd).text;
+        const endOk = sv3.ok && modelOk && endV === origV.text;
+        ctx.log('⑥ 还原提供商+模型', endOk ? 'pass' : 'warn',
+          `已切回「${origProvider}」` + (origModelName ? ` + 重选「${origModelName}」` : '') + ` + 保存——别名实测=${JSON.stringify(endV)}（原值=${JSON.stringify(origV.text)}）` + (endOk ? '✓' : ' ✗不一致（人工核对设置）'));
+      } else ctx.log('⑥ 还原提供商', 'warn', `「${origProvider}」卡片未命中——人工核对设置（当前停在 ${sacrifice}）`);
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(1200);
+      const dirty = await uiClickText(serial, '不保存关闭', { exact: true, waitMs: 1500 });
+      if (dirty.ok) ctx.log('⑥ 收尾·关弹窗', 'info', '检测到未保存提示已点「不保存关闭」（正常应已保存=清洁态，此为兜底）');
     } },
 
   // ---------- 功能④ 对话稳定性（★ 0.232.0 bug 回归：切后台开别的 APP 再回来对话清零修复） ----------

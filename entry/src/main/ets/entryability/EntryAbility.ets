@@ -148,14 +148,6 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // ★ 0.161.3：加载内置 API Key（rawfile/config.json，本地文件不入 git）——
-    // 放在 loadContent 之前，保证早于所有页面组件 connect ApiConfig（填充空位后再被各处读到）
-    try {
-      loadBuiltinApiConfig(this.context);
-    } catch (err) {
-      // 加载失败静默——设置页可自填
-    }
-
     // ★ 0.165.1：初始化云同步 RDB（建库 dag_chat_cloud.db + 建表 cloud_data + 设分布式表 autoSync）——
     // 异步执行不阻塞启动；此后各持久化点的 upsertCloudData 内部等待 init 完成后写入；
     // 云侧 AGC 未配置时本地写入正常、上云失败仅日志（静默降级，不影响本地功能）
@@ -186,6 +178,17 @@ export default class EntryAbility extends UIAbility {
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         return;
+      }
+      // ★ 0.240.2 总根因修复（官方 FAQ-1084 场景一铁证）：PersistenceV2.connect 必须在 loadContent
+      //   之后调用——此前 loadBuiltinApiConfig 放 loadContent 之前（0.161.3 设计「早于组件 connect」），
+      //   导致 api-config 系 key 冷启恒 factory 值、盘值被无视（0.240.1 全天 B1/B2/B3 怪象的真身；
+      //   model-alias-v1 可靠正因只在组件内 connect=loadContent 后）。挪到回调内=页面已加载，
+      //   组件字段 connect 已发生（runtimeApiCfg 单例已建、v5 晚 connect 水合正常），此处填内置 Key
+      //   空位仍早于用户任何交互（aboutToAppear 回显/发消息读值都在其后）。
+      try {
+        loadBuiltinApiConfig(this.context);
+      } catch (err2) {
+        // 加载失败静默——设置页可自填
       }
       // ★ 0.167：注册 Inter 三字重（UI_GUIDELINES.md 字体策略）——三个不同 familyName
       //（Pixso 导出代码三份同名注册会互相覆盖，是导出瑕疵勿照抄）；

@@ -32,7 +32,7 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
-import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, ModelAliasStore, connectModelAlias } from '../common/ChatModel'; // ★ 0.190.0：加 inferProviderFromEndpoint（provider 异常值兜底推断）；★ 0.167.8：删画布 Tab——CanvasMode/CanvasModeStore/applyCanvasModeSwitch 引用随删（逻辑已由画布页顶部分段控件承担）；★ 0.195.0：加复习显示两库计数 store（全局设置直达 0=关闭复习区）；★ 0.232.0：connectTtsHint（云端朗读首次配置提示 flag）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.236.0：getBuiltinQwenTtsKey（千问档 Key 预填）；★ 0.236.1：getBuiltinVolcanoTtsKey/Voice（火山档切回兜底回填）；★ 0.238.1：ModelAliasStore/connectModelAlias（别名按模型 ID 一一对应）
+ import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, ModelAliasStore, connectModelAlias, snapshotApiConfig, refreshApiCfg } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias（别名按模型 ID 一一对应）；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
@@ -187,7 +187,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.240.0'; // ★ 0.240.0：手机端搜索栏滚动隐藏 + 排序按钮图标化（两库同款）；上一版 0.239.0：知识库双视图+加号菜单
+const APP_VERSION: string = 'v0.240.2'; // ★ 0.240.2：方案B拍平存储（api-config-v5 单string JSON——豆包+华为AI双评审共同方案，绕开 PersistenceV2 B1/B2/B3 全部黑盒）；上一版 0.240.1：快照自愈（部分生效）；更早历史见 MEMORY.md
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -368,17 +368,30 @@ export struct GlobalSettingsDialog {
   // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
   aboutToAppear() {
+    // ★ 0.240.2 开弹窗先补灌 v5 盘值（水合竞态双保险第二通道——onCreate 首读撞水合 pending 时，
+    //   此刻盘值已就绪，重灌运行时真值后再回显，杜绝「回显 backup 迁移旧值」）
+    refreshApiCfg();
     // ★ 0.190.0：Tab1 提供商化初始化——回显持久化配置
     this.editKey = this.apiConfig.apiKey;
     this.editProvider = this.apiConfig.provider;
     // ★ 0.238.0：模型别名回显 + 测试结果复位（每次开弹窗清零上次结果）
     // ★ 0.238.1：回显后同步把「当前生效模型的落盘别名」灌进映射表（0.238.0 用户已保存过的别名
     //   在 map 里还没有记录——灌一次保证切换再切回能自动带出）
-    this.editAlias = this.apiConfig.modelAlias;
+    // ★ 0.240.1：①回显改走映射表（先灌后读）——v4 旧快照 modelAlias 读侧丢失（Pad 实测：保存→重启
+    //   落盘值在而实例读空，model 正常回显唯独别名恒空），map 是别名最全真相源（输入即实时记录）；
+    //   ②搭救回灌：apiConfig.modelAlias 为空而 map 有值 → 回灌（v4→v5 迁移期读侧丢的落盘别名从 map
+    //   复活，ChatPage 消息行即时痊愈，无需用户重存）——时机必须在开弹窗（map 已正常水合；
+    //   ⚠️ 禁在 connectApiConfig 工厂里嵌套 connect map 毒害其水合，ChatModel 有注）
     if (this.apiConfig.model.length > 0 && this.apiConfig.modelAlias.length > 0 &&
       this.aliasStore.aliasFor(this.apiConfig.model).length === 0) {
       this.aliasStore.setAlias(this.apiConfig.model, this.apiConfig.modelAlias);
     }
+    const savedAlias = this.aliasStore.aliasFor(this.apiConfig.model);
+    if (this.apiConfig.modelAlias.length === 0 && savedAlias.length > 0) {
+      this.apiConfig.modelAlias = savedAlias; // ★ 0.240.1 搭救回灌（落盘立即生效）
+      snapshotApiConfig(); // ★ 0.240.2：方案B拍平存储——回灌结果显式落盘 v5（运行时视图不随字段写自动持久化）
+    }
+    this.editAlias = savedAlias;
     this.testing = false;
     this.testResult = '';
     this.testOk = false;
@@ -894,6 +907,9 @@ export struct GlobalSettingsDialog {
         }
       });
     }
+    // ★ 0.240.1：保存即双写配置快照（'api-cfg-backup-v1' 自愈真相源——根治「带 factory 的 key
+    //   冷启被工厂值重置」：Key/提供商/模型/别名保存后重启被回滚/变空，详见 ChatModel 注）
+    snapshotApiConfig();
     this.showToastSafe('已保存');
   }
 

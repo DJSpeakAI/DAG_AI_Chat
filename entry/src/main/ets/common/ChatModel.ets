@@ -267,24 +267,182 @@ export function inferProviderFromEndpoint(endpoint: string): string {
 // ★ 0.238.0：key 再从 'api-config-v3' 换为 'api-config-v4'——同理（新增 modelAlias 字段写不进
 // v3 旧快照，0.143/0.190/0.224.1 三次实锤：不换 key=新增字段重启即丢）；v3 数据全量迁移
 // （含 0.236.0 千问 TTS 四字段），modelAlias 旧快照从未存在、走新默认空串。
+// ★ 0.240.2 方案B拍平存储（豆包+华为AI双评审共同方案，终案）：放弃用 13 个 @Trace 字段的
+//   @ObservedV2 类直接做 PersistenceV2 key（v2→v3→v4 三代同坑），api-config 整体改为「单 string
+//   存 JSON」——与 'model-alias-v1'（ModelAliasStore）完全同构，0.240.1 全天唯一 100% 可靠的实证
+//   模式（纯 new factory + 顶层 connect + key 一次性首创 + 永不嵌套 + 永不换 key + 结构永不加字段）。
+//   B1（盘值被冷启工厂值回滚）/B2（嵌套 connect 毒害水合）/B3（行为自相矛盾）一键绕开。
+//   ApiConfig 保留为运行时视图：@Trace 响应式照常驱动 UI；持久化=进程级单例 runtimeApiCfg，
+//   启动读 JSON 全量灌入（connectApiConfig），保存全量写 JSON（snapshotApiConfig）。
+//   0.240.1 病象族谱（供后来者避坑）：①v4 modelAlias「写盘正常、重启读恒空」；②「火山 Key 保存→
+//   重启变空」；③「献祭档保存落盘→重启回显被回滚成旧档」；④四版首启 v4 盘值 glm 被重置成类默认。
+//   共因=带 factory 的 connect 冷启时盘值被 factory 值覆盖（嵌套 connect 还毒害被嵌 key 水合）。
+//   迁移链（一次性，幂等判据=v5 非空天然跳过）：backup 快照（0.240.1 五版用户）> v4 实例 > v3 实例，
+//   全部顶层 connect 非嵌套；迁移成功即写回 v5 转正，此后永不再读旧 key。
+@ObservedV2
+class ApiCfgStore {
+  @Trace cfgJson: string = ''; // api-config 主真相源（plain JSON；空=从未保存过/新用户）
+  // ★ 0.240.2 水合竞态补灌回调：PersistenceV2.connect 返回实例时盘值水合可能尚未完成（真机实锤：
+  // onCreate 首读 cfgJson=''（水合 pending）→ 误判新用户走迁移链灌入 backup 旧值；同款代码有时存活
+  // 有时重置的 B3 矛盾=读得早/晚与水合完成的赛跑）。@Monitor 在水合完成（cfgJson 被框架赋盘值）时
+  // 触发补灌，把 runtimeApiCfg 修正为盘上真值。
+  onHydrated: (() => void) | null = null;
+
+  @Monitor('cfgJson')
+  onCfgJsonChange(): void {
+    if (this.cfgJson.trim().length > 0 && this.onHydrated !== null) {
+      try {
+        this.onHydrated();
+      } catch (_e) {
+        // 补灌异常静默（下次变化重试）
+      }
+    }
+  }
+}
+
+// 二级兜底快照（0.240.1 通道保留：saveAll 双写，成本≈0；仅供未来排查，不再参与自愈判定）
+@ObservedV2
+class ApiCfgBackup {
+  @Trace cfgJson: string = '';
+}
+
+function apiCfgToBackupJson(cfg: ApiConfig): string {
+  const plain: Record<string, string | number> = {}; // @ObservedV2 实例禁直接 stringify（0.205.4 铁律）
+  plain['apiKey'] = cfg.apiKey;
+  plain['endpoint'] = cfg.endpoint;
+  plain['model'] = cfg.model;
+  plain['provider'] = cfg.provider;
+  plain['audioModel'] = cfg.audioModel;
+  plain['audioVoice'] = cfg.audioVoice;
+  plain['audioEndpoint'] = cfg.audioEndpoint;
+  plain['audioKey'] = cfg.audioKey;
+  plain['ttsProvider'] = cfg.ttsProvider;
+  plain['ttsEmotion'] = cfg.ttsEmotion;
+  plain['ttsSpeed'] = cfg.ttsSpeed;
+  plain['ttsVolume'] = cfg.ttsVolume;
+  plain['modelAlias'] = cfg.modelAlias;
+  return JSON.stringify(plain);
+}
+
+let runtimeApiCfg: ApiConfig | null = null; // 进程级运行时视图单例（多处 connectApiConfig 复用同实例）
+
 export function connectApiConfig(): ApiConfig {
-  return PersistenceV2.connect(ApiConfig, 'api-config-v4', () => {
-    const old = PersistenceV2.connect(ApiConfig, 'api-config-v3', () => new ApiConfig()) as ApiConfig;
-    const fresh = new ApiConfig();
-    fresh.apiKey = old.apiKey;
-    fresh.endpoint = old.endpoint;
-    fresh.model = old.model;
-    fresh.provider = old.provider;
-    fresh.audioModel = old.audioModel;
-    fresh.audioVoice = old.audioVoice;
-    fresh.audioEndpoint = old.audioEndpoint;
-    fresh.audioKey = old.audioKey;
-    fresh.ttsProvider = old.ttsProvider;
-    fresh.ttsEmotion = old.ttsEmotion;
-    fresh.ttsSpeed = old.ttsSpeed;
-    fresh.ttsVolume = old.ttsVolume;
-    return fresh;
-  }) as ApiConfig;
+  if (runtimeApiCfg !== null) {
+    return runtimeApiCfg; // 同实例复用（GSD/ChatPage/Review/WordBank/Statistics/CloudTts 等七处调用点）
+  }
+  const store = PersistenceV2.connect(ApiCfgStore, 'api-config-v5', () => new ApiCfgStore()) as ApiCfgStore;
+  const cfg = new ApiConfig(); // 纯运行时实例（@Trace 响应式与 PersistenceV2 无关）
+  const applyJson = (json: string): boolean => {
+    try {
+      const b = JSON.parse(json) as Record<string, string | number>;
+      cfg.apiKey = String(b['apiKey'] ?? '');
+      cfg.endpoint = String(b['endpoint'] ?? cfg.endpoint);
+      cfg.model = String(b['model'] ?? cfg.model);
+      cfg.provider = String(b['provider'] ?? cfg.provider);
+      cfg.audioModel = String(b['audioModel'] ?? cfg.audioModel);
+      cfg.audioVoice = String(b['audioVoice'] ?? cfg.audioVoice);
+      cfg.audioEndpoint = String(b['audioEndpoint'] ?? cfg.audioEndpoint);
+      cfg.audioKey = String(b['audioKey'] ?? '');
+      cfg.ttsProvider = String(b['ttsProvider'] ?? cfg.ttsProvider);
+      cfg.ttsEmotion = String(b['ttsEmotion'] ?? cfg.ttsEmotion);
+      cfg.ttsSpeed = Number(b['ttsSpeed'] ?? cfg.ttsSpeed);
+      cfg.ttsVolume = Number(b['ttsVolume'] ?? cfg.ttsVolume);
+      cfg.modelAlias = String(b['modelAlias'] ?? '');
+      return true;
+    } catch (_e) {
+      return false; // 坏数据兜底=默认（下次保存重建）
+    }
+  };
+  // ★ 0.240.2 补灌器：盘值（水合完成）非空且≠已灌值 → 重灌 runtimeApiCfg。
+  //   值等价门闩（lastApplied）：迁移/保存的自写回声与已灌值相等自然跳过——无自环、无覆盖用户
+  //   正在编辑表单的风险（编辑副本独立，重灌只修正运行时真值）。
+  let lastApplied = '';
+  const reapply = (): boolean => {
+    const j = store.cfgJson;
+    if (j.trim().length === 0 || j === lastApplied) {
+      return false;
+    }
+    if (applyJson(j)) {
+      lastApplied = j;
+      return true;
+    }
+    return false;
+  };
+  const loaded = reapply(); // 同步首读（水合已完成则直接命中；未完成走迁移链，水合后 @Monitor 补灌）
+  store.onHydrated = reapply; // 水合完成/后续任何盘值变化 → 响应式补灌（ChatPage 消息行等消费点自动刷新）
+  cfgReapply = reapply;
+  if (!loaded) {
+    // 一次性迁移（顶层 connect 非嵌套；迁移源尽力而为——B1 下旧实例可能读出工厂值，最坏=回默认）
+    // ★ 仅灌内存不落盘（0.240.2 修正）：此刻若水合仍 pending，迁移写入会与水合互踩（迁移值落盘
+    //   覆盖盘上真值=数据丢失）。转正交给下次保存（snapshotApiConfig 自然写全量）；真·新用户
+    //   不保存就重启=重走迁移链（幂等无害）。
+    let migrated = '';
+    try {
+      const bak = PersistenceV2.connect(ApiCfgBackup, 'api-cfg-backup-v1',
+        () => new ApiCfgBackup()) as ApiCfgBackup;
+      if (bak.cfgJson.trim().length > 0) {
+        migrated = bak.cfgJson; // 0.240.1 五版用户的上次保存快照（最全真相源）
+      } else {
+        const v4IsDefault = (c: ApiConfig): boolean => c.apiKey.length === 0 && c.provider === 'volcano' &&
+          c.model === 'deepseek-v4-flash-ga-260731';
+        const v4 = PersistenceV2.connect(ApiConfig, 'api-config-v4', () => new ApiConfig()) as ApiConfig;
+        if (!v4IsDefault(v4)) {
+          migrated = apiCfgToBackupJson(v4);
+        } else {
+          const v3 = PersistenceV2.connect(ApiConfig, 'api-config-v3', () => new ApiConfig()) as ApiConfig;
+          if (!v4IsDefault(v3)) {
+            migrated = apiCfgToBackupJson(v3); // v3 老用户（v4 空档）兜底；别名真相在 map（GSD 回灌）
+          }
+        }
+      }
+    } catch (_e) {
+      // 迁移源读失败静默（走默认）
+    }
+    if (migrated.length > 0) {
+      applyJson(migrated); // 仅内存（水合完成后 @Monitor/复核把盘上真值重灌修正）
+      lastApplied = migrated;
+    }
+    // ★ 第三保险：1.5s 延迟复核（水合必已完成——本地小 XML 毫秒级；防 @Monitor 极端不触发的情形）
+    setTimeout(() => {
+      reapply();
+    }, 1500);
+  }
+  runtimeApiCfg = cfg;
+  return cfg;
+}
+
+// ★ 0.240.2 开弹窗主动补灌（双保险第二通道）：GSD aboutToAppear 开头调用——此刻距 onCreate 已数秒，
+//   水合必已完成，即便 @Monitor 未触发（框架内部赋值不走 setter 的极端情形）也能兜住表单回显真值。
+let cfgReapply: (() => void) | null = null;
+
+export function refreshApiCfg(): void {
+  if (cfgReapply !== null) {
+    cfgReapply();
+  }
+}
+
+// ★ 0.240.2：配置落盘唯一主动通道——saveAll / 云同步 apply / 搭救回灌后调用。
+//   双写：v5（主真相源）+ backup（0.240.1 兜底快照通道保留）。
+//   ★ 保存即上行：cfg:api-config 行同步写本地 RDB（autoSync 推云）——根治「保存后上行不及时+
+//   云端滞留旧值→冷启下行 apply 把回显/内存顶回旧档」（真机取证实锤的回滚第二凶）。
+export function snapshotApiConfig(): void {
+  try {
+    const cfg = connectApiConfig();
+    const json = apiCfgToBackupJson(cfg);
+    const store = PersistenceV2.connect(ApiCfgStore, 'api-config-v5', () => new ApiCfgStore()) as ApiCfgStore;
+    store.cfgJson = json;
+    const bak = PersistenceV2.connect(ApiCfgBackup, 'api-cfg-backup-v1', () => new ApiCfgBackup()) as ApiCfgBackup;
+    bak.cfgJson = json;
+  } catch (_e) {
+    // 落盘失败静默（下次保存重试）
+  }
+  try {
+    if (connectCloudSyncArbiter().rowInitDone) {
+      upsertIfChanged('cfg:api-config', cfgApiToJson()); // 首拉闸门内才写行（0.223.1 防种子事故同款纪律）
+    }
+  } catch (_e) {
+    // 上行失败静默（下轮 flush 兜底）
+  }
 }
 
 // ★ 0.238.1：模型别名映射表（按模型 ID 一一对应，用户拍板「别名跟模型绑定+自动记录」——
@@ -304,7 +462,7 @@ export class ModelAliasStore {
     try {
       const map = JSON.parse(this.aliasMapJson) as Record<string, string>;
       const v = map[modelId];
-      return v === undefined || v === null ? '' : v;
+      return v === undefined || v === null ? '' : v.trim(); // ★ 0.240.1：读侧 trim（纯空格=空，防残留脏值上屏）
     } catch (_e) {
       return ''; // 坏数据兜底：视同无别名
     }
@@ -314,14 +472,15 @@ export class ModelAliasStore {
     if (modelId.length === 0) {
       return; // 模型 ID 未定（如自定义档空手填）不记录
     }
+    const norm = alias.trim().length === 0 ? '' : alias; // ★ 0.240.1：纯空格归一为空串（测试台收尾清空通道）
     try {
       const map = JSON.parse(this.aliasMapJson) as Record<string, string>;
-      map[modelId] = alias; // 空别名=存空串（aliasFor 读空串返回 ''，等效回落官方名）
+      map[modelId] = norm; // 空别名=存空串（aliasFor 读空串返回 ''，等效回落官方名）
       this.aliasMapJson = JSON.stringify(map);
     } catch (_e) {
       // 坏数据兜底：重建为只含当前键
       const fresh: Record<string, string> = {};
-      fresh[modelId] = alias;
+      fresh[modelId] = norm;
       this.aliasMapJson = JSON.stringify(fresh);
     }
   }
@@ -1509,6 +1668,10 @@ function cfgApiApply(v: string): boolean {
     c.audioVoice = g('audioVoice', c.audioVoice);
     c.audioEndpoint = g('audioEndpoint', c.audioEndpoint);
     c.audioKey = g('audioKey', c.audioKey);
+    // ★ 0.240.2 修正：此处禁 snapshotApiConfig——云下行旧值（保存后上行未及时+云端滞留旧配置）
+    //   会被固化到 v5 盘上=「保存→重启被回滚」的帮凶（真机取证实锤：⑤ 回显华为+旧标记后拉盘
+    //   v5 已被覆写成云端旧值）。云下行只改内存：每次冷启云同步重放 apply，无需落盘；
+    //   盘=v5 本地保存真值，云端断网时兜底。
     return true;
   } catch (_e) {
     return false;
