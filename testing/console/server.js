@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.240.2.1'; // ★ 0.240.2.1：跟 APP 0.240.2（方案B拍平存储——api-config-v5 单string JSON 主真相源，豆包+华为AI双评审共同方案）——④ 保存生效校验改读 v5（provider+apiKey 含唯一 KMARK）+ Key 框注入、⑤ 重启存活加 Key 框回显断言（别名+档位+Key 三重——验收标准 1 全覆盖） // ★ 0.240.1.4：跟 app 终案（v5 换 key 三版真机证伪弃用、回 v4+别名持久化走 map）——④ 保存生效校验改读 v4.provider、删「v5 出生」断言、MARK 断言改「别名 map 落盘」 // ★ 0.240.1.1：跟 APP 0.240.1（模型别名保存→重启丢失修复）+ ui-audit 新增 ALIAS-KEEP（别名注入→保存→落盘双断言→冷启重开→存活断言→献祭模型法零污染收尾还原） // ★ 0.240.0.1：跟 APP 0.240.0（手机端搜索栏滚动隐藏+排序按钮图标化）+ kbview 新增 KB-SORT-ICON/WB-SORT-ICON/KB-SEARCH-HIDE/WB-SEARCH-HIDE 四用例（图标试探定位/弹层紫底高亮断言/上滑收起下滑呼回回顶强制显示/宽屏常驻红线） // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.241.0.8'; // ★ 0.241.0.8：常亮重写+设备名精简（用户实测翻车：点常亮手机被切深色省电界面+熄屏依旧）——①真凶①=power-shell setmode 602 根本不是永不休眠（鸿蒙 PowerMode 600=正常/601=省电/602=**超省电**——此前实现=切超省电模式，深色界面即其表现、熄屏依旧因它压根不管休眠）；正解=power-shell timeout -o 2147483647 临时覆盖休眠超时（不动用户设置），off=timeout -r 恢复+setmode 600 救回残留省电模式 ②真凶②=中部上滑手势在桌面拉起全局搜索浮层（用户截图半透明侧边栏实锤）——改底部区域上滑（600,2000→600,1200：锁屏解锁/已解锁不触发搜索）③config.json 四设备 label 精简（鸿蒙 PC/Pad/手机/Pura X View——连接方式已在地址行显示，长名换行丑）+addr 行 workMachine 追加「· 工作机」标注。 // ★ 0.241.0.7：三端同步链路优化（用户令「三端同步的优化+三端都试一下」；两轮实锤修复）——①**SYNC-FLOW-WORD/CARD/WORD-M 稳定复现红根治**（R20261015120120/120525 同点位「保存」找不到）：inputText 后软键盘在屏=uitest dump 盲区（0.230.0.1 实锤），keyEvent Back 收键盘再点保存（编辑器返回键拦截在第二层=不关弹窗，B11 同款实证修法，0.229.25「CARD 键盘遮挡保存」遗留项 hereby 落地）②**BOOT-CONVERGE 键集签名瞬态假红根治**（R20261015115552：行数收敛而内容在途单次快照判死、下轮自愈）：签名一致改 settle 轮询 ≤120s/12s 一复查，持续分叉才定性 fail。 // ★ 0.241.0.6：UI 精修（用户需求「右边宽度大一点好看一点+紫色按 UI guideline+左边 scroll 好看一点」；纯 index.html 样式改动，本文件仅同步版本号）——①右栏设备面板 240→300 加宽+列间距 14→16/内边距放大+max-width 1280→1500 ②色值全量对齐 UI_GUIDELINES.md DesignTokens（BRAND_PRIMARY #7C4DFF/BRAND_SECONDARY #A78BFA/BG_APP #120B1F/BG_NAV #1A1030/SURFACE_NODE #241640/SURFACE_HOVER #2C1B4D/STROKE_CARD 白8%/STROKE_BRAND 40% 紫）+顶部品牌紫光带+主按钮品牌渐变 ③全局紫色细滚动条（webkit+firefox 双通道）+左树分组头品牌左条+悬停态+徽章彩色底。仅改 public/index.html 刷新即生效；重启服务后 syncDesktop 同步桌面副本 // ★ 0.241.0.5：测试台三功能（用户拍板）+ 首轮真机 bug 修复——①设备「常亮」按钮（/api/keepalive：wakeup+setmode 602 永不休眠+上滑解锁；off=600 恢复——手机测试期锁屏卡流程根治）②「从零进度」设备状态行（/api/bootstate：协议 agreement-v1/登录 huawei-account/同步 cloud_data 行数 三探——分清「全新安装未走完流程」vs「已就绪」，全 CLI 通道锁屏可测）③左侧用例树滚动栏+页面一屏化 ④acceptSyncAsk 堆叠修复（首轮 R20261015105027 实锤：点下层「开启云同步」被 30 天试用弹窗遮罩拦截=点空→改 findTopmostButton 最上层优先逐层清） // ★ 0.241.0.4：三端云同步测试（用户拍板——畅享90Pro Max 入列后手机 APP 与 Pad/PC 疑似不同步，三台 fresh 从零全流程测试台化；全案 docs/0.165+/0.241.0.4）——①新 sync-boot 套件（BOOT-AGREE 协议全自动同意/BOOT-LOGIN 全自动登录+开同步·唯一人工=华为授权页/BOOT-CONVERGE 三端 settle 收敛+四域签名一致）②SYNC-FLOW 新增手机操作端 2 用例（WORD-M/NODE-M——用户「手机不同步」的正向验证；flowPrep 支持 prefer 指定操作端）③新原语：ensureLoginFlow（三端首页「登录华为账号」统一登录链）/acceptSyncAsk（登录后云同步询问自动「开启」+系统权限「允许」——区别 dismissLoginDialogs 测试隔离语义）/openPhoneDrawer（手机画布左下角抽屉按钮启发式）/ensureCanvas/navToM/navAnywhere（手机抽屉导航分流）/pcClickText（0.229.25 实证的 PC 多屏注入通道固化：dump -d 15/0 + uiInput click x y disp）④login 套件手机适配（LOGIN-SIDEBAR/SYNC 抽屉导航、autoLogout 手机回首页重试）⑤前端加三端从零全流程步骤指引 // ★ 0.241.0.3：修新设备首装必踩坑——「全新安装」对从未装过 app 的设备，卸载报 9568386 missing installed bundle 被当硬失败中止（Pura X View 首装实锤截图）；bmUninstall 加 clean 判定=该报错视为「设备本来就干净」放行继续安装，真卸载失败仍中止（0.229.18 防假成功语义保留） // ★ 0.241.0.2：Pura X View 入列第四台（2026-10-15 用户口述勘误——0.241.0.1 曾把 192.168.2.16:39421 记为畅享地址，实为搞反；畅享真身=192.168.2.14:38611 截图+config 双实锤，2.16:39421=新买的 Pura X View）——config.json 新增 pura 条目带 workMachine:true，前端默认勾选跳过工作机，测试/装机仍只用前三台（PC→Pad→手机），Pura X View 动不了就跳过不折腾（用户工作机） // ★ 0.241.0.1：设备阵容更新（2026-10-15 用户拍板）——畅享90Pro Max 入列常测试设备（config.json 手机条目：label 更名+serial 换 192.168.2.16:39421+删 optional 死字段），三端同测=PC+Pad+手机；Pura X View=用户工作机，不入列、禁测禁装机（测不了不用管）；project_rule §12.14 阵容规则入档 // ★ 0.240.2.1：跟 APP 0.240.2（方案B拍平存储——api-config-v5 单string JSON 主真相源，豆包+华为AI双评审共同方案）——④ 保存生效校验改读 v5（provider+apiKey 含唯一 KMARK）+ Key 框注入、⑤ 重启存活加 Key 框回显断言（别名+档位+Key 三重——验收标准 1 全覆盖） // ★ 0.240.1.4：跟 app 终案（v5 换 key 三版真机证伪弃用、回 v4+别名持久化走 map）——④ 保存生效校验改读 v4.provider、删「v5 出生」断言、MARK 断言改「别名 map 落盘」 // ★ 0.240.1.1：跟 APP 0.240.1（模型别名保存→重启丢失修复）+ ui-audit 新增 ALIAS-KEEP（别名注入→保存→落盘双断言→冷启重开→存活断言→献祭模型法零污染收尾还原） // ★ 0.240.0.1：跟 APP 0.240.0（手机端搜索栏滚动隐藏+排序按钮图标化）+ kbview 新增 KB-SORT-ICON/WB-SORT-ICON/KB-SEARCH-HIDE/WB-SEARCH-HIDE 四用例（图标试探定位/弹层紫底高亮断言/上滑收起下滑呼回回顶强制显示/宽屏常驻红线） // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -257,7 +257,9 @@ async function dbCount(serial, prefix) {
 }
 async function dbSignature(serial, prefix) {
   const where = prefix ? `where key like '${prefix}%'` : '';
-  const { out, bad } = await sqliteQuery(serial, `select key || '|' || updated_at || '|' || length(value) from cloud_data ${where} order by key`);
+  // ★ 0.241.0.5 修假红：签名去掉 updated_at——它是各端【本地拉取/落库时刻】，三端必然互异（首轮 BOOT-CONVERGE 实锤：
+  //   行数/键集/值内容逐字一致而签名红）。口径改 key|length(value)——键集+值长度双校验，内容分叉（键异/值截断）仍必现
+  const { out, bad } = await sqliteQuery(serial, `select key || '|' || length(value) from cloud_data ${where} order by key`);
   const hash = bad || out === '' ? null : crypto.createHash('md5').update(out).digest('hex').slice(0, 12);
   return { ok: !bad, hash, lines: bad ? -1 : (out === '' ? 0 : out.split('\n').length), raw: out.slice(0, 2000) };
 }
@@ -497,7 +499,17 @@ async function autoLogout(ctx, serial, dev) {
   }
   // ★ 0.229.24 登录后双层弹窗逐层关（fresh 首登=30天试用+云同步询问堆叠，顺序点会点空）
   await dismissLoginDialogs(serial, ctx.log);
-  const a1 = await uiClickText(serial, '退出账号', { waitMs: 2000 });
+  let a1 = await uiClickText(serial, '退出账号', { waitMs: 2000 });
+  // ★ 0.241.0.4 手机适配：抽屉/画布页无「退出账号」（按钮在首页已登录卡）——Back 回首页重试
+  if (!a1.ok && dev.id === 'phone') {
+    for (let i = 0; i < 3 && !a1.ok; i++) {
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(1400);
+      const dk = await dumpLayout(serial);
+      if (dk.ok && dk.text.includes('退出账号')) a1 = await uiClickText(serial, '退出账号', { waitMs: 2000 });
+      else break;
+    }
+  }
   if (a1.ok) {
     ctx.log('收尾·自动点「退出账号」', 'pass', `已点击 (${a1.x},${a1.y})（实际文案=退出账号，无二次确认直退）`);
     await sleep(2000);
@@ -680,7 +692,9 @@ async function bmUninstall(serial) {
   await sh(serial, `aa force-stop ${CFG.bundle}`, 10000);
   const r = await sh(serial, `bm uninstall -n ${CFG.bundle}`, 60000);
   const ok = /(successfully|finish)/i.test(r) && !/(failure|failed|error)/i.test(r);
-  return { ok, detail: r.trim().slice(0, 200) };
+  // ★ 0.241.0.3 新设备首装修复：设备从未装过该 app 时卸载报 code:9568386 "missing installed bundle"=设备本来就是干净状态，非真失败（Pura X View 首装实锤：卸载失败被中止=永远装不上）
+  const clean = /missing installed bundle|9568386/i.test(r);
+  return { ok, clean, detail: r.trim().slice(0, 200) };
 }
 
 // ---------- artifacts 证据留存 ----------
@@ -820,26 +834,32 @@ async function settleCountEquals(serial, prefix, expectN, timeoutMs, label) {
   return { ok: ok && c.ok && c.n === expectN, n: c.ok ? c.n : null, raw: c.raw, label };
 }
 // 编排前置：角色路由（canUiDump=UI 操作端，其余=数据断言端）+ 双端同步活检查；不符返回 null（用例已如实 log）
-async function flowPrep(ctx) {
+// ★ 0.241.0.4：opts.prefer 指定操作端设备 id（如 'phone'——手机操作端用例；指定端不在线/无 UI 通道如实 skip）
+//   登录块改 ensureLoginFlow 统一链（三端首页「登录华为账号」，替代边栏头像路径——手机抽屉默认关恒 miss）
+async function flowPrep(ctx, opts = {}) {
   const devs = ctx.devices;
-  const op = devs.find((d) => canUiDump(d));
+  let op = null;
+  if (opts.prefer) {
+    const p = devs.find((d) => d.id === opts.prefer && canUiDump(d));
+    if (!p) { ctx.log('前置', 'skip', `指定操作端 ${opts.prefer} 未勾选/离线/无 UI 通道（手机操作端用例须勾选手机+≥1 台断言端）`); return null; }
+    op = p;
+  } else op = devs.find((d) => canUiDump(d));
   const asserts = devs.filter((d) => d !== op);
   if (!op) { ctx.log('前置', 'skip', '无 UI 操作端（需 Pad/手机在线——PC 无 UI 自动化通道，dumpLayout 平台限制）'); return null; }
   if (!asserts.length) { ctx.log('前置', 'skip', '需 ≥1 台数据断言端与操作端同时勾选（如 PC+Pad）——单端无法验证跨端传播'); return null; }
-  // 操作端：冷启 + 协议 + 登录 + 同步活
+  // ★ 0.241.0.5 修复：操作端无条件冷启拉起 app（同步活也必须——上一轮用例/ARKUI-TEST 的 aa test 会把 app
+  //   停在桌面/测试态，导航原语对着桌面 dump 必然全 miss；首轮 R20261015120120 实锤「单词库未找到」根因）
   await coldStart(op.serial, 6000);
-  await agreeDialogIfAny(op.serial, ctx.log);
-  if ((await dumpCountText(op.serial, '已登录')).n === 0) {
-    ctx.log('操作端·未登录→自动登录', 'info', `${op.label} 点头像登录（静默授权；华为授权页弹出才需人工点同意）`);
-    const av = await uiClickCheckbox(op.serial, '未登录', { waitMs: 3000 });
-    if (!av.ok) { ctx.log('操作端登录', 'fail', '头像定位失败——' + (av.err || '')); return null; }
-    const r = await ctx.checkpoint({ label: `【人工仅授权·请看 ${op.label}】静默授权通常零点击；若弹华为授权页点「同意并继续」（登录后云同步自动开）`, deviceId: op.id,
-      detect: async () => (await dumpCountText(op.serial, '已登录')).n >= 1 });
-    if (r.state === 'timeout') { ctx.log('操作端登录', 'fail', '180s 内未完成授权'); return null; }
-    await dismissLoginDialogs(op.serial, ctx.log);
+  // 操作端：协议 + 登录 + 同步活（ensureLoginFlow 内含；同步活兜底=登录询问自动「开启」）
+  let oc = await dbCount(op.serial, null);
+  if (!(oc.ok && oc.n > 0)) {
+    ctx.log('操作端·同步未活→自动登录+开同步', 'info', `${op.label} cloud_data=${oc.ok ? oc.n : oc.raw}——走统一登录链`);
+    const lok = await ensureLoginFlow(ctx, op, true); // skipCold=true：flowPrep 已冷启
+    if (!lok) return null;
+    if (canUiDump(op)) await acceptSyncAsk(op.serial, ctx.log);
+    oc = await dbCount(op.serial, null);
   }
-  const oc = await dbCount(op.serial, null);
-  if (!(oc.ok && oc.n > 0)) { ctx.log('操作端·云同步未活', 'fail', `${op.label} cloud_data=${oc.ok ? oc.n : oc.raw} 行——登录后同步应自动开启（0.196.11）；0 行=app 侧同步链路问题（先测后修，报告不修）`); return null; }
+  if (!(oc.ok && oc.n > 0)) { ctx.log('操作端·云同步未活', 'fail', `${op.label} cloud_data=${oc.ok ? oc.n : oc.raw} 行——登录后同步应自动开启（0.196.11）；0 行=app 侧同步链路问题（先测后修，报告不修）；若已登录未开同步，先跑 sync-boot 套件 BOOT-LOGIN`); return null; }
   ctx.log('操作端就绪', 'pass', `${op.label} 已登录·cloud_data=${oc.n} 行（同步活）`);
   // 断言端：同步活（app 未开则拉起再查；未登录如实剔除——PC 无 UI 自动登录通道）
   const alive = [];
@@ -883,6 +903,215 @@ async function uiDoubleClick(serial, x, y, waitMs = 2400) {
   const r = await sh(serial, `uitest uiInput click ${x} ${y}; sleep 0.15; uitest uiInput click ${x} ${y}`, 15000);
   await sleep(waitMs);
   return { ok: !SH_ERR_RE.test(r), raw: r.trim().slice(0, 120) };
+}
+
+// ============================================================
+// ★ 0.241.0.4 三端云同步原语（手机入列·从零引导；全案 docs/0.165+/0.241.0.4）
+// ============================================================
+// 进画布（三端通用）：首页点「进入气泡树」主按钮（0.179 三端首页同款）；已在画布（信息条「N 个气泡」特征）跳过；
+//   不在首页也不在画布（如单词库页）→ Back 回退重试（手机抽屉只在画布——导航必经此步）
+async function ensureCanvas(serial, log) {
+  let d = await dumpLayout(serial);
+  if (d.ok && d.text.includes('个气泡')) { if (log) log('已在画布', 'pass', '信息条「N 个气泡」特征命中——跳过导航'); return true; }
+  if (d.ok && !d.text.includes('进入气泡树')) {
+    for (let i = 0; i < 3; i++) {
+      if (log) log('返回画布·Back 回退', 'info', '当前不在首页/画布（子页面）——Back 回退重试');
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(1400);
+      d = await dumpLayout(serial);
+      if (d.ok && (d.text.includes('个气泡') || d.text.includes('进入气泡树'))) break;
+    }
+  }
+  if (d.ok && d.text.includes('个气泡')) return true;
+  const btn = await uiClickText(serial, '进入气泡树', { waitMs: 2800 });
+  if (log) log('进画布·点「进入气泡树」', btn.ok ? 'pass' : 'fail', btn.ok ? `已点击 (${btn.x},${btn.y})（0.179 首页主按钮，三端同款）` : (btn.err || '首页未找到主按钮'));
+  return btn.ok;
+}
+// 手机抽屉唤出（幂等）：抽屉开=dump 可见边栏项「单词库」；未开=点画布左下角抽屉按钮
+//   （BBTreeCanvas:1532 `!isTablet` 渲染：40×40 sidebar.svg + padding4 容器≈48vp，position x=14/y=viewH-68——
+//    dump 启发式=左下角区域 x<30%W、y>66%H 内 40~150px 的无文字 Image；屏幕宽高=dump 全树最大 bounds 近似）
+async function openPhoneDrawer(serial, log) {
+  const d0 = await dumpLayout(serial);
+  if (!d0.ok) return { ok: false, err: 'dumpLayout 失败' };
+  if (d0.text.includes('单词库') && d0.text.includes('知识库')) { if (log) log('抽屉已开', 'pass', '边栏项「单词库/知识库」可见——跳过唤出'); return { ok: true }; }
+  const cands = []; let W = 0, H = 0;
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return;
+    const a = node.attributes || {};
+    const m = String(a.bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+    if (m) { W = Math.max(W, +m[3]); H = Math.max(H, +m[4]); }
+    if (String(a.type || '').toLowerCase() === 'image' && !String(a.text || '').trim() && m) {
+      cands.push({ x: Math.round((+m[1] + +m[3]) / 2), y: Math.round((+m[2] + +m[4]) / 2), x1: +m[1], y1: +m[2], w: +m[3] - +m[1], h: +m[4] - +m[2] });
+    }
+    for (const k of Object.keys(node)) if (node[k] && typeof node[k] === 'object') walk(node[k]);
+  };
+  try { walk(JSON.parse(d0.text)); } catch (_) { return { ok: false, err: 'dump 非 JSON' }; }
+  const zone = cands.filter((c) => c.x1 < W * 0.3 && c.y1 > H * 0.66 && c.w >= 40 && c.w <= 150 && c.h >= 40 && c.h <= 150)
+    .sort((a, b) => a.x1 - b.x1);
+  if (!zone.length) return { ok: false, err: `左下角未找到抽屉按钮候选（W=${W} H=${H}，Image 候选 ${cands.length} 个均出界）——盯屏校准 /api/dump?dev=phone` };
+  const t = zone[0];
+  const r = await sh(serial, `uitest uiInput click ${t.x} ${t.y}`, 15000);
+  await sleep(1800);
+  const d1 = await dumpLayout(serial);
+  const opened = d1.ok && d1.text.includes('单词库') && d1.text.includes('知识库');
+  if (log) log('点左下角抽屉按钮', opened ? 'pass' : 'fail', `已点击 (${t.x},${t.y})（启发式：左下角 ${t.w}×${t.h}px Image）——${opened ? '抽屉已开' : '抽屉未开（坐标偏差——盯屏校准）'}`);
+  return { ok: opened, raw: r.trim().slice(0, 100) };
+}
+// 手机导航（抽屉版 navTo）：ensureCanvas → openPhoneDrawer → 点目标边栏项
+async function navToM(serial, text, log) {
+  const c = await ensureCanvas(serial, log);
+  if (!c) return { ok: false, err: '进画布失败（导航链断）' };
+  const dr = await openPhoneDrawer(serial, log);
+  if (!dr.ok) return { ok: false, err: dr.err || '抽屉未开' };
+  return await uiClickText(serial, text, { waitMs: 2600 });
+}
+// 通用导航分流：手机=抽屉（navToM）/ Pad=常驻边栏（navTo 自带 0.220.0 折叠展开适配）——0.241.0.4 手机操作端用
+async function navAnywhere(dev, serial, text, log) {
+  if (dev.id === 'phone') return await navToM(serial, text, log);
+  return await navTo(serial, text, log);
+}
+// ★ 登录后云同步询问·主动开启（BOOT 引导专用——与 dismissLoginDialogs「暂不开启」测试隔离语义互补）
+// ★ 0.241.0.5 堆叠修复（首轮真机实锤 R20261015105027：先点「开启云同步」时它常在 30 天试用弹窗【下层】，
+//   坐标点击被上层弹窗全屏遮罩拦截=点空，开关滞留 false）——改 findTopmostButton 最上层优先逐层清：
+//   每轮取「开启云同步/知道了」树序最后命中（=最上层弹窗的按钮）点它，上层清完下层自然露出；系统权限弹窗独立处理
+async function acceptSyncAsk(serial, log) {
+  let opened = false, allowed = false, knowed = 0;
+  for (let i = 0; i < 10; i++) {
+    const d = await dumpLayout(serial);
+    if (!d.ok) break;
+    if (d.text.includes('附近的设备')) {
+      const allow = findNodeBoundsAll(d.text, '允许').filter((h) => h.text === '允许');
+      const t = allow.length ? allow[allow.length - 1] : null;
+      if (t) { await sh(serial, `uitest uiInput click ${t.x} ${t.y}`, 15000); if (log) log('系统权限·自动点「允许」', 'pass', `已点击 (${t.x},${t.y})（发现和连接附近的设备——同步所需，系统弹窗在所有 app 弹窗之上）`); allowed = true; await sleep(1500); continue; }
+    }
+    const b = findTopmostButton(d.text, ['开启云同步', '知道了']);
+    if (!b) break;
+    if (b.text === '开启云同步') opened = true;
+    else knowed++;
+    await sh(serial, `uitest uiInput click ${b.x} ${b.y}`, 15000);
+    if (log) log(b.text === '开启云同步' ? '云同步询问·自动点「开启云同步」（最上层）' : '30天试用·自动点「知道了」（最上层）', 'pass', `已点击 (${b.x},${b.y})——逐层清弹窗，上层优先防遮罩拦截`);
+    await sleep(1500);
+  }
+  return { opened, allowed, knowed };
+}
+// ★ PC 多屏注入点击（0.229.25 实证通道固化：`dumpLayout -d <disp>` 定向 dump（dumpAuditNodes 已限 app 子树）
+//   + `uitest uiInput click x y <disp>` 多屏注入；窗口所在屏漂移=15→0 双屏尝试兜底）
+async function pcClickText(serial, keyword, opts = {}) {
+  const disps = opts.displayId !== undefined ? [opts.displayId] : [15, 0];
+  for (const disp of disps) {
+    const d = await dumpAuditNodes(serial, disp);
+    if (!d.ok || !d.nodes.length) continue;
+    let hits = d.nodes.filter((n) => String(n.text || '').includes(keyword));
+    if (opts.exact) hits = hits.filter((n) => String(n.text) === keyword);
+    if (!hits.length) continue;
+    const b = opts.pick === 'last' ? hits[hits.length - 1] : hits[0];
+    const r = await sh(serial, `uitest uiInput click ${Math.round(b.xc)} ${Math.round(b.yc)} ${disp}`, 15000);
+    await sleep(opts.waitMs || 1600);
+    return { ok: !SH_ERR_RE.test(r), x: Math.round(b.xc), y: Math.round(b.yc), disp, text: String(b.text).slice(0, 30), raw: r.trim().slice(0, 120) };
+  }
+  return { ok: false, err: `PC 两屏（${disps.join('/')}）app 子树内未找到含「${keyword}」控件${opts.exact ? '（精确）' : ''}——窗口可能在别的屏或文案变化，盯屏 /api/dump?dev=pc` };
+}
+// ★ 统一登录引导（三端）：coldStart → 协议模态自动同意 → 点首页「登录华为账号」（三端首页账号卡同款，
+//   Index.ets:589——手机无首页勾选框走协议模态放行路径已由 agreeDialogIfAny 覆盖）→
+//   唯一人工=华为授权页（checkpoint 自动探测；'华为账号已登录'含子串'已登录'，dumpCountText 三端通用）→
+//   收尾 dismissLoginDialogs（BOOT 场景由调用方接 acceptSyncAsk 主动开启）
+async function ensureLoginFlow(ctx, dev, skipCold) {
+  const serial = dev.serial;
+  const isPc = !canUiDump(dev);
+  if (!skipCold) await coldStart(serial, 6000); // ★ skipCold：flowPrep 等调用方已冷启过（重复 force-stop 白耗 8s）
+  const ag = await agreeDialogIfAny(serial, ctx.log);
+  if (ag.agreed) ctx.log('协议模态·自动同意', ag.ok ? 'pass' : 'fail', ag.ok ? '勾选+「同意并继续」+「暂不加入」体验改进 全自动完成（fresh 首启路径）' : '同意点击未生效');
+  else ctx.log('协议已同意（无模态）', 'info', '覆盖安装/此前已同意——直接登录');
+  if (isPc) {
+    const loginOk = (await grepPref(serial, 'huawei-account')).found; // ★ 0.241.0.5：登录态=持久化通道（cloud_data 是同步活≠登录态——PC 已登录但同步未开时误走登录分支找不到按钮）
+    if (loginOk) { ctx.log('PC 已登录（huawei-account 落盘）', 'pass', '跳过登录——同步未活由设置页自愈链接管'); return true; }
+    const c0 = await dbCount(serial, null);
+    if (c0.ok && c0.n > 0) { ctx.log('PC 已登录+同步活', 'pass', `cloud_data=${c0.n} 行——跳过登录`); return true; }
+    const b = await pcClickText(serial, '登录华为账号', { exact: true, waitMs: 2500 });
+    ctx.log('① 点首页「登录华为账号」（PC 多屏通道）', b.ok ? 'pass' : 'fail', b.ok ? `已点击 (${b.x},${b.y})@屏${b.disp}（0.229.25 实证通道固化）` : (b.err || ''));
+    if (!b.ok) return false;
+  } else {
+    const n0 = (await dumpCountText(serial, '已登录')).n;
+    if (n0 >= 1) { ctx.log('已登录', 'pass', '首页「华为账号已登录」——跳过登录（fresh 场景跑 BOOT 前应未登录）'); return true; }
+    const b = await uiClickText(serial, '登录华为账号', { exact: true, waitMs: 2500 });
+    ctx.log('① 点首页「登录华为账号」', b.ok ? 'pass' : 'fail', b.ok ? `已点击 (${b.x},${b.y})（三端首页账号卡同款）` : (b.err || ''));
+    if (!b.ok) return false;
+    // 手机/协议未同意路径：点登录弹协议模态（pendingAction=login）——同意后续跑授权
+    const d1 = await dumpLayout(serial);
+    if (d1.ok && d1.text.includes('同意并继续')) {
+      const ag2 = await agreeDialogIfAny(serial, ctx.log);
+      if (ag2.agreed && ag2.ok) ctx.log('② 协议模态自动同意续跑登录', 'pass', 'pendingAction=login 续跑拉华为授权（0.226.0 手机路径）');
+    }
+  }
+  const r = await ctx.checkpoint({ label: `【人工仅授权·请看 ${dev.label}】测试台已自动点完协议与「登录华为账号」。静默授权零点击；若弹华为授权页点「同意并继续」（有「阅读并同意」勾选框先勾再点）`, deviceId: dev.id,
+    detect: isPc ? (async () => (await grepPref(serial, 'huawei-account')).found) // ★ 0.241.0.5：PC 登录态探测改持久化通道——cloud_data 是"同步活"不是"登录态"（首轮实锤：登录成功但同步未开=0 行恒不通过→180s 假超时）
+      : (async () => (await dumpCountText(serial, '已登录')).n >= 1) });
+  if (r.state === 'timeout') { ctx.log('人工授权', 'fail', '180s 内未完成授权（华为授权页未点同意）'); return false; }
+  ctx.log('② 华为授权完成', 'pass', r.auto ? '自动确认（静默授权零点击·全程无人工）' : '用户确认完成');
+  return true;
+}
+// ★ 0.241.0.5 编辑器保存·键盘遮挡处置（0.229.25 遗留坑——inputText 注入后软键盘把「保存」顶出 dump 可视区，
+//   R20261015120525 实锤单词编辑器同病）：先直找「保存」→找不到点编辑器标题收键盘（点输入框外收键盘 0.182.x；
+//   禁用 keyEvent Back——B9 返回键会直接关编辑器丢输入）
+async function saveEditorSafe(serial, ctx, editorTitle) {
+  let sv = await uiClickText(serial, '保存', { exact: true, waitMs: 1600 });
+  if (sv.ok) { ctx.log('④ 点「保存」', 'pass', `已点击 (${sv.x},${sv.y})`); return sv; }
+  const t = await uiClickText(serial, editorTitle, { exact: true, waitMs: 1200 });
+  ctx.log('④ 保存被键盘遮挡→点「' + editorTitle + '」标题收键盘', t.ok ? 'info' : 'warn', t.ok ? `已点击 (${t.x},${t.y})（点输入框外收键盘，Back 会误关编辑器）` : (t.err || ''));
+  if (t.ok) {
+    await sleep(1500);
+    sv = await uiClickText(serial, '保存', { exact: true, waitMs: 1600 });
+  }
+  ctx.log('④ 点「保存」', sv.ok ? 'pass' : 'fail', sv.ok ? `已点击 (${sv.x},${sv.y})（键盘已收，保存回屏）` : (sv.err || '仍不可见——盯屏 /api/dump 校准'));
+  return sv;
+}
+// ★ 0.241.0.5 分布式同步权限 CLI 预授权（PC 首轮 BOOT-LOGIN 三连败终案：DISTRIBUTED_DATASYNC grantStatus=-1——
+//   系统权限弹窗在 PC 双屏环境未被允许（弹窗不可见/被焦点窗口吞），requestPermissionsFromUser 恒拒 → 开关恒 false。
+//   0.223.1 方法论「atm perm -g 可给 debug hap 预授权」：动态取 tokenId → 查 grantStatus → 非 0 则预授权（幂等无害）。
+//   预授权后 requestPermissionsFromUser 直接 granted 不弹窗——UI 设备同样受益（少一个弹窗变量）
+async function ensureSyncPerm(serial, log) {
+  try {
+    const dumpOut = await sh(serial, `atm dump -t token-info -b ${CFG.bundle}`, 15000);
+    const tid = (dumpOut.match(/"tokenID": (\d+)/) || [])[1];
+    if (!tid) { if (log) log('权限预授权·tokenId 获取', 'warn', 'atm dump 未取到 tokenID（设备工具链差异）——跳过预授权，走弹窗路径'); return { ok: false }; }
+    const granted = /DISTRIBUTED_DATASYNC[\s\S]{0,80}?"grantStatus": 0/.test(dumpOut);
+    if (granted) { if (log) log('权限预授权·已授权', 'pass', `tokenID=${tid} DISTRIBUTED_DATASYNC grantStatus=0——无需处理`); return { ok: true }; }
+    const r = await sh(serial, `atm perm -g -i ${tid} -p ohos.permission.DISTRIBUTED_DATASYNC`, 15000);
+    const okNow = /Success/i.test(r);
+    if (log) log('权限预授权·atm perm -g', okNow ? 'pass' : 'warn', `tokenID=${tid} → ${r.trim().slice(0, 80)}${okNow ? '（后续 requestPermissionsFromUser 直接 granted 不弹窗——PC 双屏系统弹窗不可靠的根治）' : '（预授权未成功——保留系统弹窗路径兜底）'}`);
+    return { ok: okNow };
+  } catch (e) { if (log) log('权限预授权·异常', 'warn', String(e).slice(0, 80)); return { ok: false }; }
+}
+// ★ 0.241.0.5 设置页开同步自愈链（真实用户路径：边栏/抽屉「设置」→云同步 Tab→「开启云同步」→系统权限「允许」）——
+//   适用于「已登录但登录询问弹窗已错过」的存量态（首轮 acceptSyncAsk 点空/用户手动关过弹窗）：此时弹窗不会再弹，
+//   唯一正路=设置页手动开。已登录点「开启云同步」不再弹登录引导（0.196.10 只拦未登录）直接开。
+async function openSyncViaSettings(ctx, dev) {
+  const serial = dev.serial;
+  const isPc = !canUiDump(dev);
+  await ensureSyncPerm(serial, ctx.log); // ★ 点「开启云同步」前先 CLI 预授权——PC 双屏系统弹窗不可靠的根治
+  const click = isPc ? (kw, o) => pcClickText(serial, kw, o) : (kw, o) => uiClickText(serial, kw, o);
+  const s1 = isPc ? await click('设置', { waitMs: 2200 }) : await navAnywhere(dev, serial, '设置', ctx.log);
+  ctx.log('自愈① 「设置」入口', s1.ok ? 'pass' : 'fail', s1.ok ? `已点击 (${s1.x},${s1.y})——全局设置弹窗${dev.id === 'phone' ? '（抽屉内入口）' : ''}` : (s1.err || ''));
+  if (!s1.ok) return false;
+  const s2 = await click('云同步', { waitMs: 2000 });
+  ctx.log('自愈② 「云同步」Tab', s2.ok ? 'pass' : 'fail', s2.ok ? `已点击 (${s2.x},${s2.y})` : (s2.err || ''));
+  if (!s2.ok) return false;
+  const s3 = await click('开启云同步', { waitMs: 2500 });
+  ctx.log('自愈③ 「开启云同步」', s3.ok ? 'pass' : 'fail', s3.ok ? `已点击 (${s3.x},${s3.y})（已登录不再弹登录引导，直接开）` : (s3.err || '可能已开启'));
+  if (!s3.ok) return false;
+  await sleep(2500);
+  // 系统权限弹窗（首次开同步才弹；已授权过则跳过）
+  if (!isPc) {
+    const d = await dumpLayout(serial);
+    if (d.ok && d.text.includes('附近的设备')) {
+      const s5 = await uiClickText(serial, '允许', { pick: 'last', waitMs: 2500 });
+      ctx.log('自愈④ 系统弹窗·「允许」', s5.ok ? 'pass' : 'fail', s5.ok ? `已点击 (${s5.x},${s5.y})` : (s5.err || ''));
+    } else ctx.log('自愈④ 系统权限弹窗未出现', 'info', '此前已授权（仅首次开同步弹）');
+  } else {
+    const d = await dumpAuditNodes(serial, 15);
+    if (d.ok && d.nodes.some((n) => String(n.text || '').includes('附近的设备'))) await pcClickText(serial, '允许', { exact: true, pick: 'last', waitMs: 2000 });
+  }
+  return true;
 }
 
 // ★ 0.232.0 读持久化字段值（persistent_storage 实为 XML <preferences>：值内嵌 JSON 且 HTML 实体转义
@@ -1131,6 +1360,12 @@ const CASES = [
       ctx.log('前置状态', 'info', ag.agreed ? '协议未同意→点头像先弹协议（已自动同意续跑）' : '协议已同意+未登录（点头像直接拉华为授权——0.226.0 真实路径）');
       // ★ 0.229.24 头像自动点：账号行=Row[Image(头像), Column(未登录/昵称)]——uiClickCheckbox 两级向上找行首图标
       //   （0.196.3：未登录点头像拉起登录；系统账号已授权时静默完成=零人工）
+      // ★ 0.241.0.4 手机适配：边栏=画布抽屉（默认关）——先 ensureCanvas+openPhoneDrawer 再点头像
+      if (dev.id === 'phone') {
+        const csOk = await ensureCanvas(serial, ctx.log);
+        const drOk = csOk ? await openPhoneDrawer(serial, ctx.log) : { ok: false };
+        if (!drOk.ok) { const dk = await dumpLayout(serial); if (!dk.text.includes('未登录')) { ctx.log('① 手机抽屉未开', 'fail', '抽屉唤出失败——头像定位无从谈起'); return; } }
+      }
       const av = await uiClickCheckbox(serial, '未登录', { waitMs: 3000 });
       if (av.ok) ctx.log('① 自动点边栏账号头像（行首图标）', 'pass', `已点击 (${av.x},${av.y})（${av.how}——0.196.3 未登录点头像拉起登录）`);
       else ctx.log('① 头像自动定位失败', 'warn', (av.err || '') + '——请人工点边栏底部账号头像');
@@ -1153,6 +1388,12 @@ const CASES = [
       ctx.log('前置状态', 'info', (ag.agreed ? '协议未同意→云同步入口先弹协议（已自动同意续跑）' : '协议已同意+未登录') + '（0.196.11：fromSyncEntry 登录成功直接开云同步，不再弹询问）');
       // ★ 0.229.24 全自动导航（实机 dump 探索固化关键词——「对测试台的测试」产物；此前人工导航 180s 超时翻车主因）：
       //   边栏「设置」→ 弹窗「云同步」Tab → 「开启云同步」→ 未登录弹「登录华为账号」引导窗（0.196.10）→ 静默授权
+      // ★ 0.241.0.4 手机适配：设置入口在画布抽屉内（默认关）——先 ensureCanvas+openPhoneDrawer
+      if (dev.id === 'phone') {
+        const csOk = await ensureCanvas(serial, ctx.log);
+        const drOk = csOk ? await openPhoneDrawer(serial, ctx.log) : { ok: false };
+        if (!drOk.ok) { const dk = await dumpLayout(serial); if (!dk.text.includes('设置')) { ctx.log('⓪ 手机抽屉唤出', 'fail', '抽屉未开——设置入口不可达'); return; } }
+      }
       const s1 = await uiClickText(serial, '设置', { waitMs: 2500 });
       ctx.log('① 自动点边栏「设置」', s1.ok ? 'pass' : 'fail', s1.ok ? `已点击 (${s1.x},${s1.y})——全局设置弹窗（默认 API Tab）` : (s1.err || ''));
       if (!s1.ok) return;
@@ -1269,6 +1510,116 @@ const CASES = [
       if (pre && pre.login === true && logged === 0) { ctx.log('★覆盖安装登录态保留', 'fail', '装机前快照=已登录、装后已登录×0——登录态被覆盖安装丢失（真红线：不卸载的 -r 安装绝不该清沙箱）'); return; }
       if (logged === 0) { ctx.log('登录态保留', 'skip', '当前未登录——本用例须【覆盖安装】模式且此前已登录时跑（fresh 模式必清）'); return; }
       ctx.log('★覆盖安装登录态保留', 'pass', `已登录×${logged}${pre && pre.login ? '（装机前快照=已登录，装后保留 ✓）' : ''}（覆盖安装不清沙箱，华为登录态与协议同意均保留）`);
+    } },
+
+  // ---------- ★ 0.241.0.4 sync-boot 三端从零引导（fresh 装机后：协议→登录→开同步→三端收敛；用户拍板唯一人工=华为授权页） ----------
+  // 配套全流程（前端指引同步更新）：①装机模式选「全新安装」+勾三台→【装机】 ②跑本套件 ③跑 sync+syncflow 完成三端验证
+  { id: 'BOOT-AGREE', suite: 'sync-boot', name: '从零①·首启协议全自动同意+未登录基线（fresh 装机第一步）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) {
+        const g = await grepPref(serial, 'agreement-v1');
+        ctx.log('PC 协议态（数据侧尽力）', g.found ? 'pass' : 'info', g.found ? '盘上有 agreement-v1（已同意）' : '盘上无 agreement-v1（未同意或未落盘——PC 无 UI 通道，协议链已由 Pad/手机验证，BOOT-LOGIN 数据断言兜底）');
+        return;
+      }
+      await coldStart(serial, 7000);
+      const d0 = await dumpLayout(serial);
+      const hadModal = d0.ok && d0.text.includes('同意并继续');
+      if (!hadModal) { ctx.log('★协议模态未出现', 'warn', '非 fresh 装机或协议已同意（本用例验证 fresh 首启路径——覆盖安装场景直接跑 BOOT-LOGIN）'); return; }
+      const ag = await agreeDialogIfAny(serial, ctx.log);
+      if (!(ag.agreed && ag.ok)) { ctx.log('★协议自动同意', 'fail', '同意链失败（勾选/点击未生效）'); return; }
+      const d1 = await dumpLayout(serial);
+      const gone = d1.ok && !d1.text.includes('同意并继续');
+      ctx.log('★协议已同意（模态消失）', gone ? 'pass' : 'fail', gone ? '勾选+「同意并继续」+「暂不加入」体验改进 全自动完成' : '模态仍在（同意未生效）');
+      const unlogged = d1.ok && d1.text.includes('登录华为账号');
+      ctx.log('★未登录基线', unlogged ? 'pass' : 'fail', unlogged ? '首页「登录华为账号」在场——三端从零起点一致' : '首页未见登录入口（状态异常，盯屏 /api/dump）');
+    } },
+  { id: 'BOOT-LOGIN', suite: 'sync-boot', name: '从零②·全自动登录+开云同步（唯一人工=华为授权页；登录询问自动「开启」+系统权限自动「允许」）', semi: true, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      const lok = await ensureLoginFlow(ctx, dev);
+      if (!lok) return;
+      await ensureSyncPerm(serial, ctx.log); // ★ 登录后先 CLI 预授权同步权限（幂等）——后续「开启云同步」点击直接 granted，少一个系统弹窗变量
+      // 登录后三连弹窗主动开启（PC=pcClickText 版；UI 设备=acceptSyncAsk）
+      if (canUiDump(dev)) {
+        const ac = await acceptSyncAsk(serial, ctx.log);
+        if (!ac.opened) ctx.log('云同步询问未出现', 'info', '此前已开过同步或弹窗已过——以数据断言为准（三重断言兜底）');
+      } else {
+        for (let i = 0; i < 4; i++) {
+          const d = await dumpAuditNodes(serial, 15);
+          if (!d.ok || !d.nodes.length) break;
+          if (d.nodes.some((n) => String(n.text) === '开启云同步')) { const b = await pcClickText(serial, '开启云同步', { exact: true, waitMs: 1800 }); if (b.ok) ctx.log('云同步询问·自动点「开启云同步」（PC）', 'pass', `已点击 (${b.x},${b.y})@屏${b.disp}`); continue; }
+          if (d.nodes.some((n) => String(n.text) === '知道了')) { const b = await pcClickText(serial, '知道了', { pick: 'last', waitMs: 1500 }); if (b.ok) ctx.log('30天试用·自动点「知道了」（PC）', 'pass', `已点击 (${b.x},${b.y})@屏${b.disp}`); continue; }
+          if (d.nodes.some((n) => String(n.text || '').includes('附近的设备'))) { const b = await pcClickText(serial, '允许', { exact: true, pick: 'last', waitMs: 1800 }); if (b.ok) ctx.log('系统权限·自动点「允许」（PC）', 'pass', `已点击 (${b.x},${b.y})@屏${b.disp}`); continue; }
+          break;
+        }
+      }
+      // ★ 0.241.0.5 自愈：已登录但弹窗已错过（存量态）——走设置页真实路径开启，等待首拉
+      let cNow = await dbCount(serial, null);
+      if (!(cNow.ok && cNow.n > 0)) {
+        ctx.log('同步未活→设置页自愈链', 'info', `cloud_data=${cNow.ok ? cNow.n : cNow.raw}——登录询问弹窗已错过，走 设置→云同步→开启 真实用户路径`);
+        const sv = await openSyncViaSettings(ctx, dev);
+        if (sv) {
+          ctx.log('自愈·等待同步激活+首拉', 'info', '最多 90s（含云端全量下拉）');
+          await pollUntil(async () => { const c = await dbCount(serial, null); return c.ok && c.n > 0; }, 90000);
+          cNow = await dbCount(serial, null);
+          ctx.log('★自愈结果', cNow.ok && cNow.n > 0 ? 'pass' : 'fail', `cloud_data=${cNow.ok ? cNow.n : cNow.raw} 行${cNow.ok && cNow.n > 0 ? '（设置页路径开启成功+首拉完成）' : '——设置页开启未生效（app 侧问题，先测后修）'}`);
+        }
+      }
+      // ★ 三重断言：UI 登录态 + RDB 同步活 + 开关落盘（PersistenceV2 flush 秒级延迟=12s 轮询重试，同 LOGIN-SYNC）
+      if (canUiDump(dev)) {
+        const n = (await dumpCountText(serial, '已登录')).n;
+        ctx.log('★UI 登录态', n >= 1 ? 'pass' : 'fail', n >= 1 ? '首页「华为账号已登录」（含子串命中，三端通用）' : '首页仍未见登录态特征');
+      }
+      const alive = await pollUntil(async () => { const c = await dbCount(serial, null); return c.ok && c.n > 0; }, 90000);
+      const c = await dbCount(serial, null);
+      ctx.log('★云同步活（RDB 有行）', alive && c.ok && c.n > 0 ? 'pass' : 'fail', c.ok ? `cloud_data=${c.n} 行（>0=登录+同步链路开；90s 等待含首拉）` : `sqlite 读取异常：${c.raw}`);
+      let g = null, switchOn = false;
+      for (let i = 0; i < 6 && !switchOn; i++) {
+        g = await grepPref(serial, 'cloud-sync-switch');
+        switchOn = g.found && g.sample.includes('true');
+        if (!switchOn) await sleep(2000);
+      }
+      ctx.log('★cloud-sync-switch 开关落盘', switchOn ? 'pass' : (g && g.found ? 'fail' : 'warn'),
+        g && g.found ? `${g.path} → ${g.sample.slice(0, 200)}${switchOn ? '' : '（12s 内磁盘未见 true——行数已实证同步活，flush 延迟或开关未落盘，人工复核）'}` : '候选路径未命中（RDB 行数断言已兜底）');
+    } },
+  { id: 'BOOT-CONVERGE', suite: 'sync-boot', name: '从零③·三端收敛（settle 总行数一致+四域行数/签名三端一致）', semi: false, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (devs.length < 2) { ctx.log('前置', 'skip', '三端收敛需 ≥2 台在线设备（建议三台全勾——本条是「手机与 Pad/PC 不同步」的总闸断言）'); return; }
+      const base = []; for (const d of devs) base.push({ d, n: (await dbCount(d.serial, null)).n });
+      ctx.log('基线', 'info', base.map((x) => `${x.d.id}=${x.n}`).join(' ') + '（fresh 三端并发首拉有先后——settle 等待收敛）');
+      const eq = await pollUntil(async () => {
+        const cs = []; for (const d of devs) cs.push(await dbCount(d.serial, null));
+        return cs.every((c) => c.ok) && cs.every((c) => c.n === cs[0].n);
+      }, 180000);
+      const afters = []; for (const d of devs) afters.push({ d, c: await dbCount(d.serial, null) });
+      const allOk = afters.every((x) => x.c.ok) && afters.every((x) => x.c.n === afters[0].c.n);
+      ctx.log('★三端总行数收敛', allOk ? 'pass' : 'fail', afters.map((x) => `${x.d.id}=${x.c.ok ? x.c.n : x.c.raw}`).join(' ') + (allOk ? `（一致=${afters[0].c.n}）` : '——180s 内未达一致：某端未拉完/未登录/同步未开（先跑 BOOT-LOGIN；仍不一致=app 同步问题实锤，先测后修）'));
+      // 四域行数+键集签名（三端版 SYNC-DOMAIN；del 墓碑域含在内——收敛后墓碑也应一致）
+      for (const [domain, prefixes] of Object.entries(CFG.domains)) {
+        for (const p of prefixes) {
+          const res = []; for (const d of devs) res.push({ d, c: await dbCount(d.serial, p) });
+          if (res.some((x) => !x.c.ok)) { ctx.log(`${domain} [${p}] 行数`, 'fail', res.map((x) => `${x.d.id}=${x.c.raw}`).join(' ')); continue; }
+          const ns = res.map((x) => x.c.n);
+          const equal = ns.every((n) => n === ns[0]);
+          ctx.log(`${domain} [${p}] 行数`, equal ? 'pass' : 'fail', res.map((x) => `${x.d.id}=${x.c.n}`).join(' '));
+          artSave('BOOT-CONVERGE', `${p.replace(/[:%]/g, '_')}-counts.json`, res.map((x) => { return { device: x.d.id, n: x.c.n }; }));
+          if (equal && ns[0] > 0) {
+            // ★ 0.241.0.7 修瞬态假红（R20261015115552 实锤：行数已收敛而键集/值长仍在途——单次快照判死，下一轮自愈）：
+            //   签名一致也走 settle 轮询（≤120s，每 12s 复查三端）——fresh 后云端增量分批下行有先后，瞬态在途自愈为绿；
+            //   持续分叉（120s 仍不一致）才定性 fail（LWW 残留/墓碑压制转 app 修复迭代）
+            let sigs = [], sigEq = false;
+            for (let t = 0; t < 10 && !sigEq; t++) {
+              sigs = []; for (const d of devs) sigs.push({ d, s: await dbSignature(d.serial, p) });
+              const hs = sigs.map((x) => x.s.hash);
+              sigEq = hs.every((h) => h === hs[0]);
+              if (!sigEq && t < 9) await sleep(12000);
+            }
+            ctx.log(`${domain} [${p}] 键集签名`, sigEq ? 'pass' : 'fail', sigs.map((x) => `${x.d.id}=${x.s.hash}(${x.s.lines})`).join(' ') + (sigEq ? '' : '——120s 轮询后仍分叉（行数同而内容异）：LWW 残留/墓碑压制问题，转 app 修复迭代'));
+          }
+        }
+      }
     } },
 
   // ---------- 功能② 云同步四域数据链 ----------
@@ -1410,7 +1761,7 @@ const CASES = [
         const baseOp = await dbCount(op.serial, 'word:');
         const bases = []; for (const d of asserts) bases.push({ d, n: (await dbCount(d.serial, 'word:')).n });
         ctx.log('基线', 'pass', `${op.id} word=${baseOp.n}，` + bases.map((x) => `${x.d.id}=${x.n}`).join(' '));
-        const nav = await navTo(op.serial, '单词库', ctx.log);
+        const nav = await navAnywhere(op, op.serial, '单词库', ctx.log);
         ctx.log('① 边栏「单词库」', nav.ok ? 'pass' : 'warn', nav.ok ? `已点击 (${nav.x},${nav.y})` : (nav.err || '未命中——继续找 +'));
         const plus = await uiClickText(op.serial, '+', { exact: true, waitMs: 1500 });
         if (!plus.ok) { ctx.log('② 顶栏「+」', 'fail', plus.err || '未找到 + 按钮'); return; }
@@ -1425,7 +1776,13 @@ const CASES = [
         const it = await uiInputText(op.serial, inBox.x, inBox.y, word);
         ctx.log(`③ 输入单词 ${word}`, it.ok ? 'pass' : 'fail', it.ok ? `已注入 (${inBox.x},${inBox.y})` : (it.raw || 'inputText 失败'));
         if (!it.ok) return;
-        const sv = await uiClickText(op.serial, '保存', { exact: true, waitMs: 2000 });
+        // ★ 0.241.0.7 修稳定复现红（R20261015120120/120525 两轮同点位「保存」找不到）：inputText 后软键盘在屏=uitest dump 盲区
+        //   （0.230.0.1 实锤：窗口 RESIZE 后 app 子树抓不到——「树中无保存」≠不可达）。keyEvent Back 收键盘再点保存
+        //   （编辑器返回键拦截在第二层：Back 只收键盘不关弹窗——B11 0.230.0.1 同款实证修法，0.229.25 遗留项落地）
+        await sh(op.serial, 'uitest uiInput keyEvent Back', 15000);
+        await sleep(1500);
+        ctx.log('④ 收键盘', 'pass', 'keyEvent Back——键盘态 dump 抓不到「保存」（盲区），收起后可达（编辑器不关：拦截在第二层）');
+        const sv = await uiClickText(op.serial, '保存', { exact: true, waitMs: 2500 });
         ctx.log('④ 点「保存」', sv.ok ? 'pass' : 'fail', sv.ok ? `已点击 (${sv.x},${sv.y})` : (sv.err || '未找到保存按钮'));
         if (!sv.ok) return;
         const localOk = await pollUntil(async () => { const c = await dbCount(op.serial, 'word:'); return c.ok && c.n === baseOp.n + 1; }, 30000);
@@ -1457,7 +1814,7 @@ const CASES = [
         const baseOp = await dbCount(op.serial, 'card:');
         const bases = []; for (const d of asserts) bases.push({ d, n: (await dbCount(d.serial, 'card:')).n });
         ctx.log('基线', 'pass', `${op.id} card=${baseOp.n}，` + bases.map((x) => `${x.d.id}=${x.n}`).join(' '));
-        const nav = await uiClickText(op.serial, '知识库', { waitMs: 2500 });
+        const nav = await navAnywhere(op, op.serial, '知识库', ctx.log);
         ctx.log('① 边栏「知识库」', nav.ok ? 'pass' : 'warn', nav.ok ? `已点击 (${nav.x},${nav.y})` : (nav.err || '未命中——继续找 +'));
         const plus = await uiClickText(op.serial, '+', { exact: true, waitMs: 1500 });
         if (!plus.ok) { ctx.log('② 顶栏「+」', 'fail', plus.err || '未找到 + 按钮'); return; }
@@ -1471,7 +1828,11 @@ const CASES = [
         const it = await uiInputText(op.serial, inBox.x, inBox.y, title);
         ctx.log(`④ 输入标题 ${title}`, it.ok ? 'pass' : 'fail', it.ok ? `已注入 (${inBox.x},${inBox.y})` : (it.raw || 'inputText 失败'));
         if (!it.ok) return;
-        const sv = await uiClickText(op.serial, '保存', { exact: true, waitMs: 2000 });
+        // ★ 0.241.0.7 收键盘（同 WORD——键盘态 dump 盲区，Back 只收键盘不关编辑器）
+        await sh(op.serial, 'uitest uiInput keyEvent Back', 15000);
+        await sleep(1500);
+        ctx.log('⑤ 收键盘', 'pass', 'keyEvent Back——收起软键盘，「保存」可达（编辑器不关）');
+        const sv = await uiClickText(op.serial, '保存', { exact: true, waitMs: 2500 });
         ctx.log('⑤ 点「保存」', sv.ok ? 'pass' : 'fail', sv.ok ? `已点击 (${sv.x},${sv.y})` : (sv.err || ''));
         if (!sv.ok) return;
         const localOk = await pollUntil(async () => { const c = await dbCount(op.serial, 'card:'); return c.ok && c.n === baseOp.n + 1; }, 30000);
@@ -1493,7 +1854,7 @@ const CASES = [
         const baseOp = await nodeCountSum(op.serial);
         const bases = []; for (const d of asserts) bases.push({ d, n: (await nodeCountSum(d.serial)).n });
         ctx.log('基线', 'pass', `${op.id} ${baseOp.detail}，` + bases.map((x) => `${x.d.id}=${x.n}`).join(' ') + '（+ 按钮平铺=新树/选项卡=新 Tab，node+tab 联合免疫模式差异）');
-        const nav = await uiClickText(op.serial, '气泡树', { waitMs: 2500 });
+        const nav = await navAnywhere(op, op.serial, '气泡树', ctx.log);
         ctx.log('① 边栏「气泡树」', nav.ok ? 'pass' : 'warn', nav.ok ? `已点击 (${nav.x},${nav.y})` : (nav.err || '未命中——继续找 +'));
         const plus = await uiClickText(op.serial, '+', { exact: true, waitMs: 1800 });
         if (!plus.ok) { ctx.log('② 顶栏「+」', 'fail', plus.err || '未找到 + 按钮'); return; }
@@ -1523,7 +1884,7 @@ const CASES = [
         const delOp0 = await dbCount(op.serial, 'del:');
         ctx.log('基线', 'pass', `${op.id}=${baseOp.detail} del=${delOp0.n}，` + bases.map((x) => `${x.d.id}=${x.n}`).join(' '));
         // ① 建树（同 NODE 路径）
-        const nav = await uiClickText(op.serial, '气泡树', { waitMs: 2500 });
+        const nav = await navAnywhere(op, op.serial, '气泡树', ctx.log);
         if (nav.ok) ctx.log('① 边栏「气泡树」', 'pass', `已点击 (${nav.x},${nav.y})`);
         const plus = await uiClickText(op.serial, '+', { exact: true, waitMs: 1800 });
         if (!plus.ok) { ctx.log('② 顶栏「+」建树', 'fail', plus.err || ''); return; }
@@ -1563,6 +1924,81 @@ const CASES = [
           const bDel = await dbCount(b.d.serial, 'del:');
           ctx.log(`⑧ ★${b.d.label} 删除传播`, ok && c.n === b.n ? 'pass' : 'fail',
             `总和 ${b.n + 1}→${c.n}（期望回基线 ${b.n}，${c.detail}），del=${bDel.ok ? bDel.n : bDel.raw}${ok && c.n === b.n ? '——墓碑行传播收敛（0.228.0 遗留项验证通过）' : '——未收敛=删除传播实锤问题（0.228.0 PENDING 转 app 修复迭代，先测后修）'}`);
+        }
+      } finally {
+        for (const d of asserts) { await forceStopApp(d.serial); ctx.log(`收尾·${d.label} 窗口收起`, 'info', 'aa force-stop（断言已完）'); }
+      }
+    } },
+
+  // ---------- ★ 0.241.0.4 手机操作端链路（用户实测「手机 APP 与 Pad/PC 不同步」的正向验证——手机建数据→其余端收敛） ----------
+  // flowPrep prefer:'phone'——手机为操作端，Pad/PC 全部成为断言端；导航走 navAnywhere（抽屉链）
+  { id: 'SYNC-FLOW-WORD-M', suite: 'syncflow', name: '生词链路·手机建词→其余端收敛（★手机操作端：抽屉→单词库→+→新建单词→保存）', semi: true, scope: 'cross',
+    run: async (ctx) => {
+      const fp = await flowPrep(ctx, { prefer: 'phone' }); if (!fp) return;
+      const { op, asserts } = fp;
+      const word = 'TFM' + String(Date.now()).slice(-6); // 纯字母数字：inputText/转义零风险
+      try {
+        const baseOp = await dbCount(op.serial, 'word:');
+        const bases = []; for (const d of asserts) bases.push({ d, n: (await dbCount(d.serial, 'word:')).n });
+        ctx.log('基线', 'pass', `${op.id} word=${baseOp.n}，` + bases.map((x) => `${x.d.id}=${x.n}`).join(' '));
+        const nav = await navAnywhere(op, op.serial, '单词库', ctx.log);
+        ctx.log('① 手机抽屉→「单词库」', nav.ok ? 'pass' : 'fail', nav.ok ? `已点击 (${nav.x},${nav.y})（画布左下角抽屉按钮→边栏项）` : (nav.err || '导航失败'));
+        if (!nav.ok) return;
+        const plus = await uiClickText(op.serial, '+', { exact: true, waitMs: 1500 });
+        if (!plus.ok) { ctx.log('② 顶栏「+」', 'fail', plus.err || '未找到 + 按钮'); return; }
+        ctx.log('② 顶栏「+」', 'pass', `已点击 (${plus.x},${plus.y})——弹 + 菜单（0.239.0 bindPopup）`);
+        const mi = await uiClickText(op.serial, '新建单词', { exact: true, waitMs: 1800 });
+        if (!mi.ok) { ctx.log('③ 菜单「新建单词」', 'fail', mi.err || ''); return; }
+        ctx.log('③ 菜单「新建单词」', 'pass', `已点击 (${mi.x},${mi.y})——弹「新增单词」编辑器（手机 86% 宽）`);
+        await sleep(1000);
+        const ed = (await dumpLayout(op.serial));
+        const inBox = findNodeHintAll(ed.text, '单词（必填）')[0];
+        if (!inBox) { ctx.log('③ 单词输入框定位', 'fail', 'dump 未命中 hint「单词（必填）」（编辑器未弹出或 dump 结构变化）'); return; }
+        const it = await uiInputText(op.serial, inBox.x, inBox.y, word);
+        ctx.log(`③ 输入单词 ${word}`, it.ok ? 'pass' : 'fail', it.ok ? `已注入 (${inBox.x},${inBox.y})` : (it.raw || 'inputText 失败'));
+        if (!it.ok) return;
+        // ★ 0.241.0.7 收键盘（同 WORD——手机键盘态 dump 盲区更甚：86% 宽编辑器+键盘双压窗口，Back 收键盘保编辑器）
+        await sh(op.serial, 'uitest uiInput keyEvent Back', 15000);
+        await sleep(1500);
+        ctx.log('④ 收键盘', 'pass', 'keyEvent Back——键盘态 dump 抓不到「保存」（盲区），收起后可达（编辑器不关：拦截在第二层）');
+        const sv = await uiClickText(op.serial, '保存', { exact: true, waitMs: 2500 });
+        ctx.log('④ 点「保存」', sv.ok ? 'pass' : 'fail', sv.ok ? `已点击 (${sv.x},${sv.y})` : (sv.err || '未找到保存按钮'));
+        if (!sv.ok) return;
+        const localOk = await pollUntil(async () => { const c = await dbCount(op.serial, 'word:'); return c.ok && c.n === baseOp.n + 1; }, 30000);
+        const afterOp = await dbCount(op.serial, 'word:');
+        ctx.log('⑤ 手机端落盘', localOk && afterOp.n === baseOp.n + 1 ? 'pass' : 'fail', `${op.id} word ${baseOp.n}→${afterOp.n}（期望 +1）——手机上行链路起点`);
+        let all = true;
+        for (const b of bases) {
+          const s = await settleCountEquals(b.d.serial, 'word:', b.n + 1, CFG.poll.syncTimeoutMs + 30000, b.d.label);
+          ctx.log(`⑥ ${b.d.label} 云端收敛（基线+1）`, s.ok ? 'pass' : 'fail', `word ${b.n}→${s.n}（期望=${b.n + 1}）${s.ok ? '——手机上行→云端→对端下行 全链路活（用户「手机不同步」疑云的正向验证）' : '——手机上行传播未达（app 同步问题实锤，先测后修）'}`);
+          if (!s.ok) all = false;
+        }
+        if (all) { const u = await dumpCountText(op.serial, word); ctx.log('⑦ 手机 UI 可见', u.n >= 1 ? 'pass' : 'warn', `dump 命中「${word}」×${u.n}`); }
+      } finally {
+        for (const d of asserts) { await forceStopApp(d.serial); ctx.log(`收尾·${d.label} 窗口收起`, 'info', 'aa force-stop（断言已完，同步数据已落盘）'); }
+      }
+    } },
+  { id: 'SYNC-FLOW-NODE-M', suite: 'syncflow', name: '气泡链路·手机建气泡→其余端收敛（★手机操作端：画布顶栏 +；node+tab 联合断言）', semi: true, scope: 'cross',
+    run: async (ctx) => {
+      const fp = await flowPrep(ctx, { prefer: 'phone' }); if (!fp) return;
+      const { op, asserts } = fp;
+      try {
+        const baseOp = await nodeCountSum(op.serial);
+        const bases = []; for (const d of asserts) bases.push({ d, n: (await nodeCountSum(d.serial)).n });
+        ctx.log('基线', 'pass', `${op.id} ${baseOp.detail}，` + bases.map((x) => `${x.d.id}=${x.n}`).join(' ') + '（+ 按钮平铺=新树/选项卡=新 Tab，node+tab 联合免疫模式差异）');
+        const csOk = await ensureCanvas(op.serial, ctx.log);
+        if (!csOk) { ctx.log('① 手机进画布', 'fail', '进画布失败——顶栏 + 不可达'); return; }
+        const plus = await uiClickText(op.serial, '+', { exact: true, waitMs: 1800 });
+        if (!plus.ok) { ctx.log('② 顶栏「+」', 'fail', plus.err || '未找到 + 按钮'); return; }
+        ctx.log('② 画布顶栏「+」新建气泡', 'pass', `已点击 (${plus.x},${plus.y})——新建即落盘（不等对话内容）`);
+        const localOk = await pollUntil(async () => { const c = await nodeCountSum(op.serial); return c.ok && c.n === baseOp.n + 1; }, 30000);
+        const afterOp = await nodeCountSum(op.serial);
+        ctx.log('③ 手机端落盘', localOk && afterOp.n === baseOp.n + 1 ? 'pass' : 'fail', `${op.id} ${afterOp.detail}（期望总和 ${baseOp.n + 1}）`);
+        if (!(localOk && afterOp.n === baseOp.n + 1)) return;
+        for (const b of bases) {
+          const ok = await pollUntil(async () => { const c = await nodeCountSum(b.d.serial); return c.ok && c.n === b.n + 1; }, CFG.poll.syncTimeoutMs + 30000);
+          const c = await nodeCountSum(b.d.serial);
+          ctx.log(`④ ${b.d.label} 云端收敛（基线+1）`, ok && c.n === b.n + 1 ? 'pass' : 'fail', `总和 ${b.n}→${c.n}（期望=${b.n + 1}，${c.detail}）`);
         }
       } finally {
         for (const d of asserts) { await forceStopApp(d.serial); ctx.log(`收尾·${d.label} 窗口收起`, 'info', 'aa force-stop（断言已完）'); }
@@ -3234,7 +3670,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', 'sync-boot': '云同步·三端从零引导（★0.241.0.4：fresh 装机后 协议→登录→开同步→三端收敛；唯一人工=华为授权页）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）+ 手机操作端链路（0.241.0.4 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }
@@ -3246,6 +3682,50 @@ async function handler(req, res) {
     return json(res, 200, { ok: v.ok && v.code === EXPECTED_VC, expected: EXPECTED_VC, actual: v.code, device: dev.id, label: dev.label, raw: v.raw });
   }
   if (u.pathname === '/api/devices') { await autoConnectTcpDevices(); const targets = await listTargets(); return json(res, 200, { devices: await probeDevices(), running, targets }); }
+  // ★ 0.241.0.5 设备常亮（用户需求：手机测试期一直锁屏卡流程——仿 DevEco 连上设备保持常开）
+  // ★ 0.241.0.8 重写（用户实测翻车：点常亮手机被切进深色省电界面+常亮根本没生效外出仍熄屏）——
+  //   真凶①=power-shell setmode 602 根本不是「永不休眠」：鸿蒙 PowerMode 枚举 600=正常/601=省电/602=**超省电**——此前实现是切超省电模式（回显 Success 只是切换成功、语义全错，深色界面即其表现）；
+  //   真凶②=中部上滑手势（600,2400→600,600）在已解锁桌面上=拉起桌面上滑全局搜索浮层（用户截图半透明侧边栏实锤）——前台扰动。
+  //   正解：常亮=power-shell timeout -o 2147483647（临时覆盖休眠超时≈24.8 天，不动用户设置）；off=timeout -r 恢复原值 + setmode 600 救回残留省电模式；
+  //   上滑改底部区域（600,2000→600,1200）：锁屏解锁到主屏 / 已解锁桌面底部上滑不触发全局搜索。
+  if (u.pathname === '/api/keepalive' && req.method === 'POST') {
+    let body = ''; req.on('data', (d) => { body += d; });
+    req.on('end', async () => {
+      try {
+        const p = JSON.parse(body || '{}');
+        const dev = (CFG.devices || []).find((x) => x.id === p.device);
+        if (!dev) return json(res, 404, { ok: false, error: '未知设备：' + p.device });
+        if (!p.on) {
+          const t = await sh(dev.serial, 'power-shell timeout -r', 12000); // 恢复用户原始休眠超时
+          const r = await sh(dev.serial, 'power-shell setmode 600', 12000); // 切回正常模式（顺带救回旧版 602 误切的超省电）
+          return json(res, 200, { ok: /Success|600/i.test(r), detail: (r.trim() + ' | ' + t.trim()).slice(0, 120), mode: 'normal' });
+        }
+        const w = await sh(dev.serial, 'power-shell wakeup', 12000);
+        await sh(dev.serial, 'power-shell setmode 600', 12000); // 确保正常模式（防残留省电态干扰常亮观感）
+        const t = await sh(dev.serial, 'power-shell timeout -o 2147483647', 12000); // ★ 常亮正解=临时覆盖休眠超时
+        await sleep(600);
+        await sh(dev.serial, 'uitest uiInput swipe 600 2000 600 1200', 12000); // 底部上滑解锁（锁屏→解锁到主屏；已解锁桌面=底部上滑回主屏，不触发中部全局搜索浮层）
+        await sleep(800);
+        return json(res, 200, { ok: /success/i.test(t), detail: (w.trim() + ' | ' + t.trim()).slice(0, 200), mode: 'always-on' });
+      } catch (e) { return json(res, 400, { ok: false, error: String(e) }); }
+    });
+    return;
+  }
+  // ★ 0.241.0.5 从零进度探测（用户需求：分清设备处于「全新安装还没走完流程」还是「协议/登录/同步已全部就绪」——
+  //   否则后面的测试进度全卡住也不知道卡在哪步）。全 CLI 通道（grepPref 持久化 + sqlite 行数），锁屏/无 UI 通道设备照样可测：
+  //   协议=agreement-v1 落盘；登录=huawei-account 落盘；同步=cloud_data 行数（>0=同步活）
+  if (u.pathname === '/api/bootstate') {
+    const devs = await probeDevices();
+    const out = await Promise.all(devs.filter((d) => d.online).map(async (d) => {
+      const [agree, login, sync] = await Promise.all([
+        grepPref(d.serial, 'agreement-v1'),
+        grepPref(d.serial, 'huawei-account'),
+        dbCount(d.serial, null)
+      ]);
+      return { id: d.id, label: d.label, agree: agree.found, login: login.found, syncRows: sync.ok ? sync.n : null, syncErr: sync.ok ? '' : String(sync.raw).slice(0, 80) };
+    }));
+    return json(res, 200, { states: out, at: now() });
+  }
   if (u.pathname === '/api/results') return json(res, 200, loadResults());
   // ★ 0.229.20 停止测试：用户拍板"打开不能是失控的执行中"——后台在跑的那轮可随时请求中止
   if (u.pathname === '/api/stop' && req.method === 'POST') {
@@ -3294,7 +3774,8 @@ async function handler(req, res) {
         if (mode === 'fresh') {
           un = await bmUninstall(dev.serial);
           // ★ 0.229.18：卸载失败→中止安装（防「未卸载却报装机成功」假成功——用户实测 PC 全新安装后登录态还在即此因）
-          if (!un.ok) return json(res, 200, { mode, uninstall: un, install: null, coldStart: null, aborted: true, error: '卸载失败——已中止安装（防旧数据残留的假成功；原始输出见 uninstall.detail）' });
+          // ★ 0.241.0.3：un.clean=true（code:9568386 missing installed bundle）=设备从未装过该 app、本来就是干净状态——放行继续安装（新设备首装必踩，此前 Pura X View 被中止即此因）
+          if (!un.ok && !un.clean) return json(res, 200, { mode, uninstall: un, install: null, coldStart: null, aborted: true, error: '卸载失败——已中止安装（防旧数据残留的假成功；原始输出见 uninstall.detail）' });
         }
         const ins = await bmInstall(dev.serial, mode === 'overwrite');
         // ★ 0.229.22（用户拍板 A）：装机后不再自动冷启——首次启动交给第一条用例的 coldStart 完成（"装完弹一次+用例又弹一次"→只弹一次）；单独装机想验证就手动点开 app

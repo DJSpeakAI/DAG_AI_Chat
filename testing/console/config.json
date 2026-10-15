@@ -14,7 +14,7 @@
   "devices": [
     {
       "id": "pc",
-      "label": "鸿蒙 PC（本机）",
+      "label": "鸿蒙 PC",
       "serial": "127.0.0.1:35247",
       "conn": "本机调试口",
       "caps": {
@@ -25,7 +25,7 @@
     },
     {
       "id": "pad",
-      "label": "Pad（USB 连线）",
+      "label": "Pad",
       "serial": "7HZUN26330G02209",
       "conn": "USB",
       "caps": {
@@ -34,10 +34,19 @@
     },
     {
       "id": "phone",
-      "label": "手机（WiFi，注册后入列）",
+      "label": "手机",
       "serial": "192.168.2.14:38611",
       "conn": "WiFi",
-      "optional": true,
+      "caps": {
+        "uiDump": true
+      }
+    },
+    {
+      "id": "pura",
+      "label": "Pura X View",
+      "serial": "192.168.2.16:39421",
+      "conn": "WiFi",
+      "workMachine": true,
       "caps": {
         "uiDump": true
       }

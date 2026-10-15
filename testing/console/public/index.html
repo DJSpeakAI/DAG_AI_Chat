@@ -5,36 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DAG AI Chat 测试台</title>
 <style>
-  :root { --bg:#160D26; --bg2:#1E1436; --panel:#221743; --line:#372766; --txt:#E7E2F7; --dim:#9C92C9; --acc:#7C5CFF; --acc2:#9F87FF; --ok:#3ECF8E; --fail:#FF5D7A; --warn:#FFC24B; --skip:#8A80B8; }
+  /* ★ 0.241.0.6 色值对齐 UI_GUIDELINES.md（DesignTokens 同源）：BG_APP #120B1F / BG_NAV #1A1030 / SURFACE_NODE #241640 / SURFACE_HOVER #2C1B4D / BRAND_PRIMARY #7C4DFF / BRAND_SECONDARY #A78BFA / STROKE_CARD 白8% */
+  :root { --bg:#120B1F; --bg2:#1A1030; --panel:#241640; --hover:#2C1B4D; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14); --txt:#F5F2FF; --dim:rgba(255,255,255,.62); --dim2:rgba(255,255,255,.40); --acc:#7C4DFF; --acc2:#A78BFA; --strokeBrand:rgba(124,77,255,.40); --ok:#3ECF8E; --fail:#FF5D7A; --warn:#FFC24B; --skip:#8A80B8; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* ★ 0.241.0.6 全局紫色细滚动条（左树/日志/弹窗统一，UI_GUIDELINES 品牌紫） */
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:rgba(124,77,255,.32); border-radius:4px; }
+  ::-webkit-scrollbar-thumb:hover { background:rgba(124,77,255,.58); }
+  .wrap > .panel, #stream, #detail, #connCard, #connCard pre { scrollbar-width:thin; scrollbar-color:rgba(124,77,255,.35) transparent; }
+  /* 顶部品牌紫光带 */
+  body::before { content:''; position:fixed; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,var(--acc),var(--acc2),rgba(124,77,255,0)); z-index:99; }
   body { background: var(--bg); color: var(--txt); font: 13px/1.6 -apple-system,'HarmonyOS Sans SC','Microsoft YaHei',sans-serif; min-height: 100vh; }
-  header { display:flex; align-items:center; gap:14px; padding: 14px 22px; border-bottom:1px solid var(--line); background: linear-gradient(180deg,#1B1130,#160D26); position:sticky; top:0; z-index:5; }
-  header .logo { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--acc),#B48CFF); display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; }
+  /* ★ 0.241.0.5 一屏化（用户需求：用例树太长——整页高度锁一屏，左右两栏各自内部滚动） */
+  html, body { height: 100%; }
+  body { overflow: hidden; display: flex; flex-direction: column; }
+  header { flex: none; }
+  #app.wrap { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .wrap > .panel { overflow-y: auto; min-height: 0; }
+  header { display:flex; align-items:center; gap:14px; padding: 14px 24px; border-bottom:1px solid var(--strokeBrand); background: linear-gradient(180deg,#1A1030,#120B1F); position:sticky; top:0; z-index:5; }
+  header .logo { width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; box-shadow:0 2px 10px rgba(124,77,255,.35); }
   header h1 { font-size:16px; font-weight:600; }
   header .sub { color:var(--dim); font-size:12px; }
   header .spacer { flex:1; }
 
-  .wrap { display:grid; grid-template-columns: 300px 1fr 240px; gap:14px; padding:14px 22px; max-width:1280px; margin:0 auto; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; }
-  .panel h2 { font-size:13px; color:var(--acc2); font-weight:600; margin-bottom:10px; letter-spacing:.5px; }
+  /* ★ 0.241.0.6 右栏设备面板 240→300 加宽 + 列间距/内边距放大（用户需求：右边宽一点好看） */
+  .wrap { display:grid; grid-template-columns: 300px 1fr 300px; gap:16px; padding:16px 24px; max-width:1500px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; }
+  .panel h2 { font-size:13px; color:var(--acc2); font-weight:600; margin-bottom:12px; letter-spacing:.5px; padding-bottom:8px; border-bottom:1px dashed var(--line2); }
   .case-group { margin-bottom:10px; }
-  .case-group .gh { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; background:var(--bg2); margin-bottom:6px; cursor:pointer; user-select:none; }
+  /* ★ 0.241.0.6 分组头美化：品牌紫左条 + 悬停态 */
+  .case-group .gh { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:10px; background:var(--hover); margin-bottom:6px; cursor:pointer; user-select:none; border-left:3px solid var(--acc); transition:background .15s; }
+  .case-group .gh:hover { background:#33215A; }
   .case-group .gh b { font-size:12.5px; flex:1; }
-  .case-group .gh .fold { color:var(--dim); font-size:11px; width:12px; flex:none; text-align:center; }
-  .actions select { background:var(--bg2); color:var(--txt); border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:12.5px; cursor:pointer; }
-  .case-item { display:flex; align-items:flex-start; gap:8px; padding:5px 8px 5px 26px; border-radius:8px; cursor:pointer; }
-  .case-item:hover { background:var(--bg2); }
+  .case-group .gh .fold { color:var(--acc2); font-size:11px; width:12px; flex:none; text-align:center; }
+  .actions select { background:var(--bg2); color:var(--txt); border:1px solid var(--line2); border-radius:9px; padding:8px 10px; font-size:12.5px; cursor:pointer; }
+  .case-item { display:flex; align-items:flex-start; gap:8px; padding:6px 8px 6px 28px; border-radius:8px; cursor:pointer; transition:background .12s; }
+  .case-item:hover { background:var(--hover); }
   .case-item .nm { flex:1; font-size:12.5px; }
-  .badge { font-size:10px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); color:var(--dim); white-space:nowrap; }
-  .badge.semi { color:var(--warn); border-color:#5a4a1e; }
-  .badge.cross { color:var(--acc2); border-color:#43348a; }
+  .badge { font-size:10px; padding:1px 7px; border-radius:6px; border:1px solid var(--line2); color:var(--dim); white-space:nowrap; }
+  .badge.semi { color:var(--warn); border-color:rgba(255,194,75,.35); background:rgba(255,194,75,.08); }
+  .badge.cross { color:var(--acc2); border-color:rgba(167,139,250,.35); background:rgba(124,77,255,.12); }
   input[type=checkbox] { accent-color: var(--acc); width:15px; height:15px; cursor:pointer; }
-  .dev { border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px; transition:.15s; }
-  .dev.on { border-color:var(--acc); background:#251A4E; }
+  .dev { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; transition:.15s; }
+  .dev.on { border-color:var(--strokeBrand); background:var(--hover); box-shadow:0 0 0 1px rgba(124,77,255,.15), 0 4px 14px rgba(18,11,31,.4); }
   .dev.off { border-style:dashed; background:var(--bg2); }
   .dev.off .nm, .dev.off .dot { opacity:.7; }
-  .dev .t { display:flex; align-items:center; gap:8px; }
-  .dev .nm { font-size:12.5px; font-weight:600; flex:1; }
+  .dev .t { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .dev .nm { font-size:12.5px; font-weight:600; flex:1; min-width:0; }
   .dot { width:8px; height:8px; border-radius:50%; background:#555; flex:none; }
   .dot.online { background:var(--ok); box-shadow:0 0 6px var(--ok); }
   .dev .conn { font-size:11.5px; font-weight:600; margin-top:5px; padding-left:23px; }
@@ -42,35 +60,42 @@
   .dev .conn.bad { color:var(--warn); }
   .dev .addr { color:var(--dim); font-size:11px; margin-top:2px; padding-left:23px; word-break:break-all; }
   .dev .hint { color:var(--dim); font-size:11px; margin-top:3px; padding-left:23px; line-height:1.5; }
-  .dev .editbtn { background:var(--bg2); border:1px solid var(--line); color:var(--acc2); cursor:pointer; font-size:12px; font-weight:600; padding:3px 10px; border-radius:7px; white-space:nowrap; }
+  .dev .editbtn { background:var(--hover); border:1px solid var(--line2); color:var(--acc2); cursor:pointer; font-size:12px; font-weight:600; padding:4px 11px; border-radius:8px; white-space:nowrap; transition:.15s; }
+  /* ★ 0.241.0.5 常亮按钮 + 从零进度行 */
+  .dev .keepbtn { background:var(--bg2); border:1px solid var(--line2); color:var(--dim); cursor:pointer; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; transition:.15s; }
+  .dev .keepbtn:hover { border-color:var(--acc2); color:var(--txt); }
+  .dev .keepbtn.on { background:linear-gradient(135deg,#B8860B,#FFC83D); border-color:transparent; color:#1B1130; font-weight:700; box-shadow:0 2px 10px rgba(255,200,61,.3); }
+  .dev .bootline { font-size:11px; color:var(--dim); padding:2px 0 0 2px; line-height:1.6; }
   .dev .editbtn:hover { border-color:var(--acc2); color:#fff; }
-  .dev.off .editbtn { background:linear-gradient(135deg,var(--acc),#A78BFF); border-color:transparent; color:#fff; }
+  .dev.off .editbtn { background:linear-gradient(135deg,var(--acc),var(--acc2)); border-color:transparent; color:#fff; }
   .devedit { display:none; margin-top:8px; }
-  .devedit input { background:var(--bg); border:1px solid var(--acc); color:var(--txt); border-radius:7px; padding:5px 8px; font-size:12px; width:100%; margin-bottom:6px; }
+  .devedit input { background:var(--bg); border:1px solid var(--acc); color:var(--txt); border-radius:8px; padding:5px 8px; font-size:12px; width:100%; margin-bottom:6px; }
   .devedit .row { display:flex; gap:6px; }
-  .btn { border:none; border-radius:9px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; transition:.15s; }
-  .btn.primary { background:linear-gradient(135deg,var(--acc),#A78BFF); color:#fff; }
+  .btn { border:none; border-radius:10px; padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; transition:.15s; }
+  .btn.primary { background:linear-gradient(135deg,var(--acc),var(--acc2)); color:#fff; box-shadow:0 4px 14px rgba(124,77,255,.28); }
+  .btn.primary:hover:not(:disabled) { filter:brightness(1.1); }
   .btn.primary:disabled { opacity:.4; cursor:not-allowed; }
-  .btn.ghost { background:var(--bg2); color:var(--txt); border:1px solid var(--line); }
-  .btn.sm { padding:5px 10px; font-size:12px; border-radius:7px; }
+  .btn.ghost { background:var(--bg2); color:var(--txt); border:1px solid var(--line2); }
+  .btn.ghost:hover { border-color:var(--acc2); }
+  .btn.sm { padding:5px 10px; font-size:12px; border-radius:8px; }
   .actions { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
   .bar { height:8px; background:var(--bg2); border-radius:4px; overflow:hidden; margin:10px 0 8px; }
-  .bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--acc),#B48CFF); transition:width .4s; }
+  .bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .4s; }
   .stats { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
   .chip { font-size:11.5px; padding:3px 10px; border-radius:20px; background:var(--bg2); border:1px solid var(--line); }
   .chip b { margin-right:2px; }
   .chip.ok b{color:var(--ok)} .chip.fail b{color:var(--fail)} .chip.warn b{color:var(--warn)} .chip.skip b{color:var(--skip)} .chip.tot b{color:var(--acc2)}
-  #stream { background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; height:420px; overflow-y:auto; font:12px/1.7 'JetBrains Mono',Consolas,monospace; }
+  #stream { background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:10px 12px; height:420px; overflow-y:auto; font:12px/1.7 'JetBrains Mono',Consolas,monospace; }
   .ln { padding:1px 0; word-break:break-all; }
   .ln .s { display:inline-block; width:34px; }
   .s.pass{color:var(--ok)} .s.fail{color:var(--fail)} .s.warn{color:var(--warn)} .s.skip{color:var(--skip)} .s.info{color:var(--dim)}
-  .hd { color:var(--acc2); font-weight:600; margin:8px 0 3px; border-top:1px dashed var(--line); padding-top:8px; }
+  .hd { color:var(--acc2); font-weight:600; margin:8px 0 3px; border-top:1px dashed var(--line2); padding-top:8px; }
   .hd.fail{color:var(--fail)} .hd.pass{color:var(--ok)} .hd.warn{color:var(--warn)}
-  #sumCard { display:none; margin-top:12px; border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--bg2); }
+  #sumCard { display:none; margin-top:12px; border:1px solid var(--line2); border-radius:12px; padding:14px; background:var(--bg2); }
   #sumCard .ttl { font-size:14px; font-weight:600; margin-bottom:8px; }
   #sumCard .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #sumCard .stat { color:var(--dim); font-size:12px; }
-  #cpCard { position:fixed; left:50%; top:70px; transform:translateX(-50%); width:520px; max-width:92vw; background:linear-gradient(180deg,#2A1B58,#221743); border:1px solid var(--acc); border-radius:14px; padding:18px; box-shadow:0 12px 40px rgba(0,0,0,.5); z-index:50; display:none; }
+  #cpCard { position:fixed; left:50%; top:70px; transform:translateX(-50%); width:520px; max-width:92vw; background:linear-gradient(180deg,var(--hover),var(--panel)); border:1px solid var(--strokeBrand); border-radius:14px; padding:18px; box-shadow:0 12px 40px rgba(0,0,0,.5), 0 0 24px rgba(124,77,255,.15); z-index:50; display:none; }
   #cpCard .tag { font-size:11px; color:var(--warn); letter-spacing:1px; }
   #cpCard .lbl { font-size:14px; font-weight:600; margin:6px 0; }
   #cpCard .cnt { font-size:12px; color:var(--dim); margin-bottom:12px; }
@@ -82,25 +107,26 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   .hist { margin-top:12px; }
   .hist .it { display:flex; gap:10px; align-items:center; padding:7px 9px; border-radius:8px; cursor:pointer; font-size:12px; }
-  .hist .it:hover { background:var(--bg2); }
+  .hist .it:hover { background:var(--hover); }
   .hist .it .hl { font-style:normal; font-size:10px; opacity:.7; margin-left:2px; }
   .hist .it > span { white-space:nowrap; }
-  .footer-note { color:var(--dim); font-size:11px; margin-top:10px; padding:8px; border-top:1px dashed var(--line); }
-  .tabs { display:flex; gap:6px; margin-bottom:10px; border-bottom:1px solid var(--line); }
-  .tab { background:none; border:none; color:var(--dim); cursor:pointer; font-size:12.5px; font-weight:600; padding:6px 12px; border-bottom:2px solid transparent; }
+  .footer-note { color:var(--dim2); font-size:11px; margin-top:10px; padding:8px; border-top:1px dashed var(--line2); line-height:1.7; }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; border-bottom:1px solid var(--line2); }
+  .tab { background:none; border:none; color:var(--dim); cursor:pointer; font-size:12.5px; font-weight:600; padding:6px 12px; border-bottom:2px solid transparent; transition:.15s; }
+  .tab:hover { color:var(--txt); }
   .tab.on { color:var(--acc2); border-bottom-color:var(--acc); }
   .dotbadge { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--fail); margin-left:5px; vertical-align:middle; }
   .actline { font-size:11.5px; font-weight:600; margin-bottom:8px; padding:4px 8px; border-radius:6px; background:var(--bg2); }
   .actline.ok { color:var(--ok); } .actline.warn { color:var(--warn); } .actline.bad { color:var(--fail); }
   .modal-bg { position:fixed; inset:0; background:rgba(10,6,20,.7); z-index:40; display:none; }
-  #detail { position:fixed; left:50%; top:60px; transform:translateX(-50%); width:680px; max-width:94vw; max-height:80vh; overflow-y:auto; background:var(--panel); border:1px solid var(--acc); border-radius:14px; padding:18px; z-index:45; display:none; }
+  #detail { position:fixed; left:50%; top:60px; transform:translateX(-50%); width:680px; max-width:94vw; max-height:80vh; overflow-y:auto; background:var(--panel); border:1px solid var(--strokeBrand); border-radius:14px; padding:18px; z-index:45; display:none; box-shadow:0 12px 40px rgba(0,0,0,.5); }
   #detail h3 { color:var(--acc2); margin-bottom:10px; font-size:14px; }
   #detail pre { background:var(--bg2); padding:8px; border-radius:8px; font-size:11.5px; overflow-x:auto; margin:4px 0; }
-  #connCard { position:fixed; left:50%; top:56px; transform:translateX(-50%); width:600px; max-width:94vw; max-height:82vh; overflow-y:auto; background:var(--panel); border:1px solid var(--acc); border-radius:14px; padding:18px; z-index:55; display:none; }
+  #connCard { position:fixed; left:50%; top:56px; transform:translateX(-50%); width:600px; max-width:94vw; max-height:82vh; overflow-y:auto; background:var(--panel); border:1px solid var(--strokeBrand); border-radius:14px; padding:18px; z-index:55; display:none; box-shadow:0 12px 40px rgba(0,0,0,.5); }
   #connCard .cttl { color:var(--acc2); font-weight:600; font-size:14px; margin-bottom:10px; }
   #connCard pre { background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--txt); max-height:52vh; overflow:auto; margin:0; line-height:1.6; }
   #connCard .crow { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
-  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:var(--panel); border:1px solid var(--acc); color:var(--txt); padding:8px 18px; border-radius:10px; font-size:12.5px; display:none; z-index:60; }
+  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:var(--hover); border:1px solid var(--strokeBrand); color:var(--txt); padding:8px 18px; border-radius:10px; font-size:12.5px; display:none; z-index:60; box-shadow:0 6px 20px rgba(0,0,0,.45); }
 </style>
 </head>
 <body>
@@ -134,6 +160,7 @@
       <button class="btn ghost" onclick="prepDevices()" title="点一下自动：先编译最新 HAP → 再安装到所选设备">装机</button>
       <span class="sub" id="runningTip" style="color:var(--warn);font-size:12px"></span>
     </div>
+    <div class="footer-note" style="margin:0 0 8px;padding:8px 10px;border:1px dashed var(--acc2);border-radius:8px;color:var(--dim)">★ 三端从零·云同步全流程（0.241.0.4）：① 装机模式选「<b>全新安装</b>」+ 勾选三台（PC/Pad/手机）→ 点【装机】（清数据从零开始）② 勾选「<b>云同步·三端从零引导</b>」套件 → 开始测试（协议同意/华为登录/开云同步/系统权限<b>全自动</b>，<b>唯一人工=华为授权页点「同意」</b>）③ 再跑「云同步四域数据链」+「云同步数据链·跨端编排」（三端一致断言 + 手机↔Pad↔PC 双向传播）——任一红=同步 bug 实锤，复制报告给 AI 修</div>
     <div id="paneRun">
       <div id="actLine" class="actline" style="display:none">● 执行中 · 最近活动 <b id="actSecs">0</b> 秒前</div>
       <div class="bar"><i id="pbar"></i></div>
@@ -155,12 +182,12 @@
   <div class="panel">
     <h2>② 设备 <button class="btn sm ghost" style="float:right;margin-top:-3px" onclick="openConnDiagNow()" title="生成当前所有设备的连接诊断报告（可一键复制给 AI）">连接诊断</button></h2>
     <div id="devList"></div>
-    <div class="footer-note">设备顺序：鸿蒙PC → Pad → 手机 · PC 本机需开 DevEco Studio 才现调试口（不需填地址）· Pad/手机点「填写IP连接」填地址（WiFi 调试 ip:5555，保存后自动连）；手机默认入列，未注册/占线自动跳过只跑 PC+Pad</div>
+    <div class="footer-note">设备顺序：鸿蒙PC → Pad → 手机（Pura X View 第四台·工作机）· 测试/装机只用前三台 · Pura X View 是工作机默认不勾选不参与，用户手动勾选才测；它若连不上/装不上就跳过，不要折腾（用户要在上面工作）· PC 本机需开 DevEco Studio 才现调试口（不需填地址）· Pad/手机点「填写IP连接」填地址（WiFi 调试 ip:5555，保存后自动连）</div>
   </div>
 </div>
 
 <div id="guide" class="guide" style="display:none">
-  <div class="logo" style="width:44px;height:44px;border-radius:12px;margin:0 auto 14px;background:linear-gradient(135deg,var(--acc),#B48CFF);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:20px">测</div>
+  <div class="logo" style="width:44px;height:44px;border-radius:12px;margin:0 auto 14px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:20px;box-shadow:0 4px 20px rgba(124,77,255,.4)">测</div>
   <h2 style="font-size:17px" id="guideTitle">正在启动后台服务…</h2>
   <div class="spinner"></div>
   <p style="color:var(--dim);margin-top:4px">自动进行中，无需任何操作（<span id="guideSecs">0</span> 秒）</p>
@@ -186,6 +213,22 @@
 
 <script>
 let SUITES = null, APP_CFG = {}, DEVSEL = new Set(), CASESEL = new Set(), DEVLIST = [], DEVSEL_INITED = false, RUNNING = false, cpTimer = null, cpCur = null, es = null;
+// ★ 0.241.0.5 常亮状态（session 级）+ 从零进度缓存
+const KEEPON = new Set(); let BOOT_STATE = {}; let BOOT_AT = '';
+function fmtBoot(bs) {
+  const y = (b) => b ? '✓' : '✗';
+  const sync = bs.syncRows === null ? '✗(' + bs.syncErr + ')' : (bs.syncRows > 0 ? '✓(' + bs.syncRows + '行)' : '✗(0行)');
+  const ready = bs.agree && bs.login && bs.syncRows > 0;
+  return '从零进度：协议' + y(bs.agree) + ' · 登录' + y(bs.login) + ' · 同步' + sync + (ready ? ' ——已就绪（可直接跑 sync/syncflow）' : ' ——未就绪（先跑 sync-boot 引导）');
+}
+async function refreshBootState() {
+  try {
+    const r = await api('/api/bootstate');
+    BOOT_STATE = {}; BOOT_AT = r.at || '';
+    for (const s of (r.states || [])) BOOT_STATE[s.id] = s;
+    for (const id of Object.keys(BOOT_STATE)) { const el = $('boot-' + id); if (el) el.textContent = fmtBoot(BOOT_STATE[id]); }
+  } catch (_) { /* 探测失败不打扰 */ }
+}
 let DEV_TARGETS = [], CONN_RESOLVE = null, CONN_AUTOSHOWN = false;
 let lastAct = 0; // 最近一次 SSE 活动时间（活动指示用）
 let lastRunId = null, lastResults = [], lastSummary = null;
@@ -194,7 +237,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-const PAGE_VER = '0.240.2.1'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.240.2.1：跟 APP 0.240.2 方案B拍平存储——ALIAS-KEEP ④ 改读 api-config-v5（provider+KMARK 双校验）、⑤ 三重存活断言（别名+档位+Key）；★ 0.240.1.3：④ 保存生效校验（保存点击间歇落空防双假绿）
+  const PAGE_VER = '0.241.0.8'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.241.0.8：本页仅同步版本号+常亮按钮 title 更新+addr 行工作机标注（常亮重写+设备名精简见 server.js）；★ 0.241.0.7：三端同步链路优化（服务端用例修复，本页仅同步版本号——SYNC-FLOW 输入后收键盘再点保存+BOOT-CONVERGE 签名 settle 轮询）；★ 0.241.0.6：UI 精修——右栏设备面板加宽 240→300+间距放大、色值全量对齐 UI_GUIDELINES（BRAND_PRIMARY #7C4DFF/BRAND_SECONDARY #A78BFA/SURFACE 系+白8%描边+顶部品牌光带）、全局紫色细滚动条+左树分组品牌左条+悬停态；★ 0.241.0.5：设备「常亮」按钮（手机锁屏卡流程根治）+「从零进度」状态行（协议/登录/同步三探，分清未就绪 vs 已就绪）+ 左栏滚动一屏化；★ 0.241.0.4：三端云同步——sync-boot 套件（BOOT-AGREE/LOGIN/CONVERGE）+ 手机操作端 SYNC-FLOW-WORD-M/NODE-M + 三端从零全流程指引
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;
@@ -229,7 +272,7 @@ async function boot() {
     if (RUNNING) setTimeout(() => toast('后台有一轮测试正在执行——这是你之前点「开始测试」启动的那轮（页面刷新/重开不会中断它）。去「实时执行」看进度，或点「■ 停止测试」中止'), 600);
     try { await api('/api/shutdown/cancel', { method: 'POST' }); } catch (_) { /* 无待关闭则忽略 */ }
     $('guide').style.display = 'none'; $('app').style.display = 'grid';
-    renderTree(); await refreshDevices(); await loadHistory(); loadVersion();
+    renderTree(); await refreshDevices(); await loadHistory(); loadVersion(); refreshBootState();
     // ★ 0.229.21 服务版本守卫（治本"旧服务跑新页面"全面错位——用户曾连撞三假象皆因服务停在旧版未重启）
     // ★ 0.229.23 追加 stale 守卫（治本 0.229.17 事故盲区：页面+服务同为旧版时本守卫无感知）——
     //   服务实时比对磁盘正本 mtime，正本被更新（AI 改码）而服务未重启 → stale:true，顶栏标红+开跑前置确认
@@ -347,7 +390,7 @@ function renderDevices(devices) {
     const box = document.createElement('div');
     box.className = 'dev' + (dev.online ? (DEVSEL.has(dev.id) ? ' on' : '') : ' off');
     const t = document.createElement('div'); t.className = 't';
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = DEVSEL.has(dev.id); cb.title = dev.online ? '勾选 = 参与测试/装机' : '离线也可勾选——连上后生效';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = DEVSEL.has(dev.id); cb.title = dev.workMachine ? '工作机——默认不参与测试/装机，手动勾选才测；它若动不了就跳过别折腾' : (dev.online ? '勾选 = 参与测试/装机' : '离线也可勾选——连上后生效');
     cb.onclick = (e) => e.stopPropagation();
     cb.onchange = () => { cb.checked ? DEVSEL.add(dev.id) : DEVSEL.delete(dev.id); box.className = 'dev' + (cb.checked ? ' on' : (dev.online ? '' : ' off')); };
     t.appendChild(cb);
@@ -366,8 +409,33 @@ function renderDevices(devices) {
     st.textContent = dev.online ? '连接状态：已连接 ✅' : '连接状态：未连接 ⚠️' + (dev.reason ? ' · ' + dev.reason : '');
     box.appendChild(st);
     const ad = document.createElement('div'); ad.className = 'addr';
-    ad.textContent = '已保存地址：' + (dev.serial ? dev.serial : '未填写') + (isPc ? '（本机调试口）' : (dev.conn ? '（' + dev.conn + '）' : ''));
+    ad.textContent = '已保存地址：' + (dev.serial ? dev.serial : '未填写') + (isPc ? '（本机调试口）' : (dev.conn ? '（' + dev.conn + '）' : '')) + (dev.workMachine ? ' · 工作机' : '');
     box.appendChild(ad);
+    // ★ 0.241.0.5 从零进度行（用户需求：分清「全新安装还没走完流程」vs「协议/登录/同步已全部就绪」——卡哪步一眼可见）
+    if (dev.online) {
+      const bl = document.createElement('div'); bl.className = 'bootline'; bl.id = 'boot-' + dev.id;
+      const bs = BOOT_STATE[dev.id];
+      bl.textContent = bs ? fmtBoot(bs) : '从零进度：未探测（点「刷新设备」或等自动轮询）';
+      box.appendChild(bl);
+    }
+    // ★ 0.241.0.5 常亮按钮（用户需求：手机测试期一直锁屏卡流程——点击=亮屏+永不休眠+上滑解锁；再点=恢复正常休眠）
+    if (dev.online) {
+      const kb = document.createElement('button'); kb.className = 'keepbtn' + (KEEPON.has(dev.id) ? ' on' : '');
+      kb.textContent = KEEPON.has(dev.id) ? '☀ 常亮中' : '☀ 常亮';
+      kb.title = '点击=设备亮屏+常亮（power-shell timeout 覆盖休眠超时，不动你的设置；底部上滑仅在锁屏时解锁）——测试期间防自动锁屏卡流程；再点=恢复你原来的休眠设置';
+      kb.onclick = async (e) => {
+        e.stopPropagation();
+        const wantOn = !KEEPON.has(dev.id);
+        kb.textContent = '处理中…'; kb.disabled = true;
+        try {
+          const r = await api('/api/keepalive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device: dev.id, on: wantOn }) });
+          if (wantOn && r.ok) KEEPON.add(dev.id); else KEEPON.delete(dev.id);
+          toast(wantOn ? (r.ok ? dev.label + ' 已常亮（永不锁屏）' : '常亮失败：' + (r.detail || '')) : dev.label + ' 已恢复正常休眠');
+          renderDevices(DEVLIST);
+        } catch (err) { toast('常亮切换失败：' + err.message); kb.disabled = false; }
+      };
+      t.appendChild(kb);
+    }
     if (!dev.online) { const hp = document.createElement('div'); hp.className = 'hint'; hp.textContent = '排查：' + connHint(dev); box.appendChild(hp); }
     if (!isPc) {
       const ed = document.createElement('div'); ed.className = 'devedit'; ed.onclick = (e) => e.stopPropagation();
@@ -392,7 +460,7 @@ function renderDevices(devices) {
     }
     box.onclick = () => { cb.checked = !cb.checked; cb.onchange(); };
     el.appendChild(box);
-    if (!DEVSEL_INITED && dev.online && !DEVSEL.has(dev.id)) { DEVSEL.add(dev.id); box.classList.add('on'); cb.checked = true; }
+    if (!DEVSEL_INITED && dev.online && !DEVSEL.has(dev.id) && !dev.workMachine) { DEVSEL.add(dev.id); box.classList.add('on'); cb.checked = true; }
   }
   DEVSEL_INITED = true;
 }
@@ -723,7 +791,7 @@ function closeDetail() { $('modalBg').style.display = 'none'; $('detail').style.
 
 
 boot();
-setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') { refreshDevices(); pollStale(); } }, 30000);
+setInterval(() => { if (!RUNNING && $('app').style.display !== 'none') { refreshDevices(); refreshBootState(); pollStale(); } }, 30000);
 // ★ 0.229.15：关页签自动停后台（用户拍板 B）——延迟 30s 关闭 + 页面回来自动取消：
 // 最小化不触发 pagehide（服务照常跑）；刷新后 boot 成功即取消关闭（刷新不再误停）；跑测中服务端拒绝（安全）
 window.addEventListener('pagehide', () => {
