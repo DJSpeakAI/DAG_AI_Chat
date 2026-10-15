@@ -5,7 +5,8 @@
 //   入口）/画布 ⚙/对话页 ⚙ 三处，但返回键事件只送达栈顶 NavDestination（词库/知识库/复习/统计/账单页），
 //   各页 onBackPressed 原先不知弹窗开态→返回键不关弹窗（0.229.26 审计 B9 实锤：仅画布页有拦截分支）。
 //   共享 store 后：任何页 onBackPressed 首分支 connectGlobalSettingsShared().closeReq++ 即触发
-//   requestClose（含未保存修改二次确认，0.150 语义原样）。
+//   requestClose（★ 0.242.0：关闭一律直接关，原「修改未保存」二次确认已移除——用户拍板，
+//   详见 docs/0.165+/0.242.0）。
 // 本文件是应用的全局设置弹窗（ChatPage 顶栏 ⚙ 与 BBTreeCanvas 画布 ⚙ 共用同一实例数据）：
 //   - Tab 1「API 配置」：★ 0.190.0 提供商化——模型提供商 2×2 卡片（华为云 MaaS / 火山引擎 /
 //     DeepSeek 3 预设 + 自定义配置，其他服务商全走自定义）；预设=模型下拉（预置清单+「自定义」
@@ -187,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.241.0'; // ★ 0.241.0：手机端导航胶囊条+滚动隐藏抖动修复+间距收紧对称（两库同款）；上一版 0.240.2：方案B拍平存储；更早历史见 MEMORY.md
+const APP_VERSION: string = 'v0.242.0'; // ★ 0.242.0：全局设置「修改未保存」误报弹窗移除+云同步开启按钮隐藏补齐；上一版 0.241.0：手机端导航胶囊条；更早历史见 MEMORY.md
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -513,54 +514,6 @@ export struct GlobalSettingsDialog {
     });
   }
 
-  // ★ 0.135/0.150/0.151：是否有未保存的修改（✕ 关闭拦截判断；★ 0.190.0：提供商化四项对比）
-  hasUnsavedChanges(): boolean {
-    return this.editProvider !== this.apiConfig.provider ||
-      this.editKey.trim() !== this.apiConfig.apiKey ||
-      this.currentModelValue() !== this.apiConfig.model ||
-      this.currentEndpointValue() !== this.apiConfig.endpoint ||
-      this.editAlias.trim() !== this.apiConfig.modelAlias || // ★ 0.238.0：模型别名
-      this.editNickname.trim() !== this.aiPreference.aiNickname || // ★ 0.150：称呼
-      this.editEncourageMode !== this.aiPreference.encourageMode || // ★ 0.191.0：鼓励三档
-      this.editAnchorMode !== this.anchorPref.anchorMode || // ★ 0.234.0：锚点卡片开关
-      this.editAnchorDensity !== (this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse') || // ★ 0.237.0：密度档两档归一比较（遗留 standard 按疏算——防开弹窗即恒脏误报「修改未保存」）
-      this.editFoldMode !== this.anchorPref.foldMode || // ★ 0.234.0：分章折叠开关
-      this.editReviewLearn !== this.learnCountStore.learnCount || // ★ 0.197.2：复习显示（保存模式）
-      this.editReviewKnowledge !== this.knowledgeCountStore.knowledgeCount ||
-      this.editTtsProvider !== this.apiConfig.ttsProvider || // ★ 0.236.0：TTS 提供商三档
-      this.hasUnsavedTtsChanges(); // ★ 0.232.0/0.236.0：TTS 档内字段分档比较（见方法）
-  }
-
-  // ★ 0.236.0：TTS 档内字段脏检查（分档比较——audioKey/audioModel/audioVoice 三档复用承载，
-  //   持久化值属当前生效档，跨档直比会误报恒脏）
-  hasUnsavedTtsChanges(): boolean {
-    if (this.editTtsKey.trim() !== this.apiConfig.audioKey) {
-      return true;
-    }
-    if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
-      const modelVal = this.editTtsQwenModel.trim().length > 0
-        ? this.editTtsQwenModel.trim() : TTS_QWEN_DEFAULT_MODEL;
-      return modelVal !== this.apiConfig.audioModel ||
-        this.editTtsVoice.trim() !== this.apiConfig.audioVoice ||
-        this.editTtsEmotion !== this.apiConfig.ttsEmotion ||
-        this.editTtsSpeed !== this.apiConfig.ttsSpeed ||
-        this.editTtsVolume !== this.apiConfig.ttsVolume;
-    }
-    if (this.editTtsProvider === 'custom') {
-      // ★ 0.236.1：自定义档=端点+Key+手填模型资源 ID 三字段（无火山预设）
-      return this.editTtsModel.trim() !== this.apiConfig.audioModel ||
-        this.currentTtsEndpointValue() !== this.apiConfig.audioEndpoint;
-    }
-    if (this.currentTtsModelValue() !== this.apiConfig.audioModel) {
-      return true;
-    }
-    // ★ 0.232.2：自定义档音色字段隐藏——不参与脏检查/保存（火山音色体系不适用）
-    if (this.editTtsProvider === 'volcano' && this.ttsVoiceEditable() &&
-      this.editTtsVoice.trim() !== this.apiConfig.audioVoice) {
-      return true;
-    }
-    return this.currentTtsEndpointValue() !== this.apiConfig.audioEndpoint;
-  }
 
   // ★ 0.232.0：当前 TTS 表单端点（火山=内置端点；自定义=手填 URL）
   currentTtsEndpointValue(): string {
@@ -816,32 +769,18 @@ export struct GlobalSettingsDialog {
     }
   }
 
-  // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose（有未保存修改时二次确认）
+  // ★ 0.150：外部请求关闭（返回键/返回按钮路径）——父组件递增 closeReq 触发，走 requestClose
   @Monitor('closeReq')
   onCloseReqChange(): void {
     this.requestClose();
   }
 
-  // ★ 0.150：关闭请求——有未保存修改时 AlertDialog 二次确认，无修改直接关闭
+  // ★ 0.242.0：关闭请求一律直接关闭——原「修改未保存」AlertDialog 已移除（用户拍板：
+  //   12 项脏检查与云同步无关、云同步 Tab 无保存按钮，误报弹窗困惑大于保护价值；
+  //   hasUnsavedChanges/hasUnsavedTtsChanges 两死代码方法一并删除，保存模式 Tab 未点保存
+  //   即关闭=放弃草稿，用户接受）
   requestClose(): void {
-    if (this.hasUnsavedChanges()) {
-      this.getUIContext().showAlertDialog({
-        title: '修改未保存',
-        message: '有修改尚未保存，确定要关闭吗？',
-        primaryButton: {
-          value: '继续编辑',
-          action: () => {}
-        },
-        secondaryButton: {
-          value: '不保存关闭',
-          action: () => {
-            this.onClose();
-          }
-        }
-      });
-    } else {
-      this.onClose();
-    }
+    this.onClose();
   }
 
   // ★ 0.224.0：切换卡面模式（即时生效全局单通道——写共享 store 即同步复习页 ⚙；即时推桌面卡片）
@@ -2528,14 +2467,17 @@ export struct GlobalSettingsDialog {
         : (SURFACE_SOFT))
       .margin({ bottom: 16 })
 
-      // 开启按钮（已开启则不显示——重复弹窗无意义；拒绝过可再点重试）
+      // ★ 0.242.0：已开启(syncOn)不显示——补齐缺失条件（注释自 0.196 起写「已开启则不显示」
+      //   但代码漏 !syncOn，实锤状态卡绿色「已开启」时按钮仍渲染，语义冲突；真机截图+用户实测）
       // ★ 0.194.0：非 VIP 时按钮替换为「订阅后开启」——云同步是唯一会员功能，到期只锁这里
       // ★ 0.196.8：未登录时按钮点击拦截——云同步与华为账号绑定，先登录（用户拍板）
       // ★ 0.196.10：拦截 toast 升级登录引导弹窗——「登录华为账号」直拉登录（用户拍板：
       //   原让用户回主页/边栏登录多此一举）；弹窗 Index 根挂载
       // ★ 0.196.12：未登录/VIP 两分支按钮样式完全相同——合并为一个 Button，onClick 内分流
       //   （原两分支重复 12 行样式代码；非 VIP 分支样式不同保持独立）
-      if (!this.account.isLoggedIn || isVip(this.subscription)) {
+      if (this.syncOn) {
+        // 云同步已开启：不渲染开启按钮（重复授权弹窗无意义；状态卡绿色已自明）
+      } else if (!this.account.isLoggedIn || isVip(this.subscription)) {
         Button('开启云同步')
           .width('100%')
           .height(48)

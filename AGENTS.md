@@ -1,0 +1,32 @@
+# AGENTS.md — DAG AI Chat 项目 AI 协作规则（所有 AI 工具通用）
+
+## 强制第一步
+任何任务开始前，先读三文档对齐基线：
+1. project_rule.md（全局开发规则）
+2. MEMORY.md（项目基线+迭代记录，只读最新条目定位上下文）
+3. docs/CONTEXT_MANAGEMENT.md（上下文纪律）
+
+## 开发铁律（摘要，细节以 project_rule.md 为准）
+- 技术栈：鸿蒙 ArkUI V2 + @ObservedV2/@Trace；禁止混用 V1 老语法
+- 数据 Schema 字段只许尾部追加+默认值，禁止改名/改类型/删除（数据安全第一）
+- PersistenceV2/AppStorageV2 的 key 一律禁改
+- 发版版本号三处同步：AppScope/app.json5 + Index.ets + GlobalSettingsDialog.ets；versionCode 每版 +1
+- 收尾四件套：MEMORY.md 迭代记录 / 桌面清理 / git push 双远端 / 版本号三处同步
+- 一任务一会话：任务完成即收尾，bug 修复新开会话
+
+## 止损熔断（强制，防死循环烧资源）
+同一 bug 出现以下任一情况，立即停止修改，产出「死胡同报告.md」（放桌面）：
+1. 连续 3 轮修改+编译仍未解决
+2. 同一处代码第 2 次改回原样
+3. 修改范围超出原始 bug（≥3 文件或开始重构式改动）
+4. 编译报错数连续 2 轮不降反升
+死胡同报告五部分：①环境与现象 ②相关代码骨架 ③已实锤证据 ④已试方案+死因表 ⑤怀疑方向。
+报告产出后必须停手，等人工决定下一步。
+
+## 红线（禁改，改动须转人工）
+数据模型 Schema / CloudSyncUtil.ets / BackupUtil.ets / 持久化 key / signing/ / module.json5 / 测试台 testing/console/
+
+## 其他
+- 未经用户明确要求不执行 git commit
+- 桌面「测试台.html」是副本禁手改（正本 testing/console/）；桌面「埋点看板.html」禁删
+- 全程简体中文

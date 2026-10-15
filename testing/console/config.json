@@ -88,11 +88,27 @@
   },
   "desktopDir": "/storage/Users/currentUser/Desktop/DAG AI Chat",
   "historyCap": 30,
+  "autofix": {
+    "cliCmd": "/storage/Users/currentUser/npm/bin/deveco",
+    "maxRounds": 2,
+    "timeoutMs": 600000,
+    "defaultSuites": ["version", "ui-audit"],
+    "redlineNote": "红线=自动修复禁改清单（命中即自动回滚当轮+熔断转人工）；testing/ 对闭环不可见不可改（防改考卷骗绿）",
+    "redlineFiles": [
+      "entry/src/main/ets/model/",
+      "entry/src/main/ets/utils/CloudSyncUtil.ets",
+      "entry/src/main/ets/utils/BackupUtil.ets",
+      "AppScope/",
+      "signing/",
+      "entry/src/main/module.json5",
+      "testing/"
+    ]
+  },
   "audit": {
     "tokenAnchor": {
-      "count": 30,
+      "count": 31,
       "hash": "recompute",
-      "note": "★0.230.0 更新：24→30（评分三档色 REVIEW_HARD/GOOD/EASY+BG 变体 token 化——0.229.26 审计 A11 warn 池人工裁决=纳入白名单）"
+      "note": "★0.243.0.1 更新：30→31（0.238.0 DesignTokens 新增 SUCCESS '#3BB273' 后锚未回填——0.243.0.1 闭环首轮基线实锤 CALIBRATE 红；历史 0.230.0 24→30 同族）"
     }
   }
 }

@@ -127,6 +127,14 @@
   #connCard pre { background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:12px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; color:var(--txt); max-height:52vh; overflow:auto; margin:0; line-height:1.6; }
   #connCard .crow { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
   #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:var(--hover); border:1px solid var(--strokeBrand); color:var(--txt); padding:8px 18px; border-radius:10px; font-size:12.5px; display:none; z-index:60; box-shadow:0 6px 20px rgba(0,0,0,.45); }
+  /* ★ 0.243.0.1 自动修复闭环面板（色值同 DesignTokens） */
+  .afbox { border:1px solid var(--line2); border-radius:10px; padding:8px 12px; margin:8px 0; background:rgba(124,77,255,.05) }
+  .afhead { cursor:pointer; display:flex; gap:8px; align-items:center; user-select:none }
+  .afhead b { font-size:13px; color:var(--acc2) }
+  .aflamps { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px }
+  .aflamp { font-size:12px; padding:3px 10px; border-radius:12px; border:1px solid var(--line2); cursor:help }
+  .aflamp.ok { color:var(--ok); border-color:rgba(59,178,115,.4) }
+  .aflamp.bad { color:var(--fail); border-color:rgba(255,99,99,.4) }
 </style>
 </head>
 <body>
@@ -161,6 +169,25 @@
       <span class="sub" id="runningTip" style="color:var(--warn);font-size:12px"></span>
     </div>
     <div class="footer-note" style="margin:0 0 8px;padding:8px 10px;border:1px dashed var(--acc2);border-radius:8px;color:var(--dim)">★ 三端从零·云同步全流程（0.241.0.4）：① 装机模式选「<b>全新安装</b>」+ 勾选三台（PC/Pad/手机）→ 点【装机】（清数据从零开始）② 勾选「<b>云同步·三端从零引导</b>」套件 → 开始测试（协议同意/华为登录/开云同步/系统权限<b>全自动</b>，<b>唯一人工=华为授权页点「同意」</b>）③ 再跑「云同步四域数据链」+「云同步数据链·跨端编排」（三端一致断言 + 手机↔Pad↔PC 双向传播）——任一红=同步 bug 实锤，复制报告给 AI 修</div>
+    <!-- ★ 0.243.0.1 自动修复闭环面板（测试→CLI 改码→编译→装机→重测，全案 docs/0.165+/0.243.0） -->
+    <div id="afBox" class="afbox">
+      <div class="afhead" onclick="afToggle()">
+        <span class="fold" id="afFold">▸</span><b>⚙ 自动修复闭环</b>
+        <span class="sub" style="color:var(--dim);font-size:11px">失败 → AI 自动改码 → 编译装机 → 重测（全绿收工 / 死胡同报告落桌面求援）</span>
+        <span id="afState" style="float:right;font-size:11.5px;color:var(--dim)"></span>
+      </div>
+      <div id="afBody" style="display:none">
+        <div id="afLamps" class="aflamps"></div>
+        <div style="margin:8px 0 4px;font-size:12px;color:var(--dim)">闭环套件（默认快速档=版本核验+UI 审计，分钟级反馈；含人工检查点的套件不建议进闭环）：</div>
+        <div id="afSuites" style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px"></div>
+        <div style="margin:6px 0 2px;font-size:12px;color:var(--dim)">设备 = 右侧②已勾选的在线设备（须全部在线，离线拒绝启动）</div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn sm primary" id="afStartBtn" onclick="afStart()">⚙ 开始自动修复</button>
+          <button class="btn sm ghost" id="afStopBtn" onclick="afStop()" style="display:none">■ 停止闭环</button>
+          <span class="sub" id="afTip" style="color:var(--dim);font-size:11.5px"></span>
+        </div>
+      </div>
+    </div>
     <div id="paneRun">
       <div id="actLine" class="actline" style="display:none">● 执行中 · 最近活动 <b id="actSecs">0</b> 秒前</div>
       <div class="bar"><i id="pbar"></i></div>
@@ -237,7 +264,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-  const PAGE_VER = '0.241.0.9'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.241.0.9：本页仅同步版本号+常亮失败 toast 改中文（服务端判定补 Override 关键词——0.241.0.8 实现功能已生效但被误报失败）；★ 0.241.0.8：本页仅同步版本号+常亮按钮 title 更新+addr 行工作机标注（常亮重写+设备名精简见 server.js）；★ 0.241.0.7：三端同步链路优化（服务端用例修复，本页仅同步版本号——SYNC-FLOW 输入后收键盘再点保存+BOOT-CONVERGE 签名 settle 轮询）；★ 0.241.0.6：UI 精修——右栏设备面板加宽 240→300+间距放大、色值全量对齐 UI_GUIDELINES（BRAND_PRIMARY #7C4DFF/BRAND_SECONDARY #A78BFA/SURFACE 系+白8%描边+顶部品牌光带）、全局紫色细滚动条+左树分组品牌左条+悬停态；★ 0.241.0.5：设备「常亮」按钮（手机锁屏卡流程根治）+「从零进度」状态行（协议/登录/同步三探，分清未就绪 vs 已就绪）+ 左栏滚动一屏化；★ 0.241.0.4：三端云同步——sync-boot 套件（BOOT-AGREE/LOGIN/CONVERGE）+ 手机操作端 SYNC-FLOW-WORD-M/NODE-M + 三端从零全流程指引
+  const PAGE_VER = '0.243.0.1'; // ★ 0.243.0.1：自动修复闭环面板（与 server.js 同版本）——「⚙ 自动修复闭环」折叠面板（执行矩阵 Tab 内）：五灯健康检查（CLI/git/模型探针/编译链/设备，悬停看原因）+闭环套件勾选（默认快速档 version+ui-audit）+开始/停止+SSE 实时流（[自动修复·阶段] 行内嵌实时执行流）+三出口（全绿报告/死胡同报告均落桌面）+拒绝启动亮原因；服务端 afLoop 状态机+熔断五判据详见 server.js 同版本注释 // 更早历史见 MEMORY.md 版本表
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;
@@ -289,6 +316,7 @@ async function boot() {
     }
     resetStats(); initStreamTip();
     openEvents();
+    afRefreshStatus(); // ★ 0.243.0.1 页面重开时恢复自动修复闭环状态显示（后台闭环跑着不中断）
     if (!CONN_AUTOSHOWN) { CONN_AUTOSHOWN = true; setTimeout(autoShowConnDiag, 800); }
   } catch (e) {
     showGuideWait();
@@ -607,6 +635,105 @@ async function prepDevices() {
   loadVersion();
 }
 
+// ---------- ★ 0.243.0.1 自动修复闭环（测试→CLI 改码→编译→装机→重测；全案 docs/0.165+/0.243.0） ----------
+const AF_DEFAULT_SUITES = ['version', 'ui-audit'];
+let AF_SEL = new Set(AF_DEFAULT_SUITES), AF_OPEN = false, AF_RUNNING = false;
+const AF_LAMP_NAME = { cli: 'CLI', git: 'git', model: '模型', build: '编译链', device: '设备' };
+function afToggle() {
+  AF_OPEN = !AF_OPEN;
+  $('afBody').style.display = AF_OPEN ? 'block' : 'none';
+  $('afFold').textContent = AF_OPEN ? '▾' : '▸';
+  if (AF_OPEN) { afRenderSuites(); afHealth(false); afRefreshStatus(); }
+}
+function afRenderSuites() {
+  const el = $('afSuites'); el.innerHTML = '';
+  if (!SUITES) return;
+  for (const [sid, s] of Object.entries(SUITES)) {
+    const lab = document.createElement('label');
+    lab.style.cssText = 'display:flex;gap:5px;align-items:center;cursor:pointer';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = AF_SEL.has(sid);
+    cb.onchange = () => { cb.checked ? AF_SEL.add(sid) : AF_SEL.delete(sid); };
+    lab.appendChild(cb);
+    const nm = document.createElement('span'); nm.textContent = sid + '（' + s.cases.length + '项' + (s.cases.some(c => c.semi) ? '·含人工' : '') + '）';
+    lab.appendChild(nm); el.appendChild(lab);
+  }
+}
+function afRenderLamps(h) {
+  const el = $('afLamps'); el.innerHTML = '';
+  if (!h) return;
+  for (const k of ['cli', 'git', 'model', 'build', 'device']) {
+    const v = h[k] || { ok: false, detail: '' };
+    const s = document.createElement('span');
+    s.className = 'aflamp ' + (v.ok ? 'ok' : 'bad');
+    s.textContent = (v.ok ? '●' : '●') + ' ' + AF_LAMP_NAME[k];
+    s.title = v.detail || (v.ok ? '正常' : '未检查');
+    el.appendChild(s);
+  }
+}
+async function afHealth(force) {
+  $('afLamps').innerHTML = '<span style="color:var(--dim);font-size:12px">健康检查中' + (force ? '（强制重探，模型探针约 15~60 秒）' : '') + '…</span>';
+  try {
+    const h = await api('/api/autofix/health' + (force ? '?refresh=1' : ''));
+    afRenderLamps(h);
+    const bad = Object.entries(h).filter(([k, v]) => v && typeof v === 'object' && v.ok === false);
+    $('afTip').textContent = bad.length ? '红灯：' + bad.map(([k]) => AF_LAMP_NAME[k]).join('、') + '（悬停灯看原因）' : (h.cached ? '五灯全绿（5 分钟缓存）' : '五灯全绿');
+    return h;
+  } catch (e) { $('afLamps').innerHTML = '<span style="color:var(--fail);font-size:12px">健康检查失败：' + esc(e.message) + '</span>'; return null; }
+}
+function afSyncBtns() {
+  $('afStartBtn').disabled = AF_RUNNING;
+  $('afStopBtn').style.display = AF_RUNNING ? 'inline-block' : 'none';
+}
+async function afRefreshStatus() {
+  try {
+    const st = await api('/api/autofix/status');
+    AF_RUNNING = st.state !== 'idle';
+    if (AF_RUNNING) {
+      $('afState').textContent = '闭环运行中 · 第 ' + st.round + ' 轮 · ' + (st.phase || '');
+      if (!AF_OPEN) { AF_OPEN = true; $('afBody').style.display = 'block'; $('afFold').textContent = '▾'; }
+      afRenderSuites(); afSyncBtns();
+    } else { $('afState').textContent = ''; afSyncBtns(); }
+  } catch (_) { /* 服务未起由 boot 兜底 */ }
+}
+async function afStart() {
+  if (!DEVSEL.size) { alert('先在右侧②勾选设备（自动修复会装机会动设备，须全部在线）'); return; }
+  const suites = [...AF_SEL];
+  if (!suites.length) { alert('至少勾选一个闭环套件'); return; }
+  if (!confirm('自动修复闭环：\n① 先跑所选套件基线测试（设备=' + [...DEVSEL].join('、') + '）\n② 有失败 → 派单 CLI agent 自动改码（红线文件禁改，违者自动回滚）→ 编译 → 覆盖装机 → 重测\n③ 全绿=报告落桌面收工；连修 ' + 2 + ' 轮不收敛/触碰红线=死胡同报告落桌面，仓库回滚到启动前\n\n期间设备会被自动操作（安装/冷启/点按），请勿手动使用设备。开始？')) return;
+  $('afStartBtn').disabled = true; $('afTip').textContent = '健康检查中（模型探针约 15~60 秒）…';
+  try {
+    const r = await api('/api/autofix/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ devices: [...DEVSEL], suites }) });
+    AF_RUNNING = true; afSyncBtns();
+    $('afTip').textContent = '闭环已启动 ' + r.runId;
+    lastAct = Date.now(); switchTab('run');
+    addLn('— 自动修复闭环 ' + r.runId + ' 启动 · ' + new Date().toLocaleTimeString() + ' —', 'info', '');
+  } catch (e) {
+    alert('启动被拒：' + e.message);
+    $('afTip').textContent = '启动被拒（详见弹窗）；可先点灯区重探';
+    afHealth(true);
+  }
+  $('afStartBtn').disabled = false;
+}
+async function afStop() {
+  if (!confirm('中止自动修复闭环？（当前环节完成即停，CLI 子进程立即强杀；已产生的修复改动保留在工作区）')) return;
+  try { const r = await api('/api/autofix/stop', { method: 'POST' }); toast(r.note || '已请求中止'); }
+  catch (e) { toast('停止失败：' + e.message); }
+}
+function onAfEvent(e) {
+  lastAct = Date.now();
+  addLn('[自动修复·' + (e.phase || '') + (e.round ? ' R' + e.round : '') + '] ' + (e.text || ''), e.phase === 'done' ? 'pass' : (e.phase === 'deadend' || e.phase === 'error' || e.phase === 'redline' ? 'fail' : 'info'), '');
+  $('afState').textContent = '第 ' + (e.round || 0) + ' 轮 · ' + (e.phase || '');
+}
+function onAfEnd(e) {
+  AF_RUNNING = false; afSyncBtns(); $('afState').textContent = '';
+  const r = e.result || {};
+  if (r.outcome === 'green') { toast('✅ 自动修复收工：' + (r.rounds || '?') + ' 轮全绿，报告已放桌面'); addLn('[自动修复] ✅ 收工——报告：' + (r.report || ''), 'pass', ''); }
+  else if (r.outcome === 'deadend') { toast('⛔ 熔断：死胡同报告已放桌面（' + (r.reason || '') + '），可外发任意 AI 求援'); addLn('[自动修复] ⛔ 死胡同报告：' + (r.report || ''), 'fail', r.reason || ''); }
+  else if (r.outcome === 'aborted') toast('闭环已中止');
+  else toast('闭环异常退出：' + (r.error || '?'));
+  loadHistory();
+}
+
 // ---------- SSE 实时流 ----------
 function openEvents() {
   if (es) es.close();
@@ -620,6 +747,8 @@ function openEvents() {
     else if (e.type === 'run-end') { RUNNING = false; syncRunBtn(); loadHistory(); showSummary(e.summary || {}); $('resDot').style.display = 'inline-block'; switchTab('res'); }
     else if (e.type === 'checkpoint') onCheckpoint(e.cp);
     else if (e.type === 'run-start') { }
+    else if (e.type === 'autofix') onAfEvent(e);
+    else if (e.type === 'autofix-end') { onAfEnd(e); }
   };
   es.onerror = () => { /* 断流：30 秒设备刷新兜底 + 下一轮操作会重连 */ };
 }

@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000281, // ★ 0.241.0：手机端导航胶囊条+滚动隐藏抖动修复+间距收紧对称（两库同款）；上一版 0.240.2：方案B拍平存储；更早历史见 MEMORY.md
+    "versionCode": 1000282, // ★ 0.242.0：全局设置「修改未保存」误报弹窗移除+云同步开启按钮隐藏补齐；上一版 0.241.0：手机端导航胶囊条；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

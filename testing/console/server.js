@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.241.0.9'; // ★ 0.241.0.9：修常亮「成功被误报失败」（用户真机实锤：toast 常亮失败但回显 WakeupDevice is called | Override screen off time to 2147483647=两命令实际都成功）——timeout -o 成功回显含 Override 不含 success、判定正则补 override/restore 关键词；失败时返回中文 error（§4 禁裸英文） // ★ 0.241.0.8：常亮重写+设备名精简（用户实测翻车：点常亮手机被切深色省电界面+熄屏依旧）——①真凶①=power-shell setmode 602 根本不是永不休眠（鸿蒙 PowerMode 600=正常/601=省电/602=**超省电**——此前实现=切超省电模式，深色界面即其表现、熄屏依旧因它压根不管休眠）；正解=power-shell timeout -o 2147483647 临时覆盖休眠超时（不动用户设置），off=timeout -r 恢复+setmode 600 救回残留省电模式 ②真凶②=中部上滑手势在桌面拉起全局搜索浮层（用户截图半透明侧边栏实锤）——改底部区域上滑（600,2000→600,1200：锁屏解锁/已解锁不触发搜索）③config.json 四设备 label 精简（鸿蒙 PC/Pad/手机/Pura X View——连接方式已在地址行显示，长名换行丑）+addr 行 workMachine 追加「· 工作机」标注。 // ★ 0.241.0.7：三端同步链路优化（用户令「三端同步的优化+三端都试一下」；两轮实锤修复）——①**SYNC-FLOW-WORD/CARD/WORD-M 稳定复现红根治**（R20261015120120/120525 同点位「保存」找不到）：inputText 后软键盘在屏=uitest dump 盲区（0.230.0.1 实锤），keyEvent Back 收键盘再点保存（编辑器返回键拦截在第二层=不关弹窗，B11 同款实证修法，0.229.25「CARD 键盘遮挡保存」遗留项 hereby 落地）②**BOOT-CONVERGE 键集签名瞬态假红根治**（R20261015115552：行数收敛而内容在途单次快照判死、下轮自愈）：签名一致改 settle 轮询 ≤120s/12s 一复查，持续分叉才定性 fail。 // ★ 0.241.0.6：UI 精修（用户需求「右边宽度大一点好看一点+紫色按 UI guideline+左边 scroll 好看一点」；纯 index.html 样式改动，本文件仅同步版本号）——①右栏设备面板 240→300 加宽+列间距 14→16/内边距放大+max-width 1280→1500 ②色值全量对齐 UI_GUIDELINES.md DesignTokens（BRAND_PRIMARY #7C4DFF/BRAND_SECONDARY #A78BFA/BG_APP #120B1F/BG_NAV #1A1030/SURFACE_NODE #241640/SURFACE_HOVER #2C1B4D/STROKE_CARD 白8%/STROKE_BRAND 40% 紫）+顶部品牌紫光带+主按钮品牌渐变 ③全局紫色细滚动条（webkit+firefox 双通道）+左树分组头品牌左条+悬停态+徽章彩色底。仅改 public/index.html 刷新即生效；重启服务后 syncDesktop 同步桌面副本 // ★ 0.241.0.5：测试台三功能（用户拍板）+ 首轮真机 bug 修复——①设备「常亮」按钮（/api/keepalive：wakeup+setmode 602 永不休眠+上滑解锁；off=600 恢复——手机测试期锁屏卡流程根治）②「从零进度」设备状态行（/api/bootstate：协议 agreement-v1/登录 huawei-account/同步 cloud_data 行数 三探——分清「全新安装未走完流程」vs「已就绪」，全 CLI 通道锁屏可测）③左侧用例树滚动栏+页面一屏化 ④acceptSyncAsk 堆叠修复（首轮 R20261015105027 实锤：点下层「开启云同步」被 30 天试用弹窗遮罩拦截=点空→改 findTopmostButton 最上层优先逐层清） // ★ 0.241.0.4：三端云同步测试（用户拍板——畅享90Pro Max 入列后手机 APP 与 Pad/PC 疑似不同步，三台 fresh 从零全流程测试台化；全案 docs/0.165+/0.241.0.4）——①新 sync-boot 套件（BOOT-AGREE 协议全自动同意/BOOT-LOGIN 全自动登录+开同步·唯一人工=华为授权页/BOOT-CONVERGE 三端 settle 收敛+四域签名一致）②SYNC-FLOW 新增手机操作端 2 用例（WORD-M/NODE-M——用户「手机不同步」的正向验证；flowPrep 支持 prefer 指定操作端）③新原语：ensureLoginFlow（三端首页「登录华为账号」统一登录链）/acceptSyncAsk（登录后云同步询问自动「开启」+系统权限「允许」——区别 dismissLoginDialogs 测试隔离语义）/openPhoneDrawer（手机画布左下角抽屉按钮启发式）/ensureCanvas/navToM/navAnywhere（手机抽屉导航分流）/pcClickText（0.229.25 实证的 PC 多屏注入通道固化：dump -d 15/0 + uiInput click x y disp）④login 套件手机适配（LOGIN-SIDEBAR/SYNC 抽屉导航、autoLogout 手机回首页重试）⑤前端加三端从零全流程步骤指引 // ★ 0.241.0.3：修新设备首装必踩坑——「全新安装」对从未装过 app 的设备，卸载报 9568386 missing installed bundle 被当硬失败中止（Pura X View 首装实锤截图）；bmUninstall 加 clean 判定=该报错视为「设备本来就干净」放行继续安装，真卸载失败仍中止（0.229.18 防假成功语义保留） // ★ 0.241.0.2：Pura X View 入列第四台（2026-10-15 用户口述勘误——0.241.0.1 曾把 192.168.2.16:39421 记为畅享地址，实为搞反；畅享真身=192.168.2.14:38611 截图+config 双实锤，2.16:39421=新买的 Pura X View）——config.json 新增 pura 条目带 workMachine:true，前端默认勾选跳过工作机，测试/装机仍只用前三台（PC→Pad→手机），Pura X View 动不了就跳过不折腾（用户工作机） // ★ 0.241.0.1：设备阵容更新（2026-10-15 用户拍板）——畅享90Pro Max 入列常测试设备（config.json 手机条目：label 更名+serial 换 192.168.2.16:39421+删 optional 死字段），三端同测=PC+Pad+手机；Pura X View=用户工作机，不入列、禁测禁装机（测不了不用管）；project_rule §12.14 阵容规则入档 // ★ 0.240.2.1：跟 APP 0.240.2（方案B拍平存储——api-config-v5 单string JSON 主真相源，豆包+华为AI双评审共同方案）——④ 保存生效校验改读 v5（provider+apiKey 含唯一 KMARK）+ Key 框注入、⑤ 重启存活加 Key 框回显断言（别名+档位+Key 三重——验收标准 1 全覆盖） // ★ 0.240.1.4：跟 app 终案（v5 换 key 三版真机证伪弃用、回 v4+别名持久化走 map）——④ 保存生效校验改读 v4.provider、删「v5 出生」断言、MARK 断言改「别名 map 落盘」 // ★ 0.240.1.1：跟 APP 0.240.1（模型别名保存→重启丢失修复）+ ui-audit 新增 ALIAS-KEEP（别名注入→保存→落盘双断言→冷启重开→存活断言→献祭模型法零污染收尾还原） // ★ 0.240.0.1：跟 APP 0.240.0（手机端搜索栏滚动隐藏+排序按钮图标化）+ kbview 新增 KB-SORT-ICON/WB-SORT-ICON/KB-SEARCH-HIDE/WB-SEARCH-HIDE 四用例（图标试探定位/弹层紫底高亮断言/上滑收起下滑呼回回顶强制显示/宽屏常驻红线） // ★ 0.239.0.1：跟 APP 0.239.0（知识库双视图+加号菜单双库统一）+ 新增 kbview 套件 KB-VIEW/KB-PLUS/WB-PLUS（切换按钮定位/多列网格断言/无图占位/跨页记忆/菜单宽度位置 drill-down） // ★ 0.238.0.1：跟 APP 0.238.0（测试连接+模型别名+信息行合并）+ UI-AUDIT-DIALOGS 新增 C3/C4（API Tab 表单尾独立重开段：别名字段+测试连接真点链路断言） // ★ 0.237.2.2：修「保存并自动连接」报 inp is not defined（doSave 定义在 if 块外、捕获不到块内 const inp，移入块内） // ★ 0.237.2.1：跟 APP 0.237.2（TTS 设置区三 bug）+ C0/C1/C2 重写（C1 反转 0.233.0 断言方向） // ★ 四段制：前三段跟 APP，第四段=测试台工具版本 // ★ 0.237.1.1：跟 APP 0.237.1 + 新增 SEL-ACCURACY（长按行尾词→翻译浮窗原文=所划之词三断言） // ★ 0.237.0.1：跟 APP 0.237.0 + CHAT-FOLD 重写（SVG 折叠指示器军令断言/去共N节/字符三角清零）+ A17 改 SVG 同源断言 // ★ 0.235.2.1：跟 APP 0.235.2 + 新增 CHAT-ACTIONS/CHAT-SWIPE/CHAT-FOLD 三用例（只测 Pad）// ★ 0.233.0.3：看护脚本协作（shutdown 写 .watchdog-skip、启动清标记）+ watch-server.sh 自动重启看护
+const VERSION = '0.243.0.1'; // ★ 0.243.0.1 自动修复闭环一期（全案 docs/0.165+/0.243.0；工具线新整段 0.243——同 0.229 先例，APP 下版 0.244.0）：Phase 0 已实锤 deveco run headless（非交互+自动退出+退出码）——①服务端 autofix 模块：AF 状态机（afLoop：基线测试→任务包→git 打点→CLI 改码→红线 diff 检查→编译→装机→重测，全绿/死胡同/红线三出口）②止损熔断五判据（零改动死轮/红线回滚/编译连败 2 轮/超时 600s 强杀/轮次用尽）写死服务端不靠 CLI 自觉③git 工具（白名单 rev-parse/add/commit/status/diff/reset/clean；打点快照保护用户未提交工作；clean 不带 -x 不碰 ignored 密钥文件）④修复任务包（失败断言详情+红线禁令+止损令+基线三读指令）⑤死胡同报告五部分求援定式+绿报告均落桌面⑥四接口 /api/autofix/health|status|start|stop（start 强制五灯全绿：CLI/git/模型探针/编译链/设备在线，任一红拒绝启动）⑦测试代码对闭环不可见不可改（红线含 testing/，防改考卷骗绿）。前端见 public/index.html 同版本注释 // ★ 0.241.0.10：修 ARKUI-TEST 三端全红 9568263（R20261015164335 实锤：app 发版 1000282 后旧测试包 pack.info=1000281 被「复用已编译测试包」直接拿去装→拒装）——①新增 testHapVersionCode()（读 pack.info，与 hap 同批产出纯 JSON 免解包）：复用前比对工程当前 versionCode，不一致强制重编（0.235.0/0.237.1/0.237.2 三踩同坑的结构性根治，此前全靠人工重编）②安装前设备侧版本预检（bmVersionCode 读设备主应用 versionCode ≠ 工程值→红字指路先【装机】，不硬撞 9568263）③安装失败输出含 9568263 附中文解码④runCase 支持 caseDef.timeoutMs 覆盖（ARKUI-TEST=900s，重编数分钟不撞全局 300s 线） // 更早历史见 MEMORY.md 版本表（唯一真相源·版本注释瘦身约束）
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -634,6 +634,16 @@ function pickTestHap() {
     return list[0];
   } catch (_) { return null; }
 }
+// ★ 0.241.0.10 新增：读已编译测试包的 versionCode——pack.info 与 hap 同批产出（纯 JSON，免解包 hap）。
+//   app 每次发版递增 versionCode 后旧测试包必装不上（hdc install 9568263 版本不匹配，0.235.0/0.237.1/0.237.2 三踩）；
+//   本函数供 ARKUI-TEST 复用前比对，读不到/解析失败一律返回 null（=视为过期强制重编，安全侧倒）
+function testHapVersionCode() {
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(testHapDir(), 'pack.info'), 'utf8'));
+    const code = info && info.summary && info.summary.app && info.summary.app.version && info.summary.app.version.code;
+    return Number.isInteger(code) ? code : null;
+  } catch (_) { return null; }
+}
 async function buildTestHap() {
   const lb = CFG.localBuild || {};
   const hvigorw = lb.hvigorw;
@@ -756,7 +766,8 @@ async function runCase(devices, caseDef) {
   const t0 = Date.now();
   let status = 'pass';
   // ★ 0.229.17：用例级超时保护（用户"停止了不可能一直等、卡住要有反馈"）——超时自动标失败并写明原因、跳过继续后续用例
-  const timeoutMs = CFG.caseTimeoutMs || 300000;
+  // ★ 0.241.0.10：用例可带 timeoutMs 覆盖全局值（ARKUI-TEST 需现场重编测试包，数分钟，给 900s 专属档）
+  const timeoutMs = caseDef.timeoutMs || CFG.caseTimeoutMs || 300000;
   let timer = null;
   try {
     await Promise.race([
@@ -3486,19 +3497,36 @@ const CASES = [
     } },
 
   // ---------- 功能③ ArkUI Test（设备内真断言，hypium；工程 entry/src/ohosTest） ----------
-  { id: 'ARKUI-TEST', suite: 'arkui', name: 'ArkUI Test 设备内真断言（hypium 2 条）', semi: false, scope: 'each', builtin: true,
+  { id: 'ARKUI-TEST', suite: 'arkui', name: 'ArkUI Test 设备内真断言（hypium 2 条）', semi: false, scope: 'each', builtin: true, timeoutMs: 900000,
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
+      // ★ 0.241.0.10：复用前比对测试包 versionCode 与工程当前值（现读 app.json5，防服务跨发版未重启用旧期望）——
+      //   app 发版递增 versionCode 后旧测试包必装不上（9568263），此前 0.235.0/0.237.1/0.237.2 三踩全靠人工重编
+      const curVc = readAppVersionCode() ?? EXPECTED_VC;
       let testHap = pickTestHap();
-      if (!testHap) {
-        ctx.log('① 编译测试包', 'info', '首次需编译 ohosTest（可能数分钟）…');
+      const hapVc = testHap ? testHapVersionCode() : null;
+      if (testHap && hapVc === curVc) {
+        ctx.log('① 测试包已存在', 'pass', testHap.split('/').pop() + `（复用已编译测试包，versionCode=${hapVc} 与工程一致）`);
+      } else {
+        ctx.log('① 编译测试包', 'info', testHap ? `已编译测试包 versionCode=${hapVc} ≠ 工程当前 ${curVc}（app 已发版）——9568263 版本不匹配防线，强制重编` : '首次需编译 ohosTest（可能数分钟）…');
         const b = await buildTestHap();
         if (!b.ok) { ctx.log('① 测试包编译', 'fail', b.err + (b.log ? ' | ' + String(b.log).split('\n').slice(-3).join(' ').slice(0, 300) : '')); return; }
-        testHap = b.hap; ctx.log('① 测试包编译', 'pass', testHap.split('/').pop());
-      } else ctx.log('① 测试包已存在', 'pass', testHap.split('/').pop() + '（复用已编译测试包）');
+        testHap = b.hap; ctx.log('① 测试包编译', 'pass', testHap.split('/').pop() + `（versionCode=${curVc}）`);
+      }
+      // ★ 0.241.0.10：设备侧预检——设备主应用版本落后于工程时，测试包（=工程版本）必装不上（9568263）；
+      //   红字指路先【装机】升级主应用，不硬撞 hdc 报错（bmVersionCode=VERSION 用例已验证通道）
+      const dv = await bmVersionCode(serial);
+      if (!dv.ok || dv.code !== curVc) {
+        ctx.log('② 测试包安装到 ' + dev.id, 'fail', !dv.ok
+          ? '设备上未查询到主应用 versionCode（bm dump 失败）——请先【装机】装好主应用再跑本用例'
+          : `设备应用 versionCode=${dv.code} ≠ 工程 ${curVc}——测试包版本随工程走，请先【装机】升级设备主应用后重跑本用例`);
+        return;
+      }
       const ins = await hdcSpawn(serial, ['install', '-r', testHap], 180000);
-      const insOk = /successfully/.test(ins.out + ins.err);
-      ctx.log('② 测试包安装到 ' + dev.id, insOk ? 'pass' : 'fail', (ins.out + ins.err).trim().slice(0, 200));
+      const insTxt = (ins.out + ins.err).trim();
+      const insOk = /successfully/.test(insTxt);
+      const hintVc = /9568263/.test(insTxt) ? '【9568263=测试包与设备应用 versionCode 不一致——app 发版后测试包须重编】' : '';
+      ctx.log('② 测试包安装到 ' + dev.id, insOk ? 'pass' : 'fail', (insTxt.slice(0, 200) + ' ' + hintVc).trim());
       if (!insOk) return;
       ctx.log('③ 执行 aa test', 'info', '-m entry_test · hypium runner');
       const out = await aaTestRun(serial);
@@ -3511,6 +3539,7 @@ const CASES = [
 let running = false;
 let abortRequested = false; // ★ 0.229.20「停止测试」请求——当前步骤跑完即停（不硬杀正在执行的 hdc 命令）
 function startRun(deviceIds, caseIds) {
+  if (AF.state !== 'idle') return { error: '自动修复闭环正在运行（' + AF.phase + '）——等它结束或先停止闭环' }; // ★ 0.243.0.1 互斥
   if (running) return { error: '已有测试在跑（页面刷新/重开不会中断后台执行——等它跑完，或点【停止测试】）' };
   const devs = CFG.devices.filter((d) => deviceIds.includes(d.id));
   const cases = CASES.filter((c) => c.builtin || caseIds.includes(c.id));
@@ -3589,6 +3618,392 @@ function syncDesktop() {
     }
     return { ok: true };
   } catch (e) { return { ok: false, reason: String(e) }; }
+}
+
+// ============================================================
+// ★ 0.243.0.1 自动修复闭环（autofix：测试 → CLI agent 改码 → 编译 → 装机 → 重测；全案 docs/0.165+/0.243.0）
+//   Phase 0 已实锤（2026-10-16）：deveco run "<任务>" --dir <PROJECT> --dangerously-skip-permissions
+//   = 非交互一次性执行、自动退出、退出码可判（类 claude -p / codex exec）。
+//   止损熔断五判据（写死服务端，不靠 CLI 自觉——方案 §4.2）：
+//     ① 同一 bug 连续 maxRounds(2) 轮修复后仍失败 → 熔断+死胡同报告（五部分求援定式）落桌面
+//     ② 本轮 git diff 为空（CLI 没改成任何东西）= 死轮，计入熔断连击
+//     ③ diff 触碰红线清单（config.autofix.redlineFiles）→ 回滚当轮+熔断转人工
+//     ④ CLI 进程超时 600s → 强杀+判死轮
+//     ⑤ 编译失败连续 2 轮 → 熔断（编译报错喂给下一轮任务包，两轮机会）
+//   成败判定一律以 git diff + 编译 + 重跑测试为准（不信 CLI 自述）。
+// ============================================================
+const AF = {
+  state: 'idle', runId: null, round: 0, phase: '', devices: [], suites: [],
+  bootSnap: null, abort: false, startedAt: 0, rounds: [], result: null,
+  lastHealth: null, healthAt: 0, cliProc: null,
+};
+function afSend(phase, text, extra) {
+  AF.phase = phase;
+  sseSend({ type: 'autofix', runId: AF.runId, phase, round: AF.round, text, ...(extra || {}) });
+}
+function afStatusLite() {
+  return { state: AF.state, runId: AF.runId, round: AF.round, phase: AF.phase, result: AF.result, startedAt: AF.startedAt,
+    rounds: AF.rounds.map((r) => ({ round: r.round, files: r.files, outcome: r.outcome, summary: r.summary })) };
+}
+// ---------- git 工具（打点/回滚/diff；子命令白名单——安全模型从「只 spawn hdc」扩展出 git，仅限以下只读+快照操作） ----------
+const GIT_SUBCMDS = new Set(['rev-parse', 'add', 'commit', 'status', 'diff', 'reset', 'clean']);
+function git(args, timeoutMs = 30000) {
+  if (!GIT_SUBCMDS.has(args[0])) return Promise.resolve({ code: -1, out: '', err: 'git subcommand not allowed: ' + args[0] });
+  // commit 身份用命令级 -c（不动仓库/全局 git config）
+  if (args[0] === 'commit') args = ['-c', 'user.name=autofix', '-c', 'user.email=autofix@local', ...args];
+  return runCmd('git', args, PROJECT, timeoutMs);
+}
+async function gitAvailable() {
+  const r = await git(['rev-parse', 'HEAD']);
+  return { ok: r.code === 0, head: r.out.trim().slice(0, 12), err: r.out.slice(0, 120) };
+}
+// 打点快照：把当前工作区全部改动 add -A + commit（保护用户未提交工作=入历史不丢）；无可提交则只取 HEAD
+async function gitSnap(label) {
+  const st = await git(['status', '--porcelain']);
+  if (!st.out.trim()) { const h = await git(['rev-parse', 'HEAD']); return { hash: h.out.trim(), empty: true }; }
+  await git(['add', '-A']);
+  const c = await git(['commit', '-m', label]);
+  const h = await git(['rev-parse', 'HEAD']);
+  return { hash: h.out.trim(), empty: false, commitOk: c.code === 0, commitOut: (c.out || '').slice(0, 200) };
+}
+// 当前改动文件（含新增/删除/未跟踪——porcelain 全态，比 git diff --name-only 全）
+async function gitChangedFiles() {
+  const r = await git(['status', '--porcelain']);
+  return r.out.split('\n').map((l) => l.slice(3).trim()).filter(Boolean);
+}
+// 回滚到指定快照：reset --hard + clean -fd（clean 不带 -x=不碰 ignored 文件，rawfile/config.json 等本地密钥配置安全）
+async function gitRollback(hash) {
+  const a = await git(['reset', '--hard', hash]);
+  const b = await git(['clean', '-fd']);
+  return { ok: a.code === 0, out: (a.out + b.out).slice(0, 200) };
+}
+// 红线匹配：目录前缀（以 / 结尾）/ 精确文件 / 尾部 * 通配
+function afRedlineHit(files) {
+  const rl = (CFG.autofix && CFG.autofix.redlineFiles) || [];
+  const hits = [];
+  for (const f of files) {
+    for (const r of rl) {
+      let m = false;
+      if (r.endsWith('/')) m = f.startsWith(r);
+      else if (r.includes('*')) m = new RegExp('^' + r.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*') + '$').test(f);
+      else m = f === r;
+      if (m) { hits.push(f + '（红线：' + r + '）'); break; }
+    }
+  }
+  return hits;
+}
+// ---------- CLI headless 调用（deveco run；spawn 数组参数；超时强杀） ----------
+function stripAnsi(s) { return String(s || '').replace(/\x1b\[[0-9;]*m/g, ''); }
+function afRunCli(prompt, timeoutMs) {
+  return new Promise((resolve) => {
+    const af = CFG.autofix || {};
+    if (!af.cliCmd) return resolve({ code: -1, out: '未配置 autofix.cliCmd' });
+    const env = { ...process.env };
+    if (CFG.localBuild && CFG.localBuild.nodeBin) env.PATH = CFG.localBuild.nodeBin + path.delimiter + (env.PATH || '');
+    const args = ['run', prompt, '--dir', PROJECT, '--dangerously-skip-permissions'];
+    // ★ stdin 必须 ignore：deveco 真身（bun 二进制）对「开放的空 pipe stdin」会阻塞等待（实测挂死零输出，spawn
+    //   timeout 杀掉才现形 close(null)）；bash 下 stdin=TTY/EOF 均正常——node spawn 场景显式断开 stdin 即通
+    const p = spawn(af.cliCmd, args, { cwd: PROJECT, timeout: timeoutMs, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    AF.cliProc = p;
+    let out = '';
+    const push = (d) => { out += d.toString(); if (out.length > 2 * 1024 * 1024) out = out.slice(-1024 * 1024); };
+    p.stdout.on('data', push); p.stderr.on('data', push);
+    p.on('close', (code) => { AF.cliProc = null; resolve({ code: code ?? -1, out, timedOut: code === null }); });
+    p.on('error', (e) => { AF.cliProc = null; resolve({ code: -1, out: String(e) }); });
+  });
+}
+// ★ 0.243.0.1 CLI 重试封装：上游网关（deveco×glm-5.3 流式通道）存在间歇性 JSON 截断（实测：单轮短响应大概率通、
+//   多轮工具/长响应大概率崩、随时间波动）——崩特征=输出含 "JSON parsing failed"。重试可显著提高单任务通过率；
+//   多轮 agentic 修复任务在链路恢复前不可靠（实测 7+ 次稳定复现，已按止损熔断纪律停手并留档）
+async function afRunCliRetry(prompt, timeoutMs, retries) {
+  let last = { code: -1, out: '' };
+  for (let i = 0; i <= (retries ?? 1); i++) {
+    last = await afRunCli(prompt, timeoutMs);
+    if (last.code === 0 && !/JSON parsing failed|JSON Parse error|Unterminated string|Unexpected EOF/i.test(last.out)) return last;
+    afSend('fix', 'CLI 调用异常（流式截断嫌疑，' + (i < (retries ?? 1) ? '重试 ' + (i + 1) + '/' + retries : '重试用尽') + '）：' + stripAnsi(last.out).slice(-100));
+    await sleep(3000);
+  }
+  return last;
+}
+// ---------- autofix 跑测（复用 runCase/saveResults/artifacts；与手动跑测共用 running 锁互斥） ----------
+async function afRunTests(tag) {
+  const devs = CFG.devices.filter((d) => AF.devices.includes(d.id));
+  const cases = CASES.filter((c) => AF.suites.includes(c.suite) || c.builtin);
+  curRun = { runId: AF.runId + '-' + tag, startedAt: now(), env: { versionCode: EXPECTED_VC, node: process.version, autofix: true },
+    plan: { devices: devs.map((d) => d.id), cases: cases.map((c) => c.id) }, runs: [], summary: {} };
+  running = true;
+  outer: for (const dev of devs) {
+    for (const c of cases.filter((x) => x.scope === 'each')) {
+      if (AF.abort || abortRequested) break outer;
+      sseSend({ type: 'case-start', runId: curRun.runId, device: dev.id, case: c.id, name: c.name });
+      const r = await runCase([dev], c);
+      r.device = dev.id; curRun.runs.push(r);
+      sseSend({ type: 'case-end', runId: curRun.runId, device: dev.id, result: r });
+      afSend('test', (r.status === 'pass' ? '✓' : r.status === 'fail' ? '✗' : '⚠') + ' ' + c.id + ' @ ' + dev.label + '（' + r.status + '）');
+    }
+  }
+  for (const c of cases.filter((x) => x.scope === 'cross')) {
+    if (AF.abort || abortRequested) break;
+    sseSend({ type: 'case-start', runId: curRun.runId, device: '跨端', case: c.id, name: c.name });
+    const r = await runCase(devs, c);
+    r.device = 'cross'; curRun.runs.push(r);
+    sseSend({ type: 'case-end', runId: curRun.runId, device: 'cross', result: r });
+    afSend('test', (r.status === 'pass' ? '✓' : r.status === 'fail' ? '✗' : '⚠') + ' ' + c.id + '（跨端·' + r.status + '）');
+  }
+  curRun.endedAt = now();
+  const cnt = (s) => curRun.runs.filter((r) => r.status === s).length;
+  curRun.summary = { pass: cnt('pass'), fail: cnt('fail'), warn: cnt('warn'), skip: cnt('skip'), total: curRun.runs.length, aborted: !!(AF.abort || abortRequested) };
+  saveResults(curRun);
+  running = false;
+  const fails = curRun.runs.filter((r) => r.status === 'fail').map((r) => ({ case: r.case, name: r.name, device: r.device, steps: r.steps.filter((s) => s.status === 'fail') }));
+  return { summary: curRun.summary, fails };
+}
+// ---------- 修复任务包（喂 CLI 的完整上下文：失败详情+红线禁令+止损令+基线三读） ----------
+function afBuildTask(testRes, buildLog, round, note) {
+  const af = CFG.autofix || {};
+  const L = [];
+  L.push('你是 DAG AI Chat（鸿蒙 ArkUI V2）项目的自动修复 agent，闭环第 ' + round + ' 轮。工作目录即项目根。');
+  L.push('【强制第一步】先读 project_rule.md、AGENTS.md、MEMORY.md（只读最新迭代条目）、docs/CONTEXT_MANAGEMENT.md 对齐项目基线，再动手。');
+  if (note) L.push('【上轮情况】' + note);
+  L.push('【失败用例】（只修这些，修完要能通过对应断言）');
+  for (const f of testRes.fails) {
+    const dev = CFG.devices.find((d) => d.id === f.device);
+    L.push('◆ ' + f.case + '「' + f.name + '」@' + (dev ? dev.label : f.device));
+    for (const s of f.steps.slice(0, 8)) L.push('   ✗ ' + s.name + '：' + String(s.detail || '').slice(0, 300));
+  }
+  if (buildLog) L.push('【上轮编译报错（优先修编译错误）】\n' + String(buildLog).slice(-2500));
+  L.push('【硬性禁令（违反=当轮自动回滚+熔断转人工）】');
+  L.push('- 禁改红线文件：' + ((af.redlineFiles || []).join('、')));
+  L.push('- 禁改任何 PersistenceV2/AppStorageV2 的 key 字符串；数据 Schema 字段只许尾部追加+默认值，禁止改名/改类型/删除');
+  L.push('- 禁止执行 git commit/push（打点与回滚由闭环负责）；禁止重构；改动控制在 2 个文件以内（≥3 文件=超出原始 bug 范围，判死轮）');
+  L.push('【止损令】只修上面列出的失败；修不动就保持原样，输出你认为的原因，不要硬凑改法。');
+  L.push('【输出要求】末尾输出：修改了哪些文件 + 每个文件一句话原因。');
+  return L.join('\n');
+}
+// ---------- 报告生成（绿报告 / 死胡同报告五部分，均落 desktopDir 桌面） ----------
+function afWriteReport(name, text) {
+  try {
+    const p = path.join(CFG.desktopDir, name);
+    fs.writeFileSync(p, text);
+    return p;
+  } catch (e) { return '写入失败:' + String(e); }
+}
+function afGreenReport(round, testRes) {
+  const files = [...new Set(AF.rounds.flatMap((r) => r.files || []))];
+  const L = [];
+  L.push('# 自动修复报告 ' + AF.runId + '（全绿收工）');
+  L.push('');
+  L.push('- 应用版本：' + (readAppVersionName() || '?') + '（versionCode ' + EXPECTED_VC + '）· 工具 0.243.0.1');
+  L.push('- 设备：' + AF.devices.join('、') + ' · 套件：' + AF.suites.join('、'));
+  L.push('- 修复轮次：' + round + ' · 起止：' + new Date(AF.startedAt).toLocaleString('zh-CN') + ' → ' + new Date().toLocaleString('zh-CN'));
+  L.push('- 最终测试：✓' + testRes.summary.pass + ' 通过 / ✗' + testRes.summary.fail + ' 失败 / ⚠' + testRes.summary.warn + ' 警告 / −' + testRes.summary.skip + ' 跳过');
+  L.push('- 修改文件（git 打点链可回滚）：');
+  for (const f of files) L.push('  · ' + f);
+  L.push('');
+  L.push('每轮实录：');
+  for (const r of AF.rounds) L.push('  第 ' + r.round + ' 轮：' + (r.outcome || '') + (r.files && r.files.length ? '（改 ' + r.files.join('、') + '）' : ''));
+  L.push('');
+  L.push('> 工作区已留修复成果（含 git 快照），请验收；不满意可 git reset 回退。');
+  return L.join('\n');
+}
+function afDeadEndReport(reason, lastCliOut, lastBuildLog) {
+  const files = [...new Set(AF.rounds.flatMap((r) => r.files || []))];
+  const L = [];
+  L.push('# 死胡同报告 ' + AF.runId + '（自动修复闭环熔断，求援外发用）');
+  L.push('');
+  L.push('## ① 环境与现象');
+  L.push('- 应用：' + (readAppVersionName() || '?') + '（versionCode ' + EXPECTED_VC + '，bundle ' + CFG.bundle + '）· 设备：' + AF.devices.join('、') + ' · 套件：' + AF.suites.join('、'));
+  L.push('- 熔断原因：**' + reason + '**');
+  const lastRes = AF.rounds.length ? AF.rounds[AF.rounds.length - 1].summary : null;
+  if (lastRes) L.push('- 最后一轮测试：✓' + (lastRes.pass || 0) + ' / ✗' + (lastRes.fail || 0) + ' / ⚠' + (lastRes.warn || 0) + ' / −' + (lastRes.skip || 0));
+  L.push('');
+  L.push('## ② 相关代码骨架（CLI 本轮触碰过的文件）');
+  L.push(files.length ? files.map((f) => '- ' + f).join('\n') : '（无——CLI 未成功改动任何文件）');
+  L.push('');
+  L.push('## ③ 已实锤证据');
+  for (const r of AF.rounds) {
+    L.push('- 第 ' + r.round + ' 轮：' + (r.outcome || ''));
+    if (r.failLines && r.failLines.length) L.push('  失败断言：\n' + r.failLines.map((x) => '    ✗ ' + x).join('\n'));
+    if (r.buildErr) L.push('  编译报错尾：' + String(r.buildErr).slice(-400).replace(/\n/g, ' | '));
+  }
+  L.push('- 测试全程明细与 dump 证据：testing/console/artifacts/ 下按 runId 查（' + AF.runId + '-*）');
+  L.push('');
+  L.push('## ④ 已试方案 + 死因表');
+  for (const r of AF.rounds) {
+    L.push('| 第 ' + r.round + ' 轮 | 改动：' + (r.files && r.files.length ? r.files.join('、') : '（无改动）') + ' | 死因：' + (r.outcome || '') + ' |');
+  }
+  L.push('');
+  L.push('## ⑤ 怀疑方向与求解点');
+  L.push('- CLI agent 最后输出（尾 500 字，含其自述原因）：');
+  L.push('```');
+  L.push(stripAnsi(lastCliOut || '（无输出）').trim().slice(-500));
+  L.push('```');
+  if (lastBuildLog) { L.push('- 编译报错（尾 800 字）：'); L.push('```'); L.push(String(lastBuildLog).slice(-800)); L.push('```'); }
+  L.push('');
+  L.push('> 请把本报告整段发给任意 AI（豆包/DeepSeek/CodeArts 等）求方案；方案回来后可把要点贴回 DevEco Code 继续修。');
+  L.push('> 仓库已自动回滚到闭环启动前的快照（' + String(AF.bootSnap || '').slice(0, 12) + '），数据安全无损。');
+  return L.join('\n');
+}
+async function afDeadEnd(reason, lastCliOut, lastBuildLog) {
+  AF.phase = 'deadend';
+  afSend('deadend', '熔断：' + reason + ' —— 生成死胡同报告…');
+  const rpt = afDeadEndReport(reason, lastCliOut, lastBuildLog);
+  const p = afWriteReport('死胡同报告_' + AF.runId + '.md', rpt);
+  AF.result = { outcome: 'deadend', reason, report: p };
+  if (AF.bootSnap) {
+    const rb = await gitRollback(AF.bootSnap);
+    afSend('deadend', '已回滚到启动前快照 ' + String(AF.bootSnap).slice(0, 12) + '（' + (rb.ok ? '成功' : '失败:' + rb.out) + '）；报告已放桌面：' + p);
+  } else afSend('deadend', '报告已放桌面：' + p);
+}
+// ---------- 闭环主状态机 ----------
+async function afLoop() {
+  const af = CFG.autofix || {};
+  const maxRounds = af.maxRounds || 2;
+  const cliTimeout = af.timeoutMs || 600000;
+  let lastCliOut = '', lastBuildLog = '';
+  try {
+    // 轮 0：基线测试（确认有红才修）
+    AF.phase = 'test';
+    afSend('test', '第 0 轮：跑基线测试（套件：' + AF.suites.join(' + ') + '）');
+    let testRes = await afRunTests('T0');
+    AF.rounds.push({ round: 0, outcome: testRes.fails.length ? '基线有红（✗' + testRes.summary.fail + '）' : '基线全绿', files: [], summary: testRes.summary,
+      failLines: testRes.fails.map((f) => f.case + '@' + f.device + '：' + (f.steps[0] ? f.steps[0].name + '—' + String(f.steps[0].detail || '').slice(0, 120) : '无失败步骤')) });
+    if (!testRes.fails.length) {
+      AF.result = { outcome: 'green', rounds: 0, note: '基线测试全绿，无需修复——直接收工' };
+      afSend('done', '✅ 基线测试全绿——无需修复，闭环收工');
+      return;
+    }
+    afSend('test', '基线：✗' + testRes.summary.fail + ' 项失败——开始修复循环（上限 ' + maxRounds + ' 轮）');
+    // 启动快照（含用户未提交工作=入历史不丢；死胡同回滚锚点）
+    const snap0 = await gitSnap('autofix 启动基线快照(' + AF.runId + ')');
+    AF.bootSnap = snap0.hash;
+    afSend('snapshot', '启动快照 ' + snap0.hash.slice(0, 12) + (snap0.empty ? '（工作区干净）' : '（已把当前未提交改动入历史保护）'));
+    let noConv = 0, buildFail = 0;
+    for (let round = 1; round <= maxRounds; round++) {
+      if (AF.abort) break;
+      AF.round = round;
+      // 打点
+      const snap = await gitSnap('autofix-round-' + round + ' 修复前快照(' + AF.runId + ')');
+      afSend('snapshot', '第 ' + round + ' 轮打点 ' + snap.hash.slice(0, 12));
+      // 任务包 + CLI 改码
+      AF.phase = 'fix';
+      const note = round > 1 ? (noConv > 0 ? '上一轮未收敛，仍失败' : '') : '';
+      const pkg = afBuildTask(testRes, lastBuildLog, round, note || undefined);
+      try {
+        const dir = path.join(ART_DIR, AF.runId); fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'task-round-' + round + '.md'), pkg);
+      } catch (_) { /* 存档尽力 */ }
+      afSend('fix', '派单 CLI agent（deveco headless，超时 ' + Math.round(cliTimeout / 1000) + 's 强杀）…');
+      const cli = await afRunCliRetry(pkg, cliTimeout, 2);
+      lastCliOut = cli.out;
+      try { fs.writeFileSync(path.join(ART_DIR, AF.runId, 'cli-round-' + round + '.log'), cli.out); } catch (_) { /* 存档尽力 */ }
+      afSend('fix', 'CLI 退出 code=' + cli.code + (cli.timedOut ? '（超时被强杀）' : '') + '，输出 ' + cli.out.length + ' 字（已存档）');
+      if (AF.abort) break;
+      // diff 检查（死轮 / 红线）
+      const files = await gitChangedFiles();
+      if (!files.length) {
+        noConv++;
+        AF.rounds.push({ round, outcome: '死轮：CLI 未改动任何文件', files: [], summary: testRes.summary });
+        afSend('fix', '✗ 死轮：CLI 没改任何文件（连击 ' + noConv + '/' + maxRounds + '）');
+        if (noConv >= maxRounds) { await afDeadEnd('连续 ' + noConv + ' 轮 CLI 零改动（修不动或无解）', lastCliOut, lastBuildLog); return; }
+        continue;
+      }
+      const hits = afRedlineHit(files);
+      if (hits.length) {
+        afSend('redline', '✗ 红线命中：' + hits.join('、') + ' —— 自动回滚当轮+熔断转人工');
+        await gitRollback(snap.hash);
+        AF.rounds.push({ round, outcome: '红线命中已回滚：' + hits.join('、'), files, summary: testRes.summary });
+        await afDeadEnd('改动触碰红线文件（已自动回滚）：' + hits.join('、'), lastCliOut, lastBuildLog);
+        return;
+      }
+      afSend('fix', '本轮改动 ' + files.length + ' 个文件：' + files.join('、'));
+      // 编译
+      AF.phase = 'build';
+      afSend('build', '编译（本地 hvigorw，最长 15 分钟）…');
+      const b = await localBuild();
+      if (!b.ok) {
+        buildFail++;
+        lastBuildLog = b.log || b.err || '';
+        afSend('build', '✗ 编译失败（连击 ' + buildFail + '/2）：' + String(b.err || '').slice(0, 150));
+        AF.rounds.push({ round, outcome: '编译失败（报错已喂下一轮）', files, summary: testRes.summary, buildErr: lastBuildLog });
+        if (buildFail >= 2) { await afDeadEnd('编译连续 2 轮失败（CLI 改崩了）', lastCliOut, lastBuildLog); return; }
+        continue; // 编译报错进下一轮任务包（afBuildTask 的 buildLog 参数）
+      }
+      buildFail = 0;
+      afSend('build', '✓ 编译通过');
+      // 装机（覆盖安装到参测设备）
+      AF.phase = 'install';
+      for (const devId of AF.devices) {
+        const dev = CFG.devices.find((d) => d.id === devId);
+        afSend('install', dev.label + ' 覆盖安装…');
+        const ins = await bmInstall(dev.serial, true);
+        if (!ins.ok) {
+          AF.rounds.push({ round, outcome: '装机失败：' + dev.label, files, summary: testRes.summary });
+          await afDeadEnd('装机失败（' + dev.label + '）：' + ins.detail, lastCliOut, lastBuildLog);
+          return;
+        }
+        afSend('install', '✓ ' + dev.label + ' 安装成功');
+      }
+      // 重跑
+      AF.phase = 'test';
+      afSend('test', '第 ' + round + ' 轮修复完成——重跑测试…');
+      testRes = await afRunTests('T' + round);
+      const failLines = testRes.fails.map((f) => f.case + '@' + f.device + '：' + (f.steps[0] ? f.steps[0].name + '—' + String(f.steps[0].detail || '').slice(0, 120) : '无失败步骤'));
+      AF.rounds.push({ round, outcome: testRes.fails.length ? '修后仍失败（✗' + testRes.summary.fail + '）' : '全绿', files, summary: testRes.summary, failLines });
+      if (!testRes.fails.length) {
+        const snapDone = await gitSnap('autofix: 修复完成 round-' + round + '(' + AF.runId + ')');
+        const rpt = afGreenReport(round, testRes);
+        const p = afWriteReport('自动修复报告_' + AF.runId + '.md', rpt);
+        AF.result = { outcome: 'green', rounds: round, files, report: p, snap: snapDone.hash };
+        afSend('done', '✅ 第 ' + round + ' 轮修复后全绿！成果已打点 ' + snapDone.hash.slice(0, 12) + '，报告已放桌面');
+        return;
+      }
+      noConv++;
+      afSend('test', '✗ 修后仍有 ' + testRes.summary.fail + ' 项失败（不收敛连击 ' + noConv + '/' + maxRounds + '）');
+      if (noConv >= maxRounds) { await afDeadEnd('连续 ' + noConv + ' 轮修复后测试仍失败', lastCliOut, lastBuildLog); return; }
+    }
+    if (AF.abort) { AF.result = { outcome: 'aborted' }; afSend('done', '用户请求中止——闭环停止'); return; }
+    await afDeadEnd('修复轮次用尽（' + maxRounds + ' 轮）仍未全绿', lastCliOut, lastBuildLog);
+  } catch (e) {
+    AF.result = { outcome: 'error', error: String(e) };
+    afSend('error', '闭环异常：' + String(e));
+  } finally {
+    running = false;
+    AF.state = 'idle'; AF.phase = '';
+    abortRequested = false;
+    sseSend({ type: 'autofix-end', runId: AF.runId, result: AF.result });
+  }
+}
+// ---------- 健康检查（五灯：CLI/git/模型探针/编译链/设备在线；缓存 5 分钟，?refresh=1 强制重探） ----------
+async function afHealthCheck(force) {
+  if (!force && AF.lastHealth && Date.now() - AF.healthAt < 300000) return { ...AF.lastHealth, cached: true };
+  const af = CFG.autofix || {};
+  const r = { cli: { ok: false, detail: '' }, git: { ok: false, detail: '' }, model: { ok: false, detail: '' }, build: { ok: false, detail: '' }, device: { ok: false, detail: '' }, at: now() };
+  // 灯1 CLI 存在性
+  const v = await new Promise((resolve) => {
+    if (!af.cliCmd) return resolve({ code: -1, out: '未配置 autofix.cliCmd（config.json）' });
+    const p = spawn(af.cliCmd, ['-v'], { timeout: 15000 });
+    let o = ''; p.stdout.on('data', (d) => { o += d; }); p.stderr.on('data', (d) => { o += d; });
+    p.on('close', (c) => resolve({ code: c ?? -1, out: o })); p.on('error', (e) => resolve({ code: -1, out: String(e) }));
+  });
+  r.cli = { ok: v.code === 0, detail: v.code === 0 ? 'deveco ' + stripAnsi(v.out).trim().slice(0, 30) : '不可执行：' + stripAnsi(v.out).slice(0, 120) };
+  // 灯2 git（打点/回滚依赖）
+  const g = await gitAvailable();
+  r.git = { ok: g.ok, detail: g.ok ? 'HEAD ' + g.head : 'git 不可用：' + g.err };
+  // 灯3 模型连通（最小探针任务，~15s；带重试——上游流式截断间歇性）
+  if (r.cli.ok) {
+    const probe = await afRunCliRetry('连通性探针：只回复两个字「正常」，不要做任何其他事', 90000, 1);
+    r.model = { ok: probe.code === 0 && /正常/.test(stripAnsi(probe.out)), detail: probe.code === 0 ? '探针回显：' + stripAnsi(probe.out).trim().slice(0, 60) : '探针失败（exit ' + probe.code + '）：' + stripAnsi(probe.out).slice(-100) };
+  } else r.model = { ok: false, detail: 'CLI 不可用，跳过' };
+  // 灯4 编译链
+  const lb = CFG.localBuild || {};
+  r.build = { ok: !!(lb.hvigorw && fs.existsSync(lb.hvigorw)), detail: lb.hvigorw && fs.existsSync(lb.hvigorw) ? 'hvigorw 就绪' : 'hvigorw 未配置/不存在（config.localBuild）' };
+  // 灯5 设备（至少一台非工作机在线）
+  const devs = await probeDevices();
+  const online = devs.filter((d) => d.online && !d.workMachine);
+  r.device = { ok: online.length > 0, detail: online.length ? '在线：' + online.map((d) => d.label).join('、') : '全部设备离线（PC 开 DevEco/Pad 插线/手机连 WiFi）' };
+  AF.lastHealth = r; AF.healthAt = Date.now();
+  return r;
 }
 
 // ---------- HTTP 服务 ----------
@@ -3827,6 +4242,51 @@ async function handler(req, res) {
         if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(serial)) connect = await hdcTconn(serial);
         fs.writeFileSync(path.join(ROOT, 'config.json'), JSON.stringify(CFG, null, 2));
         return json(res, 200, { devices: await probeDevices(), running, connect });
+      } catch (e) { return json(res, 400, { error: String(e) }); }
+    });
+    return;
+  }
+  // ★ 0.243.0.1 自动修复闭环四接口（全案 docs/0.165+/0.243.0）
+  if (u.pathname === '/api/autofix/health') {
+    const force = u.searchParams.get('refresh') === '1';
+    return json(res, 200, await afHealthCheck(force));
+  }
+  if (u.pathname === '/api/autofix/status') return json(res, 200, afStatusLite());
+  if (u.pathname === '/api/autofix/stop' && req.method === 'POST') {
+    if (AF.state === 'idle') return json(res, 200, { ok: true, note: '闭环当前不在运行' });
+    AF.abort = true; abortRequested = true;
+    if (AF.cliProc) { try { AF.cliProc.kill('SIGKILL'); } catch (_) { /* 已退出 */ } }
+    return json(res, 200, { ok: true, note: '已请求中止——当前环节完成即停（CLI 子进程已强杀）' });
+  }
+  if (u.pathname === '/api/autofix/start' && req.method === 'POST') {
+    if (AF.state !== 'idle') return json(res, 409, { error: '自动修复闭环正在运行（' + AF.phase + ' 第 ' + AF.round + ' 轮）——等它结束或点停止' });
+    if (running) return json(res, 409, { error: '有测试正在跑——等它跑完或点【停止测试】，再启动自动修复' });
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', async () => {
+      try {
+        const p = JSON.parse(body || '{}');
+        // 套件校验（默认快速档：version+ui-audit，方案开放问题 3 建议值）
+        const validSuites = [...new Set(CASES.map((c) => c.suite))];
+        const suites = (Array.isArray(p.suites) ? p.suites : (CFG.autofix && CFG.autofix.defaultSuites) || ['version', 'ui-audit']).filter((s) => validSuites.includes(s));
+        if (!suites.length) return json(res, 400, { error: '未选择有效套件' });
+        // 设备校验：必须勾选且全部在线（离线=拒绝启动，方案三灯纪律）
+        const devs = await probeDevices();
+        const want = (Array.isArray(p.devices) ? p.devices : []).filter(Boolean);
+        if (!want.length) return json(res, 400, { error: '至少勾选一台设备' });
+        const off = want.map((id) => devs.find((d) => d.id === id)).filter((d) => !d || !d.online);
+        if (off.length) return json(res, 409, { error: '设备离线，拒绝启动：' + off.map((d) => d ? d.label : '未知设备').join('、') + '——先连设备（连接诊断可复制报告）' });
+        // 健康检查（强制全探，任一红=拒绝并亮原因）
+        const h = await afHealthCheck(true);
+        const reds = Object.entries(h).filter(([k, v]) => v && typeof v === 'object' && v.ok === false).map(([k, v]) => ({ lamp: k, detail: v.detail }));
+        if (reds.length) return json(res, 409, { error: '健康检查红灯，拒绝启动：' + reds.map((x) => x.lamp + '→' + x.detail).join('；'), health: h });
+        // 启动
+        AF.state = 'running'; AF.runId = RUN_ID() + 'AF'; AF.round = 0; AF.phase = 'health';
+        AF.devices = want; AF.suites = suites; AF.bootSnap = null; AF.abort = false;
+        AF.startedAt = Date.now(); AF.rounds = []; AF.result = null; AF.lastHealth = h;
+        afSend('health', '五灯全绿（CLI/git/模型/编译/设备）——闭环启动：' + suites.join('+') + ' × ' + want.join('、'));
+        afLoop().catch(async (e) => { AF.state = 'idle'; running = false; sseSend({ type: 'autofix-end', runId: AF.runId, result: { outcome: 'error', error: String(e) } }); });
+        return json(res, 200, { ok: true, runId: AF.runId });
       } catch (e) { return json(res, 400, { error: String(e) }); }
     });
     return;
