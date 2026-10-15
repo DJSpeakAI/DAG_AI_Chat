@@ -237,7 +237,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-  const PAGE_VER = '0.241.0.8'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.241.0.8：本页仅同步版本号+常亮按钮 title 更新+addr 行工作机标注（常亮重写+设备名精简见 server.js）；★ 0.241.0.7：三端同步链路优化（服务端用例修复，本页仅同步版本号——SYNC-FLOW 输入后收键盘再点保存+BOOT-CONVERGE 签名 settle 轮询）；★ 0.241.0.6：UI 精修——右栏设备面板加宽 240→300+间距放大、色值全量对齐 UI_GUIDELINES（BRAND_PRIMARY #7C4DFF/BRAND_SECONDARY #A78BFA/SURFACE 系+白8%描边+顶部品牌光带）、全局紫色细滚动条+左树分组品牌左条+悬停态；★ 0.241.0.5：设备「常亮」按钮（手机锁屏卡流程根治）+「从零进度」状态行（协议/登录/同步三探，分清未就绪 vs 已就绪）+ 左栏滚动一屏化；★ 0.241.0.4：三端云同步——sync-boot 套件（BOOT-AGREE/LOGIN/CONVERGE）+ 手机操作端 SYNC-FLOW-WORD-M/NODE-M + 三端从零全流程指引
+  const PAGE_VER = '0.241.0.9'; // ★ 0.229.21 本页版本（boot 时与 /api/health 的服务版本比对，旧于页面立即提示重启——防"旧服务跑新页面"全面错位）；★ 0.241.0.9：本页仅同步版本号+常亮失败 toast 改中文（服务端判定补 Override 关键词——0.241.0.8 实现功能已生效但被误报失败）；★ 0.241.0.8：本页仅同步版本号+常亮按钮 title 更新+addr 行工作机标注（常亮重写+设备名精简见 server.js）；★ 0.241.0.7：三端同步链路优化（服务端用例修复，本页仅同步版本号——SYNC-FLOW 输入后收键盘再点保存+BOOT-CONVERGE 签名 settle 轮询）；★ 0.241.0.6：UI 精修——右栏设备面板加宽 240→300+间距放大、色值全量对齐 UI_GUIDELINES（BRAND_PRIMARY #7C4DFF/BRAND_SECONDARY #A78BFA/SURFACE 系+白8%描边+顶部品牌光带）、全局紫色细滚动条+左树分组品牌左条+悬停态；★ 0.241.0.5：设备「常亮」按钮（手机锁屏卡流程根治）+「从零进度」状态行（协议/登录/同步三探，分清未就绪 vs 已就绪）+ 左栏滚动一屏化；★ 0.241.0.4：三端云同步——sync-boot 套件（BOOT-AGREE/LOGIN/CONVERGE）+ 手机操作端 SYNC-FLOW-WORD-M/NODE-M + 三端从零全流程指引
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;
@@ -430,7 +430,7 @@ function renderDevices(devices) {
         try {
           const r = await api('/api/keepalive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device: dev.id, on: wantOn }) });
           if (wantOn && r.ok) KEEPON.add(dev.id); else KEEPON.delete(dev.id);
-          toast(wantOn ? (r.ok ? dev.label + ' 已常亮（永不锁屏）' : '常亮失败：' + (r.detail || '')) : dev.label + ' 已恢复正常休眠');
+          toast(wantOn ? (r.ok ? dev.label + ' 已常亮（永不锁屏）' : '常亮失败：' + (r.error || '设备未响应，请重试')) : dev.label + ' 已恢复正常休眠');
           renderDevices(DEVLIST);
         } catch (err) { toast('常亮切换失败：' + err.message); kb.disabled = false; }
       };
