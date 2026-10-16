@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.242.0'; // ★ 0.242.0：全局设置「修改未保存」误报弹窗移除+云同步开启按钮隐藏补齐；上一版 0.241.0：手机端导航胶囊条；更早历史见 MEMORY.md
+const APP_VERSION: string = 'v0.244.0'; // ★ 0.244.0：云同步隐藏期替换 nodeList 致画布陈旧渲染（子气泡重叠+连线悬空）根治；上一版 0.242.0：设置弹窗关闭确认移除；更早历史见 MEMORY.md
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

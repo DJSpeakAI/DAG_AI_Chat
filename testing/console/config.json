@@ -35,7 +35,7 @@
     {
       "id": "phone",
       "label": "手机",
-      "serial": "192.168.2.14:38611",
+      "serial": "192.168.2.17:38611",
       "conn": "WiFi",
       "caps": {
         "uiDump": true
@@ -44,7 +44,7 @@
     {
       "id": "pura",
       "label": "Pura X View",
-      "serial": "192.168.2.16:39421",
+      "serial": "192.168.2.4:39421",
       "conn": "WiFi",
       "workMachine": true,
       "caps": {
@@ -92,7 +92,10 @@
     "cliCmd": "/storage/Users/currentUser/npm/bin/deveco",
     "maxRounds": 2,
     "timeoutMs": 600000,
-    "defaultSuites": ["version", "ui-audit"],
+    "defaultSuites": [
+      "version",
+      "ui-audit"
+    ],
     "redlineNote": "红线=自动修复禁改清单（命中即自动回滚当轮+熔断转人工）；testing/ 对闭环不可见不可改（防改考卷骗绿）",
     "redlineFiles": [
       "entry/src/main/ets/model/",

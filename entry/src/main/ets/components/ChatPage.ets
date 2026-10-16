@@ -1665,6 +1665,23 @@ export struct ChatPage {
     });
   }
 
+  // ★ 0.244.0：流式写穿——云同步 reconcile 会在会话期整体替换 store.nodeList（refreshWorkspaceFromPools，
+  //   按池 JSON 反序列化出全新对象）。流式回调若捕获的是被替换的旧消息对象，后续写入只进孤儿对象：
+  //   界面冻结在替换瞬间、onDone saveTree 落盘残缺内容（用户实测「返回父气泡内容像被重新生成」家族
+  //   根因之一）。每片/收尾把内容同步写回 store 当前对象（按 nodeID+messageId 定位），流尾零丢失。
+  mirrorStreamToLive(bubbleId: string, msg: ChatMessage): void {
+    const live = this.store.nodeList.find((n: BubbleNode) => n.nodeID === bubbleId);
+    if (live === undefined) {
+      return; // 气泡真没了（对端删除）——孤儿写入无害放弃
+    }
+    const liveMsg = live.messages.find((m: ChatMessage) => m.messageId === msg.messageId);
+    if (liveMsg !== undefined && liveMsg !== msg) {
+      liveMsg.content = msg.content;
+      liveMsg.inputTokens = msg.inputTokens;
+      liveMsg.outputTokens = msg.outputTokens;
+    }
+  }
+
   async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
     // ★ 0.190.4：卡死自愈（须在 guard 前）——isLoading=true 但 streamController=null 是异常态
     //   （正常流两者同步设置/清除；真机实测超时出错后偶发卡此态，guard 挡死后续所有发送
@@ -1717,6 +1734,7 @@ export struct ChatPage {
     this.isLoading = true;
     this.streamPhase = 1; // ★ 0.191.0：阶段 1——请求即将发出，等待服务器响应
     this.streamingMsgId = aiMsg.messageId; // ★ 0.234.0：流式直显标记（该消息完成前不折叠）
+    const streamBubbleId = this.currentBubbleId; // ★ 0.244.0：流式写穿定位键（发送时刻的气泡 ID）
 
     // 构建发送给 API 的消息列表：剔除空 content 的占位 AI 消息
     // ★ 替换为链路回溯 + 压缩（0.117）
@@ -1768,6 +1786,7 @@ export struct ChatPage {
           aiMsg.content = '';
         }
         aiMsg.content += chunk;
+        this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：流式写穿（防 reconcile 孤儿化丢流尾）
         // ★ 0.191.0：接收态已删——首字节到达即清占位，等待态消失，「正在接收内容」永远显示不出来
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
         this.scroller.scrollEdge(Edge.Bottom);
@@ -1783,6 +1802,7 @@ export struct ChatPage {
         }
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
+        this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
         // 流式完成时滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
@@ -1798,6 +1818,7 @@ export struct ChatPage {
         // ★ 0.190.6：错误场景分类（ApiClient 单一真相源）——中文场景+建议操作+保留原始错误；
         //   0.190.2 图片关键词检测已合并进 classifyStreamError
         aiMsg.content = classifyStreamError(errMsg);
+        this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：错误文案同步写穿
         // 错误时也滚到底部
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
@@ -1843,6 +1864,7 @@ export struct ChatPage {
     this.streamingMsgId = msg.messageId;
     this.isLoading = true;
     this.streamPhase = 1; // ★ 0.191.0：阶段 1——请求即将发出，等待服务器响应
+    const regenBubbleId = this.currentBubbleId; // ★ 0.244.0：流式写穿定位键（刷新时刻的气泡 ID）
     const messagesToSend = await this.buildBranchMessageList(this.currentBubble);
     // 回复长度档位 prompt（与 sendMessage 同机制，不持久化）
     if (this.replyLengthMode === 'short') {
@@ -1871,6 +1893,7 @@ export struct ChatPage {
           msg.content = '';
         }
         msg.content += chunk;
+        this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：流式写穿（防 reconcile 孤儿化丢流尾）
         // ★ 0.191.0：接收态已删（同 sendMessage——死代码）
         this.scroller.scrollEdge(Edge.Bottom);
       },
@@ -1884,6 +1907,7 @@ export struct ChatPage {
         }
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
+        this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
@@ -1897,6 +1921,7 @@ export struct ChatPage {
         this.streamingMsgId = ''; // ★ 0.234.0：错误态不折叠，恢复平铺显示
         // ★ 0.190.6：错误场景分类（与 sendMessage onError 同机制）
         msg.content = classifyStreamError(errMsg);
+        this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：错误文案同步写穿
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
       },
@@ -3661,6 +3686,7 @@ export struct ChatPage {
       this.currentBubbleStore.bubbleY
     );
     this.store.nodeList = [...this.store.nodeList, newBubble];
+    this.store.rebuildEpoch++; // ★ 0.244.0：nodeList 替换——渲染世代 +1（画布 ForEach key 联动，防条目闭包持旧对象）
     recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——创建子气泡 +1
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局（返回画布时 onShown 消费）

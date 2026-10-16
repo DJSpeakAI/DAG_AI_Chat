@@ -95,6 +95,12 @@ export class BubbleTree {
   @Trace nodeList: BubbleNode[] = [];
   @Trace needsRelayout: boolean = false; // ★ 0.126：标记需要重新布局（新建气泡后触发）
   @Trace needsCloudRedraw: boolean = false; // ★ 0.223.0：云端下行重建画布（保坐标重绘连线，绝不 autoLayout 重排——对端坐标是真相）
+  // ★ 0.244.0：渲染世代计数器——nodeList 被【整体替换为新对象】（云同步 refreshWorkspaceFromPools /
+  //   模式切换 / 删 Tab 等）或坐标被批量改写（autoLayout）时 +1。画布 ForEach 的 key 拼入此值，
+  //   强制条目重建重新捕获当前对象。根因（0.244.0 实锤）：ForEach 稳定 key 复用条目时，条目闭包持有
+  //   旧对象——云同步隐藏期替换 nodeList 后，旧坐标冻结渲染（气泡重叠+连线悬空），直到页面重建才恢复。
+  //   不持久化（serializeBubbleTree 只序列化 nodeList，此字段无 Schema 影响）。
+  @Trace rebuildEpoch: number = 0;
 
   constructor(nodeList: BubbleNode[] = []) {
     this.nodeList = nodeList;
@@ -1464,6 +1470,7 @@ export function applyCanvasModeSwitch(newMode: CanvasMode): void {
   current.nodeID = '';
   current.bubbleX = 0;
   current.bubbleY = 0;
+  store.rebuildEpoch++; // ★ 0.244.0：nodeList 整体替换——渲染世代 +1（ForEach key 联动重建条目）
   // 触发画布重布局（BBTreeCanvas onShown / 弹窗 onClose 消费）
   store.needsRelayout = true;
 }
@@ -2682,10 +2689,13 @@ function refreshWorkspaceFromPools(): void {
     const tree = active !== undefined ? deserializeBubbleTree(active.treeJson) : null;
     store.nodeList = tree !== null ? tree.nodeList : [];
   }
+  // ★ 0.244.0：nodeList 整体替换为新对象——渲染世代 +1（画布 ForEach key 拼入 epoch，
+  //   强制条目重建重新捕获新对象；否则条目闭包持有旧对象渲染冻结旧坐标，气泡重叠+连线悬空）
+  store.rebuildEpoch++;
   // ★ 0.232.0：旧实现无条件清空 current.nodeID——手机回前台拉同步（0.223.0 onForeground
-  // forceCloudSyncNow）触发重建 → 正开着的 ChatPage 消息绑定瞬间清零，用户必须退回画布
-  // 重进（用户实测硬伤）。修正：节点在新工作区仍存在则保留选中+坐标（bubbleX/Y 是创建
-  // 子气泡的画布坐标基准，一并保留）；真被远端删除/不在池中才清空。
+  //   forceCloudSyncNow）触发重建 → 正开着的 ChatPage 消息绑定瞬间清零，用户必须退回画布
+  //   重进（用户实测硬伤）。修正：节点在新工作区仍存在则保留选中+坐标（bubbleX/Y 是创建
+  //   子气泡的画布坐标基准，一并保留）；真被远端删除/不在池中才清空。
   let kept = false;
   if (prevId.length > 0) {
     for (let i = 0; i < store.nodeList.length; i++) {

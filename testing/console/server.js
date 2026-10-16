@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.243.0.2'; // ★ 0.243.0.2 自动修复闭环二期（全案 docs/0.165+/0.243.0.2；任务书桌面 234.txt 校准版——豆包称「CLI 启用强制非流式」实锤不成立：deveco 0.2.3 无非流式参数、stream:!0 硬编码；等效落地分两层）①**治本=闭环模型通道切官方**：autofix.model 默认 deveco/GLM-5.3（afRunCli -m 注入）——本期实测官方网关 120 字长回复+两轮 Read 工具任务全绿零截断，一期卡点「流式 JSON 截断」的网关侧根因=阿里 token 计划网关（截断点实测=usage.prompt_tokens_details；0.243.0.1 只试了阿里通道下换模型、漏了官方通道）②**救生艇=本地非流式适配代理 afProxy**（默认关闭 proxy.enabled=false）：改写 stream:false 转发上游+整包 JSON 回拼标准 OpenAI SSE；⚠️实测局限如实入档——deveco.jsonc provider 覆盖对已认证内置 provider 三形态（options.baseURL/api/完整重定义）均不生效、DEVECO_CONFIG_DIR 不加载配置，打通需自定义 provider+auth 复制或插件通道，基础设施保留③三类异常分策重试 afClassifyCliFail（网络=5s×2/JSON 解析=3s×2/其他=不重试交死轮）④CLI 超时分档（非流式 900s/流式 600s）+输出缓冲 2→4MB+轮日志补用时⑤红线内容级校验：git diff 删除行扫描 redlineKeys 持久化 key 命中（key 禁改铁律自动化）⑥健康检查六灯（代理灯按需真探）⑦前端流式开关+代理灯。.deveco/ 已入 .gitignore（CLI 运行工件不污染 git 打点） // ★ 0.243.0.1 自动修复闭环一期（全案 docs/0.165+/0.243.0）：afLoop 状态机（基线测试→任务包→git 打点→CLI 改码→红线 diff→编译→装机→重测）+熔断五判据+死胡同/绿报告落桌面+四接口 /api/autofix/health|status|start|stop（start 五灯全绿强制）+测试代码对闭环不可见不可改（防改考卷骗绿） // 更早历史（0.241.0.10 ARKUI-TEST 9568263 版本校验等）见 MEMORY.md 版本表（唯一真相源·版本注释瘦身约束）
+const VERSION = '0.244.0.1'; // ★ 0.244.0.1 云同步陈旧渲染双 bug 回归用例（NODE-LAYOUT/NODE-CHILD-INTACT，app 0.244.0 修复配套）+config 手机 IP 勘正 2.17；上版 0.243.0.2 自动修复闭环二期（官方模型通道+分策重试+红线内容级校验）// 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -1246,6 +1246,58 @@ function gridColsOf(d) {
   }
   return { labels: labels.length, multi, pair };
 }
+// ---------- ★ 0.244.0 云同步陈旧渲染双 bug 回归（NODE-LAYOUT / NODE-CHILD-INTACT 共用助手） ----------
+// 修前实锤（2026-10-16 手机复现全链）：聊天页 ＋/划词新建子气泡 → 云同步 reconcile 在页面隐藏期
+//   refreshWorkspaceFromPools 整体替换 store.nodeList（全新对象）→ 画布 ForEach 稳定 nodeID key 复用条目、
+//   条目闭包持有旧对象 → 返回画布后渲染冻结在创建随机偏移坐标（气泡重叠+连线悬空=用户 bug2；
+//   重叠遮挡下点错气泡进错对话=用户 bug3「父回复搬进子气泡/父气泡重新生成」）。
+// 0.244.0 修法：BubbleTree.rebuildEpoch 渲染世代（nodeList 整体替换/重排处 +1）+ ForEach key 拼入 epoch。
+// ＋按钮定位：输入框（hint=输入问题）左侧的近方形无文字容器（w/h 55~140、右缘贴输入框左缘）
+function findChatPlusBtn(d) {
+  const input = d.nodes.find((n) => String(n.hint || '').includes('输入问题'));
+  if (!input) return null;
+  const cands = d.nodes.filter((n) => !String(n.text || '').trim()
+    && n.w >= 55 && n.w <= 140 && n.h >= 55 && n.h <= 140
+    && n.x2 <= input.x + 16 && Math.abs(n.yc - input.yc) < 70);
+  if (!cands.length) return null;
+  return cands.sort((a, b) => b.x2 - a.x2)[0]; // 最右一枚=＋（gitbranch 图标容器）
+}
+  // 气泡卡收集：含「N 条对话」或「双击进入」（当前选中态的元信息行替代文案——0.244.0.1 首跑实锤：
+  // 新建子气泡=当前选中卡，元信息行显示「双击进入」而非「N 条对话」，漏锚=卡数断言假红）文本
+  // （排除信息条「个气泡」）的最内层无文字容器（卡矩形——重叠断言基准）
+  // ★ 卡矩形≠文本矩形：修前重叠时两卡文本行互相错开（文本级断言会漏检），必须用卡容器矩形两两判交
+  function bubbleCardsOf(d) {
+    const metas = d.nodes.filter((n) => (String(n.text || '').trim() === '双击进入' || /条对话/.test(String(n.text || '')) && !String(n.text).includes('个气泡')));
+  const cards = [];
+  for (const m of metas) {
+    const holders = d.nodes.filter((n) => !String(n.text || '').trim()
+      && n.w >= 90 && n.w <= 520 && n.h >= 36 && n.h <= 200
+      && (n.w / n.h) >= 1.6 && (n.w / n.h) <= 3.6
+      && m.x >= n.x && m.x2 <= n.x2 && m.y >= n.y && m.y2 <= n.y2);
+    if (!holders.length) continue;
+    holders.sort((a, b) => (a.w * a.h) - (b.w * b.h)); // 最小含者=最内层卡
+    const c = holders[0];
+    if (!cards.some((k) => k.x === c.x && k.y === c.y)) cards.push(c);
+  }
+  return cards;
+}
+// 清理：删除「双击进入」徽标所在气泡（当前选中=测试新建的子气泡）——长按→删除气泡→确认
+async function deleteBadgeBubble(ctx, serial, tag) {
+  const d = await dumpAuditNodes(serial);
+  const badge = d.nodes.find((n) => String(n.text || '').trim() === '双击进入');
+  if (!badge || !d.ok) { ctx.log('⑧ 清理·删除测试子气泡', 'warn', '未见「双击进入」徽标（当前无选中或已删）——人工核对画布'); return; }
+  const card = bubbleCardsOf(d).find((c) => badge.x >= c.x && badge.x2 <= c.x2 && badge.y >= c.y && badge.y2 <= c.y2);
+  const px = card ? Math.round(card.xc) : Math.round(badge.xc);
+  const py = card ? Math.round(card.yc) : Math.round(badge.yc);
+  await uiLongPress(serial, px, py, 1600);
+  const dm = await uiClickText(serial, '删除气泡', { exact: true, waitMs: 2500 });
+  if (!dm.ok) { ctx.log('⑧ 清理·删除测试子气泡', 'warn', `长按 (${px},${py}) 菜单未弹出——人工删除（dump 已存证 ${tag}）`); return; }
+  await sleep(1000);
+  const cf = await uiClickText(serial, '删除', { exact: true, waitMs: 2500 });
+  await sleep(1500);
+  ctx.log('⑧ 清理·删除测试子气泡', cf.ok ? 'pass' : 'warn', cf.ok ? `已删（长按 ${px},${py}→删除气泡→确认）——画布恢复测试前状态` : '确认按钮未命中——人工删除（不影响断言结论）');
+}
+
 const CASES = [
   // ---------- 功能⓪ 版本核验（用户需求 1/2：移到最上面，最先可见、可单独秒跑） ----------
   { id: 'VERSION', suite: 'version', name: '装机版本核验（假成功防线·显示真身）', semi: false, scope: 'each',
@@ -3091,6 +3143,155 @@ const CASES = [
           `用户行 y=${uY} 右滑——` + (dlg2 ? '面板+确认链路通（用户消息 start 侧原有行为保持 ✓）' : '未见确认弹窗（面板未出或圆钮定位偏差；dump 已存证）'));
         if (dlg2) await uiClickText(serial, '取消', { exact: true, waitMs: 900 });
       }
+    } },
+
+  // ---------- ★ 0.244.0 bug2 回归：聊天页 ＋ 建子气泡→返回画布，气泡卡两两零重叠 ----------
+  // 复刻用户手机实测路径（第二个子气泡重叠+连线没连上）；连线为 Canvas 不可 dump——重叠即连线悬空的可观测
+  // 代理（修前实锤：新子气泡钉死在创建随机偏移位、与既有子气泡大面积相交）。
+  { id: 'NODE-LAYOUT', suite: 'chat', name: '画布布局·聊天页建子气泡→返回画布零重叠（0.244.0 修复回归：云同步隐藏期替换 nodeList 致 ForEach 陈旧渲染）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '画布布局断言（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      // ⓪ 进画布（复刻 CHAT-KEEP ⓪：冷启可能停首页/上轮残留页）
+      let nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+      if (!nav.ok) nav = await uiClickText(serial, '进入气泡树', { waitMs: 2600 });
+      if (!nav.ok) {
+        await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+        await sleep(1500);
+        nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+      }
+      if (!nav.ok) { ctx.log('⓪ 进入气泡树画布', 'fail', '「气泡树」与「进入气泡树」均未命中（可能已在画布或首页改版）'); return; }
+      ctx.log('⓪ 进入气泡树画布', 'pass', `已点击 (${nav.x},${nav.y})`);
+      // ① 基线气泡卡收集（卡容器矩形口径——重叠断言基准）
+      const d0 = await dumpAuditNodes(serial);
+      if (!d0.ok) { ctx.log('① 基线 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      const cards0 = bubbleCardsOf(d0);
+      if (!cards0.length) { ctx.log('① 基线气泡卡收集', 'fail', '未收集到气泡卡（「N 条对话」锚点未命中——画布结构变化？）'); return; }
+      artSave('NODE-LAYOUT', `base-${dev.id}.json`, cards0.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })));
+      ctx.log('① 基线气泡卡收集', 'pass', `${cards0.length} 张卡（卡容器矩形口径）`);
+      // ② 进「有对话」的气泡（复刻 navIntoChat 定位口径：排除信息条与空气泡）
+      const hits = findNodeBoundsAll(d0.text, '条对话').filter((h) => !String(h.text).includes('个气泡') && !String(h.text).startsWith('0 条对话'));
+      if (!hits.length) { ctx.log('② 定位有对话的气泡', 'fail', '画布未见有对话气泡——先在某气泡发一条消息再跑本用例'); return; }
+      const target = hits[hits.length - 1];
+      ctx.log('② 定位有对话的气泡', 'pass', `(${target.x},${target.y})「${String(target.text).slice(0, 24)}」`);
+      await uiDoubleClick(serial, target.x, target.y);
+      await sleep(2400);
+      const dc0 = await dumpLayout(serial);
+      const inChat0 = /"text":\s*"\d+ 条对话"/.test(dc0.text) || dc0.text.includes('暂无对话');
+      if (!inChat0) { ctx.log('③ 双击进入对话页', 'fail', '双击后仍在画布（双击未生效）'); return; }
+      ctx.log('③ 双击进入对话页', 'pass', '对话页标题特征命中');
+      // ④ 点 ＋ 新建子气泡（自动切换进新子气泡对话页——addBubble 链路）
+      const da = await dumpAuditNodes(serial);
+      if (!da.ok) { ctx.log('④ 定位＋按钮', 'fail', 'dumpLayout -a 失败'); return; }
+      const plus = findChatPlusBtn(da);
+      if (!plus) { ctx.log('④ 定位＋按钮', 'fail', '输入框左侧未见近方形 ＋ 容器（底栏结构变化？）'); return; }
+      await sh(serial, `uitest uiInput click ${Math.round(plus.xc)} ${Math.round(plus.yc)}`, 15000);
+      await sleep(3200); // 0.162 切换动画淡出 140ms+淡入 300ms + 余量
+      const dc1 = await dumpLayout(serial);
+      const childOk = /"text":\s*"0 条对话"/.test(dc1.text) && dc1.text.includes('暂无对话');
+      ctx.log('★⑤ 新子气泡对话页（空）', childOk ? 'pass' : 'fail',
+        childOk ? `已点 ＋ (${Math.round(plus.xc)},${Math.round(plus.yc)})——切进空子气泡（0 条对话+暂无对话）`
+          : '未进入新子气泡对话页（＋点击未生效或切换失败）');
+      if (!childOk) return;
+      // ⑥ 停留 10s——云同步 flush（3s 防抖）+云往返+reconcile 触发窗（修前实锤：隐藏期 refreshWorkspaceFromPools
+      //   整体替换 nodeList = 陈旧渲染的触发条件；测试等待最大化复现窗口）
+      await sleep(10000);
+      // ⑦ 返画布（onShown 消费 needsRelayout→autoLayout+fitViewport）
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(3000);
+      // ⑧ 核心断言：气泡卡两两零重叠 + 数量 +1
+      const d1 = await dumpAuditNodes(serial);
+      if (!d1.ok) { ctx.log('⑧ 返画布 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      const cards1 = bubbleCardsOf(d1);
+      artSave('NODE-LAYOUT', `after-${dev.id}.json`, cards1.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })));
+      const countOk = cards1.length === cards0.length + 1;
+      ctx.log('★⑧-1 子气泡已建（卡数 +1）', countOk ? 'pass' : 'fail',
+        `基线 ${cards0.length} → 返画布 ${cards1.length}（期望 +1）`);
+      let overlaps = [];
+      for (let i = 0; i < cards1.length; i++) {
+        for (let j = i + 1; j < cards1.length; j++) {
+          const a = cards1[i]; const b = cards1[j];
+          const ox = Math.min(a.x2, b.x2) - Math.max(a.x, b.x);
+          const oy = Math.min(a.y2, b.y2) - Math.max(a.y, b.y);
+          if (ox > 5 && oy > 5) overlaps.push(`卡${i}×卡${j} 交叠 ${Math.round(ox)}×${Math.round(oy)}px`);
+        }
+      }
+      ctx.log('★⑧-2 气泡卡两两零重叠', overlaps.length ? 'fail' : 'pass',
+        overlaps.length ? `重叠 ${overlaps.length} 对：${overlaps.join('；')}（0.244.0 前形态：新子气泡钉死创建随机偏移位=ForEach 陈旧渲染复发）`
+          : `${cards1.length} 张卡全部无交叠（画布渲染与数据一致——0.244.0 rebuildEpoch 修复生效）`);
+      // ⑨ 清理：删测试子气泡（双击进入徽标卡）+ hilog
+      await deleteBadgeBubble(ctx, serial, `NODE-LAYOUT-${dev.id}`);
+      const h = await hilogErrors(serial);
+      ctx.log('链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'warn') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
+    } },
+
+  // ---------- ★ 0.244.0 bug3 回归：子气泡隔离（初始为空·父回复不搬入）+ 父气泡内容零改动（无重新生成） ----------
+  // 用户实测两症状的数据级不变量：①新子气泡对话初始必为空（父 AI 回复「原封不动搬进来」=病）②返回父气泡
+  // 消息数不变（「重新生成了内容」=病——真身=重叠遮挡点错气泡把追问发进了父/流尾孤儿化丢内容，两根已修）。
+  // 全程零 AI 请求零 token；子回复独立性（AI 行为级）归人工验收。
+  { id: 'NODE-CHILD-INTACT', suite: 'chat', name: '子气泡隔离·新建子气泡对话为空、父气泡内容零改动（0.244.0 修复回归）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '子气泡隔离断言（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      let nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+      if (!nav.ok) nav = await uiClickText(serial, '进入气泡树', { waitMs: 2600 });
+      if (!nav.ok) {
+        await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+        await sleep(1500);
+        nav = await uiClickText(serial, '气泡树', { waitMs: 2200 });
+      }
+      if (!nav.ok) { ctx.log('⓪ 进入气泡树画布', 'fail', '「气泡树」与「进入气泡树」均未命中'); return; }
+      // ① 进有对话的父气泡 + 记录父消息数 P0（顶栏「N 条对话」无时间后缀=对话页特征）
+      const d0 = await dumpAuditNodes(serial);
+      if (!d0.ok) { ctx.log('① 画布 dump', 'fail', 'dumpLayout -a 失败'); return; }
+      const hits = findNodeBoundsAll(d0.text, '条对话').filter((h) => !String(h.text).includes('个气泡') && !String(h.text).startsWith('0 条对话'));
+      if (!hits.length) { ctx.log('① 定位有对话的父气泡', 'fail', '画布未见有对话气泡——先在某气泡发一条消息再跑本用例'); return; }
+      const target = hits[hits.length - 1];
+      const P0 = parseInt(String(target.text).match(/^(\d+) 条对话/)[1], 10);
+      ctx.log('① 定位有对话的父气泡', 'pass', `(${target.x},${target.y})「${String(target.text).slice(0, 24)}」父消息数=${P0}`);
+      await uiDoubleClick(serial, target.x, target.y);
+      await sleep(2400);
+      const dc0 = await dumpLayout(serial);
+      const m0 = dc0.text.match(/"text":\s*"(\d+) 条对话"/);
+      if (!m0) { ctx.log('② 双击进入父对话页', 'fail', '双击后仍在画布（双击未生效）'); return; }
+      const P0live = parseInt(m0[1], 10);
+      ctx.log('② 双击进入父对话页', 'pass', `顶栏「${P0live} 条对话」（画布计数 ${P0}${P0live === P0 ? ' 一致' : ' 不一致（含空气泡排除误差）'}）`);
+      // ③ ＋ 新建子气泡 → 断言 A：子气泡初始为空（父回复未搬入）
+      const da = await dumpAuditNodes(serial);
+      const plus = da.ok ? findChatPlusBtn(da) : null;
+      if (!plus) { ctx.log('③ 定位＋按钮', 'fail', '输入框左侧未见 ＋ 容器（底栏结构变化？）'); return; }
+      await sh(serial, `uitest uiInput click ${Math.round(plus.xc)} ${Math.round(plus.yc)}`, 15000);
+      await sleep(3200);
+      const dc1 = await dumpLayout(serial);
+      const childEmpty = /"text":\s*"0 条对话"/.test(dc1.text) && dc1.text.includes('暂无对话');
+      const parentLeak = new RegExp(`"text":\\s*"${P0live} 条对话"`).test(dc1.text) && /·\s*(刚刚|\d+分钟前|\d+小时前|昨天)/.test(dc1.text);
+      ctx.log('★断言A 子气泡初始为空（父回复不搬入）', childEmpty ? 'pass' : 'fail',
+        childEmpty ? '新子气泡=0 条对话+暂无对话（父气泡 AI 回复零搬入——0.244.0 前用户实测「父回复原封不动搬进子气泡」未复发）'
+          : (parentLeak ? '新子气泡页出现父气泡特征（N 条对话·时间）——切气泡失败/父内容泄漏（bug3 形态复发）' : '未进入新子气泡对话页（＋点击未生效）'));
+      if (!childEmpty) return;
+      // ④ 停留 10s（云同步 reconcile 触发窗）→ 返画布
+      await sleep(10000);
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(3000);
+      // ⑤ 重进父气泡：按「P0 条对话」前缀匹配（排除信息条/空气泡）
+      const d2 = await dumpLayout(serial);
+      const parentHits = findNodeBoundsAll(d2.text, '条对话').filter((h) => !String(h.text).includes('个气泡') && String(h.text).startsWith(`${P0} 条对话`));
+      if (!parentHits.length) { ctx.log('⑤ 重进父气泡', 'fail', `返画布未见「${P0} 条对话」气泡卡（父气泡丢失?!——dump 已存证）`); return; }
+      await uiDoubleClick(serial, parentHits[0].x, parentHits[0].y);
+      await sleep(2400);
+      const dc2 = await dumpLayout(serial);
+      const m2 = dc2.text.match(/"text":\s*"(\d+) 条对话"/);
+      // ⑥ 断言 B：父消息数不变（内容零改动——无重新生成/无搬走）
+      const intact = m2 !== null && parseInt(m2[1], 10) === P0live;
+      ctx.log('★断言B 父气泡内容零改动', intact ? 'pass' : 'fail',
+        intact ? `父气泡仍 ${P0live} 条对话（建子气泡+云同步往返后消息数不变——0.244.0 前用户实测「返回父气泡重新生成了内容」未复发）`
+          : `父消息数 ${P0live} → ${m2 ? m2[1] : '?'}（消息被增删=内容改动实锤——流尾孤儿化/误入父对话复发）`);
+      // ⑦ 清理：删测试子气泡
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000);
+      await sleep(2500);
+      await deleteBadgeBubble(ctx, serial, `NODE-CHILD-INTACT-${dev.id}`);
     } },
 
   // ---------- ★ 0.237.0 折叠指示器军令断言（用户拍板「全项目只许一套折叠三角」→ SVG chevron 唯一） ----------

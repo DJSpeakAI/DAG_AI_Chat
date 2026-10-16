@@ -483,6 +483,7 @@ export struct BBTreeCanvas {
             }
           }
           this.store.nodeList = newList;
+          this.store.rebuildEpoch++; // ★ 0.244.0：nodeList 整体替换——渲染世代 +1（条目重建重捕获）
           recordNodeTomb(idsToDelete); // ★ 0.230.1：显式墓碑（节点+子树全集——del 行唯一合法出生通道）
           this.saveTree(); // ★ 0.151：按模式分池保存
           this.redrawEdges(); // ★ 0.167.2：节点删除后连线重绘（此路径不重排，需手动刷新）
@@ -538,6 +539,12 @@ export struct BBTreeCanvas {
   //   （applyCanvasModeSwitch tabs→flat 合并树也用它先排好再落盘），这里只负责调用 + 持久化
   autoLayout(): void {
     layoutFlatForest(this.store.nodeList); // 空树/无根时内部直接 return（无操作）
+    // ★ 0.244.0：坐标批量改写后重建数组身份 + 渲染世代 +1——layoutFlatForest 是对 node.x/y 的
+    //   原地突变（不换数组引用，ForEach 不重 diff）；若条目闭包持有旧对象（云同步隐藏期整体替换
+    //   nodeList 所致），渲染将冻结在旧坐标（用户实测：第二个子气泡与既有气泡重叠+连线悬空）。
+    //   双保险：数组身份变化触发 ForEach 重 diff + key 拼入 rebuildEpoch 强制条目重建重新捕获对象。
+    this.store.nodeList = [...this.store.nodeList];
+    this.store.rebuildEpoch++;
     // 持久化（★ 0.151：按模式分池）
     this.saveTree();
     this.redrawEdges(); // ★ 0.167.2：重排改 node.x/y → 连线重绘
@@ -1192,7 +1199,12 @@ export struct BBTreeCanvas {
               this.menuVisible = true;
             }
           })
-        }, (bubble: BubbleNode) => bubble.nodeID)
+        }, (bubble: BubbleNode) => `${bubble.nodeID}_${this.store.rebuildEpoch}`)
+        // ★ 0.244.0：key 拼入渲染世代——云同步 refreshWorkspaceFromPools 等会【整体替换 nodeList
+        //   为新对象】，若 key 只用 nodeID（稳定不变），ForEach 复用旧条目、条目闭包持有已被替换的
+        //   旧对象，坐标/标题全部冻结渲染（用户实测：聊天页新建第二个子气泡后返回画布，新旧气泡
+        //   重叠且连线悬空，直到重进页面才恢复）。世代随每次 nodeList 替换/重排递增，key 变化强制
+        //   条目重建、重新捕获当前对象。
 
         // ── ★ 0.200.0：选择模式变暗层 + L3 飞行卡片（与气泡同层 = 画布坐标系零换算）──
         if (this.importSelecting) {

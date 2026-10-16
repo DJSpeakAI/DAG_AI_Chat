@@ -265,7 +265,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-  const PAGE_VER = '0.243.0.2'; // ★ 0.243.0.2：自动修复闭环二期（与 server.js 同版本）——①闭环 CLI 模型通道切官方 deveco/GLM-5.3（治本——实测官方网关无流式 JSON 截断；一期卡点的网关侧根因=阿里 token 计划网关）②「模型请求流式」开关（默认不勾；仅配合 config proxy 救生艇场景）③健康检查六灯（新增代理灯：proxy.enabled=true 才真探，默认恒绿标未启用）④其余闭环 UI 沿用一期（SSE 实时流、三出口） // ★ 0.243.0.1：自动修复闭环面板：健康检查+闭环套件勾选+开始/停止+SSE 实时流+三出口+拒绝启动亮原因；服务端 afLoop 状态机+熔断五判据详见 server.js 同版本注释 // 更早历史见 MEMORY.md 版本表
+     const PAGE_VER = '0.244.0.1'; // ★ 0.244.0.1：云同步陈旧渲染双 bug 回归用例（NODE-LAYOUT/NODE-CHILD-INTACT）——与 server.js 同版本I 模型通道切官方 deveco/GLM-5.3（治本——实测官方网关无流式 JSON 截断；一期卡点的网关侧根因=阿里 token 计划网关）②「模型请求流式」开关（默认不勾；仅配合 config proxy 救生艇场景）③健康检查六灯（新增代理灯：proxy.enabled=true 才真探，默认恒绿标未启用）④其余闭环 UI 沿用一期（SSE 实时流、三出口） // ★ 0.243.0.1：自动修复闭环面板：健康检查+闭环套件勾选+开始/停止+SSE 实时流+三出口+拒绝启动亮原因；服务端 afLoop 状态机+熔断五判据详见 server.js 同版本注释 // 更早历史见 MEMORY.md 版本表
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;
