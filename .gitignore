@@ -58,3 +58,6 @@ testing/console/artifacts/
 testing/console/server.log
 testing/console/server.pid
 testing/console/.watchdog-skip
+
+# 0.243.0.2 deveco CLI 运行工件（项目级 .deveco 配置动态挂载+插件 node_modules——防污染 git 打点）
+/.deveco/

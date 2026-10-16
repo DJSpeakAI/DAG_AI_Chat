@@ -24,9 +24,10 @@
 报告产出后必须停手，等人工决定下一步。
 
 ## 红线（禁改，改动须转人工）
-数据模型 Schema / CloudSyncUtil.ets / BackupUtil.ets / 持久化 key / signing/ / module.json5 / 测试台 testing/console/
+数据模型 Schema / CloudSyncUtil.ets / BackupUtil.ets / 持久化 key / signing/ / module.json5 / 测试台 testing/console/（用户明确指派的测试台迭代除外——闭环 CLI 仍禁改 testing/，防改考卷骗绿）
 
 ## 其他
 - 未经用户明确要求不执行 git commit
 - 桌面「测试台.html」是副本禁手改（正本 testing/console/）；桌面「埋点看板.html」禁删
+- 自动修复闭环（测试台 autofix）CLI 一律走官方 deveco/GLM-5.3 通道（阿里 token 计划网关流式 JSON 截断，勿切回）
 - 全程简体中文

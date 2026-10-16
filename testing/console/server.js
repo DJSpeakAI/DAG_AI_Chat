@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.243.0.1'; // ★ 0.243.0.1 自动修复闭环一期（全案 docs/0.165+/0.243.0；工具线新整段 0.243——同 0.229 先例，APP 下版 0.244.0）：Phase 0 已实锤 deveco run headless（非交互+自动退出+退出码）——①服务端 autofix 模块：AF 状态机（afLoop：基线测试→任务包→git 打点→CLI 改码→红线 diff 检查→编译→装机→重测，全绿/死胡同/红线三出口）②止损熔断五判据（零改动死轮/红线回滚/编译连败 2 轮/超时 600s 强杀/轮次用尽）写死服务端不靠 CLI 自觉③git 工具（白名单 rev-parse/add/commit/status/diff/reset/clean；打点快照保护用户未提交工作；clean 不带 -x 不碰 ignored 密钥文件）④修复任务包（失败断言详情+红线禁令+止损令+基线三读指令）⑤死胡同报告五部分求援定式+绿报告均落桌面⑥四接口 /api/autofix/health|status|start|stop（start 强制五灯全绿：CLI/git/模型探针/编译链/设备在线，任一红拒绝启动）⑦测试代码对闭环不可见不可改（红线含 testing/，防改考卷骗绿）。前端见 public/index.html 同版本注释 // ★ 0.241.0.10：修 ARKUI-TEST 三端全红 9568263（R20261015164335 实锤：app 发版 1000282 后旧测试包 pack.info=1000281 被「复用已编译测试包」直接拿去装→拒装）——①新增 testHapVersionCode()（读 pack.info，与 hap 同批产出纯 JSON 免解包）：复用前比对工程当前 versionCode，不一致强制重编（0.235.0/0.237.1/0.237.2 三踩同坑的结构性根治，此前全靠人工重编）②安装前设备侧版本预检（bmVersionCode 读设备主应用 versionCode ≠ 工程值→红字指路先【装机】，不硬撞 9568263）③安装失败输出含 9568263 附中文解码④runCase 支持 caseDef.timeoutMs 覆盖（ARKUI-TEST=900s，重编数分钟不撞全局 300s 线） // 更早历史见 MEMORY.md 版本表（唯一真相源·版本注释瘦身约束）
+const VERSION = '0.243.0.2'; // ★ 0.243.0.2 自动修复闭环二期（全案 docs/0.165+/0.243.0.2；任务书桌面 234.txt 校准版——豆包称「CLI 启用强制非流式」实锤不成立：deveco 0.2.3 无非流式参数、stream:!0 硬编码；等效落地分两层）①**治本=闭环模型通道切官方**：autofix.model 默认 deveco/GLM-5.3（afRunCli -m 注入）——本期实测官方网关 120 字长回复+两轮 Read 工具任务全绿零截断，一期卡点「流式 JSON 截断」的网关侧根因=阿里 token 计划网关（截断点实测=usage.prompt_tokens_details；0.243.0.1 只试了阿里通道下换模型、漏了官方通道）②**救生艇=本地非流式适配代理 afProxy**（默认关闭 proxy.enabled=false）：改写 stream:false 转发上游+整包 JSON 回拼标准 OpenAI SSE；⚠️实测局限如实入档——deveco.jsonc provider 覆盖对已认证内置 provider 三形态（options.baseURL/api/完整重定义）均不生效、DEVECO_CONFIG_DIR 不加载配置，打通需自定义 provider+auth 复制或插件通道，基础设施保留③三类异常分策重试 afClassifyCliFail（网络=5s×2/JSON 解析=3s×2/其他=不重试交死轮）④CLI 超时分档（非流式 900s/流式 600s）+输出缓冲 2→4MB+轮日志补用时⑤红线内容级校验：git diff 删除行扫描 redlineKeys 持久化 key 命中（key 禁改铁律自动化）⑥健康检查六灯（代理灯按需真探）⑦前端流式开关+代理灯。.deveco/ 已入 .gitignore（CLI 运行工件不污染 git 打点） // ★ 0.243.0.1 自动修复闭环一期（全案 docs/0.165+/0.243.0）：afLoop 状态机（基线测试→任务包→git 打点→CLI 改码→红线 diff→编译→装机→重测）+熔断五判据+死胡同/绿报告落桌面+四接口 /api/autofix/health|status|start|stop（start 五灯全绿强制）+测试代码对闭环不可见不可改（防改考卷骗绿） // 更早历史（0.241.0.10 ARKUI-TEST 9568263 版本校验等）见 MEMORY.md 版本表（唯一真相源·版本注释瘦身约束）
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -2047,6 +2047,11 @@ const CASES = [
       const dev = ctx.devices[0]; const serial = dev.serial;
       if (!canUiDump(dev)) { uiSkip(ctx.log, dev, 'UI 巡检（★一期 Pad 专属——PC 窗口导航需 uiInput displayId 支持，二期开）'); return; }
       await coldStart(serial, 7000);
+      // ★ 0.243.0.2 修 A5 存量红（R20261015180932AF-T0 实锤）：冷启后协议弹窗蒙层全屏，吃掉 navTo('气泡树')
+      //   的边栏点击 → 「气泡树」页 dump 实为关弹窗后的首页 → 首页边栏六项无选中高亮（Index 无路由=设计使然）
+      //   → A5 误报 fail。修=巡检前清弹窗（DIALOGS 用例同款前置：协议自动同意+堆叠弹窗逐层关）
+      await agreeDialogIfAny(serial, ctx.log);
+      await dismissLoginDialogs(serial, ctx.log);
       const pages = [
         { key: '首页', nav: null, bg: '#120B1F' },
         { key: '气泡树', nav: '气泡树', bg: '#160D26' },
@@ -2145,12 +2150,16 @@ const CASES = [
           const box = AUDIT.collectAppNodes(d.text, CFG.bundle).filter((n) => n.hint && n.hint.includes('单词（必填）'))[0]
             || AUDIT.collectAppNodes(d.text, CFG.bundle).filter((n) => n.text === '新增单词')[0];
           if (box) {
-            await sh(serial, `uitest uiInput click ${box.xc} ${box.yc}`, 15000);
-            await sleep(1800);
-            // ★ 0.230.0.1 断言通道修正：键盘态 dump 抓不到 app 子树（窗口 RESIZE 后节点数 0=uitest 盲区，
+            // ★ 0.243.0.2 修 B11 存量红（R20261015180932AF-T0 实锤）：裸 click 聚焦不保证输入法会话在场
+            //   （Pad 无软键盘/物理键盘场景 Back 直达 app → onBackPressed 关弹窗=「无键盘可收」的正常分层，
+            //   被误判「分层失效」）。改 uiInputText 注入 1 字符强制拉起输入法会话（0.241.0.7 SYNC-FLOW WORD
+            //   实证：inputText 后 Back=只收键盘不关弹窗）；注入字符随弹窗关闭丢弃，零数据污染
+            const inj = await uiInputText(serial, box.xc, box.yc, '测');
+            await sleep(1600);
+            // ★ 0.230.0.1 断言通道修正（沿用）：键盘态 dump 抓不到 app 子树（窗口 RESIZE 后节点数 0=uitest 盲区，
             //   0.230.0 实测实锤）——"树中无保存"≠不可达。改行为验证：收键盘→弹窗须仍在+保存 bounds 可达
             //   （0.230.0 app 侧已加 Scroll+maxHeight 96%：键盘压矮窗口时弹窗收缩在键盘上方区域内）
-            await sh(serial, 'uitest uiInput keyEvent Back', 15000); // 收键盘（不关弹窗——编辑器返回键拦截在第二层）
+            await sh(serial, 'uitest uiInput keyEvent Back', 15000); // 收键盘（输入法会话活跃——Back 只收键盘）
             await sleep(1800);
             const dk = await dumpAuditNodes(serial, undefined, true);
             const stillOpen = dk.nodes.some((n) => (n.text || '').includes('新增单词'));
@@ -2504,8 +2513,29 @@ const CASES = [
       }
       await sh(serial, `uitest uiInput keyEvent Back`, 15000);
       await sleep(1000);
-      const preSave = await dumpAuditNodes(serial);
-      const sv = await uiClickText(serial, '保存', { exact: true, waitMs: 2500 });
+      // ★ 0.243.0.2 修 ③ 存量红（R20261015180932AF-T0 实锤「保存未命中+provider/模型读空」）：Key 框下滑后
+      //   视口停在中段——保存按钮（表单底部）与提供商卡（顶部）同时滚出 dump 视口 → 定位必空。修=保存按钮
+      //   双向滚动重试：原位找不到→下滑找（保存近底部）→上滑回顶找；每步 dump 实时重定位（表单节点随滚动位移）
+      const svFind = async () => {
+        let d = await dumpAuditNodes(serial);
+        let n = d.nodes.find((x) => x.text === '保存');
+        if (n) return { ok: true, x: n.xc, y: n.yc, ctx: d };
+        const rm = String((JSON.parse(d.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        const sw = rm ? +rm[3] : 1000, shh = rm ? +rm[4] : 1600;
+        await sh(serial, `uitest uiInput swipe ${Math.round(sw / 2)} ${Math.round(shh * 0.55)} ${Math.round(sw / 2)} ${Math.round(shh * 0.3)} 600`, 15000);
+        await sleep(900);
+        d = await dumpAuditNodes(serial);
+        n = d.nodes.find((x) => x.text === '保存');
+        if (n) return { ok: true, x: n.xc, y: n.yc, ctx: d };
+        await sh(serial, `uitest uiInput swipe ${Math.round(sw / 2)} ${Math.round(shh * 0.35)} ${Math.round(sw / 2)} ${Math.round(shh * 0.7)} 600`, 15000);
+        await sleep(900);
+        d = await dumpAuditNodes(serial);
+        n = d.nodes.find((x) => x.text === '保存');
+        return n ? { ok: true, x: n.xc, y: n.yc, ctx: d } : { ok: false, ctx: d };
+      };
+      const svHit = await svFind();
+      const sv = svHit.ok ? await (async () => { const r = await sh(serial, `uitest uiInput click ${svHit.x} ${svHit.y}`, 15000); await sleep(600); return { ok: !SH_ERR_RE.test(r), x: svHit.x, y: svHit.y }; })() : { ok: false };
+      const preSave = svHit.ctx;
       const saveCtx = `provider=${JSON.stringify(curProvider(preSave))} / 模型=${JSON.stringify(curModelName(preSave))}`;
       ctx.log('③ 注入标记并保存', sv.ok ? 'pass' : 'fail', sv.ok ? `已输入「${MARK}」${keyNote}（追加语义）→点「保存」(${sv.x},${sv.y})·保存时表单=${saveCtx}` : `「保存」按钮未命中（键盘未收/滚动位移——人工复核）·表单=${saveCtx}`);
       if (!sv.ok) return;
@@ -2528,10 +2558,11 @@ const CASES = [
       let v5Saved = await v5OnDisk();
       for (let t = 0; t < 3 && !v5Saved.ok; t++) {
         ctx.log('④ 保存生效校验·重试', 'warn', `盘上 v5=${JSON.stringify(v5Saved)}（期望 provider=${SAC_ID}+Key含「${KMARK}」）——保存点击疑似落空，重点「保存」第 ${t + 1} 次`);
-        const retry = await uiClickText(serial, '保存', { exact: true, waitMs: 2500 });
+        const retryFind = await svFind();
+        if (retryFind.ok) { await sh(serial, `uitest uiInput click ${retryFind.x} ${retryFind.y}`, 15000); await sleep(600); }
         await sleep(2200);
         const again = await v5OnDisk();
-        v5Saved = again.ok ? again : (retry.ok ? again : v5Saved);
+        v5Saved = again.ok ? again : (retryFind.ok ? again : v5Saved);
       }
       ctx.log('④ 保存生效校验（v5 主真相源·全字段）', v5Saved.ok ? 'pass' : 'fail',
         v5Saved.ok ? `盘上 api-config-v5：provider=${SAC_ID} + apiKey 含本轮唯一「${KMARK}」${v5Saved.aliasHas ? ' + modelAlias 含「' + MARK + '」' : ''}（方案B 单string JSON 真实落盘——防「点击落空+残留巧合」双假绿）` : `3 次保存后 v5=${JSON.stringify(v5Saved)}——保存链路异常（点击落空或 saveAll 未写 v5），本条中止防污染`);
@@ -3635,14 +3666,14 @@ function syncDesktop() {
 const AF = {
   state: 'idle', runId: null, round: 0, phase: '', devices: [], suites: [],
   bootSnap: null, abort: false, startedAt: 0, rounds: [], result: null,
-  lastHealth: null, healthAt: 0, cliProc: null,
+  lastHealth: null, healthAt: 0, cliProc: null, stream: undefined,
 };
 function afSend(phase, text, extra) {
   AF.phase = phase;
   sseSend({ type: 'autofix', runId: AF.runId, phase, round: AF.round, text, ...(extra || {}) });
 }
 function afStatusLite() {
-  return { state: AF.state, runId: AF.runId, round: AF.round, phase: AF.phase, result: AF.result, startedAt: AF.startedAt,
+  return { state: AF.state, runId: AF.runId, round: AF.round, phase: AF.phase, result: AF.result, startedAt: AF.startedAt, stream: afUseStream(),
     rounds: AF.rounds.map((r) => ({ round: r.round, files: r.files, outcome: r.outcome, summary: r.summary })) };
 }
 // ---------- git 工具（打点/回滚/diff；子命令白名单——安全模型从「只 spawn hdc」扩展出 git，仅限以下只读+快照操作） ----------
@@ -3692,38 +3723,218 @@ function afRedlineHit(files) {
   }
   return hits;
 }
+// ★ 0.243.0.2 红线内容级校验（持久化 key 禁改铁律自动化）：diff 删除/修改行中出现已知
+//   PersistenceV2/AppStorageV2 key 字符串（单/双引号形态）= 命中——防 CLI 换 key 等于毁数据
+//   （0.185/0.224.1 两次实锤：key 一改盘值即空）。多文件 diff 整体逐行扫描。
+function afRedlineKeysHit(diffOut) {
+  const keys = (CFG.autofix && CFG.autofix.redlineKeys) || [];
+  if (!keys.length || !diffOut) return [];
+  const hits = [];
+  for (const line of String(diffOut).split('\n')) {
+    if (line.startsWith('---') || line.startsWith('+++')) continue;
+    if (!line.startsWith('-')) continue; // 只看删除/修改行（- 侧）；新增行改不回旧 key 的数据
+    for (const k of keys) {
+      if (line.includes("'" + k + "'") || line.includes('"' + k + '"')) {
+        hits.push(k + '（持久化 key 出现在删除/修改行：' + line.slice(0, 90) + '）');
+        break;
+      }
+    }
+  }
+  return [...new Set(hits)];
+}
+// ---------- ★ 0.243.0.2 非流式适配代理（stream terminator proxy；救生艇资产，默认关闭） ----------
+// 背景实锤（2026-10-16 侦察）：deveco 0.2.3 无非流式开关（OpenAI/Anthropic 适配器 stream:!0 硬编码），
+// CLI×阿里 token 计划网关流式 SSE 间歇性 JSON 截断（一期卡点；截断点实测=响应尾 usage.prompt_tokens_details 处）。
+// ★ 治本=闭环切官方通道：autofix.model 默认 deveco/GLM-5.3——本期实测 120 字长回复+两轮 Read 工具任务
+//   全绿零截断（官方网关无此缺陷；0.243.0.1 只试了阿里通道下换模型，漏了官方通道这一正解）。
+// ★ 本代理=救生艇资产（proxy.enabled=true 才挂载，默认 false）：CLI 的 provider baseURL 若被指到本代理，
+//   代理把「stream:true」改写为「stream:false」发给上游网关，等模型完整生成拿到整包 JSON，
+//   再在本地拼装成标准 OpenAI SSE 流回给 CLI——环回收流零截断，物理绕开上游流式缺陷。
+// ⚠️ 实测局限（如实入档，防后人踩坑）：deveco.jsonc 的 provider 覆盖对「已认证内置 provider」三形态
+//   （options.baseURL / api 字符串 / 完整重定义）均不生效（auth+models.dev 定义短路 config 覆盖）；
+//   DEVECO_CONFIG_DIR 环境变量不加载配置（model 标记实证）。打通需「全新自定义 provider+auth 复制」
+//   或「项目插件 catalog.transform 改 api.url」——未投入，转发/拼装基础设施保留待用。
+function afUseStream() {
+  const af = CFG.autofix || {};
+  return AF.stream !== undefined ? AF.stream : (af.stream !== undefined ? !!af.stream : false);
+}
+function afProxyWanted() {
+  const af = CFG.autofix || {};
+  return !!(af.proxy && af.proxy.enabled === true) && !afUseStream();
+}
+const AF_PROJ_DEVECO = path.join(PROJECT, '.deveco');
+function afProxyCfg() {
+  const af = CFG.autofix || {};
+  return { host: '127.0.0.1', port: 8989, providerId: 'alibaba-token-plan-cn', upstream: '', model: '', enabled: false, ...(af.proxy || {}) };
+}
+// 项目级 .deveco/deveco.jsonc 动态挂载/卸载（★ 实测唯一生效的配置注入通道：项目级加载实证 model 标记可生效；
+//   DEVECO_CONFIG_DIR 无效）。仅 proxy.enabled=true 时使用；挂载窗口=CLI 运行期，退出即删配置文件
+//   （目录可能残留 CLI 自动安装的 node_modules——已入 .gitignore 不污染 git）
+function afMountProjConfig() {
+  try {
+    const pc = afProxyCfg();
+    fs.mkdirSync(AF_PROJ_DEVECO, { recursive: true });
+    const base = 'http://' + pc.host + ':' + pc.port + String(new URL(pc.upstream).pathname).replace(/\/$/, '');
+    const cfg = { $schema: 'https://opencode.ai/config.json', provider: {} };
+    cfg.provider[pc.providerId] = { options: { baseURL: base } };
+    fs.writeFileSync(path.join(AF_PROJ_DEVECO, 'deveco.jsonc'), JSON.stringify(cfg, null, 2));
+    return { ok: true, baseURL: base };
+  } catch (e) { return { ok: false, err: String(e) }; }
+}
+function afUnmountProjConfig() {
+  try { fs.unlinkSync(path.join(AF_PROJ_DEVECO, 'deveco.jsonc')); return true; } catch (_) { return false; }
+}
+// 把上游非流式整包 JSON 拼装成标准 OpenAI SSE 流（role→reasoning→content→tool_calls→finish→usage→[DONE]）
+function afSseFromFull(obj) {
+  const chunk = (delta, finish, extra) => 'data: ' + JSON.stringify({
+    id: obj.id || 'afproxy', object: 'chat.completion.chunk', created: obj.created || Math.floor(Date.now() / 1000),
+    model: obj.model || '', choices: finish === undefined && extra === 'usage' ? [] : [{ index: 0, delta, finish_reason: finish === undefined ? null : finish }],
+    ...(extra === 'usage' ? { usage: obj.usage } : {}),
+  }) + '\n\n';
+  const out = [];
+  const msg = obj.choices && obj.choices[0] && obj.choices[0].message || {};
+  const fin = (obj.choices && obj.choices[0] && obj.choices[0].finish_reason) || 'stop';
+  out.push(chunk({ role: 'assistant' }));
+  if (msg.reasoning_content) out.push(chunk({ reasoning_content: String(msg.reasoning_content) }));
+  if (msg.content) {
+    const c = String(msg.content);
+    for (let i = 0; i < c.length; i += 4096) out.push(chunk({ content: c.slice(i, i + 4096) }));
+  }
+  if (Array.isArray(msg.tool_calls)) {
+    msg.tool_calls.forEach((tc, i) => {
+      out.push(chunk({ tool_calls: [{ index: tc.index ?? i, id: tc.id, type: 'function', function: { name: tc.function && tc.function.name, arguments: (tc.function && tc.function.arguments) || '' } }] }));
+    });
+  }
+  out.push(chunk({}, fin));
+  if (obj.usage) out.push(chunk({}, undefined, 'usage'));
+  out.push('data: [DONE]\n\n');
+  return out.join('');
+}
+const AF_PROXY = { server: null, port: 0, stats: { n: 0, bytes: 0, errs: 0 } };
+async function afProxyEnsure() {
+  if (AF_PROXY.server) return { ok: true, port: AF_PROXY.port };
+  const pc = afProxyCfg();
+  return new Promise((resolve) => {
+    const https = require('https');
+    const up = new URL(pc.upstream);
+    const srv = http.createServer((req, res) => {
+      const chunks = [];
+      req.on('data', (d) => chunks.push(d));
+      req.on('end', () => {
+        const bodyRaw = Buffer.concat(chunks);
+        let bodyJson = null;
+        try { bodyJson = JSON.parse(bodyRaw.toString('utf8')); } catch (_) { /* 非体 JSON 原样透传 */ }
+        const fwdBody = bodyJson ? Buffer.from(JSON.stringify({ ...bodyJson, stream: false, stream_options: undefined })) : bodyRaw;
+        const fwd = https.request({
+          hostname: up.hostname, port: up.port || 443, path: req.url, method: req.method,
+          headers: { ...req.headers, host: up.host, 'content-length': String(fwdBody.length) },
+        }, (ur) => {
+          if (ur.statusCode !== 200) {
+            AF_PROXY.stats.errs++;
+            res.writeHead(ur.statusCode, { 'content-type': ur.headers['content-type'] || 'application/json' });
+            ur.pipe(res); // 上游真实错误原样透传（SDK 可读出错误信息）
+            return;
+          }
+          const cs = [];
+          ur.on('data', (d) => cs.push(d));
+          ur.on('end', () => {
+            try {
+              const full = JSON.parse(Buffer.concat(cs).toString('utf8'));
+              const sse = afSseFromFull(full);
+              AF_PROXY.stats.n++; AF_PROXY.stats.bytes += sse.length;
+              res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'connection': 'keep-alive' });
+              res.end(sse);
+              if (AF.state === 'running') afSend(AF.phase === 'fix' ? 'fix' : 'health', '[代理] 非流式整包 ' + sse.length + ' 字回拼 SSE 完成（累计 ' + AF_PROXY.stats.n + ' 次）');
+            } catch (e) {
+              AF_PROXY.stats.errs++;
+              res.writeHead(502, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ error: { message: 'afproxy 拼装失败：' + String(e) } }));
+            }
+          });
+        });
+        fwd.on('error', (e) => {
+          AF_PROXY.stats.errs++;
+          try { res.writeHead(502, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'afproxy 转发失败：' + String(e) } })); } catch (_) { /* 已回 */ }
+        });
+        fwd.end(fwdBody);
+      });
+    });
+    srv.on('error', (e) => { AF_PROXY.server = null; resolve({ ok: false, err: '代理监听失败（' + pc.host + ':' + pc.port + '）：' + String(e) }); });
+    srv.listen(pc.port, pc.host, () => { AF_PROXY.server = srv; AF_PROXY.port = pc.port; AF_PROXY.stats = { n: 0, bytes: 0, errs: 0 }; resolve({ ok: true, port: pc.port }); });
+  });
+}
 // ---------- CLI headless 调用（deveco run；spawn 数组参数；超时强杀） ----------
 function stripAnsi(s) { return String(s || '').replace(/\x1b\[[0-9;]*m/g, ''); }
-function afRunCli(prompt, timeoutMs) {
-  return new Promise((resolve) => {
+async function afRunCli(prompt, timeoutMs) {
+  return new Promise(async (resolve) => {
+    try {
     const af = CFG.autofix || {};
     if (!af.cliCmd) return resolve({ code: -1, out: '未配置 autofix.cliCmd' });
     const env = { ...process.env };
     if (CFG.localBuild && CFG.localBuild.nodeBin) env.PATH = CFG.localBuild.nodeBin + path.delimiter + (env.PATH || '');
     const args = ['run', prompt, '--dir', PROJECT, '--dangerously-skip-permissions'];
-    // ★ stdin 必须 ignore：deveco 真身（bun 二进制）对「开放的空 pipe stdin」会阻塞等待（实测挂死零输出，spawn
-    //   timeout 杀掉才现形 close(null)）；bash 下 stdin=TTY/EOF 均正常——node spawn 场景显式断开 stdin 即通
-    const p = spawn(af.cliCmd, args, { cwd: PROJECT, timeout: timeoutMs, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // ★ 0.243.0.2 闭环模型通道：autofix.model 默认 deveco/GLM-5.3（官方通道实测无流式截断——治本；
+    //   阿里 token 计划网关 glm-5.3 有间歇性 JSON 截断，0.243.0.1 卡点的网关侧根因）。空=不传 -m（CLI 默认模型）
+    const am = String(af.model || '').trim();
+    if (am) args.splice(2, 0, '-m', am);
+    // ★ 救生艇（默认关闭）：proxy.enabled=true 且 stream=false 时挂载项目级 .deveco 配置 + 本地非流式代理
+    //   （provider 覆盖通道实测未打通，见模块头注释——代理监听与转发基础设施保留）
+    let mounted = false;
+    if (afProxyWanted()) {
+      const pe = await afProxyEnsure();
+      if (!pe.ok) return resolve({ code: -1, out: '非流式代理不可用：' + pe.err });
+      const mc = afMountProjConfig();
+      if (!mc.ok) return resolve({ code: -1, out: '挂载 .deveco 配置失败：' + mc.err });
+      mounted = true;
+    }
+    let p = null;
+    try {
+      // ★ stdin 必须 ignore：deveco 真身（bun 二进制）对「开放的空 pipe stdin」会阻塞等待（实测挂死零输出，spawn
+      //   timeout 杀掉才现形 close(null)）；bash 下 stdin=TTY/EOF 均正常——node spawn 场景显式断开 stdin 即通
+      p = spawn(af.cliCmd, args, { cwd: PROJECT, timeout: timeoutMs, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      if (mounted) afUnmountProjConfig();
+      return resolve({ code: -1, out: 'afRunCli spawn 异常：' + String(e) });
+    }
     AF.cliProc = p;
     let out = '';
-    const push = (d) => { out += d.toString(); if (out.length > 2 * 1024 * 1024) out = out.slice(-1024 * 1024); };
+    // ★ 0.243.0.2：4MB 上限（原 2MB）——长输出/多轮工具任务防截尾丢崩特征
+    const push = (d) => { out += d.toString(); if (out.length > 4 * 1024 * 1024) out = out.slice(-2 * 1024 * 1024); };
     p.stdout.on('data', push); p.stderr.on('data', push);
-    p.on('close', (code) => { AF.cliProc = null; resolve({ code: code ?? -1, out, timedOut: code === null }); });
-    p.on('error', (e) => { AF.cliProc = null; resolve({ code: -1, out: String(e) }); });
+    p.on('close', (code) => { AF.cliProc = null; if (mounted) afUnmountProjConfig(); resolve({ code: code ?? -1, out, timedOut: code === null }); });
+    p.on('error', (e) => { AF.cliProc = null; if (mounted) afUnmountProjConfig(); resolve({ code: -1, out: String(e) }); });
+    } catch (e) { resolve({ code: -1, out: 'afRunCli 异常：' + String(e) }); }
   });
 }
-// ★ 0.243.0.1 CLI 重试封装：上游网关（deveco×glm-5.3 流式通道）存在间歇性 JSON 截断（实测：单轮短响应大概率通、
-//   多轮工具/长响应大概率崩、随时间波动）——崩特征=输出含 "JSON parsing failed"。重试可显著提高单任务通过率；
-//   多轮 agentic 修复任务在链路恢复前不可靠（实测 7+ 次稳定复现，已按止损熔断纪律停手并留档）
+// ★ 0.243.0.1 CLI 重试封装 / ★ 0.243.0.2 三类异常分策重试：
+//   网络异常（连接拒绝/超时/DNS/socket 复位）→ 间隔 5s 重试 2 次（网络抖动自愈）
+//   JSON 解析失败（流式截断特征——非流式代理后应消失，保底）→ 间隔 3s 重试 2 次
+//   其他（真实任务失败/CLI 退出非零）→ 不重试，交死轮判定（重试只会烧时间）
+const AF_NET_FAIL = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ECONNRESET|EAI_AGAIN|socket hang up|fetch failed|ECONNABORTED/i;
+const AF_JSON_FAIL = /JSON parsing failed|JSON Parse error|JSON\.parse|Unterminated string|Unexpected EOF|Unexpected end of/i;
+function afClassifyCliFail(out) {
+  const s = String(out || '');
+  if (AF_NET_FAIL.test(s)) return 'network';
+  if (AF_JSON_FAIL.test(s)) return 'json';
+  return 'other';
+}
 async function afRunCliRetry(prompt, timeoutMs, retries) {
   let last = { code: -1, out: '' };
-  for (let i = 0; i <= (retries ?? 1); i++) {
+  const maxByKind = { network: 2, json: 2, other: 0 };
+  let kind = null, tried = 0;
+  for (let i = 0; ; i++) {
     last = await afRunCli(prompt, timeoutMs);
-    if (last.code === 0 && !/JSON parsing failed|JSON Parse error|Unterminated string|Unexpected EOF/i.test(last.out)) return last;
-    afSend('fix', 'CLI 调用异常（流式截断嫌疑，' + (i < (retries ?? 1) ? '重试 ' + (i + 1) + '/' + retries : '重试用尽') + '）：' + stripAnsi(last.out).slice(-100));
-    await sleep(3000);
+    if (last.code === 0 && !AF_JSON_FAIL.test(last.out)) return last;
+    kind = afClassifyCliFail(last.out);
+    tried = i;
+    const max = maxByKind[kind];
+    if (tried >= max) {
+      afSend('fix', 'CLI 调用失败（' + (kind === 'network' ? '网络异常' : kind === 'json' ? 'JSON 解析失败（流式截断特征）' : '任务失败（exit ' + last.code + '）') + '，' + (max > 0 ? '重试用尽' : '按策略不重试') + '）：' + stripAnsi(last.out).slice(-100));
+      return last;
+    }
+    afSend('fix', 'CLI 调用异常（' + (kind === 'network' ? '网络异常' : 'JSON 解析失败（流式截断嫌疑）') + '，重试 ' + (tried + 1) + '/' + max + '）：' + stripAnsi(last.out).slice(-100));
+    await sleep(kind === 'network' ? 5000 : 3000);
   }
-  return last;
 }
 // ---------- autofix 跑测（复用 runCase/saveResults/artifacts；与手动跑测共用 running 锁互斥） ----------
 async function afRunTests(tag) {
@@ -3859,7 +4070,8 @@ async function afDeadEnd(reason, lastCliOut, lastBuildLog) {
 async function afLoop() {
   const af = CFG.autofix || {};
   const maxRounds = af.maxRounds || 2;
-  const cliTimeout = af.timeoutMs || 600000;
+  // ★ 0.243.0.2：CLI 超时分档——非流式（代理整包生成）更慢独立放大（默认 900s）；流式保持 600s
+  const cliTimeout = afUseStream() ? (af.cliTimeoutStreamMs || af.timeoutMs || 600000) : (af.cliTimeoutNonStreamMs || af.timeoutMs || 900000);
   let lastCliOut = '', lastBuildLog = '';
   try {
     // 轮 0：基线测试（确认有红才修）
@@ -3893,11 +4105,12 @@ async function afLoop() {
         const dir = path.join(ART_DIR, AF.runId); fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, 'task-round-' + round + '.md'), pkg);
       } catch (_) { /* 存档尽力 */ }
-      afSend('fix', '派单 CLI agent（deveco headless，超时 ' + Math.round(cliTimeout / 1000) + 's 强杀）…');
+      afSend('fix', '派单 CLI agent（deveco headless，通道=' + ((CFG.autofix && CFG.autofix.model) || 'CLI 默认') + (afProxyWanted() ? '+非流式代理' : '') + '，超时 ' + Math.round(cliTimeout / 1000) + 's 强杀）…');
+      const tCli0 = Date.now();
       const cli = await afRunCliRetry(pkg, cliTimeout, 2);
       lastCliOut = cli.out;
       try { fs.writeFileSync(path.join(ART_DIR, AF.runId, 'cli-round-' + round + '.log'), cli.out); } catch (_) { /* 存档尽力 */ }
-      afSend('fix', 'CLI 退出 code=' + cli.code + (cli.timedOut ? '（超时被强杀）' : '') + '，输出 ' + cli.out.length + ' 字（已存档）');
+      afSend('fix', 'CLI 退出 code=' + cli.code + (cli.timedOut ? '（超时被强杀）' : '') + '，输出 ' + cli.out.length + ' 字，用时 ' + Math.round((Date.now() - tCli0) / 1000) + 's（已存档）');
       if (AF.abort) break;
       // diff 检查（死轮 / 红线）
       const files = await gitChangedFiles();
@@ -3909,11 +4122,15 @@ async function afLoop() {
         continue;
       }
       const hits = afRedlineHit(files);
-      if (hits.length) {
-        afSend('redline', '✗ 红线命中：' + hits.join('、') + ' —— 自动回滚当轮+熔断转人工');
+      // ★ 0.243.0.2 内容级红线：diff（基准=本轮打点快照）删除/修改行扫描持久化 key——多文件整体逐行校验
+      const diffOut = await git(['diff', snap.hash, '--unified=0']);
+      const keyHits = afRedlineKeysHit(diffOut.out);
+      if (hits.length || keyHits.length) {
+        const all = hits.concat(keyHits);
+        afSend('redline', '✗ 红线命中：' + all.join('、') + ' —— 自动回滚当轮+熔断转人工');
         await gitRollback(snap.hash);
-        AF.rounds.push({ round, outcome: '红线命中已回滚：' + hits.join('、'), files, summary: testRes.summary });
-        await afDeadEnd('改动触碰红线文件（已自动回滚）：' + hits.join('、'), lastCliOut, lastBuildLog);
+        AF.rounds.push({ round, outcome: '红线命中已回滚：' + all.join('、'), files, summary: testRes.summary });
+        await afDeadEnd('改动触碰红线文件（已自动回滚）：' + all.join('、'), lastCliOut, lastBuildLog);
         return;
       }
       afSend('fix', '本轮改动 ' + files.length + ' 个文件：' + files.join('、'));
@@ -3974,11 +4191,11 @@ async function afLoop() {
     sseSend({ type: 'autofix-end', runId: AF.runId, result: AF.result });
   }
 }
-// ---------- 健康检查（五灯：CLI/git/模型探针/编译链/设备在线；缓存 5 分钟，?refresh=1 强制重探） ----------
+// ---------- 健康检查（★ 0.243.0.2 六灯：CLI/git/模型探针/编译链/设备在线/非流式代理（stream=true 时恒绿标未启用）；缓存 5 分钟，?refresh=1 强制重探） ----------
 async function afHealthCheck(force) {
   if (!force && AF.lastHealth && Date.now() - AF.healthAt < 300000) return { ...AF.lastHealth, cached: true };
   const af = CFG.autofix || {};
-  const r = { cli: { ok: false, detail: '' }, git: { ok: false, detail: '' }, model: { ok: false, detail: '' }, build: { ok: false, detail: '' }, device: { ok: false, detail: '' }, at: now() };
+  const r = { cli: { ok: false, detail: '' }, git: { ok: false, detail: '' }, model: { ok: false, detail: '' }, build: { ok: false, detail: '' }, device: { ok: false, detail: '' }, proxy: { ok: false, detail: '' }, at: now() };
   // 灯1 CLI 存在性
   const v = await new Promise((resolve) => {
     if (!af.cliCmd) return resolve({ code: -1, out: '未配置 autofix.cliCmd（config.json）' });
@@ -4002,6 +4219,16 @@ async function afHealthCheck(force) {
   const devs = await probeDevices();
   const online = devs.filter((d) => d.online && !d.workMachine);
   r.device = { ok: online.length > 0, detail: online.length ? '在线：' + online.map((d) => d.label).join('、') : '全部设备离线（PC 开 DevEco/Pad 插线/手机连 WiFi）' };
+  // 灯6 非流式适配代理（★ 0.243.0.2：仅 proxy.enabled=true 才真探——救生艇默认关闭；否则恒绿标未启用）
+  if (!afProxyWanted()) {
+    r.proxy = { ok: true, detail: '代理未启用（默认关闭；闭环模型通道=' + ((CFG.autofix && CFG.autofix.model) || 'CLI 默认') + '）' };
+  } else {
+    const pc = afProxyCfg();
+    const pe = await afProxyEnsure();
+    r.proxy = pe.ok
+      ? { ok: true, detail: '非流式代理监听 ' + pc.host + ':' + pe.port + '（CLI baseURL 覆盖→' + pc.upstream + '）' }
+      : { ok: false, detail: pe.err };
+  }
   AF.lastHealth = r; AF.healthAt = Date.now();
   return r;
 }
@@ -4276,6 +4503,8 @@ async function handler(req, res) {
         if (!want.length) return json(res, 400, { error: '至少勾选一台设备' });
         const off = want.map((id) => devs.find((d) => d.id === id)).filter((d) => !d || !d.online);
         if (off.length) return json(res, 409, { error: '设备离线，拒绝启动：' + off.map((d) => d ? d.label : '未知设备').join('、') + '——先连设备（连接诊断可复制报告）' });
+        // ★ 0.243.0.2 流式开关（面板可勾选覆盖 config 默认；须在健康检查前定——探针/代理灯/CLI 超时分档都读它）
+        if (typeof p.stream === 'boolean') AF.stream = p.stream;
         // 健康检查（强制全探，任一红=拒绝并亮原因）
         const h = await afHealthCheck(true);
         const reds = Object.entries(h).filter(([k, v]) => v && typeof v === 'object' && v.ok === false).map(([k, v]) => ({ lamp: k, detail: v.detail }));
@@ -4284,7 +4513,7 @@ async function handler(req, res) {
         AF.state = 'running'; AF.runId = RUN_ID() + 'AF'; AF.round = 0; AF.phase = 'health';
         AF.devices = want; AF.suites = suites; AF.bootSnap = null; AF.abort = false;
         AF.startedAt = Date.now(); AF.rounds = []; AF.result = null; AF.lastHealth = h;
-        afSend('health', '五灯全绿（CLI/git/模型/编译/设备）——闭环启动：' + suites.join('+') + ' × ' + want.join('、'));
+        afSend('health', '六灯全绿（CLI/git/模型/编译/设备' + (afProxyWanted() ? '/代理' : '') + '·通道=' + ((CFG.autofix && CFG.autofix.model) || 'CLI 默认') + '）——闭环启动：' + suites.join('+') + ' × ' + want.join('、'));
         afLoop().catch(async (e) => { AF.state = 'idle'; running = false; sseSend({ type: 'autofix-end', runId: AF.runId, result: { outcome: 'error', error: String(e) } }); });
         return json(res, 200, { ok: true, runId: AF.runId });
       } catch (e) { return json(res, 400, { error: String(e) }); }
