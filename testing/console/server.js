@@ -4081,8 +4081,11 @@ async function afLoop() {
     AF.rounds.push({ round: 0, outcome: testRes.fails.length ? '基线有红（✗' + testRes.summary.fail + '）' : '基线全绿', files: [], summary: testRes.summary,
       failLines: testRes.fails.map((f) => f.case + '@' + f.device + '：' + (f.steps[0] ? f.steps[0].name + '—' + String(f.steps[0].detail || '').slice(0, 120) : '无失败步骤')) });
     if (!testRes.fails.length) {
-      AF.result = { outcome: 'green', rounds: 0, note: '基线测试全绿，无需修复——直接收工' };
-      afSend('done', '✅ 基线测试全绿——无需修复，闭环收工');
+      // ★ 0.243.0.2：基线全绿也落绿报告（此前只有修复后全绿才写——闭环跑完桌面上该有产物）
+      const rpt0 = afGreenReport(0, testRes);
+      const p0 = afWriteReport('自动修复报告_' + AF.runId + '.md', rpt0);
+      AF.result = { outcome: 'green', rounds: 0, note: '基线测试全绿，无需修复——直接收工', report: p0 };
+      afSend('done', '✅ 基线测试全绿——无需修复，闭环收工；报告已放桌面：' + p0);
       return;
     }
     afSend('test', '基线：✗' + testRes.summary.fail + ' 项失败——开始修复循环（上限 ' + maxRounds + ' 轮）');
