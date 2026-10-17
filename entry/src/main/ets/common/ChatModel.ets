@@ -757,11 +757,13 @@ export function recordStat(store: StatisticsStore, kind: string, inTok: number, 
     // ★ 0.202.3：司忆量埋点（inTok 复用为批量次数，默认 1）；提前 return——不落入 token 累加
     entry.siyi = (entry.siyi ?? 0) + Math.max(1, Math.round(inTok));
     store.raw = JSON.stringify({ days: days } as StatDayData);
+    scheduleRowFlush(); // ★ 0.248.4：统计落盘即防抖上行（cfg:stat-days——等级头衔多端一致）
     return;
   }
   entry.inputTokens += inTok;
   entry.outputTokens += outTok;
   store.raw = JSON.stringify({ days: days } as StatDayData);
+  scheduleRowFlush(); // ★ 0.248.4：统计落盘即防抖上行（cfg:stat-days——等级头衔多端一致）
 }
 
 // ============================================================
@@ -901,6 +903,7 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
   const amount = Date.now() < SIYI_FIRST_MONTH_END ? SIYI_WELCOME_FIRST_MONTH : SIYI_WELCOME_NORMAL;
   store.giftSp += amount;
   store.giftSpExpireAt = Date.now() + SIYI_GIFT_VALID_DAYS * 86400000;
+  scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
   return true;
 }
 
@@ -983,6 +986,7 @@ export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPoi
   }
   history.push(`兑换码 ${code.substring(0, 4)}****｜+${SIYI_REDEEM_SP / 10000} 万司忆点｜${new Date().toLocaleDateString()}`);
   store.purchaseHistory = JSON.stringify(history);
+  scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
   return true;
 }
 
@@ -2132,6 +2136,9 @@ export async function flushCloudRowsNow(): Promise<void> {
     upsertIfChanged('cfg:api-config', cfgApiToJson());
     upsertIfChanged('cfg:ai-pref', cfgAiPrefToJson());
     upsertIfChanged('cfg:face-mode', cfgFaceModeToJson());
+    // ★ 0.248.4：账号级资产两行（等级数据源+SP——并集/max 合并语义见 mergeStatDaysRow/mergeSiyiPointsRow）
+    upsertIfChanged('cfg:stat-days', connectStatistics().raw);
+    upsertIfChanged('cfg:siyi-points', siyiPointsToJson());
     // ★ 0.228.1：flat 模式写 layout 原子行（整套坐标单行——并发重排不再混排）
     if (connectCanvasMode().mode === 'flat') {
       upsertIfChanged('layout:flat', localLayoutJson());
@@ -2695,6 +2702,140 @@ function mergeCfgs(cloudCfg: Map<string, string>): void {
   apply('cfg:api-config', cfgApiApply, cfgApiToJson());
   apply('cfg:ai-pref', cfgAiPrefApply, cfgAiPrefToJson());
   apply('cfg:face-mode', cfgFaceModeApply, cfgFaceModeToJson());
+  // ★ 0.248.4：账号级资产两行——专用并集/max 合并（刻意不走上方 apply LWW 通道：
+  //   LWW 整行覆盖会让新装机空态/云端全量互相毁灭对方；统计只增不减+SP 只发放无消耗
+  //   语义下 max/并集数学上单调收敛、幂等、无乒乓。⚠️ SP 消耗链路上线时此语义须重审）
+  mergeStatDaysRow(cloudCfg.get('cfg:stat-days'));
+  mergeSiyiPointsRow(cloudCfg.get('cfg:siyi-points'));
+}
+
+// ★ 0.248.4：cfg:stat-days 下行合并——本地∪云端按 date 键并集，同日各数值取 max。
+//   合并写回 @Trace raw → 等级头衔/统计页自动刷新；变化则防抖上行把并集推回云端（全端收敛）。
+//   rowCache 不在此碰——首拉播种+flush diff 自然裁决（播种值=RDB 云端值，diff 出合并值才上行）
+function mergeStatDaysRow(v: string | undefined): void {
+  if (v === undefined) {
+    return; // 云端无此行（首装/旧版本）——flush 首轮上行本地值即可
+  }
+  let cloudDays: StatDayEntry[] = [];
+  try {
+    const data = JSON.parse(v) as StatDayData;
+    if (data.days !== undefined && data.days !== null) {
+      cloudDays = data.days;
+    }
+  } catch (_e) {
+    return; // 云端坏行——保持本地，flush 上行好值自愈
+  }
+  const store = connectStatistics();
+  const localDays = getStatDays(store);
+  const byDate = new Map<string, StatDayEntry>();
+  for (let i = 0; i < localDays.length; i++) {
+    byDate.set(localDays[i].date, localDays[i]);
+  }
+  let changed = false;
+  for (let i = 0; i < cloudDays.length; i++) {
+    const c = cloudDays[i];
+    const l = byDate.get(c.date);
+    if (l === undefined) {
+      byDate.set(c.date, c); // 云端独有的天——吸收（等级=天数并集的正是此源）
+      changed = true;
+      continue;
+    }
+    if (c.userMsgs > l.userMsgs) {
+      l.userMsgs = c.userMsgs;
+      changed = true;
+    }
+    if (c.aiMsgs > l.aiMsgs) {
+      l.aiMsgs = c.aiMsgs;
+      changed = true;
+    }
+    if (c.bubbles > l.bubbles) {
+      l.bubbles = c.bubbles;
+      changed = true;
+    }
+    if (c.inputTokens > l.inputTokens) {
+      l.inputTokens = c.inputTokens;
+      changed = true;
+    }
+    if (c.outputTokens > l.outputTokens) {
+      l.outputTokens = c.outputTokens;
+      changed = true;
+    }
+    if ((c.siyi ?? 0) > (l.siyi ?? 0)) {
+      l.siyi = c.siyi ?? 0;
+      changed = true;
+    }
+  }
+  if (!changed) {
+    return; // 本地已是超集——零写回零 churn（云端旧行由 flush diff 上行本地值自愈）
+  }
+  const merged: StatDayEntry[] = [];
+  byDate.forEach((d: StatDayEntry): void => {
+    merged.push(d);
+  });
+  merged.sort((a: StatDayEntry, b: StatDayEntry): number => {
+    return a.date < b.date ? -1 : 1;
+  });
+  store.raw = JSON.stringify({ days: merged } as StatDayData);
+  scheduleRowFlush();
+}
+
+// ★ 0.248.4：cfg:siyi-points 行 payload（普通 class——非 @ObservedV2，stringify 可枚举无 0.205.4 坑）
+class SiyiRowPayload {
+  permanentSp: number = 0;
+  bonusSp: number = 0;
+  giftSp: number = 0;
+  giftSpExpireAt: number = 0;
+  welcomeGranted: boolean = false;
+}
+
+function siyiPointsToJson(): string {
+  const s = connectSiyiPoints();
+  const p = new SiyiRowPayload();
+  p.permanentSp = s.permanentSp;
+  p.bonusSp = s.bonusSp;
+  p.giftSp = s.giftSp;
+  p.giftSpExpireAt = s.giftSpExpireAt;
+  p.welcomeGranted = s.welcomeGranted;
+  return JSON.stringify(p);
+}
+
+// ★ 0.248.4：cfg:siyi-points 下行合并——三池+到期戳各自取 max、welcomeGranted 取或
+//   （当前 SP 只有发放没有消耗，单调增=max 安全；缺字段 undefined 比较恒 false 天然兜底）
+function mergeSiyiPointsRow(v: string | undefined): void {
+  if (v === undefined) {
+    return;
+  }
+  let cloud: SiyiRowPayload | null = null;
+  try {
+    cloud = JSON.parse(v) as SiyiRowPayload;
+  } catch (_e) {
+    return; // 云端坏行——保持本地，flush 上行好值自愈
+  }
+  const s = connectSiyiPoints();
+  let changed = false;
+  if (cloud.permanentSp > s.permanentSp) {
+    s.permanentSp = cloud.permanentSp;
+    changed = true;
+  }
+  if (cloud.bonusSp > s.bonusSp) {
+    s.bonusSp = cloud.bonusSp;
+    changed = true;
+  }
+  if (cloud.giftSp > s.giftSp) {
+    s.giftSp = cloud.giftSp;
+    changed = true;
+  }
+  if (cloud.giftSpExpireAt > s.giftSpExpireAt) {
+    s.giftSpExpireAt = cloud.giftSpExpireAt;
+    changed = true;
+  }
+  if (cloud.welcomeGranted && !s.welcomeGranted) {
+    s.welcomeGranted = true;
+    changed = true;
+  }
+  if (changed) {
+    scheduleRowFlush();
+  }
 }
 
 // ---- 显式墓碑入口（★ 0.230.1：del 行唯一合法出生通道——用户显式删除操作专用） ----

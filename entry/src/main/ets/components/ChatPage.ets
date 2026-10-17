@@ -3028,7 +3028,31 @@ export struct ChatPage {
   getReviewWords(messageId: string, rerollSeq: number = 0): WordItem[] {
     const cached = this.reviewCache.get(messageId);
     if (cached) {
-      return cached.items.filter((w: WordItem) => this.wordBank.words.includes(w));
+      // ★ 0.248.6：缓存条目按 id 接回新库（原 includes 引用过滤在云同步 reconcile 整库
+      //   重建 WordItem 后全部失配——AI 回复完成触发上行→下行合并→司忆区瞬间滤空只剩
+      //   分隔线；id 稳定，重建后按 id 接回新对象，展示与评分均落最新实体）
+      let allRef = true;
+      for (let i = 0; i < cached.items.length; i++) {
+        if (!this.wordBank.words.includes(cached.items[i])) {
+          allRef = false;
+          break;
+        }
+      }
+      if (allRef) {
+        return cached.items;
+      }
+      const byId = new Map<string, WordItem>();
+      for (let i = 0; i < this.wordBank.words.length; i++) {
+        byId.set(this.wordBank.words[i].id, this.wordBank.words[i]);
+      }
+      const out: WordItem[] = [];
+      for (let i = 0; i < cached.items.length; i++) {
+        const nw = byId.get(cached.items[i].id);
+        if (nw !== undefined) {
+          out.push(nw);
+        }
+      }
+      return out;
     }
     const now = Date.now();
     const cachedOffset = this.rerollWordOffsets.get(messageId);
@@ -3700,7 +3724,29 @@ export struct ChatPage {
   getKnowledgeCards(messageId: string, rerollSeq: number = 0): KnowledgeCard[] {
     const cached = this.knowledgeReviewCache.get(messageId);
     if (cached) {
-      return cached.items.filter((c: KnowledgeCard) => this.knowledgeBank.cards.includes(c));
+      // ★ 0.248.6：同 getReviewWords——按 id 接回新库，云同步整库重建后引用失配不再滤空
+      let allRef = true;
+      for (let i = 0; i < cached.items.length; i++) {
+        if (!this.knowledgeBank.cards.includes(cached.items[i])) {
+          allRef = false;
+          break;
+        }
+      }
+      if (allRef) {
+        return cached.items;
+      }
+      const byId = new Map<string, KnowledgeCard>();
+      for (let i = 0; i < this.knowledgeBank.cards.length; i++) {
+        byId.set(this.knowledgeBank.cards[i].id, this.knowledgeBank.cards[i]);
+      }
+      const out: KnowledgeCard[] = [];
+      for (let i = 0; i < cached.items.length; i++) {
+        const nc = byId.get(cached.items[i].id);
+        if (nc !== undefined) {
+          out.push(nc);
+        }
+      }
+      return out;
     }
     const now = Date.now();
     const cachedOffset = this.rerollCardOffsets.get(messageId);
@@ -4602,8 +4648,10 @@ export struct ChatPage {
 
                          // ★ 0.145：生词复习区——词库非空时在 AI 气泡底部展示随机 2 词（词条式布局，与下方知识卡片风格统一）
                          // （仅 AI 气泡渲染，本分支天然不含用户消息；缓存按消息 ID，词库长度变化时重抽）
-                         // ★ UI 定稿：普通词 2 行（词+音标/释义）、缩略词 3 行（+全称）；行内超宽横向滑动，不换行不省略，行高恒定
-                         if (this.wordBank.words.length > 0) {
+                          // ★ UI 定稿：普通词 2 行（词+音标/释义）、缩略词 3 行（+全称）；行内超宽横向滑动，不换行不省略，行高恒定
+                          // ★ 0.248.6：加数量>0 判断——设置设 0（=关闭）时词条抽空但 Divider 仍渲染，
+                          //   视觉上多出一条空横线；关闭语义须整块不渲染（含分隔线），两区同理
+                          if (this.wordBank.words.length > 0 && this.learnCountStore.learnCount > 0) {
                            Divider()
                              .strokeWidth(0.5)
                              .color(STROKE_CARD)
@@ -4760,7 +4808,8 @@ export struct ChatPage {
                           // （N=知识卡片数量，知识库 ⚙ 设置，★ 0.161.2 单卡改多卡；与上方单词复习区并列，
                           // 📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID；每卡独立横向滚动行、纵向排列——与生词区同款）
                           // ★ UI 定稿：卡片 2 行（标题+图片icon/定义）；有图才显示 🖼️ 指示（不用小缩略图）；行内超宽横向滑动
-                          if (this.knowledgeBank.cards.length > 0) {
+                          // ★ 0.248.6：加数量>0 判断（同生词区——设 0 关闭时整块连同分隔线一起消失）
+                          if (this.knowledgeBank.cards.length > 0 && this.knowledgeCountStore.knowledgeCount > 0) {
                             Divider()
                               .strokeWidth(0.5)
                               .color(STROKE_CARD)
