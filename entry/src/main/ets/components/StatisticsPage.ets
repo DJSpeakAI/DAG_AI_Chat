@@ -15,6 +15,7 @@ import { streamChat } from '../utils/ApiClient';
 import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.202.3：测试数据 seed marker
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY } from '../common/DesignTokens';
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
+import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默置空）
 import { BG_CANVAS } from '../common/DesignTokens'; // ★ 0.230.0
 
 // 柱状图桶（一个周期一根柱）
@@ -312,7 +313,8 @@ export struct StatisticsPage {
   // ── AI 鼓励请求（档位跟随设置；off 不生成；称谓拼入；核心=数据再差也找优点）──
   // ★ 0.193.0：prompt 迁入 Prompts.ts（buildStatEncouragePrompt 单一真相源）
   requestAiEncourage(): void {
-    if (this.aiPreference.encourageMode === 'off') {
+    // ★ 0.248.2：AI 合规守卫——未登录不调 AI（自动触发场景静默置空，不弹窗打扰）
+    if (this.aiPreference.encourageMode === 'off' || !connectHuaweiAccount().isLoggedIn) {
       this.aiText = '';
       return;
     }

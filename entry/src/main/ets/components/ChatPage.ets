@@ -58,6 +58,8 @@ import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
+import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）
+import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.248.2：AI 登录引导弹窗桥（Index 根 Stack 消费）
 
 // ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
 const glowHighlight: boolean = true;
@@ -1731,6 +1733,11 @@ export struct ChatPage {
     if (this.isLoading && this.streamController === null) {
       this.isLoading = false;
     }
+    // ★ 0.248.2：AI 登录守卫（上架合规最高优先——未登录发消息拦截 + 引导登录；置于一切 guard 之前）
+    if (!connectHuaweiAccount().isLoggedIn) {
+      connectConfirmDialog().aiLoginPromptVisible = true;
+      return;
+    }
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
@@ -1886,6 +1893,11 @@ export struct ChatPage {
     // ★ 0.190.4：卡死自愈（同 sendMessage，须在 guard 前）
     if (this.isLoading && this.streamController === null) {
       this.isLoading = false;
+    }
+    // ★ 0.248.2：AI 登录守卫（同 sendMessage——重新生成同属 AI 生成内容，合规口径一致）
+    if (!connectHuaweiAccount().isLoggedIn) {
+      connectConfirmDialog().aiLoginPromptVisible = true;
+      return;
     }
     if (this.isLoading || !this.currentBubble) {
       return;

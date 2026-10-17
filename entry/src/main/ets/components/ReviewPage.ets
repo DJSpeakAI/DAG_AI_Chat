@@ -27,6 +27,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 import { REVIEW_HARD, REVIEW_GOOD, REVIEW_EASY, REVIEW_HARD_BG, REVIEW_GOOD_BG, REVIEW_EASY_BG, BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（原居本文件——外提防 WidgetHostBridge 反向成环）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
+import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默走 fallback）
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -296,7 +297,8 @@ export struct ReviewPage {
     const good = this.mode === 'word' ? this.dailyState.wordGood : this.dailyState.knowledgeGood;
     const easy = this.mode === 'word' ? this.dailyState.wordEasy : this.dailyState.knowledgeEasy;
     const fallback = `今天你又复习了 ${total} 个${unit}，继续保持！`;
-    if (this.aiPreference.encourageMode === 'off') {
+    // ★ 0.248.2：AI 合规守卫——未登录不调 AI（自动触发场景静默走本地 fallback，不弹窗打扰）
+    if (this.aiPreference.encourageMode === 'off' || !connectHuaweiAccount().isLoggedIn) {
       this.aiText = fallback;
       return;
     }

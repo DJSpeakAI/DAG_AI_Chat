@@ -647,7 +647,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.248.1') // ★ 0.248.1：删首登欢迎弹窗+气泡树排版垂直居中回归;上一版 0.248.0：司忆点中心+划词三端统一+边栏SP资产行+桌面卡片等级/SP;更早历史见 MEMORY.md
+        Text('v0.248.2') // ★ 0.248.2：AI 登录守卫(未登录禁止问AI);上一版 0.248.1：删首登欢迎弹窗+气泡树排版垂直居中回归;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -776,6 +776,24 @@ struct Index {
       },
       onCancel: () => {
         this.confirmDialog.loginPromptVisible = false;
+      }
+    })
+    // ★ 0.248.2：未登录发消息问 AI → 登录引导弹窗（上架合规：AI 生成内容仅限实名华为账号用户；
+    //   中国区华为账号注册即强制实名，登录守卫=实名等效闭环。ChatPage 发送/重生成触发；
+    //   fromSyncEntry=false 普通路径登录，协议门禁由 doLogin 内 AgreementDialog 链继承）
+    AppConfirmDialog({
+      visible: this.confirmDialog.aiLoginPromptVisible,
+      title: '需要登录',
+      message: '使用 AI 对话功能需先登录华为账号。',
+      confirmText: '登录华为账号',
+      cancelText: '取消',
+      confirmOnLeft: true,
+      onConfirm: () => {
+        this.confirmDialog.aiLoginPromptVisible = false;
+        this.doLogin(false);
+      },
+      onCancel: () => {
+        this.confirmDialog.aiLoginPromptVisible = false;
       }
     })
     // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）
