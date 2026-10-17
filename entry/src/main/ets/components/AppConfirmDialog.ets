@@ -19,6 +19,7 @@ export class ConfirmDialogStore {
   @Trace cloudSyncPromptVisible: boolean = false; // 登录后「是否开启云同步」询问（三条登录路径触发）
   @Trace loginPromptVisible: boolean = false; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导（设置页触发）
   @Trace aiLoginPromptVisible: boolean = false; // ★ 0.248.2：未登录发消息问 AI → 登录引导（上架合规：AI 生成内容限实名华为账号用户——ChatPage 发送/重生成等入口触发）
+  @Trace spRechargePromptVisible: boolean = false; // ★ 0.248.7：SP 余额为 0 发消息 → 充能引导（实扣链路上线；ChatPage 发送/重生成触发，确认跳账单页充能）
 }
 
 // 连接应用级单例（key 'confirm-dialog'）

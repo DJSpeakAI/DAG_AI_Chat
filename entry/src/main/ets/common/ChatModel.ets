@@ -836,30 +836,60 @@ export function vipDaysLeft(store: SubscriptionStore): number {
 
 // ============================================================
 // ★ 0.248.0：司忆点（SP）资产体系——三池余额+新用户礼包+等级头衔（用户拍板商业方案 V2.1）
-//   池语义：充能池=充值购买（永久）；嘉奖池=兑换码/签到/学习发放（永久）；
-//   赠送池=新用户礼包（90 天效）；消耗顺序=先扣临期赠送→嘉奖→充能（消耗链路待开发）
+//   ★ 0.248.5：有效期全取消（用户拍板）——所有 SP 一经获得永久有效；对外口径统一「嘉奖 SP」
+//     （禁「赠送」字样，见 UI_GUIDELINES 第十八章）；消耗顺序=先扣嘉奖（gift+bonus）→充能（permanent）
+//   池语义：充能池=充值购买（永久）；嘉奖池=兑换码/签到/学习/新用户礼包（永久）；
+//   赠送池字段（giftSp/giftSpExpireAt）按 Schema 铁律保留不再消费——旧到期戳自动作废（零迁移）
 //   存储：PersistenceV2 全新 key（0.185 铁律：全新 key 无旧快照坑）
 // ============================================================
 @ObservedV2
 export class SiyiPointStore {
-  @Trace permanentSp: number = 0;         // 充能池（充值购买，永久）
-  @Trace bonusSp: number = 0;             // 嘉奖池（兑换码/签到/学习，永久）
-  @Trace giftSp: number = 0;              // 赠送池（新用户礼包，90 天效）
-  @Trace giftSpExpireAt: number = 0;      // 赠送池到期时间戳（0=无）
+  @Trace permanentSp: number = 0;         // 充能池（充值购买，永久；★ 0.248.7 起语义=发放累计，余额=发放-消耗）
+  @Trace bonusSp: number = 0;             // 嘉奖池（兑换码/签到/学习，永久；★ 0.248.7 起语义=发放累计）
+  @Trace giftSp: number = 0;              // 赠送池（新用户礼包入此池；0.248.5 起并入嘉奖口径展示、永久）
+  @Trace giftSpExpireAt: number = 0;      // ★ 0.248.5 弃用（Schema 禁删；旧值不再被消费）
   @Trace welcomeGranted: boolean = false; // 新用户礼包已发放标记（一次性）
+  // ★ 0.248.7 SP 消耗链路（尾部追加默认 0，Schema 铁律合规）——池改「发放累计」语义，
+  //   三字段=对应池累计消耗（单调递增只增不减）：多端 max 合并单调自洽（发放/消耗都只增，
+  //   余额=发放-消耗 永不回滚；双端并发消耗窗口 max 只取大者=少扣不回滚，对用户有利可接受）
+  @Trace consumedGiftSp: number = 0;
+  @Trace consumedBonusSp: number = 0;
+  @Trace consumedPermanentSp: number = 0;
 }
 
 export function connectSiyiPoints(): SiyiPointStore {
   return PersistenceV2.connect(SiyiPointStore, 'siyi-points-v1', () => new SiyiPointStore()) as SiyiPointStore;
 }
 
-// 司忆点总余额（三池合计；赠送池过期不计）
+// 司忆点总余额（三池合计；★ 0.248.5 有效期取消——giftSp 恒计入；
+//   ★ 0.248.7 池语义升级=发放累计，余额=各池发放-各池消耗，clamp 0 防异常负数）
 export function siyiTotalSp(store: SiyiPointStore): number {
-  let total = store.permanentSp + store.bonusSp;
-  if (store.giftSp > 0 && (store.giftSpExpireAt === 0 || store.giftSpExpireAt > Date.now())) {
-    total += store.giftSp;
+  return Math.max(0, store.permanentSp - store.consumedPermanentSp)
+    + Math.max(0, store.bonusSp - store.consumedBonusSp)
+    + Math.max(0, store.giftSp - store.consumedGiftSp);
+}
+
+// ★ 0.248.7 SP 实扣（AI 回复完成按实扣口径结算）——消耗顺序=先嘉奖（gift→bonus）→充能（permanent，
+//   0.248.5 军令）；只记累计消耗不回退发放值（云同步 max 合并下单调安全）；余额不足时扣到 0 为止；
+//   返回是否扣到账（false=余额已为 0 一分未扣，调用方以此决定是否引导充值）
+export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
+  if (amount <= 0) {
+    return true;
   }
-  return total;
+  let remain = Math.min(amount, siyiTotalSp(store));
+  if (remain <= 0) {
+    return false;
+  }
+  const g = Math.min(remain, Math.max(0, store.giftSp - store.consumedGiftSp));
+  store.consumedGiftSp += g;
+  remain -= g;
+  const b = Math.min(remain, Math.max(0, store.bonusSp - store.consumedBonusSp));
+  store.consumedBonusSp += b;
+  remain -= b;
+  const p = Math.min(remain, Math.max(0, store.permanentSp - store.consumedPermanentSp));
+  store.consumedPermanentSp += p;
+  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
+  return true;
 }
 
 // 等级头衔（0.247.7 七级表）：Lv1 注册即得 / Lv2 累计7天 / Lv3 30 / Lv4 90 / Lv5 180 / Lv6 300 / Lv7 连续365
@@ -891,7 +921,7 @@ export function siyiLevelTitle(learnDays: number): string {
 export const SIYI_FIRST_MONTH_END: number = new Date(2026, 10, 30, 23, 59, 59).getTime();
 export const SIYI_WELCOME_FIRST_MONTH: number = 2000000;
 export const SIYI_WELCOME_NORMAL: number = 1000000;
-export const SIYI_GIFT_VALID_DAYS: number = 90;
+
 
 // 新用户礼包发放（一次性）：首次登录华为账号时调（与 stampFreeTrialOnLogin 同链路——三入口登录
 // 后处理都过 stamp，礼包随戳发放=天然全覆盖；0.217.2 教训：多入口登录新增入口最易漏一环）
@@ -902,7 +932,7 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
   store.welcomeGranted = true;
   const amount = Date.now() < SIYI_FIRST_MONTH_END ? SIYI_WELCOME_FIRST_MONTH : SIYI_WELCOME_NORMAL;
   store.giftSp += amount;
-  store.giftSpExpireAt = Date.now() + SIYI_GIFT_VALID_DAYS * 86400000;
+  // ★ 0.248.5：有效期取消——不再设置 giftSpExpireAt（礼包永久）
   scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
   return true;
 }
@@ -975,7 +1005,7 @@ export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPoi
   }
   used.push(code);
   store.redeemedCodes = JSON.stringify(used);
-  // ★ 0.248.0：入嘉奖池（永久；消耗顺序=先扣赠送→嘉奖→充能，由消耗链路执行）
+  // ★ 0.248.0：入嘉奖池（永久；消耗顺序=★ 0.248.5 先扣嘉奖→充能，由消耗链路执行）
   siyi.bonusSp += SIYI_REDEEM_SP;
   // 记账（文案不泄露兑换码权益构成——用户拍板「不让用户知道兑换码能获得什么」）
   let history: string[] = [];
@@ -2780,12 +2810,16 @@ function mergeStatDaysRow(v: string | undefined): void {
 }
 
 // ★ 0.248.4：cfg:siyi-points 行 payload（普通 class——非 @ObservedV2，stringify 可枚举无 0.205.4 坑）
+//   ★ 0.248.7：尾部追加三消耗字段（发放/消耗双侧单调——max 合并语义自洽）
 class SiyiRowPayload {
   permanentSp: number = 0;
   bonusSp: number = 0;
   giftSp: number = 0;
   giftSpExpireAt: number = 0;
   welcomeGranted: boolean = false;
+  consumedGiftSp: number = 0;
+  consumedBonusSp: number = 0;
+  consumedPermanentSp: number = 0;
 }
 
 function siyiPointsToJson(): string {
@@ -2796,11 +2830,15 @@ function siyiPointsToJson(): string {
   p.giftSp = s.giftSp;
   p.giftSpExpireAt = s.giftSpExpireAt;
   p.welcomeGranted = s.welcomeGranted;
+  p.consumedGiftSp = s.consumedGiftSp;
+  p.consumedBonusSp = s.consumedBonusSp;
+  p.consumedPermanentSp = s.consumedPermanentSp;
   return JSON.stringify(p);
 }
 
 // ★ 0.248.4：cfg:siyi-points 下行合并——三池+到期戳各自取 max、welcomeGranted 取或
 //   （当前 SP 只有发放没有消耗，单调增=max 安全；缺字段 undefined 比较恒 false 天然兜底）
+//   ★ 0.248.7：三消耗字段同 max（发放/消耗双侧单调——扣减不会被对端旧值回填复活）
 function mergeSiyiPointsRow(v: string | undefined): void {
   if (v === undefined) {
     return;
@@ -2831,6 +2869,18 @@ function mergeSiyiPointsRow(v: string | undefined): void {
   }
   if (cloud.welcomeGranted && !s.welcomeGranted) {
     s.welcomeGranted = true;
+    changed = true;
+  }
+  if (cloud.consumedGiftSp > s.consumedGiftSp) {
+    s.consumedGiftSp = cloud.consumedGiftSp;
+    changed = true;
+  }
+  if (cloud.consumedBonusSp > s.consumedBonusSp) {
+    s.consumedBonusSp = cloud.consumedBonusSp;
+    changed = true;
+  }
+  if (cloud.consumedPermanentSp > s.consumedPermanentSp) {
+    s.consumedPermanentSp = cloud.consumedPermanentSp;
     changed = true;
   }
   if (changed) {

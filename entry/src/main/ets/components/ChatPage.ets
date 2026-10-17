@@ -32,7 +32,7 @@ import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（Doc
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
 
- import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）
+ import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
@@ -557,6 +557,7 @@ export struct ChatPage {
   //   超 40 条全清防膨胀——单气泡消息量级下极少触发）
   private planCache: Map<string, PlanCacheEntry> = new Map();
   statStore: StatisticsStore = connectStatistics(); // ★ 0.192.0：学习统计（只增不减，删除消息/气泡不影响已统计数据）
+  siyiStore: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.7：司忆点（发送前余额闸门+回复完成实扣）
   canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：画布模式（'flat'/'tabs'，独立 key 'canvas-mode-v1'）
   tabForest: TabForestStore = connectTabForest();         // ★ 0.151：Tab 池（tabsJson + activeTabId，独立 key 'tab-forest-v1'）
   @Local inputText: string = '';
@@ -643,7 +644,8 @@ export struct ChatPage {
   //   （空串=全关）；tokenInfoText=打开瞬间文本快照，无参 @Builder 直读（0.190.1 带参 @Builder 按值传参铁律）
   @Local tokenInfoMsgId: string = '';
   @Local tokenInfoText: string = '';
-  @Local tokenInfoCacheLine: string = ''; // ★ 0.247.4：缓存命中行（空串=不渲染——无缓存数据/旧消息）
+  @Local tokenInfoCacheLine: string = ''; // ★ 0.247.4：缓存命中行（空串=不渲染——无缓存数据/旧消息；★ 0.248.7 恒显示后仅输入 token 缺失时为空）
+  @Local tokenInfoCacheHit: boolean = false; // ★ 0.248.7：缓存行命中态（true=品牌紫省钱行 / false=普通色未命中行）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.161：学习数量（单词库 ⚙ 设置，默认 2；驱动气泡复习区+提炼弹窗复习区词条数）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.161.2：知识卡片数量（知识库 ⚙ 设置，默认 1 保持现状；驱动气泡复习区+提炼弹窗复习区卡片数）
@@ -1738,6 +1740,12 @@ export struct ChatPage {
       connectConfirmDialog().aiLoginPromptVisible = true;
       return;
     }
+    // ★ 0.248.7：SP 余额闸门（实扣链路上线——余额为 0 拦截发送并引导充能；余额>0 放行，
+    //   单次消耗远小于余额不做预估拦截，回复完成按实扣、不足扣到 0 为止）
+    if (siyiTotalSp(this.siyiStore) <= 0) {
+      connectConfirmDialog().spRechargePromptVisible = true;
+      return;
+    }
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
@@ -1852,6 +1860,7 @@ export struct ChatPage {
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
         aiMsg.cacheHitTokens = cachedTokens;
+        consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
         // 流式完成时滚到底部
@@ -1897,6 +1906,11 @@ export struct ChatPage {
     // ★ 0.248.2：AI 登录守卫（同 sendMessage——重新生成同属 AI 生成内容，合规口径一致）
     if (!connectHuaweiAccount().isLoggedIn) {
       connectConfirmDialog().aiLoginPromptVisible = true;
+      return;
+    }
+    // ★ 0.248.7：SP 余额闸门（同 sendMessage——重生成同属 AI 调用，实扣口径一致）
+    if (siyiTotalSp(this.siyiStore) <= 0) {
+      connectConfirmDialog().spRechargePromptVisible = true;
       return;
     }
     if (this.isLoading || !this.currentBubble) {
@@ -1963,6 +1977,7 @@ export struct ChatPage {
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
         msg.cacheHitTokens = cachedTokens;
+        consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
         this.scroller.scrollEdge(Edge.Bottom);
@@ -2607,6 +2622,16 @@ export struct ChatPage {
     return `输入 ${inSp} SP · 输出 ${outSp} SP`; // ★ 0.247.8：去「预估」前缀（用户拍板——明细行省字，预估语义挪到缓存节省行）
   }
 
+  // ★ 0.248.7：本次 AI 调用实扣 SP（与 tokenDisplayText 同公式同口径——明细行显示多少、账户就扣多少，
+  //   展示与扣点永远一致；实扣=输入未命中×1+命中×0.02+输出×4，÷7×2 换算四舍五入）
+  spCostOf(msg: ChatMessage): number {
+    const hit = Math.min(msg.cacheHitTokens, msg.inputTokens);
+    const miss = msg.inputTokens - hit;
+    const inSp = Math.round((miss * SP_INPUT_PRICE_RATIO + hit * SP_HIT_PRICE_RATIO) / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+    const outSp = Math.round(msg.outputTokens * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+    return inSp + outSp;
+  }
+
   // ★ 0.247.3：token 明细弹层 builder（感叹号弹出）——无参 @Builder 直读 tokenInfoText 快照；
   //   ★ 0.247.4：命中缓存的回复追加「缓存命中 X% · 预估节省 N SP」行（节省算法见 SP_CACHE_SAVING_RATIO；0.247.8「帮你」→「预估」）；
   //   ★ 0.247.5：用户实测默认弹层太素难看——改自绘卡片容器（SURFACE_NODE 底+STROKE_CARD 描边+radius 12，
@@ -2625,7 +2650,7 @@ export struct ChatPage {
           .margin({ top: 9, bottom: 9 })
         Text(this.tokenInfoCacheLine)
           .fontSize(13)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.tokenInfoCacheHit ? BRAND_SECONDARY : TEXT_PRIMARY) // ★ 0.248.7：命中=品牌紫省钱高亮 / 未命中=普通色
           .textAlign(TextAlign.Center)
           .width('100%')
       }
@@ -5062,10 +5087,19 @@ export struct ChatPage {
                                   this.tokenInfoText = this.tokenDisplayText(msg);
                                   // ★ 0.247.4：缓存命中行（节省 SP=命中 token × 省钱比例 ÷7×2，四舍五入——用户口径
                                   //   「拿输入价当标准、差价换算成 SP」；percent=命中占全部输入 token 比例）
-                                  if (msg.cacheHitTokens > 0 && msg.inputTokens > 0) {
-                                    const percent = Math.round((msg.cacheHitTokens / msg.inputTokens) * 100);
-                                    const savedSp = Math.round(msg.cacheHitTokens * SP_CACHE_SAVING_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
-                                    this.tokenInfoCacheLine = `缓存命中 ${percent}% · 预估节省 ${savedSp} SP`; // ★ 0.247.8：「帮你节省」→「预估节省」（用户拍板——估算属性标注挪到省钱行）
+                                  //   ★ 0.248.7：改恒显示（用户报「缓存行看不到」——腾讯云 MaaS 对 deepseek-flash
+                                  //   恒不透传 cached_tokens（长前缀同前缀两轮 curl 实锤恒 0），原「命中才显示」
+                                  //   设计下该行永不出现；改两态：命中>0 紫色省钱行（builder 分色）、未命中普通行
+                                  //   消除「功能消失了」的困惑，云端将来支持命中时自然显示省钱）
+                                  if (msg.inputTokens > 0) {
+                                    if (msg.cacheHitTokens > 0) {
+                                      const percent = Math.round((msg.cacheHitTokens / msg.inputTokens) * 100);
+                                      const savedSp = Math.round(msg.cacheHitTokens * SP_CACHE_SAVING_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+                                      this.tokenInfoCacheLine = `缓存命中 ${percent}% · 预估节省 ${savedSp} SP`; // ★ 0.247.8：「帮你节省」→「预估节省」（用户拍板——估算属性标注挪到省钱行）
+                                    } else {
+                                      this.tokenInfoCacheLine = '本轮输入未命中缓存';
+                                    }
+                                    this.tokenInfoCacheHit = msg.cacheHitTokens > 0;
                                   } else {
                                     this.tokenInfoCacheLine = '';
                                   }

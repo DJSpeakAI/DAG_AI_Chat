@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.248.6'; // ★ 0.248.6：司忆区两 bug 修复;上一版 0.248.4：账号级资产多端同步
+const APP_VERSION: string = 'v0.248.7'; // ★ 0.248.7：SP实扣链路+缓存行恒显示;上一版 0.248.5：SP有效期取消
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2900,7 +2900,7 @@ export struct GlobalSettingsDialog {
         this.siyiGainRow('连续签到 7 天', '额外 +10,000 SP')
         this.siyiGainRow('连续签到 30 天', '额外 +50,000 SP')
         this.siyiGainRow('连续签到 100 天', '额外 +200,000 SP')
-        this.siyiGainRow('新用户注册礼包', '首月 +2,000,000 SP / 此后 +1,000,000 SP（90 天内有效）')
+        this.siyiGainRow('新用户注册礼包', '首月 +2,000,000 SP / 此后 +1,000,000 SP（永久有效）')
         this.siyiGainRow('兑换码', '+1,000,000 SP')
         this.siyiGainRow('充能', '¥9.9 → 200 万 SP / ¥19 → 400 万 SP')
       }
@@ -2910,14 +2910,14 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // 规则说明卡（★ 0.248.0：充能/嘉奖口径）
+      // 规则说明卡（★ 0.248.0：充能/嘉奖口径；★ 0.248.5：有效期取消+消耗顺序先嘉奖后充能）
       Column({ space: 6 }) {
         Text('规则说明')
           .fontSize(13)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        Text('· 充能购买的 SP 永久有效；签到与学习嘉奖永久有效\n· 新用户注册礼包自领取起 90 天内有效\n· 消耗时优先使用即将到期的赠送 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆宗师」充能时按 85 折额外赠送等值 SP')
+        Text('· 全部 SP 永久有效（充值、嘉奖与新用户礼包均不过期）\n· 消耗时先扣嘉奖 SP，嘉奖用尽后自动扣充能 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆宗师」充能时按 85 折额外赠送等值 SP')
           .fontSize(12)
           .fontColor(TEXT_SECONDARY)
           .width('100%')

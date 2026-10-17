@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.244.0.1'; // ★ 0.244.0.1 云同步陈旧渲染双 bug 回归用例（NODE-LAYOUT/NODE-CHILD-INTACT，app 0.244.0 修复配套）+config 手机 IP 勘正 2.17；上版 0.243.0.2 自动修复闭环二期（官方模型通道+分策重试+红线内容级校验）// 更早历史见 MEMORY.md 版本表
+const VERSION = '0.248.7.1'; // ★ 0.248.7.1 常亮持久化+自愈（keepalive.json 落盘/上线边沿重放/60s 续命，配套 app 0.248.7）+同步套件三端账户资产域断言；上版 0.244.0.1 云同步陈旧渲染回归用例// 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -671,9 +671,16 @@ function summarizeAaTest(out) {
   const f = t.match(/fail(?:ures?|ed)?\s*[:=]\s*(\d+)/i) || t.match(/(\d+)\s+failures?/i);
   if (f && parseInt(f[1], 10) > 0) return { level: 'fail', note: '统计 failure=' + f[1] + '（有用例失败，详见原始日志）' };
   const finished = /your test finished/i.test(t) || (!!rc && rc[1] === '0');
-  const hasA = /app_context_ready/.test(t); const hasB = /bundle_versioncode_valid/.test(t);
-  if (finished && hasA && hasB) return { level: 'pass', note: '测试框架正常结束（ResultCode 0）+ 2 条真断言均执行（app_context_ready + bundle_versioncode_valid）' };
-  if (finished && (hasA || hasB)) return { level: 'warn', note: '框架正常结束但仅命中部分用例名（可能提前中断）' };
+  // ★ 0.248.7.1：断言清单动态化（原「2 条真断言」名单写死——新增 SiyiPoint 5 条后旧判定仍报绿但新用例
+  //   是否真执行不可见，同族 0.241.0.10「缓存复用无身份校验」坑）；名单=全部已注册 hypium 用例名，
+  //   有缺=warn 提示（测试包未重编/用例漏注册），全命中才 pass
+  const KNOWN = ['app_context_ready', 'bundle_versioncode_valid', 'balance_grant_minus_consumed',
+    'consume_order_gift_bonus_permanent', 'consume_over_balance_clamp_to_zero', 'consume_zero_balance_rejected',
+    'balance_never_negative_on_weird_consumed', 'inline_bold', 'inline_code_span'];
+  const hit = KNOWN.filter((k) => t.includes(k));
+  const miss = KNOWN.filter((k) => !t.includes(k));
+  if (finished && hit.length > 0 && miss.length === 0) return { level: 'pass', note: `测试框架正常结束（ResultCode 0）+ ${hit.length} 条断言名全部执行` };
+  if (finished && hit.length > 0) return { level: 'warn', note: `框架正常结束+${hit.length} 条断言命中，但缺 ${miss.length} 条（${miss.slice(0, 3).join('/')}…）——测试包可能未重编或用例漏注册` };
   if (finished) return { level: 'warn', note: '框架正常结束但未识别到用例名（附原始日志尾供核对）' };
   return { level: 'warn', note: '未能从输出识别结果（附原始日志尾供核对）' };
 }
@@ -1646,7 +1653,7 @@ const CASES = [
       ctx.log('★cloud-sync-switch 开关落盘', switchOn ? 'pass' : (g && g.found ? 'fail' : 'warn'),
         g && g.found ? `${g.path} → ${g.sample.slice(0, 200)}${switchOn ? '' : '（12s 内磁盘未见 true——行数已实证同步活，flush 延迟或开关未落盘，人工复核）'}` : '候选路径未命中（RDB 行数断言已兜底）');
     } },
-  { id: 'BOOT-CONVERGE', suite: 'sync-boot', name: '从零③·三端收敛（settle 总行数一致+四域行数/签名三端一致）', semi: false, scope: 'cross',
+  { id: 'BOOT-CONVERGE', suite: 'sync-boot', name: '从零③·三端收敛（settle 总行数一致+全域行数/签名三端一致·含账户资产域）', semi: false, scope: 'cross',
     run: async (ctx) => {
       const devs = ctx.devices;
       if (devs.length < 2) { ctx.log('前置', 'skip', '三端收敛需 ≥2 台在线设备（建议三台全勾——本条是「手机与 Pad/PC 不同步」的总闸断言）'); return; }
@@ -1695,7 +1702,7 @@ const CASES = [
       if (canUiDump(dev)) { const d = await ctx.art.dump(`SYNC-SWITCH-${dev.id}`, 'dump-ui.json', serial); ctx.log('UI 状态快照', d.ok ? 'pass' : 'warn', 'dumpLayout 已存证（设置页开关态人工抽查）'); }
       else uiSkip(ctx.log, dev, 'UI 状态快照');
     } },
-  { id: 'SYNC-DOMAIN', suite: 'sync', name: '四域双端一致（行数+键集签名）', semi: false, scope: 'cross',
+  { id: 'SYNC-DOMAIN', suite: 'sync', name: '全域多端一致·行数+键集签名（词库/卡片/气泡/墓碑/账户资产）', semi: false, scope: 'cross',
     run: async (ctx) => {
       const devs = ctx.devices;
       if (devs.length < 2) { ctx.log('前置', 'skip', '跨端比对需 ≥2 台在线设备'); return; }
@@ -1811,6 +1818,72 @@ const CASES = [
       ctx.log('★node 键集签名对齐', sa.hash && sb.hash && sa.hash === sb.hash ? 'pass' : 'fail', `A=${sa.hash} B=${sb.hash}（不一致=复活/丢失行）`);
       if (canUiDump(b)) await ctx.art.dump('SYNC-PULL-ZERO', 'dump-b-pulled.json', b.serial);
 
+    } },
+  // ★ 0.248.7 SP 实扣链路配套（§12.13 军令）：真机发一条 AI 消息 → 操作端 cfg:siyi-points 行 consumed 三项之和
+  //   增大（回复完成实扣+3s 防抖上行）→ 其余端冷启拉取后同步到同值。余额为 0 时发送被拦（本条应跳过并提示充值）。
+  { id: 'SP-CONSUME', suite: 'sync', name: 'SP 实扣+多端同步（★0.248.7：发 AI 消息→操作端 consumed 增→其余端一致）', semi: true, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      const op = devs[0];
+      if (!canUiDump(op)) { uiSkip(ctx.log, op, 'SP 实扣（UI 操作专属——操作端须可 dump）'); return; }
+      const readSiyi = async (serial) => {
+        const { out, bad } = await sqliteQuery(serial, "select value from cloud_data where key='cfg:siyi-points'");
+        if (bad || !out.trim()) { return { ok: false, raw: String(out).slice(0, 80) }; }
+        try {
+          const v = JSON.parse(out.trim());
+          const consumed = (v.consumedGiftSp || 0) + (v.consumedBonusSp || 0) + (v.consumedPermanentSp || 0);
+          const balance = Math.max(0, (v.permanentSp || 0) - (v.consumedPermanentSp || 0)) + Math.max(0, (v.bonusSp || 0) - (v.consumedBonusSp || 0)) + Math.max(0, (v.giftSp || 0) - (v.consumedGiftSp || 0));
+          return { ok: true, consumed, balance, raw: JSON.stringify(v).slice(0, 180) };
+        } catch (e) { return { ok: false, raw: 'JSON坏行：' + String(out).slice(0, 60) }; }
+      };
+      const b0 = await readSiyi(op.serial);
+      if (!b0.ok) { ctx.log('前置·操作端 siyi 行', 'fail', `读取失败（${b0.raw}）——未登录/未开同步=空库，先跑 sync-boot`); return; }
+      ctx.log('前置·基线', 'pass', `consumed 合计=${b0.consumed} · 余额=${b0.balance}（${op.label}）`);
+      if (b0.balance <= 0) { ctx.log('前置·余额闸门', 'fail', '余额=0——发送应被拦截（0.248.7 闸门）；先充能/兑换后再测实扣'); return; }
+      // ① 冷启→画布→有对话气泡→双击进对话页（复刻 CHAT-KEEP 路径）
+      await coldStart(op.serial);
+      let nav = await uiClickText(op.serial, '气泡树', { waitMs: 2200 });
+      if (!nav.ok) { nav = await uiClickText(op.serial, '进入气泡树', { waitMs: 2600 }); }
+      if (!nav.ok) { await sh(op.serial, 'uitest uiInput keyEvent Back', 15000); await sleep(1500); nav = await uiClickText(op.serial, '气泡树', { waitMs: 2200 }); }
+      if (!nav.ok) { ctx.log('① 进画布', 'fail', '「气泡树」入口未命中'); return; }
+      const d0 = await dumpLayout(op.serial);
+      const hits = findNodeBoundsAll(d0.text, '条对话').filter((h) => !String(h.text).includes('个气泡'));
+      if (!hits.length) { ctx.log('① 找对话气泡', 'fail', '画布无「N条对话」气泡卡——先造一条对话'); return; }
+      const target = hits[hits.length - 1];
+      await uiDoubleClick(op.serial, target.x, target.y);
+      await sleep(2200);
+      // ② 找输入框（hint「输入问题...」）注入并点「发送」
+      const d1 = await dumpLayout(op.serial);
+      const inBox = findNodeHintAll(d1.text, '输入问题')[0];
+      if (!inBox) { ctx.log('② 定位输入框', 'fail', '未命中 hint「输入问题...」（未进对话页？）'); return; }
+      const probe = 'SP' + String(Date.now()).slice(-6);
+      const it = await uiInputText(op.serial, inBox.x, inBox.y, probe);
+      if (!it.ok) { ctx.log('② 注入文本', 'fail', it.raw || 'inputText 失败'); return; }
+      const sd = await uiClickText(op.serial, '发送', { waitMs: 2000 });
+      ctx.log('② 发送', sd.ok ? 'pass' : 'fail', sd.ok ? `已发送「${probe}」(${op.label})` : '「发送」按钮未命中');
+      if (!sd.ok) { return; }
+      // ③ 轮询操作端 consumed 增大（AI 回复完成才扣——0.248.7 实扣时点）
+      const grown = await pollUntil(async () => { const c = await readSiyi(op.serial); return c.ok && c.consumed > b0.consumed; }, 150000);
+      const b1 = await readSiyi(op.serial);
+      ctx.log('★操作端 SP 实扣', grown && b1.ok ? 'pass' : 'fail',
+        grown && b1.ok ? `consumed ${b0.consumed} → ${b1.consumed}（+${b1.consumed - b0.consumed}，余额 ${b1.balance}）——AI 回复完成实扣实锤` : `150s 内 consumed 未增（${b1.ok ? b1.raw : b1.raw}）——回复未完成/未扣点/上行未落，结合 chat 套件排查`);
+      // ④ 其余端冷启拉取→同步到新 consumed（cross 一致性）
+      const rest = devs.slice(1);
+      for (const rd of rest) {
+        await sh(rd.serial, 'aa force-stop ' + CFG.bundle);
+        await sleep(1200);
+        await coldStart(rd.serial, 10000);
+      }
+      if (rest.length) {
+        const synced = await pollUntil(async () => {
+          for (const rd of rest) { const c = await readSiyi(rd.serial); if (!c.ok || c.consumed < b1.consumed) { return false; } }
+          return true;
+        }, 150000);
+        const finals = [];
+        for (const rd of devs) { const c = await readSiyi(rd.serial); finals.push(`${rd.id}=${c.ok ? c.consumed : 'ERR'}`); }
+        ctx.log('★多端 consumed 一致', synced ? 'pass' : 'fail', finals.join(' ') + (synced ? '（实扣已同步）' : '——150s 未同步到（该端未登录/未开同步？）'));
+      }
+      artSave('SP-CONSUME', 'siyi-points.json', { before: b0, after: b1, at: now() });
     } },
 
   // ---------- ★ 0.229.25 功能②b 云同步数据链·跨端编排（SYNC-FLOW：真实 UI 产生→云端→对端收敛，验证"链路活不活"） ----------
@@ -4205,7 +4278,7 @@ function afGreenReport(round, testRes) {
   const L = [];
   L.push('# 自动修复报告 ' + AF.runId + '（全绿收工）');
   L.push('');
-  L.push('- 应用版本：' + (readAppVersionName() || '?') + '（versionCode ' + EXPECTED_VC + '）· 工具 0.243.0.1');
+  L.push('- 应用版本：' + (readAppVersionName() || '?') + '（versionCode ' + EXPECTED_VC + '）· 工具 ' + VERSION);
   L.push('- 设备：' + AF.devices.join('、') + ' · 套件：' + AF.suites.join('、'));
   L.push('- 修复轮次：' + round + ' · 起止：' + new Date(AF.startedAt).toLocaleString('zh-CN') + ' → ' + new Date().toLocaleString('zh-CN'));
   L.push('- 最终测试：✓' + testRes.summary.pass + ' 通过 / ✗' + testRes.summary.fail + ' 失败 / ⚠' + testRes.summary.warn + ' 警告 / −' + testRes.summary.skip + ' 跳过');
@@ -4527,13 +4600,22 @@ async function handler(req, res) {
     const v = await bmVersionCode(dev.serial);
     return json(res, 200, { ok: v.ok && v.code === EXPECTED_VC, expected: EXPECTED_VC, actual: v.code, device: dev.id, label: dev.label, raw: v.raw });
   }
-  if (u.pathname === '/api/devices') { await autoConnectTcpDevices(); const targets = await listTargets(); return json(res, 200, { devices: await probeDevices(), running, targets }); }
+  if (u.pathname === '/api/devices') {
+    await autoConnectTcpDevices();
+    const targets = await listTargets();
+    const devices = await probeDevices();
+    // ★ 0.248.7.1：常亮自愈驱动（前端 30s 轮询即节拍——持久 on 的设备上线边沿重放完整序列、在线 60s 节流续命；不阻塞响应）
+    keepaliveMaintain(devices).catch(() => { /* 自愈尽力，不影响设备探测 */ });
+    return json(res, 200, { devices: devices.map((d) => ({ ...d, ka: KEEPALIVE_SET.has(d.id) })), running, targets });
+  }
   // ★ 0.241.0.5 设备常亮（用户需求：手机测试期一直锁屏卡流程——仿 DevEco 连上设备保持常开）
   // ★ 0.241.0.8 重写（用户实测翻车：点常亮手机被切进深色省电界面+常亮根本没生效外出仍熄屏）——
   //   真凶①=power-shell setmode 602 根本不是「永不休眠」：鸿蒙 PowerMode 枚举 600=正常/601=省电/602=**超省电**——此前实现是切超省电模式（回显 Success 只是切换成功、语义全错，深色界面即其表现）；
   //   真凶②=中部上滑手势（600,2400→600,600）在已解锁桌面上=拉起桌面上滑全局搜索浮层（用户截图半透明侧边栏实锤）——前台扰动。
   //   正解：常亮=power-shell timeout -o 2147483647（临时覆盖休眠超时≈24.8 天，不动用户设置）；off=timeout -r 恢复原值 + setmode 600 救回残留省电模式；
   //   上滑改底部区域（600,2000→600,1200）：锁屏解锁到主屏 / 已解锁桌面底部上滑不触发全局搜索。
+  // ★ 0.248.7.1 常亮持久化+自愈（用户报「测试台显示常亮但手机还是黑屏」）——持久化/边沿检测/续命节流的
+  //   模块级实现在文件尾部 KEEPALIVE_* 区（handler 内定义会在每次请求重建 Map 致边沿失效、30s 重放全套=前台灾难）。
   if (u.pathname === '/api/keepalive' && req.method === 'POST') {
     let body = ''; req.on('data', (d) => { body += d; });
     req.on('end', async () => {
@@ -4544,6 +4626,10 @@ async function handler(req, res) {
         if (!p.on) {
           const t = await sh(dev.serial, 'power-shell timeout -r', 12000); // 恢复用户原始休眠超时
           const r = await sh(dev.serial, 'power-shell setmode 600', 12000); // 切回正常模式（顺带救回旧版 602 误切的超省电）
+          // ★ 0.248.7.1：关=持久态摘除（自愈停转；下次再点=重新落盘）
+          KEEPALIVE_SET.delete(dev.id);
+          KA_WAS_ONLINE.delete(dev.id);
+          saveKeepalive();
           return json(res, 200, { ok: /success|restore|600/i.test(r + ' ' + t), detail: (r.trim() + ' | ' + t.trim()).slice(0, 120), mode: 'normal' });
         }
         const w = await sh(dev.serial, 'power-shell wakeup', 12000);
@@ -4554,6 +4640,13 @@ async function handler(req, res) {
         await sleep(800);
         // ★ 0.241.0.9 修「成功被误报失败」：timeout -o 成功回显=「Override screen off time to …」不含 success 字样（用户真机实锤），判定补 override/restore 关键词；失败时给中文 error（§4 禁裸英文）
         const ok0 = /success|override/i.test(t);
+        if (ok0) {
+          // ★ 0.248.7.1：开=持久态登记（服务/设备/页面任一重启后自愈续命）
+          KEEPALIVE_SET.add(dev.id);
+          KA_WAS_ONLINE.set(dev.id, true);
+          KA_LAST_APPLY.set(dev.id, Date.now());
+          saveKeepalive();
+        }
         return json(res, 200, { ok: ok0, error: ok0 ? '' : '设备未确认常亮（回显：' + (t.trim() || w.trim()).slice(0, 80) + '）', detail: (w.trim() + ' | ' + t.trim()).slice(0, 200), mode: 'always-on' });
       } catch (e) { return json(res, 400, { ok: false, error: String(e) }); }
     });
@@ -4732,6 +4825,57 @@ async function handler(req, res) {
 // 且 /usr/bin/lsof 的 -t/-p 模式平台 bug（空输出/卡死）——故 PID 定位走 inode 双通道：
 //   通道① pid 文件（自己旧实例）  通道② hdc shell 读 /proc/net/tcp 拿 inode → 本机扫 /proc/*/fd 匹配
 const PID_FILE = path.join(ROOT, 'server.pid');
+
+// ============================================================
+// ★ 0.248.7.1 常亮持久化+自愈（模块级——用户报「测试台显示常亮但手机还是黑屏」）
+//   真因=timeout -o 覆盖是 PowerMgr 内存态：手机重启/服务重启/页面刷新（前端 KEEPON 曾是 session 级）
+//   任何一环都让「显示常亮」与「实际常亮」脱节，脱节后无人自愈（手机照常熄屏）。
+//   真机实测实锤：覆盖本身稳定生效（90s 后 dump 仍 OverrideTimeout=2147483647ms），缺的是持久+自愈：
+//   ①状态落盘 keepalive.json（服务重启不丢）；②设备上线边沿（重启/重连后）自动重放完整常亮序列；
+//   ③在线设备 60s 节流续命重刷 timeout -o（幂等，不 wakeup 不上滑不打扰前台）——前端 30s 轮询 /api/devices 即驱动节拍。
+//   ⚠️ 必须模块级：handler 内定义会在每次请求重建 Map → 边沿检测失效 → 每 30s 重放全套序列=前台灾难。
+// ============================================================
+const KEEPALIVE_FILE = path.join(ROOT, 'keepalive.json');
+let KEEPALIVE_SET = new Set();
+try { KEEPALIVE_SET = new Set(JSON.parse(fs.readFileSync(KEEPALIVE_FILE, 'utf8'))); } catch (_) { /* 无文件=空集 */ }
+function saveKeepalive() {
+  try { fs.writeFileSync(KEEPALIVE_FILE, JSON.stringify([...KEEPALIVE_SET])); } catch (e) { console.log('[常亮] 状态落盘失败：' + String(e).slice(0, 80)); }
+}
+const KA_LAST_APPLY = new Map(); // devId → ms（续命节流）
+const KA_WAS_ONLINE = new Map(); // devId → bool（上线边沿检测）
+const KA_BUSY = new Set(); // 防重入
+async function keepaliveMaintain(devs) {
+  for (const d of devs) {
+    if (!KEEPALIVE_SET.has(d.id)) { KA_WAS_ONLINE.set(d.id, d.online); continue; }
+    if (!d.online) { KA_WAS_ONLINE.set(d.id, false); continue; }
+    if (KA_BUSY.has(d.id)) { continue; }
+    const was = KA_WAS_ONLINE.get(d.id) === true;
+    KA_WAS_ONLINE.set(d.id, true);
+    const t = Date.now();
+    if (!was || t - (KA_LAST_APPLY.get(d.id) || 0) > 60000) {
+      KA_BUSY.add(d.id);
+      (async () => {
+        try {
+          if (!was) {
+            // 上线边沿：设备重启/重连 override 必丢——完整序列重放（亮屏+覆盖+底部上滑解锁）
+            await sh(d.serial, 'power-shell wakeup', 12000);
+            await sh(d.serial, 'power-shell setmode 600', 12000);
+            await sh(d.serial, 'power-shell timeout -o 2147483647', 12000);
+            await sleep(600);
+            await sh(d.serial, 'uitest uiInput swipe 600 2000 600 1200', 12000);
+            console.log(`[常亮自愈] ${d.label} 上线边沿——完整常亮序列已重放`);
+          } else {
+            const r = await sh(d.serial, 'power-shell timeout -o 2147483647', 12000); // 在线续命：仅刷覆盖（幂等）
+            if (!/override|success/i.test(r)) { console.log(`[常亮自愈] ${d.label} 续命回显异常：${r.trim().slice(0, 60)}`); }
+          }
+          KA_LAST_APPLY.set(d.id, Date.now());
+        } catch (e) {
+          console.log(`[常亮自愈] ${d.label} 维持失败：${String(e).slice(0, 80)}`);
+        } finally { KA_BUSY.delete(d.id); }
+      })();
+    }
+  }
+}
 function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
 async function localDebugSerial() {
   const targets = await listTargets();

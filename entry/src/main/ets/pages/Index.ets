@@ -647,7 +647,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.248.6') // ★ 0.248.6：司忆区两 bug 修复;上一版 0.248.4：账号级资产多端同步;更早历史见 MEMORY.md
+        Text('v0.248.7') // ★ 0.248.7：SP实扣链路+缓存行恒显示;上一版 0.248.5：SP有效期取消;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -794,6 +794,22 @@ struct Index {
       },
       onCancel: () => {
         this.confirmDialog.aiLoginPromptVisible = false;
+      }
+    })
+    // ★ 0.248.7：SP 余额为 0 发消息 → 充能引导（实扣链路上线；确认跳账单页充能 SP）
+    AppConfirmDialog({
+      visible: this.confirmDialog.spRechargePromptVisible,
+      title: '司忆点已用完',
+      message: '继续使用 AI 对话需要司忆点（SP），前往账单页充能后即可继续。',
+      confirmText: '去充能',
+      cancelText: '取消',
+      confirmOnLeft: true,
+      onConfirm: () => {
+        this.confirmDialog.spRechargePromptVisible = false;
+        this.pathStack.pushPath({ name: 'BillingPage' });
+      },
+      onCancel: () => {
+        this.confirmDialog.spRechargePromptVisible = false;
       }
     })
     // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）

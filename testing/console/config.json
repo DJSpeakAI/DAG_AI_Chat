@@ -75,6 +75,10 @@
     ],
     "删除墓碑": [
       "del:"
+    ],
+    "账户资产": [
+      "cfg:siyi-points",
+      "cfg:stat-days"
     ]
   },
   "poll": {
