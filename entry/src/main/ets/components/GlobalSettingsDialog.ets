@@ -33,7 +33,7 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
- import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, ModelAliasStore, connectModelAlias, snapshotApiConfig, refreshApiCfg } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias（别名按模型 ID 一一对应）；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）
+ import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
@@ -56,7 +56,7 @@ import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流�
 
 import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
-import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER, SUCCESS } from '../common/DesignTokens'; // ★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）；★ 0.238.0：加 SUCCESS（测试连接成功绿）
+import { SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, RADIUS_NODE, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD, DANGER, SUCCESS } from '../common/DesignTokens'; // ★ 0.247.8：加 RADIUS_NODE（司忆点规则卡）；★ 0.190.1：加 BRAND_SECONDARY（模型多模态标注高亮）；★ 0.195.0：加 DANGER（复习显示输入校验错误）；★ 0.238.0：加 SUCCESS（测试连接成功绿）
 import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.230.0：GlobalSettingsSharedStore（开态跨页共享——返回键拦截）
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.238.0：测试连接 http 异常捕获
 
@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.244.0'; // ★ 0.244.0：云同步隐藏期替换 nodeList 致画布陈旧渲染（子气泡重叠+连线悬空）根治；上一版 0.242.0：设置弹窗关闭确认移除；更早历史见 MEMORY.md
+const APP_VERSION: string = 'v0.247.8'; // ★ 0.247.8：感叹号弹层两行文案微调（去预估前缀/帮你→预估节省/216→272 拉宽）；上一版 0.247.7：SP 实扣口径系数+司忆点规则 Tab
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -274,12 +274,9 @@ export struct GlobalSettingsDialog {
   providerKeyCache: Map<string, string> = new Map();
   providerEndpointCache: Map<string, string> = new Map();
 
-  // ★ 0.238.0：模型别名编辑副本（全局单值——不随提供商切换快照/恢复，4 提供商共用一份）
-  //   ★ 0.238.1：升级「按模型 ID 一一对应」——editAlias 仍单值（当前表单选中模型的别名），
-  //   切提供商/切模型时自动从 aliasStore 带出对应模型的别名（输入实时记录，跨重启保留）
-  @Local editAlias: string = '';
-  // ★ 0.238.1：别名映射表（模型 ID→别名，独立 key 'model-alias-v1'——表单回显用）
-  @Local aliasStore: ModelAliasStore = connectModelAlias();
+  // ★ 0.247.1：模型别名机制下线（用户拍板「别名都删除掉」，顶栏模型名固定用原名）——
+  //   editAlias/aliasStore 状态、回显/保存/跟随逻辑、两处「模型别名」输入框全部移除；
+  //   ApiConfig.modelAlias 字段与 ChatModel ModelAliasStore 类保留（持久化 Schema 禁删，存量数据无害无消费）
   // ★ 0.238.0：测试连接（表单当前值发一次最小真实请求；进行中按钮禁用防连点）
   @Local testing: boolean = false;      // 执行中（按钮禁用）
   @Local testResult: string = '';       // 结果文案（空=未测过）
@@ -375,24 +372,7 @@ export struct GlobalSettingsDialog {
     // ★ 0.190.0：Tab1 提供商化初始化——回显持久化配置
     this.editKey = this.apiConfig.apiKey;
     this.editProvider = this.apiConfig.provider;
-    // ★ 0.238.0：模型别名回显 + 测试结果复位（每次开弹窗清零上次结果）
-    // ★ 0.238.1：回显后同步把「当前生效模型的落盘别名」灌进映射表（0.238.0 用户已保存过的别名
-    //   在 map 里还没有记录——灌一次保证切换再切回能自动带出）
-    // ★ 0.240.1：①回显改走映射表（先灌后读）——v4 旧快照 modelAlias 读侧丢失（Pad 实测：保存→重启
-    //   落盘值在而实例读空，model 正常回显唯独别名恒空），map 是别名最全真相源（输入即实时记录）；
-    //   ②搭救回灌：apiConfig.modelAlias 为空而 map 有值 → 回灌（v4→v5 迁移期读侧丢的落盘别名从 map
-    //   复活，ChatPage 消息行即时痊愈，无需用户重存）——时机必须在开弹窗（map 已正常水合；
-    //   ⚠️ 禁在 connectApiConfig 工厂里嵌套 connect map 毒害其水合，ChatModel 有注）
-    if (this.apiConfig.model.length > 0 && this.apiConfig.modelAlias.length > 0 &&
-      this.aliasStore.aliasFor(this.apiConfig.model).length === 0) {
-      this.aliasStore.setAlias(this.apiConfig.model, this.apiConfig.modelAlias);
-    }
-    const savedAlias = this.aliasStore.aliasFor(this.apiConfig.model);
-    if (this.apiConfig.modelAlias.length === 0 && savedAlias.length > 0) {
-      this.apiConfig.modelAlias = savedAlias; // ★ 0.240.1 搭救回灌（落盘立即生效）
-      snapshotApiConfig(); // ★ 0.240.2：方案B拍平存储——回灌结果显式落盘 v5（运行时视图不随字段写自动持久化）
-    }
-    this.editAlias = savedAlias;
+    // ★ 0.247.1：别名回显/搭救回灌段整体删除（别名机制下线，用户拍板）
     this.testing = false;
     this.testResult = '';
     this.testOk = false;
@@ -800,7 +780,7 @@ export struct GlobalSettingsDialog {
     this.apiConfig.apiKey = this.editKey.trim();
     this.apiConfig.model = this.currentModelValue();
     this.apiConfig.endpoint = this.currentEndpointValue();
-    this.apiConfig.modelAlias = this.editAlias.trim(); // ★ 0.238.0：模型别名（空=回落官方模型 ID）
+    // ★ 0.247.1：别名保存赋值删除（机制下线）；apiConfig.modelAlias 字段保留不写（Schema 禁删）
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageMode = this.editEncourageMode;
@@ -985,6 +965,9 @@ export struct GlobalSettingsDialog {
     this.editProvider = target;
     this.isModelDropdownOpen = false;
     this.editKey = this.providerKeyCache.get(target) ?? '';
+    if (target === 'volcano' && this.editKey.length === 0) {
+      this.editKey = getBuiltinVolcanoChatKey(); // ★ 2026-10-17：火山档空 key 回填内置（腾讯云默认化后 apiKey 字段让位）
+    }
     let targetIdx = -1;
     for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
       if (PROVIDER_PRESETS[i].id === target) {
@@ -999,10 +982,17 @@ export struct GlobalSettingsDialog {
       this.editEndpoint = PROVIDER_PRESETS[targetIdx].endpoint;
     } else {
       this.editEndpoint = this.providerEndpointCache.get(target) ?? '';
+      // ★ 2026-10-17：自定义档首次进入（无缓存）预填腾讯云三件套（用户拍板「自定义配置换成腾讯云」；
+      // 存量设备切档即见全套参数可直测——仅预填表单，点保存才落盘；上线后整个 API 配置 Tab 移除）
+      if (this.editEndpoint.length === 0) {
+        this.editEndpoint = TENCENT_CHAT_ENDPOINT;
+        this.editCustomModel = TENCENT_CHAT_MODEL;
+        if (this.editKey.length === 0) {
+          this.editKey = getBuiltinTencentChatKey();
+        }
+      }
     }
-    // ★ 0.238.1：别名跟随模型——切换后自动带出新表单当前模型的别名（一一对应，输入时已实时记录；
-    //   未设过=空串清空，用户原话「之前没设置过就变空」）
-    this.editAlias = this.aliasStore.aliasFor(this.currentModelValue());
+
   }
 
   // ★ 0.190.0：跳浏览器打开「获取 API Key」官网（openLink API12+；失败 toast 不崩溃）
@@ -1643,11 +1633,11 @@ export struct GlobalSettingsDialog {
   @Builder
   providerCardCustom() {
     Column() {
-      Text('自定义配置')
+      Text('腾讯云') // ★ 0.247.4：用户拍板改名（0.246.1 起腾讯云 DeepSeek 即挂本档承载，"自定义配置"名不符实）
         .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor(TEXT_PRIMARY)
-      Text('任意 OpenAI 兼容接口')
+      Text('DeepSeek 服务通道 · 开箱即用')
         .fontSize(11)
         .fontColor(this.editProvider === PROVIDER_CUSTOM ? 'rgba(255,255,255,0.8)' : TEXT_TERTIARY)
         .margin({ top: 2 })
@@ -1716,8 +1706,7 @@ export struct GlobalSettingsDialog {
               .onClick(() => {
                 this.selectedModelIndex = idx;
                 this.isModelDropdownOpen = false;
-                // ★ 0.238.1：别名跟随模型——切下拉自动带出该模型的别名（输入时已实时记录）
-                this.editAlias = this.aliasStore.aliasFor(this.currentModelValue());
+
               })
             }, (m: PresetModel) => m.id)
 
@@ -1738,8 +1727,7 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.selectedModelIndex = PROVIDER_PRESETS[this.curPresetIdx].models.length;
               this.isModelDropdownOpen = false;
-              // ★ 0.238.1：别名跟随模型——切「自定义…」模型 ID 待填，别名先清空（填入 ID 后带出）
-              this.editAlias = this.aliasStore.aliasFor(this.currentModelValue());
+
             })
           }
           .width('100%')
@@ -1782,10 +1770,6 @@ export struct GlobalSettingsDialog {
             .placeholderColor(TEXT_TERTIARY)
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(SURFACE_SOFT)
-            .onChange((value: string) => {
-              // ★ 0.238.1：手填模型 ID 变化→别名框带出该模型的别名（一一对应）
-              this.editAlias = this.aliasStore.aliasFor(value.trim());
-            })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -1824,34 +1808,7 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
-      // ★ 0.238.0：模型别名（应用内展示名——4 提供商共用一份全局配置；留空显示官方模型名）
-      //   ★ 0.238.1：按模型 ID 一一对应——输入即实时记录进 aliasStore（切换提供商/模型自动带出）
-      Column() {
-        Text('模型别名')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-        TextInput({ text: $$this.editAlias, placeholder: '给模型起个展示名（可留空）' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
-          .onChange((value: string) => {
-            // ★ 0.238.1：实时记录到当前表单模型名下（未保存也记——切走再切回自动带出）
-            this.aliasStore.setAlias(this.currentModelValue(), value);
-          })
-        Text('给模型起个应用内展示名称，对话记录里会显示它（类似司忆区的展示名）；留空则显示官方模型名。')
-          .fontSize(11)
-          .lineHeight(18)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ top: 16 })
+      // ★ 0.247.1：预设档「模型别名」输入框整块删除（别名机制下线，用户拍板）
 
       // ★ 0.238.0：测试连接（表单当前值发最小真实请求——未保存也可测；4 提供商共用块）
       this.testConnectionBlock()
@@ -1903,10 +1860,7 @@ export struct GlobalSettingsDialog {
           .placeholderColor(TEXT_TERTIARY)
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(SURFACE_SOFT)
-          .onChange((value: string) => {
-            // ★ 0.238.1：手填模型 ID 变化→别名框带出该模型的别名（一一对应）
-            this.editAlias = this.aliasStore.aliasFor(value.trim());
-          })
+
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -1936,34 +1890,7 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
-      // ★ 0.238.0：模型别名（自定义配置=第 4 提供商同款；与预设共用全局单值 editAlias）
-      //   ★ 0.238.1：按模型 ID 一一对应——输入即实时记录，切提供商/模型自动带出
-      Column() {
-        Text('模型别名')
-          .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
-          .margin({ bottom: 6 })
-        TextInput({ text: $$this.editAlias, placeholder: '给模型起个展示名（可留空）' })
-          .width('100%')
-          .height(48)
-          .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
-          .onChange((value: string) => {
-            // ★ 0.238.1：实时记录到当前表单模型名下（未保存也记——切走再切回自动带出）
-            this.aliasStore.setAlias(this.currentModelValue(), value);
-          })
-        Text('给模型起个应用内展示名称，对话记录里会显示它（类似司忆区的展示名）；留空则显示官方模型名。')
-          .fontSize(11)
-          .lineHeight(18)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ top: 16 })
+      // ★ 0.247.1：自定义档「模型别名」输入框整块删除（别名机制下线，用户拍板）
 
       // ★ 0.238.0：测试连接（自定义配置同款；Key 允许为空的本地网关守卫文案见函数内）
       this.testConnectionBlock()
@@ -2867,6 +2794,156 @@ export struct GlobalSettingsDialog {
     .alignItems(HorizontalAlign.Center)
   }
 
+  // ★ 0.247.8：Tab「司忆点」规则页（用户拍板「app 中也要看到规则，感知层面最好」——
+  //   等级表/获取途径/规则说明全量透明；纯静态展示零状态，V2.0 商业方案 §6/§5 的用户侧镜像；
+  //   防反推铁律：全页不出现 token 与钱-SP 换算，消耗只说「动态计算」）
+  @Builder
+  siyiTabContent() {
+    Column({ space: 12 }) {
+      // 介绍卡
+      Column({ space: 6 }) {
+        Row({ space: 8 }) {
+          Column() {
+            Image($r('app.media.receipt'))
+              .width(20)
+              .height(20)
+              .objectFit(ImageFit.Contain)
+          }
+          .width(36)
+          .height(36)
+          .borderRadius(RADIUS_LOGO)
+          .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+          .justifyContent(FlexAlign.Center)
+          Text('司忆点 SP')
+            .fontSize(15)
+            .fontWeight(600)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .fontColor(TEXT_PRIMARY)
+        }
+        .width('100%')
+        Text('应用内学习点数，AI 对话、知识提炼等功能按次消耗。坚持每日签到与学习，等级越高、奖励越多。')
+          .fontSize(12)
+          .fontColor(TEXT_SECONDARY)
+          .width('100%')
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_NODE)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+
+      // 头衔等级卡（7 级：条件/充值折扣/每日奖励加成）
+      Column({ space: 8 }) {
+        Text('头衔等级')
+          .fontSize(13)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+          .width('100%')
+        this.siyiLevelRow('Lv1', '好奇宝宝', '注册即得', '—', '基础奖励')
+        this.siyiLevelRow('Lv2', '探索学徒', '累计学习 7 天', '—', '奖励 +5%')
+        this.siyiLevelRow('Lv3', '逻辑筑基', '累计 30 天', '充值 98 折', '奖励 +10%')
+        this.siyiLevelRow('Lv4', '深度沉思', '累计 90 天', '充值 96 折', '奖励 +15%')
+        this.siyiLevelRow('Lv5', '知识织网', '累计 180 天', '充值 94 折', '奖励 +20%')
+        this.siyiLevelRow('Lv6', '领域先哲', '累计 300 天', '充值 90 折', '奖励 +25%')
+        this.siyiLevelRow('Lv7', '司忆宗师', '连续 365 天每日学习', '充值 85 折', '奖励 +30%')
+        Text('每日完成签到或学习任务计 1 天进度（每天最多 1 天）。中途断签：等级保留、连击冻结，可用补签卡续接。')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_NODE)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+
+      // 获取途径卡
+      Column({ space: 8 }) {
+        Text('如何获得')
+          .fontSize(13)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+          .width('100%')
+        this.siyiGainRow('每日签到', '+8,000 SP')
+        this.siyiGainRow('完成每日司忆区学习', '+19,000 SP')
+        this.siyiGainRow('连续签到 7 天', '额外 +10,000 SP')
+        this.siyiGainRow('连续签到 30 天', '额外 +50,000 SP')
+        this.siyiGainRow('连续签到 100 天', '额外 +200,000 SP')
+        this.siyiGainRow('新用户注册礼包', '+300,000 SP（90 天内有效）')
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_NODE)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+
+      // 规则说明卡
+      Column({ space: 6 }) {
+        Text('规则说明')
+          .fontSize(13)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+          .width('100%')
+        Text('· 充值购买的 SP 永久有效；签到与学习奖励永久有效\n· 新用户注册礼包自领取起 90 天内有效\n· 消耗时优先使用即将到期的赠送 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆宗师」充值时按 85 折额外赠送等值 SP')
+          .fontSize(12)
+          .fontColor(TEXT_SECONDARY)
+          .width('100%')
+      }
+      .width('100%')
+      .padding(14)
+      .borderRadius(RADIUS_NODE)
+      .backgroundColor(SURFACE_NODE)
+      .border({ width: 1, color: STROKE_CARD })
+
+      Text('每次消耗由模型与对话情况动态计算，以对话页实时展示为准；数值可能随运营活动调整')
+        .fontSize(11)
+        .fontColor(TEXT_TERTIARY)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // ★ 0.247.8：等级表行（左=等级头衔，右=条件与权益两行小字）
+  @Builder
+  siyiLevelRow(lv: string, title: string, cond: string, discount: string, bonus: string) {
+    Row() {
+      Text(`${lv} ${title}`)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(TEXT_PRIMARY)
+        .layoutWeight(2)
+      Column({ space: 2 }) {
+        Text(cond)
+          .fontSize(11)
+          .fontColor(TEXT_SECONDARY)
+        Text(`${discount} · 每日${bonus}`)
+          .fontSize(11)
+          .fontColor(BRAND_SECONDARY)
+      }
+      .alignItems(HorizontalAlign.End)
+      .layoutWeight(3)
+    }
+    .width('100%')
+  }
+
+  // ★ 0.247.8：获取途径行（左名右值）
+  @Builder
+  siyiGainRow(name: string, value: string) {
+    Row() {
+      Text(name)
+        .fontSize(12)
+        .fontColor(TEXT_SECONDARY)
+      Blank()
+      Text(value)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(BRAND_SECONDARY)
+    }
+    .width('100%')
+  }
+
   // ★ 0.190.6：Tab5 关于——版本号 + 反馈与联系（邮箱复制 / mailto 预填设备信息）+ 隐私政策入口
   // ★ 0.222.9：关于页 UI 卡片化重排——品牌信息卡（Logo+应用名+版本号+版权）+ 体验改进 + 反馈 + 隐私
   @Builder
@@ -3148,6 +3225,17 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.switchTab(1, 'pref');
             })
+          Text('司忆点') // ★ 0.247.8：新增「司忆点」规则页（用户拍板「app 中也要看到规则，感知层面最好」——等级/奖励/有效期全量透明；index 2 为历史空位）
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(this.currentTab === 2 ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.currentTab === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.currentTab === 2 ? BRAND_PRIMARY : Color.Transparent)
+            .margin({ left: 4 })
+            .onClick(() => {
+              this.switchTab(2, 'siyi');
+            })
           Text('司忆区') // ★ 0.202.1：改名「复习区」→「司忆区」（用户拍板——取「仓颉司文、此区司忆」之意，凸显注意力驱动记忆的独创性）
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(this.currentTab === 5 ? FontWeight.Medium : FontWeight.Normal)
@@ -3220,6 +3308,8 @@ export struct GlobalSettingsDialog {
             this.apiTabContent()
           } else if (this.currentTab === 1) {
             this.prefTabContent()
+          } else if (this.currentTab === 2) {
+            this.siyiTabContent() // ★ 0.247.8：司忆点规则页（等级/奖励/有效期全量透明）
           } else if (this.currentTab === 5) {
             this.reviewTabContent() // ★ 0.195.0：复习显示 Tab（★ 0.197.2：保存模式——底部有保存按钮）
           } else if (this.currentTab === 4) {
@@ -3243,7 +3333,8 @@ export struct GlobalSettingsDialog {
         // ★ 0.197.3：等宽修复——间隙从「返回」按钮的 margin left 12 改为 Row({ space: 12 })：
         //   margin 参与布局会把返回挤窄 12vp（用户实测两按钮宽度不一样）；space 均分剩余空间，
         //   双按钮 layoutWeight(1) 像素级等宽等高（UI_GUIDELINES 设置弹窗·底部保存按钮行）
-        if (this.currentTab !== 3 && this.currentTab !== 4 && this.currentTab !== 6) {
+        // ★ 0.247.8：司忆点 Tab（2）加入无保存组——纯规则展示，全宽返回
+        if (this.currentTab !== 2 && this.currentTab !== 3 && this.currentTab !== 4 && this.currentTab !== 6) {
           Row({ space: 12 }) {
             Button('保存')
               .layoutWeight(1)

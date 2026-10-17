@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000283, // ★ 0.244.0：云同步隐藏期替换 nodeList 致画布 ForEach 陈旧渲染（子气泡重叠+连线悬空+点错气泡进错对话）根治+流式写穿防丢流尾；上一版 0.242.0：设置弹窗关闭确认移除；更早历史见 MEMORY.md
+    "versionCode": 1000293, // ★ 0.247.8：感叹号弹层两行文案微调（去预估前缀/帮你→预估节省/216→272 拉宽）；上一版 0.247.7：SP 实扣口径系数+司忆点规则 Tab；更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

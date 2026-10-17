@@ -28,13 +28,14 @@ import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
-import { fileIo } from '@kit.CoreFileKit';
+import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（DocumentViewPicker 保存图片——免权限系统保存对话框）
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
- import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, ModelAliasStore, connectModelAlias } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.240.1：ModelAliasStore/connectModelAlias（别名 map 兜底）
+
+ import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
-import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）
+import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
@@ -109,6 +110,17 @@ const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
 
 // ★ 0.222.21：树形连接线每层缩进宽度（vp，与单词库/知识库 TREE_CELL 同款——加词文件夹选择弹窗用）
 const TREE_CELL: number = 14;
+
+// ★ 0.247.4：司忆点 SP 换算常量（V2.0 商业方案定稿 2026-10-17——SP=token÷7×2，结果四舍五入无小数；
+//   ÷7 刻意不整除防反推成本；界面永不出现 token 字样=商业铁律；调价只改本处勿散落逻辑）
+const SP_TOKEN_DIVISOR: number = 7;
+const SP_COST_MULTIPLIER: number = 2;
+// 价格倍数系数（腾讯云 DeepSeek-V4-Flash 实价：输入 1 元 / 命中 0.02 元=1/50 / 输出 4 元 每百万）
+const SP_INPUT_PRICE_RATIO: number = 1;     // 输入·未命中
+const SP_HIT_PRICE_RATIO: number = 0.02;    // 输入·缓存命中（未命中的 1/50）
+const SP_OUTPUT_PRICE_RATIO: number = 4;    // 输出（输入的 4 倍）
+// 缓存节省展示系数：命中部分假如未命中本要按基准价扣，实扣仅 0.02 → 省 98%（1 − 0.02/1）
+const SP_CACHE_SAVING_RATIO: number = 0.98;
 
 // ★ 0.191.0：会话级阅读高度记忆（方案 A）——模块级 Map，页面销毁不丢（同会话内返回画布/切气泡
 // 再回来都在），重启清零（像素值跨设备/字体漂移不做持久化，重启走书签/底部兜底）
@@ -531,7 +543,7 @@ export struct ChatPage {
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.143：换 key 'api-config-v2'（旧快照无 audioKey 字段致新增属性不落盘，工厂迁移历史配置）
-  @Local aliasStore: ModelAliasStore = connectModelAlias(); // ★ 0.240.1：别名映射表（modelDisplayText 的 map 兜底——@ObservedV2 实例挂 @Local 铁律）
+  // ★ 0.247.1：aliasStore 引用删除——别名机制下线（用户拍板），顶栏模型名固定用 apiConfig.model 原名
   bookmarkStore: ChatBookmarkStore = connectChatBookmarks(); // ★ 0.191.0：阅读书签持久化（方案 B，跨重启）
   @Local bookmarkCache: BookmarkEntry | null = null; // ★ 0.191.0：本气泡书签缓存（渲染期高频查询免逐段 JSON 解析）
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：AI 偏好（称呼 + 鼓励开关，独立 key 'ai-preference-v1'）
@@ -558,6 +570,28 @@ export struct ChatPage {
   @Local imageViewerVisible: boolean = false;
   @Local imageViewerIndex: number = 0;
   @Local imageViewerImages: string[] = [];
+  // ★ 0.246.0：查看器缩放+单击/双击判定（对齐知识库 0.211.2 血统：捏合跟手 1~4、双击切换 1↔2.5、单击 320ms 关闭）
+  @Local viewerScale: number = 1;
+  @Local viewerMenuVisible: boolean = false; // ★ 0.247.1：触摸长按保存菜单开态（PC 右键走 bindContextMenu 原样）
+  // ★ 0.247.4：放大态平移——单指拖/PC 左键拖=移动画面（scale>1 才生效；滚轮缩放归 onAxisEvent 不再抢 pan）
+  @Local viewerOffsetX: number = 0;
+  @Local viewerOffsetY: number = 0;
+  private viewerPanBaseX: number = 0;  // 平移手势起点基线（offset 累计值从基线续接，防跳变——画布 0.215.8 同款）
+  private viewerPanBaseY: number = 0;
+  private viewerLastTap: number = 0;
+  private viewerCloseTimerId: number = -1;
+
+  // ★ 0.246.0：每次打开查看器重置缩放（防上次放大态残留）
+  @Monitor('imageViewerVisible')
+  onViewerVisibleChange(): void {
+    if (this.imageViewerVisible) {
+      this.viewerScale = 1;
+      this.viewerOffsetX = 0; // ★ 0.247.4：平移一并归零（上次放大态位移不残留）
+      this.viewerOffsetY = 0;
+      this.viewerLastTap = 0;
+      this.viewerMenuVisible = false; // ★ 0.247.1：菜单态一并重置
+    }
+  }
   // ★ 0.145：划词翻译状态（替代原长按菜单/文本预览/删除确认——旧二级弹窗整体移除）
    @Local selText: string = '';            // 当前选中文本（onTextSelectionChange 时从对应 Text 内容截取）
    @Local selStart: number = -1;           // ★ 0.191.0：选中起始偏移（划词级书签用；-1=无有效选中）
@@ -586,6 +620,10 @@ export struct ChatPage {
   @Local wordPopupResult: WordQueryResult | null = null; // 查词结果（null=未出结果）
    @Local wordPopupError: string = '';         // 查词错误信息
    @Local wordPopupAdded: boolean = false;     // 当前结果已加入单词库（按钮转「已加入」防重复）
+  // ★ 0.246.0：翻译浮窗司忆区——划词查词等待期顺便学习（词库 N 词+知识库 M 卡，⚙ 设置驱动）；
+  //   样式与提炼弹窗复习区同款，独立状态+`wpp|` 前缀 key（与提炼弹窗 `edit|` 互不干扰）
+  @Local wordPopupReviewWords: WordItem[] = [];
+  @Local wordPopupReviewCards: KnowledgeCard[] = [];
    @Local wordExistsTip: boolean = false;      // 「单词已存在」提示（重复添加时显示）
    // ★ 0.222.21：加词目标文件夹选择弹窗（点「加入单词库」弹出；UI 与单词库移动/复制弹窗同款）
    @Local wordFolderPickerVisible: boolean = false;
@@ -596,6 +634,16 @@ export struct ChatPage {
   @Local deleteConfirmMessageId: string = '';   // 待删除的消息 ID
   @Local deleteConfirmNoAsk: boolean = false;   // 弹窗内「不再提示」勾选框当前状态（每次打开复位）
   @Local deleteSkipConfirm: boolean = false;    // 本次会话内已勾选「不再提示」（aboutToAppear 重置）
+  // ★ 0.247.1：PC 判定——true=停用消息滑动删除（PC 鼠标按下拖动是划词手势，被 swipe 抢走）。
+  //   ★ 0.247.2 改设备形态判定：deviceInfo.deviceType==='2in1'（Matebook=2in1）——弃 inputDevice
+  //   sources 探测（Pad/手机外接触控板/蓝牙鼠标或系统虚拟设备即误报 true → 滑动删除被误停）；
+  //   Pad=tablet / 手机=phone 恒保留右滑删除，PC 恒停用。aboutToAppear 同步赋值
+  @Local hasMouse: boolean = false;
+  // ★ 0.247.3：token 明细弹层（感叹号点击弹出「输入 N · 输出 N」）——单开互斥：tokenInfoMsgId 记当前打开的消息 id
+  //   （空串=全关）；tokenInfoText=打开瞬间文本快照，无参 @Builder 直读（0.190.1 带参 @Builder 按值传参铁律）
+  @Local tokenInfoMsgId: string = '';
+  @Local tokenInfoText: string = '';
+  @Local tokenInfoCacheLine: string = ''; // ★ 0.247.4：缓存命中行（空串=不渲染——无缓存数据/旧消息）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.161：学习数量（单词库 ⚙ 设置，默认 2；驱动气泡复习区+提炼弹窗复习区词条数）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.161.2：知识卡片数量（知识库 ⚙ 设置，默认 1 保持现状；驱动气泡复习区+提炼弹窗复习区卡片数）
@@ -1138,8 +1186,7 @@ export struct ChatPage {
         .fontSize(this.fs(14))
         .fontColor(TEXT_SECONDARY)
         .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // ★ 0.246.0：去 maxLines(1)+Ellipsis——锚点（勾子）生成内容显示全部，长文自动换行不截断（用户拍板「后面...绝对不行」）
     }
     .width('100%')
     .padding({ left: 10, right: 10, top: 7, bottom: 7 })
@@ -1791,8 +1838,8 @@ export struct ChatPage {
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
         this.scroller.scrollEdge(Edge.Bottom);
       },
-      (inputTokens: number, outputTokens: number) => {
-        // onDone：解锁 + 存储 token
+      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
+        // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账——弹层展示节省 SP）
         this.isLoading = false;
         this.streamController = null;
         this.streamPhase = 0; // ★ 0.191.0：阶段复位
@@ -1802,6 +1849,7 @@ export struct ChatPage {
         }
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
+        aiMsg.cacheHitTokens = cachedTokens;
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
         // 流式完成时滚到底部
@@ -1897,8 +1945,8 @@ export struct ChatPage {
         // ★ 0.191.0：接收态已删（同 sendMessage——死代码）
         this.scroller.scrollEdge(Edge.Bottom);
       },
-      (inputTokens: number, outputTokens: number) => {
-        // onDone：解锁 + 存储 token
+      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
+        // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账）
         this.isLoading = false;
         this.streamController = null;
         this.streamPhase = 0; // ★ 0.191.0：阶段复位
@@ -1907,6 +1955,7 @@ export struct ChatPage {
         }
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
+        msg.cacheHitTokens = cachedTokens;
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
         this.scroller.scrollEdge(Edge.Bottom);
@@ -2248,9 +2297,11 @@ export struct ChatPage {
     return '标记';
   }
 
+
   aboutToAppear() {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
     this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
+    this.hasMouse = deviceInfo.deviceType === '2in1'; // ★ 0.247.2：PC 判定改设备形态（同步零误报，原 probeHasMouse 探测删除）
     this.bookmarkCache = this.getBookmarkEntry(); // ★ 0.191.0：首帧渲染前载入书签（标记线即时显示）
     this.foldStateView = new Map(chatFoldMemory); // ★ 0.234.0：恢复会话级折叠状态（切页面回来保留）
     // ★ 0.214.2：恢复缩放（持久化值优先；钳制防脏数据）
@@ -2286,6 +2337,11 @@ export struct ChatPage {
     }
     this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
     this.stopExtractTimer(); // ★ 0.153：组件销毁清除提炼计时器，防内存泄漏
+    // ★ 0.246.0：查看器延迟关闭计时器销毁（项目铁律：定时器组件销毁必须销毁）
+    if (this.viewerCloseTimerId >= 0) {
+      clearTimeout(this.viewerCloseTimerId);
+      this.viewerCloseTimerId = -1;
+    }
   }
 
   // 选择图片：调用相册多选，转 Base64 存入 pendingImages
@@ -2461,6 +2517,7 @@ export struct ChatPage {
     this.wordPopupError = '';
     this.wordPopupAdded = false;
     this.wordExistsTip = false;
+    this.refreshWordPopupReview(); // ★ 0.246.0：浮窗司忆区——打开时抽一批固定（查词等待期顺便学习）
     if (this.wordQueryController) {
       this.wordQueryController.cancel(); // 上一次查词未完成 → 取消
     }
@@ -2515,14 +2572,58 @@ export struct ChatPage {
   //   拼接 token 统计（两段信息合并单一滑动区，格式「别名或模型ID · 输入 N · 输出 N」）
   //   ★ 0.240.1：别名读 map 兜底——apiConfig.modelAlias 水合在旧快照上读侧丢（0.224.1 家族），
   //   别名映射表（model-alias-v1）读写健在且为最全真相源（输入即记录）；两源取非空者
-  modelDisplayText(msg: ChatMessage): string {
-    let alias = this.apiConfig.modelAlias;
-    if (alias.length === 0) {
-      alias = this.aliasStore.aliasFor(this.apiConfig.model);
+  // ★ 0.247.2：模型名改静态死文字——上线后统一由 DeepSeek-V4.1-Flash 服务用户，
+  //   不再跟随全局设置 apiConfig.model 动态显示（用户拍板「直接静态」）；
+  //   AIGC 标识文案暂不拼接（后续另定落点再加）
+  topBarModelText(): string {
+    return 'DeepSeek-V4.1-Flash';
+  }
+
+  // ★ 0.247.0：原 modelDisplayText 改名 tokenDisplayText——模型名上移顶栏（合规标识），消息行只留 token 统计。
+  // msg.model 等字段不动（数据无损，仅展示变化）；无 token（outputTokens=0）返回空串，调用点条件同步收紧
+  // ★ 0.247.7：明细行改 SP 单位（用户拍板「输入输出加上 SP 单位」+「预估」前缀）；
+  //   ★ 0.247.7：改**实扣口径**（V2.0 商业方案，0.247.7 已随 1000292 上机——原注释误标 0.247.8 现更正），
+  //   输出=×4 倍系数（输出单价是输入 4 倍，统一系数会亏 3/4）；★ 0.247.8：明细行去「预估」前缀、
+  //   估算语义挪到缓存节省行「预估节省」（用户拍板——4 行收 2 行排版，弹层 216→272 同批）
+  tokenDisplayText(msg: ChatMessage): string {
+    if (msg.outputTokens <= 0) {
+      return '';
     }
-    const name = (msg.model === this.apiConfig.model && alias.length > 0) ? alias : msg.model;
-    const tokenPart = msg.outputTokens > 0 ? ` 输入 ${msg.inputTokens} · 输出 ${msg.outputTokens}` : '';
-    return tokenPart.length > 0 ? `${name} ·${tokenPart}` : name;
+    const hit = Math.min(msg.cacheHitTokens, msg.inputTokens);
+    const miss = msg.inputTokens - hit;
+    const inSp = Math.round((miss * SP_INPUT_PRICE_RATIO + hit * SP_HIT_PRICE_RATIO) / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+    const outSp = Math.round(msg.outputTokens * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+    return `输入 ${inSp} SP · 输出 ${outSp} SP`; // ★ 0.247.8：去「预估」前缀（用户拍板——明细行省字，预估语义挪到缓存节省行）
+  }
+
+  // ★ 0.247.3：token 明细弹层 builder（感叹号弹出）——无参 @Builder 直读 tokenInfoText 快照；
+  //   ★ 0.247.4：命中缓存的回复追加「缓存命中 X% · 预估节省 N SP」行（节省算法见 SP_CACHE_SAVING_RATIO；0.247.8「帮你」→「预估」）；
+  //   ★ 0.247.5：用户实测默认弹层太素难看——改自绘卡片容器（SURFACE_NODE 底+STROKE_CARD 描边+radius 12，
+  //   padding 对齐知识库菜单 12/16），popupColor 透明由 builder 全掌控；缓存行走品牌紫突出省钱信息
+  @Builder
+  tokenInfoBuilder() {
+    Column() {
+      Text(this.tokenInfoText)
+        .fontSize(13)
+        .fontColor(TEXT_PRIMARY)
+        .textAlign(TextAlign.Center)
+        .width('100%')
+      if (this.tokenInfoCacheLine.length > 0) {
+        Divider()
+          .color(STROKE_CARD)
+          .margin({ top: 9, bottom: 9 })
+        Text(this.tokenInfoCacheLine)
+          .fontSize(13)
+          .fontColor(BRAND_SECONDARY)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+      }
+    }
+    .width(272) // ★ 0.247.6：定宽——Divider 无固有宽会把无约束 Column 撑满整行（0.239.0 同款坑：弹层被拉成全宽条），定宽+文字居中收口；★ 0.247.8：216→272（用户拍板「拉宽一点」——两行文字各自单行显示，4 行收 2 行）
+    .padding({ top: 12, bottom: 12, left: 16, right: 16 })
+    .borderRadius(12)
+    .border({ width: 1, color: STROKE_CARD })
+    .backgroundColor(SURFACE_NODE)
   }
 
   // 「全选」：selection 属性受控驱动——nonce 递增拼进 key 使属性参数变化，
@@ -2984,6 +3085,29 @@ export struct ChatPage {
     }
     // ★ 0.202.3：司忆量埋点（本次展示的词+卡总数）
     recordStat(this.statStore, 'siyi', this.editReviewWords.length + this.editReviewCards.length, 0);
+  }
+
+  // ★ 0.246.0：抽取翻译浮窗司忆区内容（打开浮窗时调一次固定——同 refreshEditReview 哲学：
+  //   查词等待期顺便学习；词库/知识库为空时对应块不渲染；展示即复习+司忆量埋点同款）
+  refreshWordPopupReview(): void {
+    const now = Date.now();
+    let mutated = false;
+    this.wordPopupReviewWords = pickReviewWords(this.wordBank, this.learnCountStore.learnCount, now);
+    for (let i = 0; i < this.wordPopupReviewWords.length; i++) {
+      if (applyPassiveReview(this.wordPopupReviewWords[i], now)) {
+        mutated = true;
+      }
+    }
+    this.wordPopupReviewCards = pickReviewCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount, now);
+    for (let i = 0; i < this.wordPopupReviewCards.length; i++) {
+      if (applyPassiveReview(this.wordPopupReviewCards[i], now)) {
+        mutated = true;
+      }
+    }
+    if (mutated) {
+      noteBankMutation(); // 进度变更 3 秒防抖上云
+    }
+    recordStat(this.statStore, 'siyi', this.wordPopupReviewWords.length + this.wordPopupReviewCards.length, 0);
   }
 
   // ★ 0.187.0：点词条展开/收起 3 档评分（👆 图标勾引点击——点词即展开）
@@ -3448,6 +3572,110 @@ export struct ChatPage {
     this.imageViewerIndex = 0;
     this.imageViewerVisible = true;
   }
+
+  // ★ 0.246.0：查看器缩放缓动（250ms EaseOut——对齐知识库 0.211.2；捏合跟手不经此，松手归位走动画）
+  private applyViewerScale(target: number): void {
+    const clamped = Math.min(4, Math.max(1, target));
+    this.getUIContext().animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+      this.viewerScale = clamped;
+      if (clamped <= 1) {
+        // ★ 0.247.4：缩回原大小时平移同步归位（放大平移后双击缩回=画面回正中）
+        this.viewerOffsetX = 0;
+        this.viewerOffsetY = 0;
+      }
+    });
+  }
+
+  // ★ 0.246.0：单击/双击手动判定（0.173.x 铁律只绑 count:1；300ms 内第二击=双击缩放，否则延迟 320ms 关闭）
+  private viewerTapHandled(): void {
+    const now = Date.now();
+    if (now - this.viewerLastTap < 300) {
+      this.viewerLastTap = 0;
+      if (this.viewerCloseTimerId >= 0) {
+        clearTimeout(this.viewerCloseTimerId);
+        this.viewerCloseTimerId = -1;
+      }
+      this.applyViewerScale(this.viewerScale > 1 ? 1 : 2.5);
+    } else {
+      this.viewerLastTap = now;
+      if (this.viewerCloseTimerId >= 0) {
+        clearTimeout(this.viewerCloseTimerId);
+      }
+      this.viewerCloseTimerId = setTimeout(() => {
+        this.viewerCloseTimerId = -1;
+        this.imageViewerVisible = false;
+      }, 320);
+    }
+  }
+
+  // ★ 0.246.0：保存当前查看图片（免权限走 DocumentViewPicker 系统保存对话框 + fileIo 写入；
+  //   data URI 解 base64，file:// 沙箱路径直读；三端统一入口——PC 右键 / 触摸长按都进这一条链）
+  async saveViewerImage(): Promise<void> {
+    const src = this.imageViewerImages[this.imageViewerIndex] ?? '';
+    if (src.length === 0) {
+      return;
+    }
+    try {
+      let data: ArrayBuffer;
+      if (src.startsWith('data:image')) {
+        const b64 = src.substring(src.indexOf(',') + 1);
+        data = buffer.from(b64, 'base64').buffer;
+      } else {
+        const file = fileIo.openSync(src, fileIo.OpenMode.READ_ONLY);
+        const stat = fileIo.statSync(file.fd);
+        data = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, data);
+        fileIo.closeSync(file);
+      }
+      const opt = new picker.DocumentSaveOptions();
+      opt.newFileNames = [`DAGAI_${Date.now()}.jpg`];
+      const res = await new picker.DocumentViewPicker().save(opt);
+      if (res.length > 0) {
+        const out = fileIo.openSync(res[0], fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
+        fileIo.writeSync(out.fd, data);
+        fileIo.closeSync(out);
+        this.showToastSafe('图片已保存');
+      }
+    } catch (err) {
+      this.showToastSafe('保存取消或失败');
+    }
+  }
+
+  // ★ 0.247.1：查看器保存菜单卡（PC 右键 viewerSaveMenu / 触摸长按浮层同款）——深色卡+品牌紫竖条+白字
+  //   +阴影，替换 0.246.0 素底紫字丑版（用户拍板「右击保存按钮很难看」）；点击保存并收起
+  @Builder
+  viewerMenuCard() {
+    Row({ space: 8 }) {
+      Column() {
+        Blank()
+      }
+      .width(4)
+      .height(18)
+      .borderRadius(2)
+      .backgroundColor(BRAND_PRIMARY)
+      Text('保存图片')
+        .fontSize(15)
+        .fontColor(TEXT_PRIMARY)
+        .fontFamily(FONT_INTER)
+    }
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 14, right: 20, top: 12, bottom: 12 })
+    .backgroundColor(SURFACE_NODE)
+    .borderRadius(RADIUS_CONTROL)
+    .border({ width: 1, color: STROKE_CARD })
+    .shadow({ radius: 16, color: '0x66000000', offsetX: 0, offsetY: 4 })
+    .onClick(() => {
+      this.viewerMenuVisible = false;
+      this.saveViewerImage();
+    })
+  }
+
+  // ★ 0.247.1：查看器保存菜单（bindContextMenu RightClick——PC 右键触发；卡样式与触摸长按浮层同款）
+  @Builder
+  viewerSaveMenu() {
+    this.viewerMenuCard()
+  }
+
 
   // 复习区知识卡片：按消息 ID 取 N 张（N=知识卡片数量，知识库 ⚙ 设置）。
   // ★ 0.188.0：知识库复刻记忆算法——选卡改走遗忘曲线（到期卡按 R 升序 → 新卡 → 未来卡）；
@@ -4080,30 +4308,20 @@ export struct ChatPage {
       .alignItems(HorizontalAlign.Start)
       Blank()
         .layoutWeight(1)
-      // ★ 0.195.0：顶栏 emoji 图标（📚📖⚙ 彩色）换边栏同款单色 svg——UI 统一（用户拍板：与边栏
-      //   单词库/知识库/设置同款；映射与边栏 navIcon 一致：wordbank=bookopen、knowledge=library）
+      // ★ 0.247.0：顶栏精简（用户拍板）——删「单词库/知识库」两 icon（入口与边栏重复），设置保留；
+      //   设置左侧新增「模型名 · 内容由 AI 生成 · 仅供参考」常驻标识（华为市场 AIGC 合规：AI 生成内容须界面明确标识）；
+      //   ★ 0.247.1：模型名固定原名不跟别名；文案加「仅供参考」；手机窄屏 45%→60%（截图实测 45% 截断）
       Row() {
-        Image($r('app.media.bookopen'))
-          .width(20)
-          .height(20)
-          .objectFit(ImageFit.Contain)
+        Text(this.topBarModelText())
+          .fontSize(11)
+          .fontColor(TEXT_SECONDARY)
+          .fontFamily(FONT_INTER)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
-      .height(40) // ★ 0.196.5：icon 包裹行 40vp——撑起顶栏 Row 与画布 ➕ 同高，标题列居中位置两页一致（像素级对齐）
-      .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——相邻 icon 边缘间距 4+4=8vp（对齐单词库 ⚙↔+，实测原 12vp 不一致）
-      .onClick(() => {
-        this.pathStack.pushPath({ name: 'WordBankPage' });
-      })
-      Row() {
-        Image($r('app.media.library'))
-          .width(20)
-          .height(20)
-          .objectFit(ImageFit.Contain)
-      }
-      .height(40) // ★ 0.196.5：同上——40vp 撑高
-      .padding({ left: 4, right: 4 }) // ★ 0.195.0：去 margin——8vp 间距统一
-      .onClick(() => {
-        this.pathStack.pushPath({ name: 'KnowledgeBankPage' });
-      })
+      .height(40) // 与右侧 settings 包裹行同规格（40vp 撑高、8vp 间距统一）
+      .padding({ left: 4, right: 4 })
+      .constraintSize({ maxWidth: this.isTablet ? '50%' : '62%' }) // 长模型名防挤爆：手机放宽到 62%（用户实测 45% 截断），宽屏 50% 足够
       Row() {
         Image($r('app.media.settings'))
           .width(20)
@@ -4413,13 +4631,15 @@ export struct ChatPage {
                                        if (w.usPhonetic.length > 0) {
                                          // Phonetic right beside the word — same line, never ellipsized (user rule)
                                          // ★ 0.232.1：音标可点=展开评分（用户需求：点击区扩大到整个词条——词条短时只点左上角单词很难受）
+                                         // ★ 0.246.0：音标点击改发音（用户拍板：与旁边喇叭 icon 同行为）；展开评分仍走单词/箭头/全称/释义
                                          Text(w.usPhonetic)
                                            .fontSize(this.fs(12))
                                            .fontColor(TEXT_TERTIARY)
                                            .maxLines(1)
                                            .margin({ left: 6 })
                                            .onClick(() => {
-                                             this.onReviewWordTap(`${msg.messageId}|${w.id}`);
+                                             this.stopTTS();
+                                             wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
                                            })
                                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                                         // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
@@ -4544,7 +4764,22 @@ export struct ChatPage {
                                            .onClick(() => {
                                              this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                            })
-                                        Scroll() {
+                                        if (getTitleImages(card).length > 0) {
+                                          // ★ 0.247.1：正面缩略图移到行首（用户拍板「正面图片应该左对齐」——
+                                          //   原挂标题行尾=右对齐）；点击开查看器翻全部标题图
+                                          Image(getTitleImages(card)[0])
+                                            .width(20)
+                                            .height(20)
+                                            .borderRadius(4)
+                                            .objectFit(ImageFit.Cover)
+                                            .margin({ right: 6 })
+                                            .onClick(() => {
+                                              this.imageViewerImages = getTitleImages(card);
+                                              this.imageViewerIndex = 0;
+                                              this.imageViewerVisible = true;
+                                            })
+                                        }
+                                         Scroll() {
                                           Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
                                             .fontSize(this.fs(13))
                                             .fontWeight(600)
@@ -4572,27 +4807,9 @@ export struct ChatPage {
                                         .scrollBar(BarState.Off)
                                         .align(Alignment.Start)
                                         .layoutWeight(1)
-                                       if (card.imageUri.length > 0) {
-                                         // Image indicator icon — only shown when the card has an image (user rule)
-                                         // ★ 0.160 bugfix: icon was display-only with no onClick — tapping did nothing;
-                                         // now opens the fullscreen image viewer with this card's image (same viewer as chat images)
-                                         // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
-                                         Image($r('app.media.image'))
-                                           .width(14)
-                                           .height(14)
-                                           .objectFit(ImageFit.Contain)
-                                           .margin({ left: 6 })
-                                           .onClick(() => {
-                                             if (card.imageUri.length > 0) {
-                                               this.imageViewerImages = [card.imageUri];
-                                               this.imageViewerIndex = 0;
-                                               this.imageViewerVisible = true;
-                                             }
-                                           })
-                                       }
-                                     }
-                                     .width('100%')
-                                     // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
+                                      }
+                                      .width('100%')
+                                      // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
                                      if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${card.id}`) {
                                        // ★ 0.169.1：定义行划词
                                        // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
@@ -4626,6 +4843,31 @@ export struct ChatPage {
                                          //   不好看，跟上面的单词库的左对齐」）；原 margin left 18 正是「右边超出一个
                                          //   地方」真凶——margin 叠加在 width('100%') 外部使总宽超 18，右缘突出
                                          .margin({ top: 2 })
+                                         // ★ 0.246.0：反面内容图缩略图条（有图才渲染）——定义行下横排小缩略图
+                                         if (getCardImages(card).length > 0) {
+                                           Scroll() {
+                                             Row({ space: 4 }) {
+                                               ForEach(getCardImages(card), (img: string, ii: number) => {
+                                                 Image(img)
+                                                   .width(24)
+                                                   .height(24)
+                                                   .borderRadius(4)
+                                                   .objectFit(ImageFit.Cover)
+                                                   .onClick(() => {
+                                                     this.imageViewerImages = getCardImages(card);
+                                                     this.imageViewerIndex = ii;
+                                                     this.imageViewerVisible = true;
+                                                   })
+                                               }, (img: string, ii: number) => `${idx}_ci${ii}_${img.substring(0, 30)}`)
+                                             }
+                                             .alignItems(VerticalAlign.Center)
+                                           }
+                                           .scrollable(ScrollDirection.Horizontal)
+                                           .scrollBar(BarState.Off)
+                                           .align(Alignment.Start)
+                                           .width('100%')
+                                           .margin({ top: 4 })
+                                         }
                                       }
                                    }
                                    .alignItems(HorizontalAlign.Start)
@@ -4719,21 +4961,57 @@ export struct ChatPage {
                             })
                             // ★ 0.237.3：弹性占位——把右侧模型信息组推到行尾（右对齐）
                             Blank()
-                            // ★ 0.238.0：模型名+token 合并单一滑动区（方案 1 拍板）——手机滑一次看全，
+                            // ★ 0.238.0：token 合并单一滑动区（方案 1 拍板）——手机滑一次看全，
                             //   割裂感根除；宽屏（Pad/PC）放得下时视觉与合并前一致（两段文字本就紧挨着）；
                             //   上限 60%（合并后总内容更长给足空间）+ flexShrink 窄屏收缩兜底
-                            if (msg.model.length > 0 || msg.outputTokens > 0) {
-                              Scroll() {
-                                Text(this.modelDisplayText(msg))
+                            //   ★ 0.247.0：模型名上移顶栏，本行只留 token 统计（用户拍板）
+                            //   ★ 0.247.3：本行改显 AIGC 合规标识「内容由 AI 生成 · 仅供参考」灰色小字
+                            //   （原 token 行同格式同色号；顶栏只留静态模型名）+ 右侧感叹号圆圈 icon；
+                            //   点感叹号 bindPopup 弹 token 明细（输入 N · 输出 N）——单开互斥挂 tokenInfoMsgId
+                            if (msg.outputTokens > 0) {
+                              Row() {
+                                Text('内容由 AI 生成 · 仅供参考')
                                   .fontSize(11)
                                   .fontColor(TEXT_TERTIARY)
                                   .maxLines(1)
+                                  .flexShrink(1)
+                                Image($r('app.media.info'))
+                                  .width(12)
+                                  .height(12)
+                                  .objectFit(ImageFit.Contain)
+                                  .margin({ left: 4 })
                               }
-                              .scrollable(ScrollDirection.Horizontal)
-                              .scrollBar(BarState.Off)
+                              .bindPopup(this.tokenInfoMsgId === msg.messageId, {
+                                builder: this.tokenInfoBuilder(),
+                                placement: Placement.Top,
+                                popupColor: Color.Transparent, // ★ 0.247.5：弹层底色由 builder 自绘卡片接管（默认底太素被用户否）
+                                radius: 12,
+                                mask: { color: 'rgba(0,0,0,0.3)' },
+                                onStateChange: (e: PopupStateChangeParam) => {
+                                  if (!e.isVisible && this.tokenInfoMsgId === msg.messageId) {
+                                    this.tokenInfoMsgId = '';
+                                  }
+                                }
+                              })
+                              .onClick(() => {
+                                if (this.tokenInfoMsgId === msg.messageId) {
+                                  this.tokenInfoMsgId = '';
+                                } else {
+                                  this.tokenInfoMsgId = msg.messageId;
+                                  this.tokenInfoText = this.tokenDisplayText(msg);
+                                  // ★ 0.247.4：缓存命中行（节省 SP=命中 token × 省钱比例 ÷7×2，四舍五入——用户口径
+                                  //   「拿输入价当标准、差价换算成 SP」；percent=命中占全部输入 token 比例）
+                                  if (msg.cacheHitTokens > 0 && msg.inputTokens > 0) {
+                                    const percent = Math.round((msg.cacheHitTokens / msg.inputTokens) * 100);
+                                    const savedSp = Math.round(msg.cacheHitTokens * SP_CACHE_SAVING_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+                                    this.tokenInfoCacheLine = `缓存命中 ${percent}% · 预估节省 ${savedSp} SP`; // ★ 0.247.8：「帮你节省」→「预估节省」（用户拍板——估算属性标注挪到省钱行）
+                                  } else {
+                                    this.tokenInfoCacheLine = '';
+                                  }
+                                }
+                              })
                               .constraintSize({ maxWidth: '60%' })
                               .flexShrink(1)
-                              .align(Alignment.End)
                             }
                           }
                           .width('100%') // ★ 0.237.3：铺满气泡宽（Blank 推右对齐的前提）
@@ -4759,8 +5037,10 @@ export struct ChatPage {
               //   回收站圆钮面板（推翻 0.218.5「方向分治」：原用户=start/AI=end 双向分治，用户嫌冗余
               //   「都是一模一样的逻辑」）；样式对齐知识库/单词库终式（44×44 品牌紫圆钮+白 trash 20，
               //   外容器 72 满高 Center）；点击走原确认链路；swipeAction end 不再传=左滑禁用
+              //   ★ 0.247.1 用户拍板：仅 PC（鼠标在场）停用滑动删除——鼠标按下拖动=划词手势被 swipe 抢走；
+              //   手机/Pad 触摸长按划词与滑动不冲突照常保留；start 传 undefined=不挂删除面板
               .swipeAction({
-                start: (): void => {
+                start: this.hasMouse ? undefined : (): void => {
                   this.swipeDeleteMessagePanel(msg)
                 }
               })
@@ -4856,19 +5136,24 @@ export struct ChatPage {
                     this.imageViewerIndex = index;
                     this.imageViewerVisible = true;
                   })
-                Text('×')
-                  .fontSize(15)
-                  .fontWeight(600)
-                  .fontColor(TEXT_PRIMARY)
-                  .backgroundColor(DANGER)
-                  .width(22)
-                  .height(22)
-                  .borderRadius(11)
-                  .textAlign(TextAlign.Center)
-                  .offset({ x: -2, y: 2 })
-                  .onClick(() => {
-                    this.removeImage(index);
-                  })
+                // ★ 0.246.0：删除钮对齐 UI_GUIDELINES 统一删除控件（用户拍板「红 × 太难看」）——
+                //   品牌紫圆钮+白色 trash.svg 回收站图标（同知识库/单词库滑出删除面板设计语言），
+                //   小号规格 20×20 圆钮 + 12×12 图标骑缩略图右上角
+                Column() {
+                  Image($r('app.media.trash'))
+                    .width(12)
+                    .height(12)
+                }
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                .width(20)
+                .height(20)
+                .borderRadius(10)
+                .backgroundColor(BRAND_PRIMARY)
+                .offset({ x: -2, y: 2 })
+                .onClick(() => {
+                  this.removeImage(index);
+                })
               }
               .width(60)
               .height(60)
@@ -4947,6 +5232,10 @@ export struct ChatPage {
             //   原 0.118 手动行数计算 + 0.195.0 measureTextSize 软换行版在真机密度单位翻车
             //   （1 字跳 3 行，用户实测截图实锤）——整条手动计算链废弃（getter/字段/onAreaChange/measure 全删）
             .constraintSize({ minHeight: 40, maxHeight: 136 })
+            // ★ 0.246.0：对称上下 padding——空态单行时占位符「输入问题...」垂直居中（用户截图指认偏上）；
+            //   9/9 首轮仍偏上（TextArea 空态渲染高度大于 minHeight 40、内容顶部对齐致下空隙偏大），
+            //   12/12 补偿顶对齐偏移；多行增高时对称 padding 不干扰布局
+            .padding({ top: 12, bottom: 12, left: 12, right: 12 })
             // ★ 0.215.11 回车=发送（用户要求标准 IM 交互；NEW_LINE 时代回车纯换行已废弃）；
             //   Shift+回车=换行：物理键盘经 onKeyEvent 判 Shift（组件层 KeyEvent.getModifierKeyState，
             //   滚轮翻案同源 API）插 \n 并标记时间窗，onSubmit 窗内跳过发送；软键盘无物理键直发。
@@ -5019,9 +5308,9 @@ export struct ChatPage {
                 }
               })
             Text('▾')
-              .fontSize(14) // ★ 0.182.0：原独立三角 12 → 14（用户要求稍大）
+              .fontSize(17) // ★ 0.246.0：14 → 17（用户实测太小）——字号加大+下方 padding 加宽，点击区与视觉宽度同步放大
               .fontColor(Color.White)
-              .padding({ left: 2, right: 10 })
+              .padding({ left: 6, right: 14 })
               .textAlign(TextAlign.Center)
               .onClick(() => {
                 this.modeMenuOpen = !this.modeMenuOpen;
@@ -5218,13 +5507,15 @@ export struct ChatPage {
                          })
                        if (w.usPhonetic.length > 0) {
                          // ★ 0.232.1：音标可点=展开评分（点击区扩大——与气泡复习区同规）
+                         // ★ 0.246.0：音标点击改发音（与气泡复习区同规——与旁边喇叭 icon 同行为）
                          Text(w.usPhonetic)
                            .fontSize(12)
                            .fontColor(TEXT_TERTIARY)
                            .maxLines(1)
                            .margin({ left: 6 })
                            .onClick(() => {
-                             this.onReviewWordTap(`edit|${w.id}`);
+                             this.stopTTS();
+                             wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
                            })
                         // 发音按钮（与气泡复习区同款三态；缩略词播全称）
                         // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
@@ -5302,13 +5593,27 @@ export struct ChatPage {
                 ForEach(this.editReviewCards, (card: KnowledgeCard, idx: number) => {
                 // ★ 0.232.1 标题/内容行分离（与气泡复习区同规——定义独立横滑，标题常驻）
                 Column() {
-                   Row() {
-                       // ★ 0.237.0 军令：字符三角 ▼/▲ → FoldChevron SVG；点标题/点箭头展开 3 档评分
-                       FoldChevron({ expanded: this.reviewExpandKey === `editcard|${card.id}` })
-                         .onClick(() => {
-                           this.onReviewWordTap(`editcard|${card.id}`);
-                         })
-                      Scroll() {
+                    Row() {
+                        // ★ 0.237.0 军令：字符三角 ▼/▲ → FoldChevron SVG；点标题/点箭头展开 3 档评分
+                        FoldChevron({ expanded: this.reviewExpandKey === `editcard|${card.id}` })
+                          .onClick(() => {
+                            this.onReviewWordTap(`editcard|${card.id}`);
+                          })
+                       if (getTitleImages(card).length > 0) {
+                         // ★ 0.247.1：正面缩略图移到行首（左对齐统一，同气泡底部司忆区）
+                         Image(getTitleImages(card)[0])
+                           .width(20)
+                           .height(20)
+                           .borderRadius(4)
+                           .objectFit(ImageFit.Cover)
+                           .margin({ right: 6 })
+                           .onClick(() => {
+                             this.imageViewerImages = getTitleImages(card);
+                             this.imageViewerIndex = 0;
+                             this.imageViewerVisible = true;
+                           })
+                       }
+                       Scroll() {
                         Text(card.title)
                           .fontSize(13)
                           .fontWeight(600)
@@ -5323,21 +5628,8 @@ export struct ChatPage {
                        .scrollBar(BarState.Off)
                        .align(Alignment.Start)
                        .layoutWeight(1)
-                      if (card.imageUri.length > 0) {
-                        // ★ 0.210.1：彩色 emoji → 华为风格单色透明 svg
-                        Image($r('app.media.image'))
-                          .width(14)
-                          .height(14)
-                          .objectFit(ImageFit.Contain)
-                          .margin({ left: 6 })
-                          .onClick(() => {
-                            this.imageViewerImages = [card.imageUri];
-                            this.imageViewerIndex = 0;
-                            this.imageViewerVisible = true;
-                          })
-                      }
-                   }
-                   .width('100%')
+                    }
+                    .width('100%')
                      // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
                      if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `editcard|${card.id}`) {
                        // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
@@ -5350,13 +5642,38 @@ export struct ChatPage {
                              this.onReviewWordTap(`editcard|${card.id}`);
                            })
                         }
-                        .scrollable(ScrollDirection.Horizontal)
-                        .scrollBar(BarState.Off)
-                        .align(Alignment.Start)
-                        .width('100%')
-                        // ★ 0.233.0：同气泡复习区——定义行左缘 0 对齐上方单词区（margin left 18 右缘超界同根因）
-                        .margin({ top: 2 })
-                      }
+                         .scrollable(ScrollDirection.Horizontal)
+                         .scrollBar(BarState.Off)
+                         .align(Alignment.Start)
+                         .width('100%')
+                         // ★ 0.233.0：同气泡复习区——定义行左缘 0 对齐上方单词区（margin left 18 右缘超界同根因）
+                         .margin({ top: 2 })
+                         // ★ 0.246.0：反面内容图缩略图条（与气泡底部司忆区统一——有图才渲染）
+                         if (getCardImages(card).length > 0) {
+                           Scroll() {
+                             Row({ space: 4 }) {
+                               ForEach(getCardImages(card), (img: string, ii: number) => {
+                                 Image(img)
+                                   .width(24)
+                                   .height(24)
+                                   .borderRadius(4)
+                                   .objectFit(ImageFit.Cover)
+                                   .onClick(() => {
+                                     this.imageViewerImages = getCardImages(card);
+                                     this.imageViewerIndex = ii;
+                                     this.imageViewerVisible = true;
+                                   })
+                               }, (img: string, ii: number) => `${idx}_eci${ii}_${img.substring(0, 30)}`)
+                             }
+                             .alignItems(VerticalAlign.Center)
+                           }
+                           .scrollable(ScrollDirection.Horizontal)
+                           .scrollBar(BarState.Off)
+                           .align(Alignment.Start)
+                           .width('100%')
+                           .margin({ top: 4 })
+                         }
+                       }
                     }
                     .alignItems(HorizontalAlign.Start)
                     .width('100%')
@@ -5367,17 +5684,29 @@ export struct ChatPage {
               }
 
               // 保存 / 取消
-              Row() {
+              // ★ 0.246.0：对齐 UI_GUIDELINES 按钮行规范（六-79 行，0.197.3 定式）——Row space 12 间隙
+              //   （禁单侧 margin 挤窄）、等宽等高 height 48、取消=SURFACE_SOFT 底灰字（原默认蓝底出戏）、
+              //   保存=BRAND_PRIMARY 底、fontSize 13 / Medium / RADIUS_CONTROL 三端统一
+              Row({ space: 12 }) {
                 Button('取消')
                   .layoutWeight(1)
-                  .margin({ right: 8 })
+                  .height(48)
+                  .fontSize(13)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(TEXT_SECONDARY)
+                  .backgroundColor(SURFACE_SOFT)
+                  .borderRadius(RADIUS_CONTROL)
                   .onClick(() => {
                     this.closeKnowledgeEdit();
                   })
                 Button('保存入库')
                   .layoutWeight(1)
-                  .backgroundColor(BRAND_PRIMARY)
+                  .height(48)
+                  .fontSize(13)
+                  .fontWeight(FontWeight.Medium)
                   .fontColor(TEXT_PRIMARY)
+                  .backgroundColor(BRAND_PRIMARY)
+                  .borderRadius(RADIUS_CONTROL)
                   // ★ 0.153：提炼中/报错/业务超时均置灰不可点击（修复报错态仍可点击的 BUG）；
                   // 仅请求成功结束（loading=false 且无错误）才启用
                   .enabled(!this.knowledgeEditLoading && this.knowledgeEditError.length === 0)
@@ -5386,6 +5715,7 @@ export struct ChatPage {
                   })
               }
               .width('100%')
+              .margin({ top: 12 })
 
               // ★ 0.153：底部小字提示——取消仅停止后续内容生成（已发送部分不撤回）
               Text('提示：请求提交后，输入内容已发送AI服务，取消仅停止后续内容生成。')
@@ -5394,7 +5724,9 @@ export struct ChatPage {
                 .margin({ top: 8 })
                 .width('100%')
             }
-            .width('85%')
+            // ★ 0.246.0：宽度收敛断点制（用户截图指认 PC 太宽）——手机 85% 原样、平板与 PC 固定 400
+            //   （UI_GUIDELINES 六-12 确认弹窗断点制定式，同 0.225.2 ReminderDialog/AppConfirmDialog 修法）
+            .width(this.isTablet ? 400 : '85%')
             .padding(20)
             .borderRadius(RADIUS_NAV)
             .backgroundColor(SURFACE_NODE)
@@ -5469,6 +5801,10 @@ export struct ChatPage {
         }
 
         // 全屏图片浏览器
+        // ★ 0.246.0：升级为缩放查看器（对齐知识库 0.211.2 血统）——捏合跟手缩放 1~4 / 双击切换 1↔2.5 /
+        //   单击 320ms 关闭 / 右滑关闭 / × 关闭
+        // ★ 0.247.1：①捏合降速 0.5（用户实测"双手指放大太快不丝滑"）②PC 滚轮/触控板缩放（垂直 pan 事件
+        //   sourceTool=MOUSE/TOUCHPAD，Finger 源忽略）③触摸长按弹保存菜单（RightClick 长按映射实测未生效）
         if (this.imageViewerVisible) {
           Stack() {
             Swiper() {
@@ -5477,6 +5813,66 @@ export struct ChatPage {
                   .objectFit(ImageFit.Contain)
                   .width('100%')
                   .height('100%')
+                  .scale({ x: this.viewerScale, y: this.viewerScale })
+                  .translate({ x: this.viewerOffsetX, y: this.viewerOffsetY }) // ★ 0.247.4：放大态平移
+                  .gesture(
+                    PinchGesture({ fingers: 2 })
+                      .onActionUpdate((event: GestureEvent) => {
+                        // ★ 0.247.1 降速 ×0.5；★ 0.247.4 用户实测手机/Pad 仍太快→再降到 ×0.3
+                        const step = 1 + (event.scale - 1) * 0.3;
+                        this.viewerScale = Math.min(4, Math.max(1, this.viewerScale * step));
+                      })
+                      .onActionEnd(() => {
+                        if (this.viewerScale < 1) {
+                          this.applyViewerScale(1);
+                        }
+                      })
+                  )
+                  .gesture(
+                    // ★ 0.247.4：放大态平移（scale>1 才动作）——单指拖/PC 左键拖=移动画面，三端同逻辑；
+                    //   scale=1 时挂空垂直 pan 占位（不动作、不干扰 Swiper 水平翻页——原滚轮 pan 同款竞争关系）；
+                    //   滚轮缩放已整体迁出 pan 归 onAxisEvent（下方），滚轮不再触发此 Pan（画布 0.215.4 实锤）
+                    PanGesture({ direction: this.viewerScale > 1 ? PanDirection.All : PanDirection.Vertical })
+                      .onActionStart(() => {
+                        this.viewerPanBaseX = this.viewerOffsetX;
+                        this.viewerPanBaseY = this.viewerOffsetY;
+                      })
+                      .onActionUpdate((event: GestureEvent) => {
+                        if (this.viewerScale <= 1) {
+                          return;
+                        }
+                        this.viewerOffsetX = this.viewerPanBaseX + event.offsetX;
+                        this.viewerOffsetY = this.viewerPanBaseY + event.offsetY;
+                      })
+                  )
+                  .onAxisEvent((event: AxisEvent) => {
+                    // ★ 0.247.4：PC 滚轮/触控板缩放改轴事件直连（画布 0.215.5 先例——getVerticalAxisValue
+                    //   方向真载体；上滚 v<0=放大 1.04、下滚 v>0=缩小 0.96，与画布方向/速度同款）；
+                    //   替换 0.247.1 的垂直 pan 模拟（方向反了+与放大平移抢手势两症同源）
+                    const v = event.getVerticalAxisValue();
+                    if (v !== 0) {
+                      const f = v < 0 ? 1.04 : 0.96;
+                      this.viewerScale = Math.min(4, Math.max(1, this.viewerScale * f));
+                    }
+                  })
+                  .gesture(
+                    // ★ 0.247.1：触摸长按 500ms 弹保存菜单（用户实测手机/Pad 长按无保存入口）
+                    LongPressGesture({ duration: 500 })
+                      .onAction(() => {
+                        this.viewerMenuVisible = true;
+                      })
+                  )
+                  .gesture(
+                    TapGesture({ count: 1 })
+                      .onAction(() => {
+                        if (this.viewerMenuVisible) {
+                          this.viewerMenuVisible = false; // 菜单开着点图=收菜单，不关查看器
+                          return;
+                        }
+                        this.viewerTapHandled();
+                      })
+                  )
+                  .bindContextMenu(this.viewerSaveMenu, ResponseType.RightClick)
               }, (url: string) => url)
             }
             .index(this.imageViewerIndex)
@@ -5491,6 +5887,25 @@ export struct ChatPage {
               .onClick(() => {
                 this.imageViewerVisible = false;
               })
+
+            // ★ 0.247.1：触摸长按菜单浮层（与 PC 右键 viewerSaveMenu 同款卡）——底部居中弹出，点外收起
+            if (this.viewerMenuVisible) {
+              Column() {
+                Column() {
+                  Blank()
+                }
+                .width('100%')
+                .layoutWeight(1)
+                this.viewerMenuCard()
+              }
+              .width('100%')
+              .height('100%')
+              .alignItems(HorizontalAlign.Center)
+              .padding({ bottom: 140 })
+              .onClick(() => {
+                this.viewerMenuVisible = false;
+              })
+            }
           }
           .width('100%')
           .height('100%')
@@ -5606,6 +6021,187 @@ export struct ChatPage {
                 .onClick(() => {
                   this.addCurrentWordToBank();
                 })
+
+              // ★ 0.246.0：翻译浮窗司忆区——查词/等待期顺便学习（与提炼弹窗复习区同款样式；
+              //   key 前缀 wpp|/wppcard| 独立命名空间，评分交互复用 reviewExpandKey/reviewRatedMap/ratingArea）
+              if (this.wordPopupReviewWords.length > 0) {
+                Divider()
+                  .strokeWidth(0.5)
+                  .color(STROKE_CARD)
+                  .margin({ top: 12, bottom: 6 })
+                ForEach(this.wordPopupReviewWords, (w: WordItem, idx: number) => {
+                  Column() {
+                    Row() {
+                      FoldChevron({ expanded: this.reviewExpandKey === `wpp|${w.id}` })
+                        .onClick(() => {
+                          this.onReviewWordTap(`wpp|${w.id}`);
+                        })
+                      Scroll() {
+                        Row() {
+                          Text(w.word)
+                            .fontSize(13)
+                            .fontWeight(600)
+                            .fontColor(TEXT_SECONDARY)
+                            .maxLines(1)
+                            .onClick(() => {
+                              this.onReviewWordTap(`wpp|${w.id}`);
+                            })
+                          if (w.usPhonetic.length > 0) {
+                            // ★ 0.246.0：音标点击改发音（与气泡底部/提炼弹窗复习区三处统一——与旁边喇叭同行为）
+                            Text(w.usPhonetic)
+                              .fontSize(12)
+                              .fontColor(TEXT_TERTIARY)
+                              .maxLines(1)
+                              .margin({ left: 6 })
+                              .onClick(() => {
+                                this.stopTTS();
+                                wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
+                              })
+                            Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                              .width(12)
+                              .height(12)
+                              .objectFit(ImageFit.Contain)
+                              .margin({ left: 4 })
+                              .onClick(() => {
+                                this.stopTTS();
+                                wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
+                              })
+                          }
+                        }
+                      }
+                      .scrollable(ScrollDirection.Horizontal)
+                      .scrollBar(BarState.Off)
+                      .align(Alignment.Start)
+                      .layoutWeight(1)
+                    }
+                    .width('100%')
+                    if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `wpp|${w.id}`) {
+                      Scroll() {
+                        Column() {
+                          if (w.fullName.length > 0) {
+                            Text(w.fullName)
+                              .fontSize(12)
+                              .fontColor(BRAND_SECONDARY)
+                              .maxLines(1)
+                              .margin({ top: 1 })
+                              .onClick(() => {
+                                this.onReviewWordTap(`wpp|${w.id}`);
+                              })
+                          }
+                          Text(w.explain)
+                            .fontSize(12)
+                            .fontColor(TEXT_SECONDARY)
+                            .maxLines(1)
+                            .margin({ top: 2 })
+                            .onClick(() => {
+                              this.onReviewWordTap(`wpp|${w.id}`);
+                            })
+                        }
+                        .alignItems(HorizontalAlign.Start)
+                      }
+                      .scrollable(ScrollDirection.Horizontal)
+                      .scrollBar(BarState.Off)
+                      .align(Alignment.Start)
+                      .width('100%')
+                    }
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+                  .margin({ top: idx === 0 ? 6 : 0, bottom: idx === this.wordPopupReviewWords.length - 1 ? 0 : 6 })
+                  this.ratingArea(`wpp|${w.id}`, w)
+                }, (w: WordItem) => `wpp_${w.word}`)
+              }
+              if (this.wordPopupReviewCards.length > 0) {
+                Divider()
+                  .strokeWidth(0.5)
+                  .color(STROKE_CARD)
+                  .margin({ top: 6, bottom: 6 })
+                ForEach(this.wordPopupReviewCards, (card: KnowledgeCard, idx: number) => {
+                  Column() {
+                     Row() {
+                       FoldChevron({ expanded: this.reviewExpandKey === `wppcard|${card.id}` })
+                         .onClick(() => {
+                           this.onReviewWordTap(`wppcard|${card.id}`);
+                         })
+                       if (getTitleImages(card).length > 0) {
+                         // ★ 0.247.1：正面缩略图移到行首（左对齐统一，同气泡底部/提炼弹窗司忆区）
+                         Image(getTitleImages(card)[0])
+                           .width(20)
+                           .height(20)
+                           .borderRadius(4)
+                           .objectFit(ImageFit.Cover)
+                           .margin({ right: 6 })
+                           .onClick(() => {
+                             this.imageViewerImages = getTitleImages(card);
+                             this.imageViewerIndex = 0;
+                             this.imageViewerVisible = true;
+                           })
+                       }
+                       Scroll() {
+                         Text(card.title)
+                           .fontSize(13)
+                           .fontWeight(600)
+                           .fontColor(TEXT_SECONDARY)
+                           .maxLines(1)
+                           .onClick(() => {
+                             this.onReviewWordTap(`wppcard|${card.id}`);
+                           })
+                       }
+                       .scrollable(ScrollDirection.Horizontal)
+                       .scrollBar(BarState.Off)
+                       .align(Alignment.Start)
+                       .layoutWeight(1)
+
+                    }
+                    .width('100%')
+                    if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `wppcard|${card.id}`) {
+                      Scroll() {
+                        Text(card.definition)
+                          .fontSize(12)
+                          .fontColor(TEXT_SECONDARY)
+                          .maxLines(1)
+                          .onClick(() => {
+                            this.onReviewWordTap(`wppcard|${card.id}`);
+                          })
+                      }
+                      .scrollable(ScrollDirection.Horizontal)
+                      .scrollBar(BarState.Off)
+                      .align(Alignment.Start)
+                      .width('100%')
+                      .margin({ top: 2 })
+                      // ★ 0.246.0：反面内容图缩略图条（与气泡底部/提炼弹窗司忆区三处统一——有图才渲染）
+                      if (getCardImages(card).length > 0) {
+                        Scroll() {
+                          Row({ space: 4 }) {
+                            ForEach(getCardImages(card), (img: string, ii: number) => {
+                              Image(img)
+                                .width(24)
+                                .height(24)
+                                .borderRadius(4)
+                                .objectFit(ImageFit.Cover)
+                                .onClick(() => {
+                                  this.imageViewerImages = getCardImages(card);
+                                  this.imageViewerIndex = ii;
+                                  this.imageViewerVisible = true;
+                                })
+                            }, (img: string, ii: number) => `${idx}_wci${ii}_${img.substring(0, 30)}`)
+                          }
+                          .alignItems(VerticalAlign.Center)
+                        }
+                        .scrollable(ScrollDirection.Horizontal)
+                        .scrollBar(BarState.Off)
+                        .align(Alignment.Start)
+                        .width('100%')
+                        .margin({ top: 4 })
+                      }
+                    }
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .width('100%')
+                  .margin({ bottom: idx === this.wordPopupReviewCards.length - 1 ? 0 : 6 })
+                  this.ratingArea(`wppcard|${card.id}`, card)
+                }, (card: KnowledgeCard, idx: number) => `wppcard_${idx}_${card.title}`)
+              }
             }
             .width('70%')
             .padding(20)
