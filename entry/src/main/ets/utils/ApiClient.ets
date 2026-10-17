@@ -94,6 +94,11 @@ interface SSEResponseUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  prompt_tokens_details?: SSEResponsePromptTokensDetails; // ★ 0.247.4：腾讯云 DeepSeek 缓存命中（curl 实锤 OpenAI 风格字段）
+}
+
+interface SSEResponsePromptTokensDetails {
+  cached_tokens?: number; // 命中缓存的输入 token 数（无缓存/未命中=0）
 }
 
 // ========== 消息转换 ==========
@@ -312,7 +317,7 @@ export function streamChat(
   messages: ChatMessage[],
   config: ApiConfig,
   onChunk: (text: string) => void,
-  onDone: (inputTokens: number, outputTokens: number) => void,
+  onDone: (inputTokens: number, outputTokens: number, cachedTokens: number) => void, // ★ 0.247.4：尾部追加缓存命中（token 数）
   onError: (error: string) => void,
   onReasoning?: (text: string) => void // ★ 0.132：深度思考内容回调（可选）
 ): StreamController {
@@ -420,7 +425,8 @@ export function streamChat(
         return;
       }
     }
-    onDone(trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0);
+    onDone(trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0,
+      trackedUsage?.prompt_tokens_details?.cached_tokens ?? 0); // ★ 0.247.4：缓存命中随 usage 下发
     cleanupRequest(httpRequest);
   });
 

@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.248.0'; // ★ 0.248.0：司忆点中心+划词三端统一选中即弹+边栏SP资产行+桌面卡片等级/SP;上一版 0.247.8：感叹号弹层文案微调
+const APP_VERSION: string = 'v0.248.1'; // ★ 0.248.1：删首登欢迎弹窗+气泡树排版垂直居中回归;上一版 0.248.0：司忆点中心+划词三端统一+边栏SP资产行+桌面卡片等级/SP
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

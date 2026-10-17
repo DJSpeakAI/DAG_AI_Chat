@@ -584,8 +584,9 @@ export struct BBTreeCanvas {
     //   居中要求 (treeCenterX + NODE_W/2) * scale + offsetX = viewW/2
     // ★ 0.167.6：垂直居中区从 topSafe 起（信息条底板下方），树顶不再钻进底板被盖
     this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - NODE_W / 2 * this.canvasScale;
-    // ★ 0.215.6：垂直居中改偏下——用户反馈底部空行太大（树偏上观感），中心点从剩余区正中下移 6%（内容往下沉、底部空行收窄）
-    this.canvasOffsetY = topSafe + (this.viewH - topSafe) / 2 + (this.viewH - topSafe) * 0.06 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
+    // ★ 0.248.1：垂直居中回归剩余区正中——0.215.6 的 +6% 下移在当前 UI（信息条/导航条布局迭代后）
+    //   被用户实测判「整体偏下」（截图实锤），偏移项移除；若复测偏上再按 1~2% 步进微调
+    this.canvasOffsetY = topSafe + (this.viewH - topSafe) / 2 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
     this.redrawEdges(); // ★ 0.167.2：视口变化 → 连线重绘
   }
 
@@ -1533,7 +1534,7 @@ export struct BBTreeCanvas {
           .backgroundColor(SURFACE_NODE)
           .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
           .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
-          .position({ x: this.viewW - 14 - 48, y: this.viewH - 24 - 132 }) // ★ 0.170.1：右缘贴边 24→14（用户要求往右靠边一点，与信息条边距 14 对齐）
+          .position({ x: this.viewW - 14 - 48, y: this.viewH - 56 - 132 }) // ★ 0.247.5：底部余量 24→56——手机系统导航条/PC dock 遮挡致「适应全图」按钮被裁半（用户截图红圈），实高 136 余量仅 20 太贴底；右缘贴边 14 不变（0.170.1）
 
           // ★ 0.168.4：左下角固定 ☰ 唤出按钮（手机抽屉唯一入口；用户拍板取消边缘右滑——
           //   系统手势区占用左缘约 0~65px，快滑=系统返回/慢拖被吞，右滑唤出真机体验受限）；
@@ -1564,7 +1565,7 @@ export struct BBTreeCanvas {
             .backgroundColor(SURFACE_NODE)
             .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
             .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
-            .position({ x: 14, y: this.viewH - 24 - 44 }) // ★ 0.170.1：左缘贴边 24→14（用户要求往左靠边一点）
+            .position({ x: 14, y: this.viewH - 56 - 44 }) // ★ 0.247.5：底部余量 24→56（同右下角缩放控件——系统导航条/dock 遮挡统一上抬）；左缘贴边 14 不变（0.170.1）
           }
 
       // ★ 0.167：平铺/选项卡两套自绘标题行（0.151-D）已删除——统一由上方信息条

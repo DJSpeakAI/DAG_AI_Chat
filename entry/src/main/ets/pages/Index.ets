@@ -25,7 +25,7 @@ import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markWelcomeShown, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定；★ 0.248.1：markWelcomeShown 随首登欢迎弹窗移除
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
@@ -131,11 +131,9 @@ struct Index {
         this.loginTip = tip;
       }
       // ★ 0.194.0：登录成功（无错误提示）→ 统一打点（30 天免费试用起点，逻辑收敛到 stampFreeTrialOnLogin）
-      // ★ 0.195.0：首次打戳（首登）→ 弹「30 天试用欢迎弹窗」（自定义暗紫弹窗）；重复登录静默
-      if (tip === '' && stampFreeTrialOnLogin(this.subscription)) {
-        markWelcomeShown(this.subscription); // 弹出即记账（仅 1 次）
-        this.reminderMode = 0;
-        this.reminderVisible = true;
+      // ★ 0.248.1：首登欢迎弹窗已按用户要求移除；打戳保留（stampFreeTrialOnLogin 幂等，重复登录不动）
+      if (tip === '') {
+        stampFreeTrialOnLogin(this.subscription);
       }
       if (tip === '') {
         if (fromSyncEntry) {
@@ -649,7 +647,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.248.0') // ★ 0.248.0：司忆点中心+划词三端统一选中即弹+边栏SP资产行+桌面卡片等级/SP;上一版 0.247.8：感叹号弹层文案微调;更早历史见 MEMORY.md
+        Text('v0.248.1') // ★ 0.248.1：删首登欢迎弹窗+气泡树排版垂直居中回归;上一版 0.248.0：司忆点中心+划词三端统一+边栏SP资产行+桌面卡片等级/SP;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

@@ -5,7 +5,7 @@
 // ★ 0.248.0：会员/免费试用/云同步叙事全部退场（用户拍板「只有一种充值路径，其他会员什么的都没有，
 //   云同步不用管默认全设备开启」）——isVip/试用打戳逻辑代码保留（云同步守卫仍依赖），仅本页 UI 不再呈现
 
-import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLogin, markWelcomeShown,
+import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLogin,
   SiyiPointStore, connectSiyiPoints, siyiTotalSp, siyiLevelTitle, SIYI_REDEEM_SP,
 
   StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
@@ -26,9 +26,7 @@ export struct BillingPage {
   @Local redeemInput: string = '';
   @Local redeemResult: string = ''; // ''=无提示 / 'ok' / 'invalid' / 'used'
   @Local isLoggingIn: boolean = false; // ★ 0.194.0：登录中防重复点击
-  // ★ 0.195.0：订阅提醒弹窗状态（本页登录回调触发的首登欢迎）
-  @Local reminderVisible: boolean = false;
-  @Local reminderMode: number = 0;
+
 
   // ★ 0.248.0：资产卡数据
   totalSp(): number {
@@ -92,14 +90,9 @@ export struct BillingPage {
         this.showToastSafe(tip);
         return;
       }
-      // ★ 0.195.0：首次登录弹欢迎弹窗（与首页同款 ReminderDialog）；重复登录简短 toast
-      if (stampFreeTrialOnLogin(this.subscription)) {
-        markWelcomeShown(this.subscription); // 弹出即记账（仅 1 次）
-        this.reminderMode = 0;
-        this.reminderVisible = true;
-      } else {
-        this.showToastSafe('登录成功');
-      }
+      // ★ 0.248.1：首登欢迎弹窗已按用户要求移除（与首页同口径）；打戳保留，登录成功统一 toast
+      stampFreeTrialOnLogin(this.subscription);
+      this.showToastSafe('登录成功');
       // ★ 0.248.0：云同步询问弹窗移除（用户拍板「云同步不用管，默认全设备开启」）
     });
   }
@@ -420,17 +413,6 @@ export struct BillingPage {
       .backgroundColor(BG_APP)
       .expandSafeArea([SafeAreaType.SYSTEM])
 
-      // ★ 0.195.0：订阅提醒弹窗（Stack 顶层；已在账单页，「去账单」仅关闭）
-      ReminderDialog({
-        visible: this.reminderVisible,
-        mode: this.reminderMode,
-        onClose: () => {
-          this.reminderVisible = false;
-        },
-        onGoBilling: () => {
-          this.reminderVisible = false; // 已在账单页，关闭即可
-        }
-      })
       }
     }
     .hideTitleBar(true)

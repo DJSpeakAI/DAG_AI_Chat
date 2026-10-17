@@ -906,11 +906,10 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
 
 // ============================================================
 // ★ 0.195.0：到期提醒引擎（付费转化·用户定稿）
-//   首登欢迎弹 1 次 + 最后 7 天（7/6/5/4/3/2/1）每日首开弹 1 次 + 过期后不再打扰
+//   最后 7 天（7/6/5/4/3/2/1）每日首开弹 1 次 + 过期后不再打扰（★ 0.248.1：首登欢迎弹窗已移除）
 //   状态存 reminderState 单 JSON 字符串字段（0.143 教训：往类加字段旧快照坑——parse 全兜底）
 // ============================================================
 class ReminderState {
-  welcome: boolean = false; // 欢迎弹窗已弹过（仅首登 1 次）
   last: string = '';        // 最近一次倒计时提醒日期 'YYYY-MM-DD'（每日去重）
 }
 
@@ -918,7 +917,6 @@ function parseReminderState(store: SubscriptionStore): ReminderState {
   try {
     const s = JSON.parse(store.reminderState) as ReminderState;
     const st = new ReminderState();
-    st.welcome = s.welcome === true;
     st.last = typeof s.last === 'string' ? s.last : '';
     return st;
   } catch (_e) {
@@ -953,12 +951,6 @@ export function markReminderShownToday(store: SubscriptionStore): void {
   store.reminderState = JSON.stringify(st);
 }
 
-// 欢迎弹窗已弹（仅首登 1 次）
-export function markWelcomeShown(store: SubscriptionStore): void {
-  const st = parseReminderState(store);
-  st.welcome = true;
-  store.reminderState = JSON.stringify(st);
-}
 
 // ★ 0.248.0：兑换码奖励=100 万嘉奖 SP（用户拍板；200 个码与 SHA256 白名单不变；旧 +90 天会员逻辑作废）
 export const SIYI_REDEEM_SP: number = 1000000;
