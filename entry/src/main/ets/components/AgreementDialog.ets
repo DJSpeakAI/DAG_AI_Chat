@@ -91,7 +91,7 @@ export struct AgreementDialog {
       .fontFamily(FONT_INTER_SEMIBOLD)
       .margin({ bottom: 10 })
 
-    Text('不同意仅无法使用华为账号登录与云同步功能；本地对话、词库、知识库等基础功能仍可正常使用。')
+    Text('不同意仅无法使用华为账号登录、云同步、AI 对话、导入导出、圈注提炼、划词翻译等功能；单词库与知识库的新建/浏览、卡片复习等基础功能仍可正常使用。')
       .fontSize(FONT_SIZE_BODY)
       .lineHeight(20)
       .fontColor(TEXT_SECONDARY)

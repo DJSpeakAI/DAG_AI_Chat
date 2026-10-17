@@ -18,6 +18,7 @@ import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { PersistenceV2 } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.248.3：登录引导弹窗桥（Index 根 Stack 消费；AppConfirmDialog 无反向依赖不成环）
 
 // ── 登录态持久化：昵称/头像/UnionID/OpenID ──
 @ObservedV2
@@ -147,4 +148,15 @@ export function logoutHuaweiID(context: common.Context): Promise<string> {
       resolve(errorToTip(error as BusinessError));
     }
   });
+}
+
+// ★ 0.248.3：云能力统一守卫（上架合规——用户拍板边界：未登录仅可用单词库/知识库新建浏览+卡片复习；
+//   AI 对话/导入/导出/圈注/划词翻译/划词入知识库/AI 查词全部拦截）
+// 返回 true=已登录放行；false=未登录且已拉起「需要登录」引导弹窗（Index 根 Stack 消费，调用方直接 return）
+export function requireLoginForCloud(): boolean {
+  if (connectHuaweiAccount().isLoggedIn) {
+    return true;
+  }
+  connectConfirmDialog().aiLoginPromptVisible = true;
+  return false;
 }

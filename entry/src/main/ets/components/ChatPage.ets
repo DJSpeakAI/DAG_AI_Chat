@@ -58,7 +58,7 @@ import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, DANGER, CODE_KEYWORD, CODE_STRING, CODE_COMMENT, CODE_NUMBER, CODE_TEXT, OVERLAY, OVERLAY_LIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.195.0：加 BG_APP（根底色补齐）
-import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）
+import { connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）；★ 0.248.3：圈注/划词守卫
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.248.2：AI 登录引导弹窗桥（Index 根 Stack 消费）
 
 // ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
@@ -2512,6 +2512,10 @@ export struct ChatPage {
 
   // 「翻译」：关闭菜单 → 打开浮窗 → 发起 AI 查词（独立请求，不建气泡、不进 DAG）
   onToolbarTranslate(): void {
+    // ★ 0.248.3：划词翻译守卫（上架合规——翻译走 AI 查词，未登录拦截）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
@@ -3257,6 +3261,10 @@ export struct ChatPage {
   // 「入知识库」：关闭菜单 → 打开编辑弹窗 → 发起 AI 提炼。
   // AI 结果只填充输入框（草稿），不直接入库——用户拥有最终编辑权。
   onToolbarAddKnowledge(): void {
+    // ★ 0.248.3：划词入知识库守卫（上架合规——AI 多模态提炼，未登录拦截）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
@@ -3971,6 +3979,10 @@ export struct ChatPage {
   // ✏️ 画画按钮入口：首次使用先弹说明（需求文案：用于屏幕圈选标注提问，不会后台录制屏幕），
   // 确认后记 flag 永不再弹；非首次直接进入截图流程
   startAnnotation(): void {
+    // ★ 0.248.3：圈注守卫（上架合规——屏幕圈选后台走 AI 提炼，未登录拦截）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     if (this.annotationPref.notifyShown) {
       this.continueAnnotation();
       return;

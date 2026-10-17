@@ -36,7 +36,7 @@ import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
-import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」
+import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.248.2'; // ★ 0.248.2：AI 登录守卫(未登录禁止问AI);上一版 0.248.1：删首登欢迎弹窗+气泡树排版垂直居中回归
+const APP_VERSION: string = 'v0.248.3'; // ★ 0.248.3：未登录功能边界收紧+协议文案改口径;上一版 0.248.2：AI 登录守卫
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2598,6 +2598,11 @@ export struct GlobalSettingsDialog {
       this.bkAutoEnabled = false;
       return;
     }
+    // ★ 0.248.3：导出守卫（上架合规——用户拍板导入导出必须登录；仅拦「开启」，关闭不拦）
+    if (!requireLoginForCloud()) {
+      this.bkAutoEnabled = false; // 开关回弹
+      return;
+    }
     this.bkBusy = true;
     pickBackupFile(ctx).then((uri: string) => {
       this.bkBusy = false;
@@ -2625,6 +2630,10 @@ export struct GlobalSettingsDialog {
 
   // 更改目录（新目录立即备份一份；旧目录文件不删不管——用户拍板）
   onChangeDir(): void {
+    // ★ 0.248.3：导出守卫（上架合规——用户拍板导入导出必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     track(ctx, 'backup_change_dir'); // 0.206.0 埋点
     this.bkBusy = true;
@@ -2644,6 +2653,10 @@ export struct GlobalSettingsDialog {
 
   // 立即备份（手动）
   onBackupNow(): void {
+    // ★ 0.248.3：导出守卫（上架合规——用户拍板导入导出必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     track(ctx, 'backup_now'); // 0.206.0 埋点
     if (!this.bkUriReady) {
@@ -2660,6 +2673,10 @@ export struct GlobalSettingsDialog {
 
   // 从备份文件导入（用户手里的 .dagbak——卸载重装/换机恢复用）
   onImportFile(): void {
+    // ★ 0.248.3：导入守卫（上架合规——用户拍板导入导出必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     track(ctx, 'backup_import'); // 0.206.0 埋点
     this.bkBusy = true;

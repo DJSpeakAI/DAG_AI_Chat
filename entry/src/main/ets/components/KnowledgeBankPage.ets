@@ -47,6 +47,7 @@ import { ApkgCard, ApkgParseResult, parseApkg } from '../utils/ApkgUtil';
 import { ensureFolderPath } from '../utils/KnowledgeStoreUtil';
 import { track } from '../utils/TrackUtil';
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.0 手机知识库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
+import { requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.3：导入导出守卫（上架合规——用户拍板必须登录）
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.18：设备类型判定（仅手机去掉知识库空白处长按创建菜单，PC 右键/Pad 长按保留）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
@@ -1867,6 +1868,11 @@ export struct KnowledgeBankPage {
 
   /** 批量导入第一步：选文件 → 解析 → 预览弹窗（★ 0.207.1 加 xlsx 分流） */
   async pickImportFile(fmt: string): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const doc = new picker.DocumentViewPicker();
       const selOpt = new picker.DocumentSelectOptions();
@@ -1906,6 +1912,11 @@ export struct KnowledgeBankPage {
 
   /** 导出 DagPack：rootFolderId=文件夹 id（该子树）或 ''（整库）；文件名取文件夹名 */
   async exportDagPack(rootFolderId: string): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const p = buildKnowledgePack(this.knowledgeBank, rootFolderId);
       const json = packToJson(p);
@@ -1931,6 +1942,11 @@ export struct KnowledgeBankPage {
 
   /** DagPack 导入第一步：选文件 → 解析 → 勾选树弹窗（默认全选） */
   async pickPackFile(): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const doc = new picker.DocumentViewPicker();
       const selOpt = new picker.DocumentSelectOptions();
@@ -2045,6 +2061,11 @@ export struct KnowledgeBankPage {
 
   /** 导出当前视图卡片为 CSV（无搜索=当前文件夹全部；搜索中=结果集——导出所见） */
   async doExportCsv(): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const cards = this.filteredCards;
       if (cards.length === 0) {
@@ -2075,6 +2096,11 @@ export struct KnowledgeBankPage {
 
   // ★ 0.225.0：TXT 导出（用户拍板菜单四格式）——复刻 doExportCsv 全链（当前文件夹语义+保存选择器+写入校验）
   async doExportTxt(): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const cards = this.filteredCards;
       if (cards.length === 0) {
@@ -2102,6 +2128,11 @@ export struct KnowledgeBankPage {
 
   // ★ 0.225.0：XLSX 导出（用户拍板菜单四格式）——cardsToXlsxBuffer（ExcelJS writeBuffer）+同款保存链
   async doExportXlsx(): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const cards = this.filteredCards;
       if (cards.length === 0) {
@@ -2647,6 +2678,11 @@ export struct KnowledgeBankPage {
 
   /** 选 apkg → 解析（解压+SQLite 读+媒体提取）→ 牌组统计预览 */
   async pickApkgFile(): Promise<void> {
+    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
+
     try {
       const doc = new picker.DocumentViewPicker();
       const selOpt = new picker.DocumentSelectOptions();

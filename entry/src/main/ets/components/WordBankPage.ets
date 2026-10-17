@@ -30,6 +30,7 @@ import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, r
 // ★ 0.208.0：单词库 DagPack 导入导出（只走 DagPack——用户拍板不做 Anki/表格）
 import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord } from '../utils/PackUtil';
 import { readTextFile } from '../utils/ImportUtil';
+import { requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.3：导入导出守卫（上架合规——用户拍板必须登录）
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.219.2：视图模式 store（跨页面记忆）
 import { track } from '../utils/TrackUtil';
@@ -358,6 +359,10 @@ export struct WordBankPage {
 
   /** 导出整库单词为 DagPack（wordbank 类，全量平铺） */
   async doExportWordPack(): Promise<void> {
+    // ★ 0.248.3：导出守卫（上架合规——用户拍板导入导出必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     try {
       if (this.wordBank.words.length === 0) {
         this.showToast('单词库为空，无可导出');
@@ -384,6 +389,10 @@ export struct WordBankPage {
 
   /** 导入单词包：word 重词自动跳过（addWordToBank 自带幂等拒绝） */
   async pickWordPackFile(): Promise<void> {
+    // ★ 0.248.3：导入守卫（上架合规——用户拍板导入导出必须登录）
+    if (!requireLoginForCloud()) {
+      return;
+    }
     try {
       const doc = new picker.DocumentViewPicker();
       const selOpt = new picker.DocumentSelectOptions();
