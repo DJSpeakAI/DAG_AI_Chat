@@ -469,8 +469,7 @@ struct CodeBlockView {
           .backgroundColor(BG_CANVAS)
           .borderRadius(RADIUS_CONTROL)
           .copyOption(CopyOptions.LocalDevice)
-          .bindContextMenu(this.codeToolbar, ResponseType.RightClick)
-          .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
+          .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.SELECT, {
             onAppear: () => {
               this.onMenuAppear(this.textKey);
             },
@@ -505,8 +504,7 @@ struct CodeBlockView {
             .backgroundColor(BG_CANVAS)
             .borderRadius(RADIUS_CONTROL)
             .copyOption(CopyOptions.LocalDevice)
-            .bindContextMenu(this.codeToolbar, ResponseType.RightClick)
-            .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
+            .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.SELECT, {
               onAppear: () => {
                 this.onMenuAppear(this.textKey);
               },
@@ -1150,8 +1148,7 @@ export struct ChatPage {
       .fontColor(this.isHeadingKind(blk.kind) ? BRAND_SECONDARY : (blk.kind === 'quote' ? TEXT_SECONDARY : TEXT_PRIMARY)) // ★ 0.237.0 文章小标题品牌色（整条染色不拆编号——AI 编号格式不统一，拆解有误伤风险）
       .fontWeight(this.isHeadingKind(blk.kind) ? 600 : 400)
       .copyOption(CopyOptions.LocalDevice)
-      .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
         onAppear: () => {
           this.selKey = selKey;
         },
@@ -1297,8 +1294,7 @@ export struct ChatPage {
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .textAlign(TextAlign.Center)
                 .copyOption(CopyOptions.LocalDevice)
-                .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                   onAppear: () => {
                     this.selKey = `${keyBase}h${ci}`;
                   },
@@ -1339,8 +1335,7 @@ export struct ChatPage {
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .textAlign(TextAlign.Center)
                   .copyOption(CopyOptions.LocalDevice)
-                  .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                  .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                  .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                     onAppear: () => {
                       this.selKey = `${keyBase}r${ri}c${ci}`;
                     },
@@ -4401,8 +4396,7 @@ export struct ChatPage {
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现，不再留侧边空间）；0.190.3 原 90%、0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
-                          .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                             onAppear: () => {
                               this.selKey = `${msg.messageId}|u`;
                             },
@@ -4506,8 +4500,7 @@ export struct ChatPage {
                                  .fontColor(TEXT_PRIMARY)
                                  .copyOption(CopyOptions.LocalDevice)
                                  // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
-                                 .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                                 .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                                 .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                                    onAppear: () => {
                                      this.selKey = `${msg.messageId}|${idx}`;
                                    },
@@ -4616,8 +4609,7 @@ export struct ChatPage {
                                         .onClick(() => {
                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                         })
-                                        .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rw${idx}`;
                                           },
@@ -4678,8 +4670,7 @@ export struct ChatPage {
                                           .onClick(() => {
                                             this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                           })
-                                          .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
                                            onAppear: () => {
                                              this.selKey = `${msg.messageId}|rwf${idx}`;
                                            },
@@ -4705,8 +4696,7 @@ export struct ChatPage {
                                          .onClick(() => {
                                            this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                          })
-                                         .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rwe${idx}`;
                                           },
@@ -4789,8 +4779,7 @@ export struct ChatPage {
                                             .onClick(() => {
                                               this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                             })
-                                            .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
                                               onAppear: () => {
                                                 this.selKey = `${msg.messageId}|rk${idx}`;
                                               },
@@ -4822,8 +4811,7 @@ export struct ChatPage {
                                            .onClick(() => {
                                              this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                            })
-                                           .bindContextMenu(this.ReviewSelectionToolbar, ResponseType.RightClick)
-                                           .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                           .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
                                              onAppear: () => {
                                                this.selKey = `${msg.messageId}|rkd${idx}`;
                                              },
@@ -6380,8 +6368,7 @@ export struct ChatPage {
                     .borderRadius(RADIUS_CONTROL)
                     .width('100%')
                     .copyOption(CopyOptions.LocalDevice)
-                    .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                    .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                    .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                       onAppear: () => {
                         this.selKey = 'cz|w';
                       },
@@ -6413,8 +6400,7 @@ export struct ChatPage {
                       .backgroundColor(BG_CANVAS)
                       .borderRadius(RADIUS_CONTROL)
                       .copyOption(CopyOptions.LocalDevice)
-                      .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                         onAppear: () => {
                           this.selKey = 'cz|s';
                         },
@@ -6534,8 +6520,7 @@ export struct ChatPage {
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .textAlign(TextAlign.Center)
                           .copyOption(CopyOptions.LocalDevice)
-                          .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                             onAppear: () => {
                               this.selKey = `tzh${ci}`;
                             },
@@ -6567,8 +6552,7 @@ export struct ChatPage {
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                             .textAlign(TextAlign.Center)
                             .copyOption(CopyOptions.LocalDevice)
-                            .bindContextMenu(this.SelectionToolbar, ResponseType.RightClick)
-                            .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                            .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
                               onAppear: () => {
                                 this.selKey = `tzr${ri}c${ci}`;
                               },

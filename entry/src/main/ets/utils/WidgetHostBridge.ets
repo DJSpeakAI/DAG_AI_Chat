@@ -15,6 +15,7 @@ import { connectKnowledgeBank } from './KnowledgeStoreUtil';
 import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds } from './WidgetReviewUtil';
 import { track } from './TrackUtil'; // 0.206.0 埋点
 import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：卡片评分进度上云钩子
+import { connectSiyiPoints, siyiTotalSp, siyiLevelTitle, connectStatistics, getStatDays } from '../common/ChatModel'; // ★ 0.248.0：桌面卡片司忆点资产行注入
 import { connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：快照注入卡面模式（主进程安全；卡片进程经 face 字段读）
 
 const DEF_MAX = 200; // 释义截断长度（防爆 preferences 快照）
@@ -69,6 +70,11 @@ export function buildWidgetState(context: Context, mode: string,
   // ★ 0.224.0：卡面模式随快照注入（卡片进程禁连 FaceModeStore——@ObservedV2 在卡片进程崩，0.204.1 铁律）
   s.face = connectFaceMode().mode === 'double' ? 'double' : 'single';
   s.flipped = 'n'; // 新快照一律从正面开始
+  // ★ 0.248.0：司忆点资产行注入（宿主进程连 store 安全；卡片进程禁连——拼好整串注入）
+  const learnDays = getStatDays(connectStatistics()).length;
+  const lv = siyiLevelTitle(learnDays);
+  const sp = siyiTotalSp(connectSiyiPoints());
+  s.siyiLine = sp > 0 ? `${lv} · ${(sp / 10000).toLocaleString()} 万 SP` : `${lv} · 0 SP`;
   writeWidgetStateForHost(context, s);
 }
 

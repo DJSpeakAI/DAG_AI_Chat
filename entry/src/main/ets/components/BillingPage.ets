@@ -1,13 +1,14 @@
-// BillingPage.ets — 账单/订阅页（★ 0.194.0 用户定稿）
+// BillingPage.ets — 账单页（★ 0.248.0 改版=司忆点中心，用户拍板）
 // 入口：边栏「统计」下方「账单」
-// 定价：¥9.9/月 + ¥99/年（华为 IAP 订阅型商品，商品 ID/公钥待商户资格下来后接入，当前占位）
-// 规则：登录华为账号免费试用 30 天；到期只锁云同步（其他功能 100% 可用，账号照常登录）；
-//   种子用户兑换码 +90 天（200 个码，SHA256 白名单离线校验）；兑换前置登录（未登录先引导登录）
-// 发票：由华为开具（用户在华为应用市场订单中心自助申请），App 内只放指路说明
+// 终态：司忆点资产卡（余额+等级头衔+各池明细）+ 获取途径 + 充能 SP 两档（¥9.9→200万 / ¥19→400万，IAP 占位）
+//   + 兑换码（+100 万嘉奖SP）+ 记录 + 发票指路
+// ★ 0.248.0：会员/免费试用/云同步叙事全部退场（用户拍板「只有一种充值路径，其他会员什么的都没有，
+//   云同步不用管默认全设备开启」）——isVip/试用打戳逻辑代码保留（云同步守卫仍依赖），仅本页 UI 不再呈现
 
-import { SubscriptionStore, connectSubscription, isVip, vipExpireTime, vipDaysLeft, redeemCode, stampFreeTrialOnLogin, markWelcomeShown } from '../common/ChatModel';
-import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：登录后云同步弹窗（云同步↔账号耦合）；★ 0.196.9：弹窗 UI 移 AppConfirmDialog
-import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（云同步询问——Index 根挂载消费）
+import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLogin, markWelcomeShown,
+  SiyiPointStore, connectSiyiPoints, siyiTotalSp, siyiLevelTitle, SIYI_REDEEM_SP,
+
+  StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
 import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
@@ -19,6 +20,8 @@ import { BG_CANVAS } from '../common/DesignTokens'; // ★ 0.230.0
 export struct BillingPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   subscription: SubscriptionStore = connectSubscription();
+  siyi: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.0：司忆点资产（三池余额+礼包标记）
+  statStore: StatisticsStore = connectStatistics(); // ★ 0.248.0：等级推导数据源（累计学习天数）
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.194.0：兑换前置登录（未登录不允许兑换）
   @Local redeemInput: string = '';
   @Local redeemResult: string = ''; // ''=无提示 / 'ok' / 'invalid' / 'used'
@@ -27,32 +30,34 @@ export struct BillingPage {
   @Local reminderVisible: boolean = false;
   @Local reminderMode: number = 0;
 
-  // 状态文案（四态：未开通 / 免费试用中 / 会员生效中 / 已过期）
-  // ★ 0.194.0：未登录且无权益 = 未开通（引导登录送试用；已有权益的旧数据仍如实显示生效中）
-  statusTitle(): string {
-    if (isVip(this.subscription)) {
-      const expire = vipExpireTime(this.subscription);
-      const trialEnd = this.subscription.freeTrialStart > 0 ? this.subscription.freeTrialStart + 30 * 86400000 : 0;
-      if (expire === trialEnd) {
-        return '免费试用中';
-      }
-      return '会员生效中';
-    }
-    if (!this.account.isLoggedIn) {
-      return '未开通';
-    }
-    return '已过期';
+  // ★ 0.248.0：资产卡数据
+  totalSp(): number {
+    return siyiTotalSp(this.siyi);
   }
 
-  statusDaysText(): string {
-    const days = vipDaysLeft(this.subscription);
-    if (days > 0) {
-      return `${days} 天后到期（${this.formatDate(vipExpireTime(this.subscription))}）`;
+  learnDays(): number {
+    return getStatDays(this.statStore).length; // 累计学习天数=有学习活动的天数
+  }
+
+  levelTitle(): string {
+    return siyiLevelTitle(this.learnDays());
+  }
+
+  spPoolText(): string {
+    let lines: string[] = [];
+    if (this.siyi.permanentSp > 0) {
+      lines.push(`充能 SP ${this.siyi.permanentSp.toLocaleString()}（永久）`);
     }
-    if (!this.account.isLoggedIn) {
-      return '登录华为账号，免费试用 30 天';
+    if (this.siyi.bonusSp > 0) {
+      lines.push(`嘉奖 SP ${this.siyi.bonusSp.toLocaleString()}（永久）`);
     }
-    return '云同步已停用，订阅后恢复';
+    if (this.siyi.giftSp > 0 && (this.siyi.giftSpExpireAt === 0 || this.siyi.giftSpExpireAt > Date.now())) {
+      lines.push(`赠送 SP ${this.siyi.giftSp.toLocaleString()}（${this.formatDate(this.siyi.giftSpExpireAt)} 前有效）`);
+    }
+    if (lines.length === 0) {
+      return '暂无余额——通过下方途径获取';
+    }
+    return lines.join('\n');
   }
 
   formatDate(ts: number): string {
@@ -95,11 +100,7 @@ export struct BillingPage {
       } else {
         this.showToastSafe('登录成功');
       }
-      // ★ 0.196.8：登录成功 → 弹「是否开启云同步」（与首页/边栏头像登录同款耦合流程）
-      // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
-      if (shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
-        connectConfirmDialog().cloudSyncPromptVisible = true;
-      }
+      // ★ 0.248.0：云同步询问弹窗移除（用户拍板「云同步不用管，默认全设备开启」）
     });
   }
 
@@ -129,7 +130,7 @@ export struct BillingPage {
       used = [];
     }
     const normalized = this.redeemInput.trim().toUpperCase();
-    const ok = redeemCode(this.subscription, normalized);
+    const ok = redeemCode(this.subscription, normalized, this.siyi);
     this.redeemResult = ok ? 'ok' : (used.indexOf(normalized) >= 0 ? 'used' : 'invalid');
     if (ok) {
       this.redeemInput = '';
@@ -167,17 +168,27 @@ export struct BillingPage {
 
         Scroll() {
           Column() {
-            // ── 订阅状态卡 ──
+            // ── 司忆点资产卡（★ 0.248.0：余额+等级头衔+各池明细，替代旧订阅状态卡）──
             Column() {
-              Text(this.statusTitle())
-                .fontSize(20)
+              Text('司忆点')
+                .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(isVip(this.subscription) ? BRAND_SECONDARY : TEXT_TERTIARY)
-              Text(this.statusDaysText())
+                .fontColor(TEXT_SECONDARY)
+              Text(`${this.totalSp().toLocaleString()}`)
+                .fontSize(28)
+                .fontWeight(700)
+                .fontColor(BRAND_SECONDARY)
+                .margin({ top: 4 })
+              Text(this.levelTitle())
                 .fontSize(FONT_SIZE_BODY)
                 .fontColor(TEXT_SECONDARY)
+                .margin({ top: 2 })
+              Text(this.spPoolText())
+                .fontSize(FONT_SIZE_CAPTION)
+                .lineHeight(20)
+                .fontColor(TEXT_TERTIARY)
                 .margin({ top: 6 })
-              // ★ 0.194.0：未登录 → 状态卡内直接给登录入口（登录即送 30 天试用）
+              // 未登录 → 登录入口（兑换前置+新用户礼包随登录发放）
               if (!this.account.isLoggedIn) {
                 Button(this.isLoggingIn ? '登录中…' : '登录华为账号')
                   .fontSize(FONT_SIZE_BODY)
@@ -196,17 +207,17 @@ export struct BillingPage {
             .padding(16)
             .borderRadius(RADIUS_NAV)
             .backgroundColor(SURFACE_SOFT)
-            .border({ width: 1, color: isVip(this.subscription) ? BRAND_SECONDARY : STROKE_CARD })
+            .border({ width: 1, color: STROKE_CARD })
             .margin({ bottom: 12 })
 
-            // ── 权益说明 ──
+            // ── 获取途径（★ 0.248.0：替代旧「会员权益」卡）──
             Column() {
-              Text('会员权益')
+              Text('获取途径')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
                 .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 6 })
-              Text('• 云同步：多设备对话数据实时同步（会员专属）\n• 其他全部功能永久免费：对话、词库、知识库、统计、圈注、朗读……100% 不设限')
+              Text('• 每日签到：连续签到最高 8,000 司忆点/天\n• 司忆学习：复习与学习行为产出 19,000 司忆点/天\n• 新用户礼包：注册即赠司忆点（赠 90 天内有效）\n• 兑换码：输入兑换码入账\n• 充能：下方充值档位，充能 SP 永久有效')
                 .fontSize(FONT_SIZE_BODY)
                 .lineHeight(22)
                 .fontColor(TEXT_SECONDARY)
@@ -218,19 +229,19 @@ export struct BillingPage {
             .backgroundColor(SURFACE_NODE)
             .margin({ bottom: 12 })
 
-            // ── 购买区（IAP 占位：商户资格下来后接入华为应用内支付）──
+            // ── 充能 SP（★ 0.248.0：两档定稿 ¥9.9→200万 / ¥19→400万，IAP 占位——用户拍板唯一充值路径）──
             Column() {
-              Text('订阅方案')
+              Text('充能 SP')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
                 .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 10 })
               Row({ space: 10 }) {
                 Column() {
-                  Text('月付')
+                  Text('200 万 SP')
                     .fontSize(FONT_SIZE_BODY)
                     .fontColor(TEXT_PRIMARY)
-                  Text('¥9.9/月')
+                  Text('¥9.9')
                     .fontSize(18)
                     .fontWeight(600)
                     .fontColor(BRAND_PRIMARY)
@@ -242,19 +253,19 @@ export struct BillingPage {
                 .backgroundColor(SURFACE_SOFT)
                 .border({ width: 1, color: STROKE_CARD })
                 .onClick(() => {
-                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit 月订阅商品
+                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit ¥9.9 档
                 })
 
                 Column() {
-                  Text('年付')
+                  Text('400 万 SP')
                     .fontSize(FONT_SIZE_BODY)
                     .fontColor(TEXT_PRIMARY)
                   Row({ space: 4 }) {
-                    Text('¥99/年')
+                    Text('¥19')
                       .fontSize(18)
                       .fontWeight(600)
                       .fontColor(BRAND_PRIMARY)
-                    Text('省¥19.8')
+                    Text('更划算')
                       .fontSize(FONT_SIZE_CAPTION)
                       .fontColor(BRAND_SECONDARY)
                   }
@@ -266,13 +277,13 @@ export struct BillingPage {
                 .backgroundColor(SURFACE_SOFT)
                 .border({ width: 1, color: BRAND_SECONDARY })
                 .onClick(() => {
-                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit 年订阅商品
+                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit ¥19 档
                 })
               }
               .width('100%')
               .alignItems(VerticalAlign.Top)
 
-              Text('💡 支付服务开通中——华为应用内支付资格申请审核中，开通后此处可直接订阅')
+              Text('💡 充能 SP 永久有效；支付服务开通中——华为应用内支付资格申请审核中，开通后此处可直接充能')
                 .fontSize(FONT_SIZE_CAPTION)
                 .lineHeight(18)
                 .fontColor(TEXT_TERTIARY)
@@ -292,10 +303,10 @@ export struct BillingPage {
                 .fontWeight(600)
                 .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 8 })
-              // ★ 0.194.0：兑换前置登录——未登录不显示输入框，先引导登录（登录即送 30 天试用）
+              // ★ 0.194.0：兑换前置登录——未登录不显示输入框，先引导登录
               if (!this.account.isLoggedIn) {
                 Column() {
-                  Text('兑换前请先登录华为账号——登录即免费试用 30 天')
+                  Text('兑换前请先登录华为账号')
                     .fontSize(FONT_SIZE_CAPTION)
                     .fontColor(TEXT_TERTIARY)
                   Button(this.isLoggingIn ? '登录中…' : '登录华为账号')
@@ -338,7 +349,7 @@ export struct BillingPage {
                 .width('100%')
 
                 if (this.redeemResult === 'ok') {
-                  Text('✓ 兑换成功，已增加 90 天会员')
+                  Text(`✓ 兑换成功，+${SIYI_REDEEM_SP / 10000} 万司忆点`)
                     .fontSize(FONT_SIZE_CAPTION)
                     .fontColor(BRAND_SECONDARY)
                     .margin({ top: 6 })
@@ -353,7 +364,8 @@ export struct BillingPage {
                     .fontColor(TEXT_TERTIARY)
                     .margin({ top: 6 })
                 }
-                Text('兑换码可叠加：连续兑换天数顺延；每码仅可使用一次')
+                // ★ 0.248.0：小字脱敏（用户拍板——删「连续兑换天数顺延」句不泄露兑换码权益；冒号改逗号）
+                Text('兑换码可叠加，每码仅可使用一次')
                   .fontSize(FONT_SIZE_CAPTION)
                   .fontColor(TEXT_TERTIARY)
                   .margin({ top: 6 })

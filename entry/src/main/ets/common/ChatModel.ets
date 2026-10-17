@@ -15,7 +15,6 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
-import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.228.1 临时诊断（定位后删）
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
 import { CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter, writeTombstone, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）；★ 0.230.1 writeTombstone（显式墓碑唯一出生通道）+ forceCloudSyncNow（缺片 nudge 重拉）
@@ -41,9 +40,10 @@ export class ChatMessage {
   @Trace outputTokens: number; // 输出 token 数
   @Trace isPodcastMode: boolean; // ★ 0.133：本次交互是否以播客模式发起（仅标记存储，MVP 不做视觉区分）
   @Trace model: string = ''; // ★ 0.224.3：生成本条回复的模型 ID（请求发出时打标——操作行显示供用户跨模型对比；旧消息空串不显示）
+  @Trace cacheHitTokens: number = 0; // ★ 0.247.4：命中缓存的输入 token 数（腾讯云 usage.prompt_tokens_details.cached_tokens；0=无缓存数据/旧消息）
 
   constructor(messageId: string, role: ChatRole, content: string, imageUrl: string[] = [], inputTokens: number = 0, outputTokens: number = 0,
-              isPodcastMode: boolean = false, model: string = '') { // ★ 0.133：可选参数带默认值，现有 7 处调用点不破坏；★ 0.224.3 尾部追加同款
+              isPodcastMode: boolean = false, model: string = '', cacheHitTokens: number = 0) { // ★ 0.247.4：尾部追加（可选参默认 0，现有调用点零破坏）
     this.messageId = messageId;
     this.role = role;
     this.content = content;
@@ -52,6 +52,7 @@ export class ChatMessage {
     this.outputTokens = outputTokens;
     this.isPodcastMode = isPodcastMode;
     this.model = model;
+    this.cacheHitTokens = cacheHitTokens;
   }
 }
 
@@ -123,6 +124,7 @@ interface SerializedMessage {
   outputTokens: number;
   isPodcastMode?: boolean; // ★ 0.133 新增（可选字段，旧数据无此字段，反序列化时 ?? false 兜底）
   model?: string; // ★ 0.224.3 新增（可选字段，旧数据无此字段，反序列化时 ?? '' 兜底）
+  cacheHitTokens?: number; // ★ 0.247.4 新增（可选字段，旧数据无此字段，反序列化时 ?? 0 兜底）
 }
 interface SerializedNode {
   nodeID: string;
@@ -155,7 +157,8 @@ export function serializeBubbleTree(tree: BubbleTree): string {
           inputTokens: msg.inputTokens,
           outputTokens: msg.outputTokens,
           isPodcastMode: msg.isPodcastMode, // ★ 0.133
-          model: msg.model // ★ 0.224.3
+          model: msg.model, // ★ 0.224.3
+          cacheHitTokens: msg.cacheHitTokens // ★ 0.247.4
         };
       });
       return {
@@ -187,7 +190,7 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
     const nodeList: BubbleNode[] = data.nodeList.map((node: SerializedNode): BubbleNode => {
       const messages: ChatMessage[] = node.messages.map((msg: SerializedMessage): ChatMessage => {
         return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl, msg.inputTokens ?? 0, msg.outputTokens ?? 0,
-          msg.isPodcastMode ?? false, msg.model ?? ''); // ★ 0.133：旧数据无此字段自动补 false；★ 0.224.3：旧消息无模型标记补空串
+          msg.isPodcastMode ?? false, msg.model ?? '', msg.cacheHitTokens ?? 0); // ★ 0.133：旧数据无此字段自动补 false；★ 0.224.3：旧消息无模型标记补空串；★ 0.247.4：缓存命中补 0
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
         node.historySummary ?? '', node.historySummaryCount ?? 0, node.nodeTitle ?? '', // ★ 0.147：旧数据无此字段自动补空串
@@ -217,6 +220,11 @@ export function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 }
 
+// ★ 2026-10-17 用户拍板：腾讯云 DeepSeek-Flash=上线后唯一对外模型，由「自定义配置」档承载
+// （端点/模型/Key 全内置开箱即用；Key 走 rawfile/config.json 不入库；测试期火山/DeepSeek 预设保留）
+export const TENCENT_CHAT_ENDPOINT: string = 'https://tokenhub.tencentmaas.com/v1/chat/completions';
+export const TENCENT_CHAT_MODEL: string = 'deepseek/deepseek-flash';
+
 // API 配置（火山引擎方舟）：PersistenceV2 持久化，跨重启保存
 @ObservedV2
 export class ApiConfig {
@@ -224,9 +232,9 @@ export class ApiConfig {
   // 源码可安全上传 GitHub）；默认值改空串，由 EntryAbility 启动时调 loadBuiltinApiConfig 填充。
   // 用户在设置页自定义过的 Key（持久化非空）优先，不被内置值覆盖。
   @Trace apiKey: string = '';
-  @Trace endpoint: string = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
-  @Trace model: string = 'deepseek-v4-flash-ga-260731'; // ★ 0.190.1：默认模型换 V4-Flash 正式版（用户指定；旧 260910 预览版已被替代，设置页回显时 mapLegacyModel 自动映射）
-  @Trace provider: string = 'volcano'; // ★ 0.190.0：模型提供商（huawei/volcano/deepseek/custom；预设端点+模型清单见 GlobalSettingsDialog PROVIDER_PRESETS，ApiClient 不感知——端点/模型/Key 全走本类字段）
+  @Trace endpoint: string = TENCENT_CHAT_ENDPOINT;
+  @Trace model: string = TENCENT_CHAT_MODEL; // ★ 2026-10-17：默认模型换腾讯云 DeepSeek-Flash（上线唯一对外模型；自定义档承载，key 经 config.json 内置）
+  @Trace provider: string = 'custom'; // ★ 0.190.0：模型提供商（huawei/volcano/deepseek/custom）；★ 2026-10-17 默认改 custom（腾讯云）
   @Trace audioModel: string = 'seed-icl-2.0'; // ★ 0.232.1：默认音频模型=声音复刻 2.0（用户拍板；2026-10-14 实证 seed-icl-2.0+S_ 音色 code=0 直连）；seed-tts-2.0=豆包语音合成 2.0（官方音色体系）
   @Trace audioVoice: string = 'S_bv8H32Sg2'; // ★ 0.232.0：默认音色=用户合成音色（声音复刻体系 S_ 前缀，用户提供）；未开通复刻资源时引擎自动回退官方音色 zh_female_vv_uranus_bigtts（55000000 重试）
   @Trace audioEndpoint: string = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'; // ★ 0.139：TTS 端点（openspeech HTTP 单向流，与 LLM endpoint 相互独立）
@@ -507,6 +515,7 @@ export function connectModelAlias(): ModelAliasStore {
 // 兜底：文件缺失/解析异常（如 clone 后未放本地配置）静默跳过，用户走设置页自填。
 export interface BuiltinConfig {
   apiKey: string;
+  volcanoApiKey?: string; // ★ 2026-10-17：火山方舟内置对话 Key（apiKey 已让位给腾讯云默认；火山档测试期备查，上架前必删）
   audioKey: string;
   audioModel?: string; // ★ 0.232.1：内置音频模型（可选——缺省不动 audioModel）
   audioVoice?: string; // ★ 0.232.0：内置合成音色（可选——缺省不动 audioVoice）
@@ -519,6 +528,22 @@ let builtinQwenTtsKey: string = '';
 
 export function getBuiltinQwenTtsKey(): string {
   return builtinQwenTtsKey;
+}
+
+// ★ 2026-10-17：内置腾讯云对话 Key 模块级缓存（config.json apiKey；存量设备 apiKey 已持久化火山值
+// 不被覆盖，GSD 切自定义档首次预填表单用——仅预填不写持久化，用户点保存才落盘）
+let builtinTencentChatKey: string = '';
+
+export function getBuiltinTencentChatKey(): string {
+  return builtinTencentChatKey;
+}
+
+// ★ 2026-10-17：内置火山方舟对话 Key 模块级缓存（config.json volcanoApiKey；因腾讯云默认化后 apiKey
+// 字段让位，火山档测试期经 getBuiltinVolcanoChatKey() 回填表单——不写持久化，用户自定义值优先）
+let builtinVolcanoChatKey: string = '';
+
+export function getBuiltinVolcanoChatKey(): string {
+  return builtinVolcanoChatKey;
 }
 
 // ★ 0.236.1：内置火山 TTS Key/音色快照（loadBuiltinApiConfig 填充）——GSD 切火山档且
@@ -568,6 +593,11 @@ export function loadBuiltinApiConfig(context: common.UIAbilityContext): void {
     // ★ 0.236.0：千问 TTS 内置 Key 只存模块级变量（不写持久化）——GSD 切千问档且用户未自定义时
     // 预填表单；默认 ttsProvider 保持 'volcano' 不变，不打扰现有火山体验
     builtinQwenTtsKey = obj.qwenTtsKey ?? '';
+    // ★ 2026-10-17：腾讯云对话 Key 内置缓存（config.json apiKey 即腾讯云 key；存量设备持久化非空
+    // 不覆盖，仅供 GSD 切自定义档首次预填表单——用户点保存才落盘）
+    builtinTencentChatKey = obj.apiKey;
+    // ★ 2026-10-17：火山方舟对话 Key 内置缓存（apiKey 已让位腾讯云默认；火山档测试期回填表单用）
+    builtinVolcanoChatKey = obj.volcanoApiKey ?? '';
     // ★ 0.236.1：内置火山 Key/音色快照（切火山档兜底回填用——config.json audioKey/audioVoice）
     builtinVolcanoTtsKey = obj.audioKey;
     builtinVolcanoTtsVoice = obj.audioVoice ?? '';
@@ -755,9 +785,15 @@ export function connectSubscription(): SubscriptionStore {
 }
 
 // ★ 0.194.0：统一试用打点——已登录且从未记录 → 从当下起算 30 天免费试用
-//   （调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 / BillingPage 登录按钮，三处共用防逻辑漂移）
+//   （调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 / BillingPage 登录按钮 / 边栏头像，
+//   四处共用防逻辑漂移）
+// ★ 0.248.0：登录后同步发放新用户礼包（grantSiyiWelcomeBonus 自身幂等——凡登录都调、
+//   welcomeGranted 标记防重发；随 stamp 发放=四入口天然全覆盖）
 export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean {
   const account = connectHuaweiAccount();
+  if (account.isLoggedIn) {
+    grantSiyiWelcomeBonus(connectSiyiPoints());
+  }
   if (account.isLoggedIn && subscription.freeTrialStart === 0) {
     subscription.freeTrialStart = Date.now();
     return true; // ★ 0.195.0：首次打戳返回 true——调用方据此弹「30 天试用欢迎弹窗」（仅首登 1 次）
@@ -794,6 +830,78 @@ export function vipDaysLeft(store: SubscriptionStore): number {
     return 0;
   }
   return Math.ceil((expire - Date.now()) / 86400000);
+}
+
+// ============================================================
+// ★ 0.248.0：司忆点（SP）资产体系——三池余额+新用户礼包+等级头衔（用户拍板商业方案 V2.1）
+//   池语义：充能池=充值购买（永久）；嘉奖池=兑换码/签到/学习发放（永久）；
+//   赠送池=新用户礼包（90 天效）；消耗顺序=先扣临期赠送→嘉奖→充能（消耗链路待开发）
+//   存储：PersistenceV2 全新 key（0.185 铁律：全新 key 无旧快照坑）
+// ============================================================
+@ObservedV2
+export class SiyiPointStore {
+  @Trace permanentSp: number = 0;         // 充能池（充值购买，永久）
+  @Trace bonusSp: number = 0;             // 嘉奖池（兑换码/签到/学习，永久）
+  @Trace giftSp: number = 0;              // 赠送池（新用户礼包，90 天效）
+  @Trace giftSpExpireAt: number = 0;      // 赠送池到期时间戳（0=无）
+  @Trace welcomeGranted: boolean = false; // 新用户礼包已发放标记（一次性）
+}
+
+export function connectSiyiPoints(): SiyiPointStore {
+  return PersistenceV2.connect(SiyiPointStore, 'siyi-points-v1', () => new SiyiPointStore()) as SiyiPointStore;
+}
+
+// 司忆点总余额（三池合计；赠送池过期不计）
+export function siyiTotalSp(store: SiyiPointStore): number {
+  let total = store.permanentSp + store.bonusSp;
+  if (store.giftSp > 0 && (store.giftSpExpireAt === 0 || store.giftSpExpireAt > Date.now())) {
+    total += store.giftSp;
+  }
+  return total;
+}
+
+// 等级头衔（0.247.7 七级表）：Lv1 注册即得 / Lv2 累计7天 / Lv3 30 / Lv4 90 / Lv5 180 / Lv6 300 / Lv7 连续365
+// 累计口径=统计有学习活动的天数（StatisticsStore days 行数）；Lv7 连续性收紧待签到引擎落地
+export function siyiLevelTitle(learnDays: number): string {
+  if (learnDays >= 365) {
+    return 'Lv7 司忆宗师';
+  }
+  if (learnDays >= 300) {
+    return 'Lv6 领域先哲';
+  }
+  if (learnDays >= 180) {
+    return 'Lv5 知识织网';
+  }
+  if (learnDays >= 90) {
+    return 'Lv4 深度沉思';
+  }
+  if (learnDays >= 30) {
+    return 'Lv3 逻辑筑基';
+  }
+  if (learnDays >= 7) {
+    return 'Lv2 探索学徒';
+  }
+  return 'Lv1 好奇宝宝';
+}
+
+// 新用户礼包分档（用户 2026-10-18 拍板）：上线首月注册=200 万（≈免费畅用一月）；次月起新用户=100 万
+// ⚠️ SIYI_FIRST_MONTH_END 为首月截止占位——上线时间确定后更新此常量即可
+export const SIYI_FIRST_MONTH_END: number = new Date(2026, 10, 30, 23, 59, 59).getTime();
+export const SIYI_WELCOME_FIRST_MONTH: number = 2000000;
+export const SIYI_WELCOME_NORMAL: number = 1000000;
+export const SIYI_GIFT_VALID_DAYS: number = 90;
+
+// 新用户礼包发放（一次性）：首次登录华为账号时调（与 stampFreeTrialOnLogin 同链路——三入口登录
+// 后处理都过 stamp，礼包随戳发放=天然全覆盖；0.217.2 教训：多入口登录新增入口最易漏一环）
+export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
+  if (store.welcomeGranted) {
+    return false;
+  }
+  store.welcomeGranted = true;
+  const amount = Date.now() < SIYI_FIRST_MONTH_END ? SIYI_WELCOME_FIRST_MONTH : SIYI_WELCOME_NORMAL;
+  store.giftSp += amount;
+  store.giftSpExpireAt = Date.now() + SIYI_GIFT_VALID_DAYS * 86400000;
+  return true;
 }
 
 // ============================================================
@@ -852,8 +960,11 @@ export function markWelcomeShown(store: SubscriptionStore): void {
   store.reminderState = JSON.stringify(st);
 }
 
-// ★ 0.194.0：兑换码——写入 90 天权益（叠加到当前权益之后：连续兑换顺延）
-export function redeemCode(store: SubscriptionStore, code: string): boolean {
+// ★ 0.248.0：兑换码奖励=100 万嘉奖 SP（用户拍板；200 个码与 SHA256 白名单不变；旧 +90 天会员逻辑作废）
+export const SIYI_REDEEM_SP: number = 1000000;
+
+// ★ 0.194.0：兑换码——0.248.0 起写入 100 万嘉奖 SP（入 bonusSp 永久池；码唯一性/防重用不变）
+export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPointStore): boolean {
   if (!isValidRedeemCode(code)) {
     return false;
   }
@@ -869,19 +980,16 @@ export function redeemCode(store: SubscriptionStore, code: string): boolean {
   }
   used.push(code);
   store.redeemedCodes = JSON.stringify(used);
-  // 权益叠加：从当前到期日、试用期末、现在三者中较晚者 +90 天
-  // （★ 0.194.0-bugfix：试用期与兑换码顺延而非并行——登录当天兑码应得 30+90=120 天，原实现吞掉试用期）
-  const trialEnd = store.freeTrialStart > 0 ? store.freeTrialStart + 30 * 86400000 : 0;
-  const base = Math.max(store.subscriptionExpire, trialEnd, Date.now());
-  store.subscriptionExpire = base + 90 * 86400000;
-  // 记账
+  // ★ 0.248.0：入嘉奖池（永久；消耗顺序=先扣赠送→嘉奖→充能，由消耗链路执行）
+  siyi.bonusSp += SIYI_REDEEM_SP;
+  // 记账（文案不泄露兑换码权益构成——用户拍板「不让用户知道兑换码能获得什么」）
   let history: string[] = [];
   try {
     history = JSON.parse(store.purchaseHistory) as string[];
   } catch (_e) {
     history = [];
   }
-  history.push(`兑换码 ${code.substring(0, 4)}****｜+90 天｜${new Date().toLocaleDateString()}`);
+  history.push(`兑换码 ${code.substring(0, 4)}****｜+${SIYI_REDEEM_SP / 10000} 万司忆点｜${new Date().toLocaleDateString()}`);
   store.purchaseHistory = JSON.stringify(history);
   return true;
 }
@@ -1595,7 +1703,7 @@ function nodeToJson(node: BubbleNode): string {
     return {
       messageId: msg.messageId, role: msg.role, content: msg.content, imageUrl: msg.imageUrl,
       inputTokens: msg.inputTokens, outputTokens: msg.outputTokens,
-      isPodcastMode: msg.isPodcastMode, model: msg.model
+      isPodcastMode: msg.isPodcastMode, model: msg.model, cacheHitTokens: msg.cacheHitTokens // ★ 0.247.4
     };
   });
   const n: SerializedNode = {
@@ -1612,7 +1720,7 @@ function nodeFromJson(v: string): BubbleNode | null {
     const n = JSON.parse(v) as SerializedNode;
     const messages: ChatMessage[] = (n.messages ?? []).map((m: SerializedMessage): ChatMessage => {
       return new ChatMessage(m.messageId, m.role as ChatRole, m.content, m.imageUrl ?? [],
-        m.inputTokens ?? 0, m.outputTokens ?? 0, m.isPodcastMode ?? false, m.model ?? '');
+        m.inputTokens ?? 0, m.outputTokens ?? 0, m.isPodcastMode ?? false, m.model ?? '', m.cacheHitTokens ?? 0); // ★ 0.247.4：缓存命中尾部追加
     });
     return new BubbleNode(n.nodeID, n.parentID, messages, n.x ?? 0, n.y ?? 0, n.parentX ?? 0, n.parentY ?? 0,
       n.historySummary ?? '', n.historySummaryCount ?? 0, n.nodeTitle ?? '', n.draftText ?? '', n.draftImages ?? '');
@@ -1977,7 +2085,6 @@ function collectSubtree(root: BubbleNode, children: Map<string, BubbleNode[]>, o
 }
 
 export async function flushCloudRowsNow(): Promise<void> {
-  rbLog(`F0 flush-start gate=${connectCloudSyncArbiter().rowInitDone}`);
   if (!connectCloudSyncArbiter().rowInitDone) {
     return; // 首拉闸门未开（0.223.1 种子事故防线——闸开后的首轮 flush 补写一切）
   }
@@ -2037,9 +2144,7 @@ export async function flushCloudRowsNow(): Promise<void> {
     if (connectCanvasMode().mode === 'flat') {
       upsertIfChanged('layout:flat', localLayoutJson());
     }
-    rbLog('F1 flush-ok');
   } catch (_e) {
-    rbLog(`F2 flush-threw ${String(_e)}`);
   }
 }
 
@@ -2072,14 +2177,10 @@ function reconcileCloudRows(): void {
     return;
   }
   reconcileBusy = true;
-  rbLog('R0 reconcile-start');
   queryAllRows().then((rows: CloudRow[]) => {
-    rbLog(`R1 rows=${rows.length}`);
     try {
       reconcileWithRows(rows);
-      rbLog('R2 reconcile-ok');
     } catch (_e) {
-      rbLog(`R3 reconcile-threw ${String(_e)}`);
     } finally {
       reconcileBusy = false;
       if (reconcileQueued) {
@@ -2088,16 +2189,10 @@ function reconcileCloudRows(): void {
       }
     }
   }).catch(() => {
-    rbLog('R4 query-failed');
     reconcileBusy = false;
   });
 }
 
-// ★ 0.228.1 临时诊断（MEMORY 0.228.1 入档；定位后整段删除）
-
-function rbLog(msg: string): void {
-  hilog.info(0x0D20, 'DAGAI_RB', '%{public}s', msg);
-}
 
 interface ChunkedMarker {
   __chunks?: number;
@@ -2138,7 +2233,6 @@ function reconcileWithRows(rows: CloudRow[]): void {
           // ★ 0.230.1：缺片=下行不完整（Bug A 实锤形态）——该行不进实体域（现行为），
           //   并计数上报：闸门本会话不开（防残缺态上行旧值覆盖云端）+ 有界 nudge 重拉
           pendingChunkCount++;
-          rbLog(`R5 chunk-pending ${k} chunks=${m.__chunks}`);
         }
       }
     } catch (_e) {
@@ -2215,7 +2309,6 @@ function reconcileWithRows(rows: CloudRow[]): void {
   //   缺片>0：闸门保持关（上行全阻——防残缺态旧值 LWW 压云端新值），但有界 nudge 重拉，
   //   dataChange 事件到片后自动重跑 reconcile 直至完整开闸（重试上限后放弃=只读态等前台再拉）
   if (pendingChunkCount > 0) {
-    rbLog(`R6 gate-held pending=${pendingChunkCount} nudge=${pullNudgeAttempts}`);
     schedulePullNudge();
   } else {
     pullNudgeAttempts = 0;
@@ -2247,7 +2340,6 @@ function schedulePullNudge(): void {
   pullNudgeAttempts++;
   pullNudgeTimer = setTimeout(() => {
     pullNudgeTimer = -1;
-    rbLog(`R7 nudge-pull #${pullNudgeAttempts}`);
     forceCloudSyncNow();
   }, 15000);
 }

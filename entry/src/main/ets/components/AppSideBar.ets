@@ -6,8 +6,12 @@
 //   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
 
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.9：logoutHuaweiID 删——退出确认弹窗移 Index 根挂载，确认后走 doLogout
-import { SubscriptionStore, connectSubscription, isVip, stampFreeTrialOnLogin } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin——边栏头像入口登录漏打戳致 isVip 恒 false、云同步被守卫锁「云同步已停用」（Pad 实测破案；Index/BillingPage 均有打戳唯边栏漏）
+import { SubscriptionStore, connectSubscription, isVip, stampFreeTrialOnLogin,
+  SiyiPointStore, connectSiyiPoints, siyiTotalSp, siyiLevelTitle,
+  StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin 打戳；★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）
 import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
+import { openSettingsTab } from './GlobalSettingsDialog'; // ★ 0.248.0：账户区 SP 行点击→设置弹窗司忆点 Tab
+import deviceInfo from '@ohos.deviceInfo'; // ★ 0.248.0：PC(2in1) 隐藏「桌面卡片」入口（系统不提供桌面卡片）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——Index 根挂载消费）
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
@@ -45,6 +49,12 @@ export struct AppSideBar {
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
   account: HuaweiAccountStore = connectHuaweiAccount();
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
+  siyi: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.0：司忆点资产（账户区显示余额+头衔）
+  statStore: StatisticsStore = connectStatistics(); // ★ 0.248.0：等级推导数据源
+
+  siyiLearnDays(): number {
+    return getStatDays(this.statStore).length; // 累计学习天数=有学习活动的天数
+  }
   // ★ 0.220.0：知识库折叠态+文件夹树
   kbSection: SidebarSectionState = connectSidebarSection();
   folderNav: KbFolderNavStore = connectKbFolderNav();
@@ -892,16 +902,19 @@ export struct AppSideBar {
           .layoutWeight(1)
         // ★ 0.203.0：桌面卡片小字入口（用户拍板：账户行右边小字「桌面卡片」，点击打开卡片管理器选规格添加）
         //   子组件 onClick 消费不冒泡——不会误触账户行的登录/退出逻辑
-        Text('桌面卡片')
-          .fontSize(10)
-          .fontFamily(FONT_INTER_SEMIBOLD)
-          .fontColor(BRAND_PRIMARY)
-          .padding({ left: 6, right: 6, top: 3, bottom: 3 })
-          .border({ width: 0.5, color: BRAND_SECONDARY })
-          .borderRadius(8)
-          .onClick(() => {
-            requestPublishReviewWidget();
+        // ★ 0.248.0：PC(2in1) 隐藏——系统不提供桌面卡片（用户拍板「PC 的桌面卡片可以删除了」）
+        if (deviceInfo.deviceType !== '2in1') {
+          Text('桌面卡片')
+            .fontSize(10)
+            .fontFamily(FONT_INTER_SEMIBOLD)
+            .fontColor(BRAND_PRIMARY)
+            .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+            .border({ width: 0.5, color: BRAND_SECONDARY })
+            .borderRadius(8)
+            .onClick(() => {
+              requestPublishReviewWidget();
           })
+        }
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -935,6 +948,25 @@ export struct AppSideBar {
         //   与暗紫风格不符）——弹窗 Index 根挂载；确认后走 doLogout（退出 + 云同步强制关一条龙）
         connectConfirmDialog().logoutConfirmVisible = true;
       })
+      // ★ 0.248.0：司忆点资产行（登录后显示；点击进设置弹窗司忆点 Tab——三端统一，
+      //   手机/Pad 额外由桌面卡片承载，PC 无桌面卡片故边栏为唯一常驻入口）
+      if (this.account.isLoggedIn) {
+        Row({ space: 6 }) {
+          Text(siyiLevelTitle(this.siyiLearnDays()))
+            .fontSize(FONT_SIZE_CAPTION)
+            .fontColor(TEXT_TERTIARY)
+          Blank()
+          Text(`${siyiTotalSp(this.siyi).toLocaleString()} SP`)
+            .fontSize(FONT_SIZE_CAPTION)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(BRAND_SECONDARY)
+        }
+        .width('100%')
+        .margin({ top: 4 })
+        .onClick(() => {
+          openSettingsTab(2); // 司忆点 Tab（index 2）
+        })
+      }
     }
     .width(208)
     .height('100%')

@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000293, // ★ 0.247.8：感叹号弹层两行文案微调（去预估前缀/帮你→预估节省/216→272 拉宽）；上一版 0.247.7：SP 实扣口径系数+司忆点规则 Tab；更早历史见 MEMORY.md
+    "versionCode": 1000294, // ★ 0.248.0：司忆点中心(账单页大改+新用户礼包200万/100万分档+兑换码100万嘉奖SP)+划词三端统一选中即弹(删bindContextMenu两层皮)+边栏SP资产行+桌面卡片等级/SP;上一版 0.247.8：感叹号弹层文案微调;更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

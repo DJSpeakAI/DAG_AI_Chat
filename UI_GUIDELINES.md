@@ -405,3 +405,43 @@
 - bindPopup 配置原样（SURFACE_NODE / radius 12 / mask rgba(0,0,0,0.3) / 点选项不收起可连续切换）；按钮上不再显示排序文字，**当前排序状态看弹层紫色高亮**
 - 弹层当前项：紫字（BRAND_SECONDARY）+ **紫底 `SURFACE_HOVER` + borderRadius 8** 双标识（本铁律补齐执行）；非当前项透明底
 - 顶栏终态次序：宽屏=排序图标 → 视图切换 → 设置 → ＋；手机=排序图标 → 设置 → ＋（全图标 28×28 家族，无文字按钮）
+
+## 十七、全屏图片查看器（★ 0.247.1 用户定稿——对话页 0.246.0 缩放查看器沉淀，各页查看器类推）
+
+> 适用范围：全应用全屏图片查看器（对话页消息图/司忆缩略图放大等）。已有查看器（知识库 0.211.2 血统）交互一致，参数以下表为准。
+
+### 17.1 缩放交互
+| 手势/设备 | 行为 | 参数 |
+|---|---|---|
+| 双指捏合（手机/Pad） | 跟手缩放 | 范围 1~4；**每帧增量 ×0.5 降速**（`1+(event.scale-1)*0.5`——用户实测原速"太快不丝滑"） |
+| 双击（手机/Pad） | 1↔2.5 切换 | 250ms EaseOut 缓动（`applyViewerScale`） |
+| 滚轮/触控板（PC） | 缩放 | `PanGesture(Vertical)` + `sourceTool===MOUSE/TOUCHPAD`（非 Scroll 组件滚轮以垂直 pan 下发；Finger 源必须忽略）；系数 `1+(-offsetY)/600` |
+| 单击（手机/Pad） | 320ms 延迟关闭 | 300ms 内第二击=双击缩放（手动判定，铁律只绑 `TapGesture count:1`） |
+| 右滑（手机） | 关闭 | offsetX > 30 |
+| × 按钮 | 关闭 | 左上角 position(20,20)，三端冗余退出 |
+
+### 17.2 保存入口（三端统一语义）
+- **PC**：右键 `bindContextMenu(RightClick)` 弹菜单卡；**触摸端**：长按 500ms 底部居中弹同款菜单卡（`RightClick` 的触摸长按映射在查看器实测不可靠，必须单独挂 `LongPressGesture`）
+- **菜单卡规格**：深色卡 `SURFACE_NODE` 底 + `STROKE_CARD` 描边 + `RADIUS_CONTROL` 圆角 + 阴影（radius 16 / `0x66000000` / offsetY 4）；内容=品牌紫竖条（4×18 圆角2）+「保存图片」15fp `TEXT_PRIMARY`；padding left14/right20/上下12
+- 保存动作统一走 `DocumentViewPicker.save` 系统保存对话框（免权限合规）；点卡保存并收起、点外部仅收起
+
+### 17.3 状态纪律
+- 打开查看器时 `@Monitor` 重置缩放=1 与菜单开态（防上次放大态/菜单残留）
+- 菜单开态时点图片=收菜单（不关查看器）；关闭查看器=菜单一并收
+
+## 十八、划词菜单与司忆点资产展示（★ 0.248.0 用户定稿）
+
+### 18.1 划词菜单三端统一（「选中即弹」军令）
+- **三端一律 `bindSelectionMenu(..., TextResponseType.SELECT)`（选中即弹）——禁用 `TextResponseType.LONG_PRESS`+`bindContextMenu(RightClick)` 组合**。Why：PC 右键走 bindContextMenu 会被系统菜单容器包裹（白底框包暗紫卡=两层皮，用户截图实锤「好丑」）；SELECT 模式 PC 拖选完成即弹自研栏、与手机/Pad 长按同机制同 UI=零容器污染（0.248.0 用户拍板「和手机 pad 长按划词之后的 UI 一样」）
+- 现有落点：正文 SelectionToolbar / 代码块 codeToolbar（CodeBlockView 内两处挂点）/ 复习区 ReviewSelectionToolbar——16 处挂点全量切换
+- 菜单卡规格沿 17.2 同款深色卡（SURFACE_NODE+STROKE_CARD+阴影）；样式改动三处 Builder 同步
+
+### 18.2 司忆点资产展示（三端分工）
+- **手机/Pad**：桌面卡片（ReviewWidgetCard）底部 9fp 小字「等级头衔 · N 万 SP」（宿主 buildWidgetState 拼串经 siyiLine 注入——卡片进程禁连 store，0.204.1 铁律）
+- **PC**：边栏账户行下方 SP 资产行（登录后显示：等级头衔左+SP 余额右，点击开设置弹窗司忆点 Tab）；PC 系统不提供桌面卡片——边栏是 PC 唯一常驻入口，「桌面卡片」入口在 PC 隐藏（`deviceInfo.deviceType !== '2in1'` 判定）
+- SP 措辞军令：「充值」→「充能」、「奖励」→「嘉奖」（用户拍板防老土）；兑换码权益文案脱敏（不泄露码能兑什么）
+
+### 18.3 账单页=司忆点中心（0.248.0 大改定稿）
+- 结构自上而下：司忆点资产卡（余额大字+等级头衔+各池明细）→ 获取途径 → 充能 SP 两档（¥9.9→200万 / ¥19→400万）→ 兑换码 → 记录 → 发票指路
+- **禁出现**：会员/免费试用/云同步叙事（云同步默认全设备开启，页面零提及）；价格档位只有 9.9/19 两档
+

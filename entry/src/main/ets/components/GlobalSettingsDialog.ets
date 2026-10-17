@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.247.8'; // ★ 0.247.8：感叹号弹层两行文案微调（去预估前缀/帮你→预估节省/216→272 拉宽）；上一版 0.247.7：SP 实扣口径系数+司忆点规则 Tab
+const APP_VERSION: string = 'v0.248.0'; // ★ 0.248.0：司忆点中心+划词三端统一选中即弹+边栏SP资产行+桌面卡片等级/SP;上一版 0.247.8：感叹号弹层文案微调
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -229,6 +229,14 @@ export function isKnownTextOnlyModel(provider: string, model: string): boolean {
 export class GlobalSettingsSharedStore {
   @Trace visible: boolean = false;
   @Trace closeReq: number = 0; // 外部请求关闭计数器（onBackPressed 递增→挂载点传参→requestClose 含未保存确认）
+  @Trace openTabIndex: number = -1; // ★ 0.248.0：外部请求打开指定 Tab（-1=无请求；边栏账户区跳司忆点 Tab 设 2）
+}
+
+// ★ 0.248.0：外部请求打开设置并跳指定 Tab（边栏账户区→司忆点规则页）
+export function openSettingsTab(tabIndex: number): void {
+  const shared = connectGlobalSettingsShared();
+  shared.openTabIndex = tabIndex;
+  shared.visible = true;
 }
 export function connectGlobalSettingsShared(): GlobalSettingsSharedStore {
   return AppStorageV2.connect(GlobalSettingsSharedStore, 'global-settings-shared', () => new GlobalSettingsSharedStore()) as GlobalSettingsSharedStore;
@@ -366,6 +374,12 @@ export struct GlobalSettingsDialog {
   // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
   aboutToAppear() {
+    // ★ 0.248.0：消费外部「打开指定 Tab」请求（边栏账户区→司忆点 Tab；-1=无请求，打开即复位）
+    const shared = connectGlobalSettingsShared();
+    if (shared.openTabIndex >= 0) {
+      this.currentTab = shared.openTabIndex;
+      shared.openTabIndex = -1;
+    }
     // ★ 0.240.2 开弹窗先补灌 v5 盘值（水合竞态双保险第二通道——onCreate 首读撞水合 pending 时，
     //   此刻盘值已就绪，重灌运行时真值后再回显，杜绝「回显 backup 迁移旧值」）
     refreshApiCfg();
@@ -2821,7 +2835,7 @@ export struct GlobalSettingsDialog {
             .fontColor(TEXT_PRIMARY)
         }
         .width('100%')
-        Text('应用内学习点数，AI 对话、知识提炼等功能按次消耗。坚持每日签到与学习，等级越高、奖励越多。')
+        Text('应用内学习点数，AI 对话、知识提炼等功能按次消耗。坚持每日签到与学习，等级越高、嘉奖越多。')
           .fontSize(12)
           .fontColor(TEXT_SECONDARY)
           .width('100%')
@@ -2832,20 +2846,20 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // 头衔等级卡（7 级：条件/充值折扣/每日奖励加成）
+      // 头衔等级卡（7 级：条件/充能折扣/每日嘉奖加成；★ 0.248.0「充值/奖励」→「充能/嘉奖」）
       Column({ space: 8 }) {
         Text('头衔等级')
           .fontSize(13)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        this.siyiLevelRow('Lv1', '好奇宝宝', '注册即得', '—', '基础奖励')
-        this.siyiLevelRow('Lv2', '探索学徒', '累计学习 7 天', '—', '奖励 +5%')
-        this.siyiLevelRow('Lv3', '逻辑筑基', '累计 30 天', '充值 98 折', '奖励 +10%')
-        this.siyiLevelRow('Lv4', '深度沉思', '累计 90 天', '充值 96 折', '奖励 +15%')
-        this.siyiLevelRow('Lv5', '知识织网', '累计 180 天', '充值 94 折', '奖励 +20%')
-        this.siyiLevelRow('Lv6', '领域先哲', '累计 300 天', '充值 90 折', '奖励 +25%')
-        this.siyiLevelRow('Lv7', '司忆宗师', '连续 365 天每日学习', '充值 85 折', '奖励 +30%')
+        this.siyiLevelRow('Lv1', '好奇宝宝', '注册即得', '—', '基础嘉奖')
+        this.siyiLevelRow('Lv2', '探索学徒', '累计学习 7 天', '—', '嘉奖 +5%')
+        this.siyiLevelRow('Lv3', '逻辑筑基', '累计 30 天', '充能 98 折', '嘉奖 +10%')
+        this.siyiLevelRow('Lv4', '深度沉思', '累计 90 天', '充能 96 折', '嘉奖 +15%')
+        this.siyiLevelRow('Lv5', '知识织网', '累计 180 天', '充能 94 折', '嘉奖 +20%')
+        this.siyiLevelRow('Lv6', '领域先哲', '累计 300 天', '充能 90 折', '嘉奖 +25%')
+        this.siyiLevelRow('Lv7', '司忆宗师', '连续 365 天每日学习', '充能 85 折', '嘉奖 +30%')
         Text('每日完成签到或学习任务计 1 天进度（每天最多 1 天）。中途断签：等级保留、连击冻结，可用补签卡续接。')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
@@ -2857,7 +2871,7 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // 获取途径卡
+      // 获取途径卡（★ 0.248.0：新用户礼包改两档 200 万/100 万——首月 200 万、次月起 100 万）
       Column({ space: 8 }) {
         Text('如何获得')
           .fontSize(13)
@@ -2869,7 +2883,9 @@ export struct GlobalSettingsDialog {
         this.siyiGainRow('连续签到 7 天', '额外 +10,000 SP')
         this.siyiGainRow('连续签到 30 天', '额外 +50,000 SP')
         this.siyiGainRow('连续签到 100 天', '额外 +200,000 SP')
-        this.siyiGainRow('新用户注册礼包', '+300,000 SP（90 天内有效）')
+        this.siyiGainRow('新用户注册礼包', '首月 +2,000,000 SP / 此后 +1,000,000 SP（90 天内有效）')
+        this.siyiGainRow('兑换码', '+1,000,000 SP')
+        this.siyiGainRow('充能', '¥9.9 → 200 万 SP / ¥19 → 400 万 SP')
       }
       .width('100%')
       .padding(14)
@@ -2877,14 +2893,14 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // 规则说明卡
+      // 规则说明卡（★ 0.248.0：充能/嘉奖口径）
       Column({ space: 6 }) {
         Text('规则说明')
           .fontSize(13)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        Text('· 充值购买的 SP 永久有效；签到与学习奖励永久有效\n· 新用户注册礼包自领取起 90 天内有效\n· 消耗时优先使用即将到期的赠送 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆宗师」充值时按 85 折额外赠送等值 SP')
+        Text('· 充能购买的 SP 永久有效；签到与学习嘉奖永久有效\n· 新用户注册礼包自领取起 90 天内有效\n· 消耗时优先使用即将到期的赠送 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆宗师」充能时按 85 折额外赠送等值 SP')
           .fontSize(12)
           .fontColor(TEXT_SECONDARY)
           .width('100%')

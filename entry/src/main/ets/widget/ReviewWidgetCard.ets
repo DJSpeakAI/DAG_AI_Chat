@@ -41,6 +41,7 @@ struct ReviewWidgetCard {
   @LocalStorageProp('noMore') noMore: string = 'n';
   @LocalStorageProp('face') face: string = 'single';   // ★ 0.224.0：卡面模式（快照注入）
   @LocalStorageProp('flipped') flipped: string = 'n';  // ★ 0.224.0：翻面态
+  @LocalStorageProp('siyiLine') siyiLine: string = ''; // ★ 0.248.0：司忆点资产行（宿主拼好整串注入）
 
   dim(): number {
     return Number(this.dimension);
@@ -345,6 +346,15 @@ struct ReviewWidgetCard {
           .width('100%')
           .margin({ top: 6 })
         }
+      }
+      // ★ 0.248.0：司忆点资产行（等级头衔+SP 余额——三规格通用底部小字；用户拍板桌面卡片显示等级/SP）
+      if (this.siyiLine.length > 0) {
+        Text(this.siyiLine)
+          .fontSize(9)
+          .fontColor(SUB_COLOR)
+          .maxLines(1)
+          .width('100%')
+          .margin({ top: 4 })
       }
     }
     .width('100%')
