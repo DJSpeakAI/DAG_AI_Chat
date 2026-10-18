@@ -295,7 +295,7 @@ export struct BillingPage {
                 .fontWeight(600)
                 .fontColor(TEXT_PRIMARY)
                 .margin({ bottom: 6 })
-              Text('• 每日签到：连续签到最高 8,000 司忆点/天\n• 司忆学习：复习与学习行为产出 19,000 司忆点/天\n• 新用户礼包：注册即赠司忆点（永久有效）\n• 兑换码：输入兑换码入账（嘉奖 SP，永久）\n• 充能：上方充值档位，充能 SP 永久有效')
+              Text('• 每日签到：连签奖励递增，第 7 天起 8,000 司忆点/天\n• 司忆学习：复习与学习行为产出 19,000 司忆点/天\n• 新用户礼包：注册即赠司忆点（永久有效）\n• 兑换码：输入兑换码入账（嘉奖 SP，永久）\n• 充能：上方充值档位，充能 SP 永久有效')
                 .fontSize(FONT_SIZE_BODY)
                 .lineHeight(22)
                 .fontColor(TEXT_SECONDARY)

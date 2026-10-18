@@ -15,8 +15,10 @@ import { connectKnowledgeBank } from './KnowledgeStoreUtil';
 import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds } from './WidgetReviewUtil';
 import { track } from './TrackUtil'; // 0.206.0 埋点
 import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：卡片评分进度上云钩子
-import { connectSiyiPoints, siyiTotalSp, siyiLevelTitle, connectStatistics, getStatDays } from '../common/ChatModel'; // ★ 0.248.0：桌面卡片司忆点资产行注入
+import { wordSpeaker } from './WordSpeaker'; // ★ 0.255.0：卡片音标点击发音（主进程发音单例复用）
 import { connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：快照注入卡面模式（主进程安全；卡片进程经 face 字段读）
+// ★ 0.252.0：connectSiyiPoints/siyiTotalSp/siyiLevelTitle/connectStatistics/getStatDays import 已删
+//   （随左下角 siyiLine 行下线）
 
 const DEF_MAX = 200; // 释义截断长度（防爆 preferences 快照）
 
@@ -28,7 +30,8 @@ function wordToItem(w: WordItem): WidgetCardItem {
     strength: w.strength,
     reviewCount: w.reviewCount,
     lastReviewAt: w.lastReviewAt,
-    nextReviewAt: w.nextReviewAt
+    nextReviewAt: w.nextReviewAt,
+    phonetic: w.usPhonetic // ★ 0.255.0：音标注入（WordItem 真名 usPhonetic）
   };
 }
 
@@ -40,7 +43,8 @@ function cardToItem(c: KnowledgeCard): WidgetCardItem {
     strength: c.strength,
     reviewCount: c.reviewCount,
     lastReviewAt: c.lastReviewAt,
-    nextReviewAt: c.nextReviewAt
+    nextReviewAt: c.nextReviewAt,
+    phonetic: '' // ★ 0.255.0：知识卡无音标概念——恒空串（卡片端按空判不渲染音标行）
   };
 }
 
@@ -68,13 +72,10 @@ export function buildWidgetState(context: Context, mode: string,
 
   const s: WidgetState = { mode: mode === 'word' ? 'word' : 'knowledge', word: wq, knowledge: kq };
   // ★ 0.224.0：卡面模式随快照注入（卡片进程禁连 FaceModeStore——@ObservedV2 在卡片进程崩，0.204.1 铁律）
+  // ★ 0.252.0：FaceModeStore.mode 已恒 'double'（全局固定双面），此处读值自然恒 double
   s.face = connectFaceMode().mode === 'double' ? 'double' : 'single';
   s.flipped = 'n'; // 新快照一律从正面开始
-  // ★ 0.248.0：司忆点资产行注入（宿主进程连 store 安全；卡片进程禁连——拼好整串注入）
-  const learnDays = getStatDays(connectStatistics()).length;
-  const lv = siyiLevelTitle(learnDays);
-  const sp = siyiTotalSp(connectSiyiPoints());
-  s.siyiLine = sp > 0 ? `${lv} · ${(sp / 10000).toLocaleString()} 万 SP` : `${lv} · 0 SP`;
+  // ★ 0.252.0：siyiLine 拼接已删（左下角 SP/称号行下线——用户拍板桌面卡片纯背诵工具）
   writeWidgetStateForHost(context, s);
 }
 
@@ -165,6 +166,8 @@ export function handleWidgetSwitch(context: Context, mode: string): void {
   track(context, 'widget_switch', _tp2); // 0.206.0 埋点：桌面卡片切库
   const s = readWidgetState(context);
   s.mode = mode;
+  s.flipped = 'n'; // ★ 0.252.0 切库 bug 修复②：切库一律回正面——call 主链路此前不重置翻面态
+  //   （message 备用链路 processWidgetCommand 有重置，两链路不一致致切库后停留反面态污染显示）
   writeWidgetStateForHost(context, s);
 }
 
@@ -215,5 +218,16 @@ export function handleWidgetContinue(context: Context): void {
   s.noMore = 'n';
   s.flipped = 'n'; // ★ 0.224.0：新队列从正面开始
   writeWidgetStateForHost(context, s);
+}
+
+/**
+ * ★ 0.255.0：卡片音标点击发音——复用主进程发音单例（本地 TTS 双引擎+引擎互斥+口音联动全继承）。
+ * 不传 hooks（call 场景 EntryAbility 无 UI 上下文，口音提示静默）；不 updateForm 不占刷新窗。
+ */
+export function handleWidgetSpeak(word: string): void {
+  if (word.length === 0) {
+    return;
+  }
+  wordSpeaker.speak(word);
 }
 

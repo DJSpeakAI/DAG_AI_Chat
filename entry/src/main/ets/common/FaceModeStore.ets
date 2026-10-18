@@ -24,7 +24,11 @@ export class FaceModeStore {
 export function connectFaceMode(): FaceModeStore {
   // ★ 0.224.0-fix：全新 key v2——0.185 铁律实证复发（更深层形态）：根类新字段挂旧 key
   //   不入持久化 track 集——实测 Pad 上 mode 置 double 后重启回 single、persistent_storage
-  //   文件 mtime 纹丝不动（@Trace 内存刷新正常但零写盘）。旧 v1 两库分治字段就此休眠
-  //   （不迁移：用户个人偏好单面，双面用户重拨一次即可——代价最小语义最清）。
-  return PersistenceV2.connect(FaceModeStore, 'review-face-mode-v2', () => new FaceModeStore()) as FaceModeStore;
+  //   文件 mtime 纹丝不动（@Trace 内存刷新正常但零写盘）。旧 v1 两库分治字段就此休眠。
+  // ★ 0.252.0 全局固定双面（用户拍板：单面 UI 难看、双面整齐且更符合学习习惯）：
+  //   mode 恒钳制 'double'——盘值 single 一律覆盖，切换单面入口已全部移除；
+  //   PersistenceV2 key 不动（红线），休眠字段原样保留（Schema 铁律）。
+  const store = PersistenceV2.connect(FaceModeStore, 'review-face-mode-v2', () => new FaceModeStore()) as FaceModeStore;
+  store.mode = 'double';
+  return store;
 }

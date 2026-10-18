@@ -30,6 +30,7 @@ import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKb
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
+import { SignInDialog, LevelUpDialog } from '../components/SignInDialog'; // ★ 0.256.0：签到弹窗+称号升级弹窗（桥驱动，Index 根唯一挂载点）
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
 import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）；★ 0.230.0：加共享开态 store
@@ -647,7 +648,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.251.0') // ★ 0.251.0：AI流式后台保活续收(切后台不断流+完成叮咚);上一版 0.250.0：敏感词预过滤;更早历史见 MEMORY.md
+        Text('v0.257.0') // ★ 0.257.0：上架合规补全（安全拦截捕获+投诉举报入口+隐私政策审计留存）；上一版 0.256.1：TTS播报缓存;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -832,6 +833,10 @@ struct Index {
         this.onImproveSkip();
       }
     })
+    // ★ 0.256.0：签到弹窗（边栏签到入口/首登引导判定触发——SignInDialogBridge 驱动）
+    SignInDialog()
+    // ★ 0.256.0：称号升级弹窗（学习天数落盘/云下行吸收触发——LevelUpBridge 驱动）
+    LevelUpDialog()
     }
     .width('100%')
     .height('100%')

@@ -12,11 +12,12 @@
 
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 机制（真机日志实证：进程存活时 call 走 Callee onRemoteMessageRequest 而非 onNewWant）
+import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.255.0：'WGT' 切库诊断日志（临时——验收后删）
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flushCloudRowsNow } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
-import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue
+import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue, handleWidgetSpeak } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue; ★ 0.255.0 speak
 import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
 import { buildBackupPayload, writeInternalBackup } from '../utils/BackupUtil'; // 0.205.0 三道防线：退后台自动内部备份
 import { connectWordBank } from '../utils/WordStoreUtil';
@@ -93,6 +94,7 @@ export default class EntryAbility extends UIAbility {
         return new EmptyParcelable();
       });
       this.callee.on('widgetSwitch', (data: rpc.MessageSequence): rpc.Parcelable => {
+        hilog.info(0x0000, 'WGT', 'switch recv'); // ★ 0.255.0 诊断日志（验收后删）：与 flip recv 同现=冒泡双发实锤
         const params = data.readString();
         try {
           const m = JSON.parse(params) as Record<string, string>;
@@ -109,7 +111,19 @@ export default class EntryAbility extends UIAbility {
       });
       // ★ 0.224.0：双面模式卡身翻面（纯显示态零数据变更——切 flipped 推回卡片）
       this.callee.on('widgetFlip', (_data: rpc.MessageSequence): rpc.Parcelable => {
+        hilog.info(0x0000, 'WGT', 'flip recv'); // ★ 0.255.0 诊断日志（验收后删）：切库点击时与本行同现=冒泡双发实锤
         handleWidgetFlip(this.context);
+        return new EmptyParcelable();
+      });
+      // ★ 0.255.0：卡片音标点击发音（主进程发音单例复用——不 updateForm 不占刷新窗）
+      this.callee.on('widgetSpeak', (data: rpc.MessageSequence): rpc.Parcelable => {
+        const params = data.readString();
+        try {
+          const m = JSON.parse(params) as Record<string, string>;
+          handleWidgetSpeak(m['word'] ?? '');
+        } catch (_e) {
+          // 参数异常静默
+        }
         return new EmptyParcelable();
       });
     } catch (_e) {
@@ -127,7 +141,7 @@ export default class EntryAbility extends UIAbility {
       }
       const method = (p['method'] ?? '') as string;
       if (method !== 'widgetRate' && method !== 'widgetSwitch' && method !== 'widgetContinue' &&
-        method !== 'widgetFlip') {
+        method !== 'widgetFlip' && method !== 'widgetSpeak') {
         return;
       }
       const params = p['params'];
@@ -138,6 +152,8 @@ export default class EntryAbility extends UIAbility {
         handleWidgetContinue(this.context);
       } else if (method === 'widgetFlip') {
         handleWidgetFlip(this.context); // ★ 0.224.0：冷启动翻面（评分同款双路径）
+      } else if (method === 'widgetSpeak') {
+        handleWidgetSpeak(m['word'] ?? ''); // ★ 0.255.0：冷启动发音（call 同款双路径）
       } else {
         handleWidgetSwitch(this.context, m['mode'] ?? 'knowledge');
       }

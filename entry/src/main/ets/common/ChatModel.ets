@@ -764,6 +764,7 @@ export function recordStat(store: StatisticsStore, kind: string, inTok: number, 
   entry.outputTokens += outTok;
   store.raw = JSON.stringify({ days: days } as StatDayData);
   scheduleRowFlush(); // ★ 0.248.4：统计落盘即防抖上行（cfg:stat-days——等级头衔多端一致）
+  notifyLevelUp(days.length); // ★ 0.256.0：学习天数落盘即检头衔升级（本端学习路径）
 }
 
 // ============================================================
@@ -795,6 +796,7 @@ export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean 
   const account = connectHuaweiAccount();
   if (account.isLoggedIn) {
     grantSiyiWelcomeBonus(connectSiyiPoints());
+    maybeShowSignInGuide(); // ★ 0.256.0：首登签到引导（挂此=四登录入口全覆盖；guideShown 只弹一次）
   }
   if (account.isLoggedIn && subscription.freeTrialStart === 0) {
     subscription.freeTrialStart = Date.now();
@@ -947,6 +949,215 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
   // ★ 0.248.5：有效期取消——不再设置 giftSpExpireAt（礼包永久）
   scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
   return true;
+}
+
+// ============================================================
+// ★ 0.256.0：签到体系（需求正本已归档 docs/0.256.0；此前仅文案无功能本体）
+//   口径（用户 2026-10-19 拍板）：连签奖励递增封顶——第 1 天 2,000，每天 +1,000，
+//   第 7 天起 8,000/天封顶；里程碑额外奖励 7/30/100 天 → +10,000/+50,000/+200,000
+//   （断签后重新连满再发；maxStreak 只记最高不阻断）。发放一律入 bonusSp 嘉奖池。
+//   存储：PersistenceV2 全新 key 'sign-in-v1'（本地——重装清沙箱=首登引导天然复现，丙方案定案）
+// ============================================================
+@ObservedV2
+export class SignInStore {
+  @Trace signDates: string[] = [];    // 已签到日期集合 'YYYY-MM-DD'（本地自然日）
+  @Trace lastSignDate: string = '';   // 最后签到日
+  @Trace streak: number = 0;          // 当前连击天数
+  @Trace maxStreak: number = 0;       // 历史最高连击
+  @Trace guideShown: boolean = false; // 首登签到引导弹窗已展示标志（只弹一次）
+}
+
+export function connectSignIn(): SignInStore {
+  return PersistenceV2.connect(SignInStore, 'sign-in-v1', () => new SignInStore()) as SignInStore;
+}
+
+// ★ 0.256.0：日期偏移调试开关（AppStorageV2 应用级、默认 0=正常用户零影响）——
+//   签到/连击涉及「今天」统一走此偏移，测试连签 7 天/断签/里程碑不真等时间；
+//   入口=签到弹窗底部日期小字长按（bindContextMenu，触屏长按/PC 右键双通道）
+@ObservedV2
+export class DebugDayOffsetStore {
+  @Trace offset: number = 0;
+}
+
+export function connectDebugDayOffset(): DebugDayOffsetStore {
+  return AppStorageV2.connect(DebugDayOffsetStore, 'debug-day-offset',
+    () => new DebugDayOffsetStore()) as DebugDayOffsetStore;
+}
+
+// 签到弹窗触发桥（AppStorageV2 应用级共享；挂载点唯一=Index 根 Stack——AppConfirmDialog 同款模式）
+@ObservedV2
+export class SignInDialogBridge {
+  @Trace visible: boolean = false;
+}
+
+export function connectSignInDialog(): SignInDialogBridge {
+  return AppStorageV2.connect(SignInDialogBridge, 'sign-in-dialog',
+    () => new SignInDialogBridge()) as SignInDialogBridge;
+}
+
+// 本地自然日字符串（YYYY-MM-DD）+ 调试偏移天——需求 §5.1：统一 getFullYear/getMonth/getDate
+//   拼 串比较，不用 Date.now() 直比（防时区/时分秒误差）
+export function todayStrWithOffset(offsetDays: number): string {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+}
+
+// 日期字符串平移（本地时间构造防 UTC 偏移）：'2026-10-19' + (-1) = '2026-10-18'
+function shiftDateStr(dateStr: string, deltaDays: number): string {
+  const parts = dateStr.split('-');
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]) + deltaDays);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+}
+
+// 连击推导（纯函数）：昨天签过=连击+1；否则（间断/首签）归 1
+export function nextStreak(lastSignDate: string, streak: number, today: string): number {
+  if (lastSignDate !== '' && shiftDateStr(today, -1) === lastSignDate) {
+    return streak + 1;
+  }
+  return 1;
+}
+
+// 每日签到奖励（纯函数）——连签递增：第 N 天 = min(2000 + (N-1)×1000, 8000)，第 7 天起封顶
+export function signInRewardSp(streak: number): number {
+  const n = Math.max(1, streak);
+  return Math.min(2000 + (n - 1) * 1000, 8000);
+}
+
+// 连签里程碑额外奖励（纯函数）——正好达到 7/30/100 天当天发放；断签重连再满再发
+export function milestoneBonusSp(streak: number): number {
+  if (streak === 100) {
+    return 200000;
+  }
+  if (streak === 30) {
+    return 50000;
+  }
+  if (streak === 7) {
+    return 10000;
+  }
+  return 0;
+}
+
+// 今日是否已签（读取统一走调试偏移）
+export function isSignedToday(store: SignInStore): boolean {
+  const today = todayStrWithOffset(connectDebugDayOffset().offset);
+  return store.signDates.indexOf(today) >= 0;
+}
+
+// 签到执行（完整链：防重复→连击→发 SP→云上行；today 由调用方统一走 todayStrWithOffset 传入——
+//   显式参数化=纯函数可测）：返回本次发放总额（0=今日已签未发）
+//   里程碑与当日奖励一并入 bonusSp 嘉奖池（scheduleRowFlush 走 cfg:siyi-points 同款上行）
+export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string): number {
+  if (store.signDates.indexOf(today) >= 0) {
+    return 0;
+  }
+  store.streak = nextStreak(store.lastSignDate, store.streak, today);
+  store.lastSignDate = today;
+  store.signDates.push(today);
+  if (store.streak > store.maxStreak) {
+    store.maxStreak = store.streak;
+  }
+  const total = signInRewardSp(store.streak) + milestoneBonusSp(store.streak);
+  siyi.bonusSp += total;
+  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  return total;
+}
+
+// 首登签到引导判定（丙方案）：从未引导过 && 从未签过 && 登录态已建立 → 弹一次并打标志。
+//   卸载重装清 PersistenceV2 沙箱 → guideShown 清零 → 重装后首次登录必弹（验收标准）。
+//   挂 stampFreeTrialOnLogin 内=四登录入口全覆盖（Index.doLogin/Index 补查/BillingPage/边栏头像，0.217.2 铁律）
+function maybeShowSignInGuide(): void {
+  const store = connectSignIn();
+  if (store.guideShown || store.signDates.length > 0) {
+    return; // 已引导过（或异常防御：签过必已引导）
+  }
+  const account = connectHuaweiAccount();
+  if (!account.isLoggedIn) {
+    return;
+  }
+  store.guideShown = true; // 弹即置标志——只弹一次
+  connectSignInDialog().visible = true;
+}
+
+// ============================================================
+// ★ 0.256.0：称号升级检测（头衔此前静默变化，补升级提醒弹窗）
+//   桥=AppStorageV2 应用级（lastLevel 基线 + pendingLevel 待展示）；
+//   检测点=recordStat（本端学习落盘）+ mergeStatDaysRow（云下行天数吸收）两路；
+//   冷启动基线静默同步不弹——升级只可能发生在「本次会话学习/云下行」时刻（符合需求 §7）
+// ============================================================
+@ObservedV2
+export class LevelUpBridge {
+  @Trace lastLevel: number = 0;    // 已通知等级基线（0=未初始化）
+  @Trace pendingLevel: number = 0; // 待展示升级弹窗等级（>0 即弹，关闭清零）
+}
+
+export function connectLevelUpBridge(): LevelUpBridge {
+  return AppStorageV2.connect(LevelUpBridge, 'level-up-bridge',
+    () => new LevelUpBridge()) as LevelUpBridge;
+}
+
+// 头衔数值化（纯函数，1~8）——与 siyiLevelTitle 同阈值单一真相源
+export function siyiLevelOf(learnDays: number): number {
+  if (learnDays >= SIYI_LV8_DAYS) {
+    return 8;
+  }
+  if (learnDays >= 240) {
+    return 7;
+  }
+  if (learnDays >= 210) {
+    return 6;
+  }
+  if (learnDays >= 150) {
+    return 5;
+  }
+  if (learnDays >= 90) {
+    return 4;
+  }
+  if (learnDays >= 30) {
+    return 3;
+  }
+  if (learnDays >= 7) {
+    return 2;
+  }
+  return 1;
+}
+
+// 等级权益文案（升级弹窗展示）——与 GlobalSettingsDialog 八级表充能/嘉奖两列同源
+//   （⚠️ 双份维护：GSD 表改文案时此处同步；GSD 为规则展示真相源）
+export const SIYI_LEVEL_PERKS: string[] = [
+  '基础嘉奖',
+  '嘉奖 +5%',
+  '嘉奖 +10% · 充能 98 折',
+  '嘉奖 +15% · 充能 96 折',
+  '嘉奖 +20% · 充能 94 折',
+  '嘉奖 +25% · 充能 90 折',
+  '嘉奖 +30% · 充能 85 折',
+  'AI 对话 SP 永久免费',
+];
+
+// 等级头衔文案（按等级数值取用）——与 siyiLevelTitle 八级表同源（⚠️ 双份维护，siyiLevelTitle 为真相源）
+export const SIYI_LEVEL_TITLES: string[] = [
+  'Lv1 好奇宝宝',
+  'Lv2 司墨',
+  'Lv3 司简',
+  'Lv4 司理',
+  'Lv5 司微',
+  'Lv6 司玄',
+  'Lv7 司天',
+  'Lv8 司忆令',
+];
+
+// 等级升级通知：learnDays 变化后调用——首次建立基线（静默），升级置 pendingLevel 触发弹窗
+export function notifyLevelUp(learnDays: number): void {
+  const bridge = connectLevelUpBridge();
+  const level = siyiLevelOf(learnDays);
+  if (bridge.lastLevel === 0) {
+    bridge.lastLevel = level; // 冷启动/首检基线——不弹（老用户登录即 Lv8 也不打扰）
+    return;
+  }
+  if (level > bridge.lastLevel) {
+    bridge.lastLevel = level;
+    bridge.pendingLevel = level; // 触发 Index 根挂载弹窗
+  }
 }
 
 // ============================================================
@@ -2819,6 +3030,7 @@ function mergeStatDaysRow(v: string | undefined): void {
   });
   store.raw = JSON.stringify({ days: merged } as StatDayData);
   scheduleRowFlush();
+  notifyLevelUp(merged.length); // ★ 0.256.0：云下行天数吸收后检头衔升级（对端学习路径）
 }
 
 // ★ 0.248.4：cfg:siyi-points 行 payload（普通 class——非 @ObservedV2，stringify 可枚举无 0.205.4 坑）

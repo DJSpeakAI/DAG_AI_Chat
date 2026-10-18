@@ -4929,21 +4929,22 @@ export struct ChatPage {
                                            .onClick(() => {
                                              this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                            })
-                                        if (getTitleImages(card).length > 0) {
-                                          // ★ 0.247.1：正面缩略图移到行首（用户拍板「正面图片应该左对齐」——
-                                          //   原挂标题行尾=右对齐）；点击开查看器翻全部标题图
-                                          Image(getTitleImages(card)[0])
-                                            .width(20)
-                                            .height(20)
-                                            .borderRadius(4)
-                                            .objectFit(ImageFit.Cover)
-                                            .margin({ right: 6 })
-                                            .onClick(() => {
-                                              this.imageViewerImages = getTitleImages(card);
-                                              this.imageViewerIndex = 0;
-                                              this.imageViewerVisible = true;
-                                            })
-                                        }
+                                         if (getTitleImages(card).length > 0) {
+                                           // ★ 0.255.2：标题图 icon 触发器（司忆区图片展示终版方案）——缩略图铺
+                                           //   列表行被用户否决；icon 与输入区「添加图片」同款华为透明 svg（统一，
+                                           //   彩色/图片直铺太难看）；固定槽位不随标题横滑；点击开统一查看器翻全部
+                                           //   标题图；icon 只动查看器三状态、不碰展开态——关查看器返回后原地恒在
+                                           Image($r('app.media.image'))
+                                             .width(16)
+                                             .height(16)
+                                             .objectFit(ImageFit.Contain)
+                                             .margin({ right: 4 })
+                                             .onClick(() => {
+                                               this.imageViewerImages = getTitleImages(card);
+                                               this.imageViewerIndex = 0;
+                                               this.imageViewerVisible = true;
+                                             })
+                                         }
                                          Scroll() {
                                           Text(card.title, { controller: this.getOrCreateTextController(`${msg.messageId}|rk${idx}`) })
                                             .fontSize(this.fs(13))
@@ -4982,72 +4983,64 @@ export struct ChatPage {
                                       }
                                       .width('100%')
                                       // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
-                                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${card.id}`) {
-                                       // ★ 0.169.1：定义行划词
-                                       // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
-                                       Scroll() {
-                                         Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
-                                           .fontSize(this.fs(12))
-                                           .fontColor(TEXT_SECONDARY)
-                                           .maxLines(1)
-                                           .copyOption(CopyOptions.LocalDevice)
-                                           .onClick(() => {
-                                             this.onReviewWordTap(`${msg.messageId}|${card.id}`);
-                                           })
-                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
-                                              onAppear: () => {
-                                                this.selKey = `${msg.messageId}|rkd${idx}`;
-                                              },
-                                              onDisappear: () => {
-                                                this.clearSelectionState();
-                                              }
+                                      if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `${msg.messageId}|${card.id}`) {
+                                        // ★ 0.169.1：定义行划词
+                                        // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
+                                        // ★ 0.255.2：内容图 icon 放描述文字之前（终版方案「题面归题面、答案归答案」）——
+                                        //   点 icon 开统一查看器只滑内容图；icon 不碰展开态，看图返回后原地恒在可反复点
+                                        Row() {
+                                          if (getCardImages(card).length > 0) {
+                                            Image($r('app.media.image'))
+                                              .width(16)
+                                              .height(16)
+                                              .objectFit(ImageFit.Contain)
+                                              .margin({ right: 4 })
+                                              .onClick(() => {
+                                                this.imageViewerImages = getCardImages(card);
+                                                this.imageViewerIndex = 0;
+                                                this.imageViewerVisible = true;
+                                              })
+                                          }
+                                          Scroll() {
+                                          Text(card.definition, { controller: this.getOrCreateTextController(`${msg.messageId}|rkd${idx}`) })
+                                            .fontSize(this.fs(12))
+                                            .fontColor(TEXT_SECONDARY)
+                                            .maxLines(1)
+                                            .copyOption(CopyOptions.LocalDevice)
+                                            .onClick(() => {
+                                              this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                             })
-                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
-                                              onAppear: () => {
-                                                this.selKey = `${msg.messageId}|rkd${idx}`;
-                                              },
-                                              onDisappear: () => {
-                                                this.clearSelectionState();
-                                              }
+                                             .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
+                                               onAppear: () => {
+                                                 this.selKey = `${msg.messageId}|rkd${idx}`;
+                                               },
+                                               onDisappear: () => {
+                                                 this.clearSelectionState();
+                                               }
+                                             })
+                                             .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                               onAppear: () => {
+                                                 this.selKey = `${msg.messageId}|rkd${idx}`;
+                                               },
+                                               onDisappear: () => {
+                                                 this.clearSelectionState();
+                                               }
+                                             })
+                                            .onTextSelectionChange((start: number, end: number) => {
+                                              this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
                                             })
-                                           .onTextSelectionChange((start: number, end: number) => {
-                                             this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
-                                           })
                                         }
-                                         .scrollable(ScrollDirection.Horizontal)
-                                         .scrollBar(BarState.Off)
-                                         .align(Alignment.Start)
-                                         .width('100%')
-                                         // ★ 0.233.0：定义行左缘与上方单词区左对齐（0 缩进——用户拍板「翻面左边留空
-                                         //   不好看，跟上面的单词库的左对齐」）；原 margin left 18 正是「右边超出一个
-                                         //   地方」真凶——margin 叠加在 width('100%') 外部使总宽超 18，右缘突出
-                                         .margin({ top: 2 })
-                                         // ★ 0.246.0：反面内容图缩略图条（有图才渲染）——定义行下横排小缩略图
-                                         if (getCardImages(card).length > 0) {
-                                           Scroll() {
-                                             Row({ space: 4 }) {
-                                               ForEach(getCardImages(card), (img: string, ii: number) => {
-                                                 Image(img)
-                                                   .width(24)
-                                                   .height(24)
-                                                   .borderRadius(4)
-                                                   .objectFit(ImageFit.Cover)
-                                                   .onClick(() => {
-                                                     this.imageViewerImages = getCardImages(card);
-                                                     this.imageViewerIndex = ii;
-                                                     this.imageViewerVisible = true;
-                                                   })
-                                               }, (img: string, ii: number) => `${idx}_ci${ii}_${img.substring(0, 30)}`)
-                                             }
-                                             .alignItems(VerticalAlign.Center)
-                                           }
-                                           .scrollable(ScrollDirection.Horizontal)
-                                           .scrollBar(BarState.Off)
-                                           .align(Alignment.Start)
-                                           .width('100%')
-                                           .margin({ top: 4 })
-                                         }
-                                      }
+                                          .scrollable(ScrollDirection.Horizontal)
+                                          .scrollBar(BarState.Off)
+                                          .align(Alignment.Start)
+                                          .layoutWeight(1)
+                                        }
+                                        // ★ 0.233.0：定义行左缘与上方单词区左对齐（0 缩进——用户拍板「翻面左边留空
+                                        //   不好看，跟上面的单词库的左对齐」）；原 margin left 18 正是「右边超出一个
+                                        //   地方」真凶——margin 叠加在 width('100%') 外部使总宽超 18，右缘突出
+                                          .width('100%')
+                                          .margin({ top: 2 })
+                                       }
                                    }
                                    .alignItems(HorizontalAlign.Start)
                                    .width('100%')
@@ -5796,20 +5789,19 @@ export struct ChatPage {
                           .onClick(() => {
                             this.onReviewWordTap(`editcard|${card.id}`);
                           })
-                       if (getTitleImages(card).length > 0) {
-                         // ★ 0.247.1：正面缩略图移到行首（左对齐统一，同气泡底部司忆区）
-                         Image(getTitleImages(card)[0])
-                           .width(20)
-                           .height(20)
-                           .borderRadius(4)
-                           .objectFit(ImageFit.Cover)
-                           .margin({ right: 6 })
-                           .onClick(() => {
-                             this.imageViewerImages = getTitleImages(card);
-                             this.imageViewerIndex = 0;
-                             this.imageViewerVisible = true;
-                           })
-                       }
+                        if (getTitleImages(card).length > 0) {
+                          // ★ 0.255.2：标题图 icon 触发器（同气泡底部司忆区——与输入区「添加图片」同款华为透明 svg）
+                          Image($r('app.media.image'))
+                            .width(16)
+                            .height(16)
+                            .objectFit(ImageFit.Contain)
+                            .margin({ right: 4 })
+                            .onClick(() => {
+                              this.imageViewerImages = getTitleImages(card);
+                              this.imageViewerIndex = 0;
+                              this.imageViewerVisible = true;
+                            })
+                        }
                        Scroll() {
                         Text(card.title)
                           .fontSize(13)
@@ -5828,50 +5820,41 @@ export struct ChatPage {
                     }
                     .width('100%')
                      // ★ 0.224.0：双面模式定义=反面内容——隐藏到点卡片展开（单面恒显=现状零回归）
-                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `editcard|${card.id}`) {
-                       // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
-                       Scroll() {
-                         Text(card.definition)
-                           .fontSize(12)
-                           .fontColor(TEXT_SECONDARY)
-                           .maxLines(1)
-                           .onClick(() => {
-                             this.onReviewWordTap(`editcard|${card.id}`);
-                           })
+                      if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `editcard|${card.id}`) {
+                        // ★ 0.232.1：定义可点=展开评分（点击区扩大）+ 独立横滑（与标题行分离）
+                        // ★ 0.255.2：内容图 icon 放描述文字之前（同气泡底部司忆区终版方案，缩略图条移除）
+                        Row() {
+                          if (getCardImages(card).length > 0) {
+                            Image($r('app.media.image'))
+                              .width(16)
+                              .height(16)
+                              .objectFit(ImageFit.Contain)
+                              .margin({ right: 4 })
+                              .onClick(() => {
+                                this.imageViewerImages = getCardImages(card);
+                                this.imageViewerIndex = 0;
+                                this.imageViewerVisible = true;
+                              })
+                          }
+                          Scroll() {
+                            Text(card.definition)
+                              .fontSize(12)
+                              .fontColor(TEXT_SECONDARY)
+                              .maxLines(1)
+                              .onClick(() => {
+                                this.onReviewWordTap(`editcard|${card.id}`);
+                              })
+                          }
+                          .scrollable(ScrollDirection.Horizontal)
+                          .scrollBar(BarState.Off)
+                          .align(Alignment.Start)
+                          .layoutWeight(1)
                         }
-                         .scrollable(ScrollDirection.Horizontal)
-                         .scrollBar(BarState.Off)
-                         .align(Alignment.Start)
-                         .width('100%')
-                         // ★ 0.233.0：同气泡复习区——定义行左缘 0 对齐上方单词区（margin left 18 右缘超界同根因）
-                         .margin({ top: 2 })
-                         // ★ 0.246.0：反面内容图缩略图条（与气泡底部司忆区统一——有图才渲染）
-                         if (getCardImages(card).length > 0) {
-                           Scroll() {
-                             Row({ space: 4 }) {
-                               ForEach(getCardImages(card), (img: string, ii: number) => {
-                                 Image(img)
-                                   .width(24)
-                                   .height(24)
-                                   .borderRadius(4)
-                                   .objectFit(ImageFit.Cover)
-                                   .onClick(() => {
-                                     this.imageViewerImages = getCardImages(card);
-                                     this.imageViewerIndex = ii;
-                                     this.imageViewerVisible = true;
-                                   })
-                               }, (img: string, ii: number) => `${idx}_eci${ii}_${img.substring(0, 30)}`)
-                             }
-                             .alignItems(VerticalAlign.Center)
-                           }
-                           .scrollable(ScrollDirection.Horizontal)
-                           .scrollBar(BarState.Off)
-                           .align(Alignment.Start)
-                           .width('100%')
-                           .margin({ top: 4 })
-                         }
-                       }
-                    }
+                        // ★ 0.233.0：同气泡复习区——定义行左缘 0 对齐上方单词区（margin left 18 右缘超界同根因）
+                          .width('100%')
+                          .margin({ top: 2 })
+                        }
+                     }
                     .alignItems(HorizontalAlign.Start)
                     .width('100%')
                     .margin({ bottom: idx === this.editReviewCards.length - 1 ? 0 : 6 })
@@ -6281,20 +6264,19 @@ export struct ChatPage {
                          .onClick(() => {
                            this.onReviewWordTap(`wppcard|${card.id}`);
                          })
-                       if (getTitleImages(card).length > 0) {
-                         // ★ 0.247.1：正面缩略图移到行首（左对齐统一，同气泡底部/提炼弹窗司忆区）
-                         Image(getTitleImages(card)[0])
-                           .width(20)
-                           .height(20)
-                           .borderRadius(4)
-                           .objectFit(ImageFit.Cover)
-                           .margin({ right: 6 })
-                           .onClick(() => {
-                             this.imageViewerImages = getTitleImages(card);
-                             this.imageViewerIndex = 0;
-                             this.imageViewerVisible = true;
-                           })
-                       }
+                        if (getTitleImages(card).length > 0) {
+                          // ★ 0.255.2：标题图 icon 触发器（同气泡底部/提炼弹窗司忆区——统一华为透明 svg）
+                          Image($r('app.media.image'))
+                            .width(16)
+                            .height(16)
+                            .objectFit(ImageFit.Contain)
+                            .margin({ right: 4 })
+                            .onClick(() => {
+                              this.imageViewerImages = getTitleImages(card);
+                              this.imageViewerIndex = 0;
+                              this.imageViewerVisible = true;
+                            })
+                        }
                        Scroll() {
                          Text(card.title)
                            .fontSize(13)
@@ -6313,45 +6295,36 @@ export struct ChatPage {
                     }
                     .width('100%')
                     if (this.faceMode.mode !== 'double' || this.reviewExpandKey === `wppcard|${card.id}`) {
-                      Scroll() {
-                        Text(card.definition)
-                          .fontSize(12)
-                          .fontColor(TEXT_SECONDARY)
-                          .maxLines(1)
-                          .onClick(() => {
-                            this.onReviewWordTap(`wppcard|${card.id}`);
-                          })
-                      }
-                      .scrollable(ScrollDirection.Horizontal)
-                      .scrollBar(BarState.Off)
-                      .align(Alignment.Start)
-                      .width('100%')
-                      .margin({ top: 2 })
-                      // ★ 0.246.0：反面内容图缩略图条（与气泡底部/提炼弹窗司忆区三处统一——有图才渲染）
-                      if (getCardImages(card).length > 0) {
+                      // ★ 0.255.2：内容图 icon 放描述文字之前（三处司忆区统一终版方案，缩略图条移除）
+                      Row() {
+                        if (getCardImages(card).length > 0) {
+                          Image($r('app.media.image'))
+                            .width(16)
+                            .height(16)
+                            .objectFit(ImageFit.Contain)
+                            .margin({ right: 4 })
+                            .onClick(() => {
+                              this.imageViewerImages = getCardImages(card);
+                              this.imageViewerIndex = 0;
+                              this.imageViewerVisible = true;
+                            })
+                        }
                         Scroll() {
-                          Row({ space: 4 }) {
-                            ForEach(getCardImages(card), (img: string, ii: number) => {
-                              Image(img)
-                                .width(24)
-                                .height(24)
-                                .borderRadius(4)
-                                .objectFit(ImageFit.Cover)
-                                .onClick(() => {
-                                  this.imageViewerImages = getCardImages(card);
-                                  this.imageViewerIndex = ii;
-                                  this.imageViewerVisible = true;
-                                })
-                            }, (img: string, ii: number) => `${idx}_wci${ii}_${img.substring(0, 30)}`)
-                          }
-                          .alignItems(VerticalAlign.Center)
+                          Text(card.definition)
+                            .fontSize(12)
+                            .fontColor(TEXT_SECONDARY)
+                            .maxLines(1)
+                            .onClick(() => {
+                              this.onReviewWordTap(`wppcard|${card.id}`);
+                            })
                         }
                         .scrollable(ScrollDirection.Horizontal)
                         .scrollBar(BarState.Off)
                         .align(Alignment.Start)
-                        .width('100%')
-                        .margin({ top: 4 })
+                        .layoutWeight(1)
                       }
+                      .width('100%')
+                      .margin({ top: 2 })
                     }
                   }
                   .alignItems(HorizontalAlign.Start)

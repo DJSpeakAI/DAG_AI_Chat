@@ -45,6 +45,7 @@ export interface WidgetCardItem {
   reviewCount: number;
   lastReviewAt: number;
   nextReviewAt: number;
+  phonetic?: string; // ★ 0.255.0：单词卡音标（可选——旧快照缺字段天然兼容；知识卡恒空串）
 }
 
 /** 一条复习队列（进度+三档计数） */
@@ -65,7 +66,7 @@ export interface WidgetState {
   noMore?: string;  // 0.204.2：'y'=全部学完（含未来）——完成态隐藏继续按钮显示「全部学完」文案；主应用重建快照时重置
   face?: string;    // ★ 0.224.0：卡面模式（'single' | 'double'——跟全局 FaceModeStore，经快照注入卡片进程）
   flipped?: string; // ★ 0.224.0：当前卡是否已翻面（'y' | 'n'——双面模式卡身点击切换；评分/切库/换卡重置）
-  siyiLine?: string; // ★ 0.248.0：司忆点资产行（「Lv2 司墨 · 12 万 SP」——宿主拼好整串注入，卡片进程禁连 store 0.204.1 铁律）
+  // ★ 0.252.0：siyiLine 已删（左下角 SP/称号行下线——用户拍板桌面卡片纯背诵工具）
 }
 
 /** 待回放评分（卡片上产生；主应用按 happenedAt 顺序 applyRating 到真数据） */
@@ -282,6 +283,47 @@ export function setWidgetDimension(context: Context, dimension: number): void {
   pushWidgetState(context);
 }
 
+// ---------------- 评分预计间隔（★ 0.252.1：按钮时间显示——预计算注入，卡片纯展示） ----------------
+
+/** 天数 → 中文短格式（「10分」「12时」「2天」「3月」「1.2年」） */
+export function formatEtaDays(days: number): string {
+  const min = days * 24 * 60;
+  if (min < 60) {
+    return `${Math.max(1, Math.round(min))}分`;
+  }
+  if (min < 60 * 24) {
+    return `${Math.round(min / 60)}时`;
+  }
+  if (days < 30) {
+    return `${Math.round(days)}天`;
+  }
+  if (days < 365) {
+    return `${Math.round(days / 30)}月`;
+  }
+  return `${(days / 365).toFixed(1)}年`;
+}
+
+/**
+ * 按评分算法（与 widgetApplyRating 同源常量）预计算三档评分后的预计间隔。
+ * 首评：生疏 10分钟 / 尚可 12小时 / 熟知 2天；复评：×0.5 / 增长打折 / ×2.4。
+ */
+export function calcRatingEtas(it: WidgetCardItem, now: number): string[] {
+  let hard: number;
+  let good: number;
+  let easy: number;
+  if (it.strength <= 0) {
+    hard = W_FIRST_HARD;
+    good = W_FIRST_GOOD;
+    easy = W_FIRST_EASY;
+  } else {
+    const factor = Math.min(Math.max((now - it.lastReviewAt) / W_DAY_MS / it.strength, W_EARLY_GROWTH_FLOOR), 1);
+    hard = Math.min(Math.max(it.strength * W_MULT_HARD, W_S_MIN_DAYS), W_S_MAX_DAYS);
+    good = Math.min(Math.max(it.strength * (1 + (W_MULT_GOOD - 1) * factor), W_S_MIN_DAYS), W_S_MAX_DAYS);
+    easy = Math.min(Math.max(it.strength * (1 + (W_MULT_EASY - 1) * factor), W_S_MIN_DAYS), W_S_MAX_DAYS);
+  }
+  return [formatEtaDays(hard), formatEtaDays(good), formatEtaDays(easy)];
+}
+
 // ---------------- 推送（updateForm 全部已添加卡片） ----------------
 
 /** 快照 → 卡片绑定数据（ArkTS 卡片只认平铺基础类型；dimension 驱动三规格排版分支） */
@@ -290,10 +332,13 @@ export function formBindingDataOf(context: Context): formBindingData.FormBinding
   const q = s.mode === 'word' ? s.word : s.knowledge;
   const dim = getDimension(context);
   const item = q.idx < q.items.length ? q.items[q.idx] : undefined;
+  // ★ 0.252.1：三档评分预计间隔（当前卡实时预计算——评分/换卡后随快照刷新）
+  const etas = item === undefined ? ['分', '时', '天'] : calcRatingEtas(item, Date.now());
   return formBindingData.createFormBindingData({
     mode: s.mode,
     title: item === undefined ? '' : item.title,
     definition: item === undefined ? '' : item.definition,
+    phonetic: item === undefined || item.phonetic === undefined ? '' : item.phonetic, // ★ 0.255.0：音标平铺注入
     progress: q.items.length > 0 ? `${q.idx + 1} / ${q.items.length}` : '',
     remain: q.items.length > 0 ? `${q.items.length - q.idx}` : '0',
     done: q.done || item === undefined ? 'y' : 'n',
@@ -304,7 +349,10 @@ export function formBindingDataOf(context: Context): formBindingData.FormBinding
     noMore: s.noMore === 'y' ? 'y' : 'n',
     face: s.face === 'double' ? 'double' : 'single', // ★ 0.224.0：卡面模式（卡片进程禁连 FaceModeStore——经快照注入）
     flipped: s.flipped === 'y' ? 'y' : 'n', // ★ 0.224.0：翻面态
-    siyiLine: s.siyiLine === undefined ? '' : s.siyiLine // ★ 0.248.0：司忆点资产行
+    hardEta: etas[0], // ★ 0.252.1：生疏后预计间隔
+    goodEta: etas[1], // ★ 0.252.1：尚可后预计间隔
+    easyEta: etas[2] // ★ 0.252.1：熟知后预计间隔
+    // ★ 0.252.0：siyiLine 已删（左下角 SP/称号行下线）
   });
 }
 
@@ -328,6 +376,21 @@ export function pushWidgetState(context: Context): void {
   } catch (_e) {
     // 静默
   }
+  // ★ 0.252.1：延迟重推一次——updateForm 偶发失败（系统繁忙/时序）会让卡片停在旧态，
+  //   用户「点了没反应」体感；300ms 后再推一次，binding 从 state 重读（若期间 state 已变则以最新为准）
+  setTimeout(() => {
+    try {
+      const ids2 = readWidgetMeta(context).formIds;
+      const binding2 = formBindingDataOf(context);
+      ids2.forEach((id: string) => {
+        formProvider.updateForm(id, binding2).catch((_e: BusinessError) => {
+          // 过期 formId 忽略
+        });
+      });
+    } catch (_e) {
+      // 静默
+    }
+  }, 300);
 }
 
 // ---------------- 卡片侧命令处理（onFormEvent → 此处分发） ----------------
@@ -393,14 +456,8 @@ export function handleWidgetFlip(context: Context): void {
   pushWidgetState(context);
 }
 
-// ★ 0.224.0：卡面模式全局变更（全局设置/复习页 ⚙ 调用——写快照+即时推全部卡片）
-export function setWidgetFace(context: Context, face: string): void {
-  const s = readWidgetState(context);
-  s.face = face === 'double' ? 'double' : 'single';
-  s.flipped = 'n'; // 模式切换回正面
-  writeWidgetState(context, s);
-  pushWidgetState(context);
-}
+// ★ 0.252.0：setWidgetFace 已删（全局固定双面——单面切换入口全部移除，快照 face 恒 'double' 由
+//   WidgetHostBridge.buildWidgetState 从 FaceModeStore 读取注入；切库回正面由 handleWidgetSwitch 负责）
 
 /**
  * 解析 call/message 双形态事件（备用入口——当前主链路为 call→EntryAbility Callee）。

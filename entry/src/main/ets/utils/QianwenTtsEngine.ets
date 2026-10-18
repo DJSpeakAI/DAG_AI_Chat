@@ -261,8 +261,53 @@ export class QianwenTtsEngine {
     this.waitingForAudio = true;
     this.dropInstruction = false;
     this.started = false;
+    // ★ 0.256.1：播报结果缓存命中——同文本+同配置再次点击喇叭=直接重播已合成音频，
+    //   零请求零计费（value=段数组：各段独立 base64，串接会因 padding 错位——按段播放原管线）
+    const cacheKey = `qwen|${this.presetKey}|${this.presetModel}|${this.presetVoice}|${this.presetEmotion}|${this.presetSpeed}|${this.presetVolume}|${trimmed}`;
+    const hit = this.resultCache.get(cacheKey);
+    if (hit !== undefined) {
+      this.resultCache.delete(cacheKey);
+      this.resultCache.set(cacheKey, hit); // LRU touch
+      this.pendingCacheKey = '';
+      this.segments = [trimmed];
+      this.audioCache = hit.slice();
+      this.requestIndex = 1; // 全部「已合成」
+      this.playIndex = 0;
+      this.waitingForAudio = true;
+      this.started = false;
+      this.tryPlayNextAudio();
+      return true;
+    }
+    this.pendingCacheKey = cacheKey;
     this.requestNextSegment();
     return true;
+  }
+
+  // ★ 0.256.1：播报结果缓存（key=引擎+配置+全文；value=各段 base64 数组；LRU 上限 20 条）
+  private static readonly RESULT_CACHE_MAX = 20;
+  private resultCache: Map<string, string[]> = new Map();
+  private pendingCacheKey: string = '';
+
+  // 结果缓存写入（全部段合成完成时调用；命中重播/回退重试路径由 pendingCacheKey 空值自然跳过）
+  private saveResultCache(): void {
+    const key = this.pendingCacheKey;
+    if (key.length === 0) {
+      return;
+    }
+    this.pendingCacheKey = '';
+    this.resultCache.delete(key);
+    this.resultCache.set(key, this.audioCache.slice());
+    if (this.resultCache.size > QianwenTtsEngine.RESULT_CACHE_MAX) {
+      let oldestKey = '';
+      this.resultCache.forEach((_v: string[], k: string): void => {
+        if (oldestKey.length === 0) {
+          oldestKey = k; // Map 迭代序=插入序，首个即最旧
+        }
+      });
+      if (oldestKey.length > 0) {
+        this.resultCache.delete(oldestKey);
+      }
+    }
   }
 
   // 会话级显式参数（speakWithParams 写入；speak 由配置换算后同样走该通道，保持单一合成管线）
@@ -475,6 +520,7 @@ export class QianwenTtsEngine {
     }
     if (this.playIndex >= this.audioCache.length) {
       if (this.audioCache.length >= this.segments.length) {
+        this.saveResultCache(); // ★ 0.256.1：完整合成走完才写缓存（中断/失败不缓存）
         const s = this.session;
         this.stop();
         if (s.onComplete !== null && s.onComplete !== undefined) {

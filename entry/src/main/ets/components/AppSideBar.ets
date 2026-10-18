@@ -8,7 +8,8 @@
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.9：logoutHuaweiID 删——退出确认弹窗移 Index 根挂载，确认后走 doLogout
 import { SubscriptionStore, connectSubscription, isVip, stampFreeTrialOnLogin,
   SiyiPointStore, connectSiyiPoints, siyiTotalSp, siyiLevelTitle,
-  StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin 打戳；★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）
+  StatisticsStore, connectStatistics, getStatDays,
+  SignInStore, connectSignIn, isSignedToday, connectSignInDialog } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin 打戳；★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）；★ 0.256.0：签到入口（红点驱动）
 import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { openSettingsTab } from './GlobalSettingsDialog'; // ★ 0.248.0：账户区 SP 行点击→设置弹窗司忆点 Tab
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.248.0：PC(2in1) 隐藏「桌面卡片」入口（系统不提供桌面卡片）
@@ -51,6 +52,7 @@ export struct AppSideBar {
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
   siyi: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.0：司忆点资产（账户区显示余额+头衔）
   statStore: StatisticsStore = connectStatistics(); // ★ 0.248.0：等级推导数据源
+  signIn: SignInStore = connectSignIn(); // ★ 0.256.0：签到状态（入口红点判定）
 
   siyiLearnDays(): number {
     return getStatDays(this.statStore).length; // 累计学习天数=有学习活动的天数
@@ -956,6 +958,31 @@ export struct AppSideBar {
             .fontSize(FONT_SIZE_CAPTION)
             .fontColor(TEXT_TERTIARY)
           Blank()
+          // ★ 0.256.0：签到入口 pill（未签亮红点；子组件 onClick 消费不冒泡——0.203.0 桌面卡片小字先例）
+          Stack({ alignContent: Alignment.TopEnd }) {
+            Row({ space: 3 }) {
+              Image($r('app.media.sign'))
+                .width(12)
+                .height(12)
+                .objectFit(ImageFit.Contain)
+              Text(isSignedToday(this.signIn) ? '已签' : '签到')
+                .fontSize(10)
+                .fontColor(isSignedToday(this.signIn) ? TEXT_TERTIARY : BRAND_SECONDARY)
+            }
+            .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+            .borderRadius(9)
+            .backgroundColor(SURFACE_HOVER)
+            .onClick(() => {
+              connectSignInDialog().visible = true;
+            })
+            if (!isSignedToday(this.signIn)) {
+              Circle()
+                .width(6)
+                .height(6)
+                .fill('#FF4D4F')
+                .offset({ x: 3, y: -2 })
+            }
+          }
           Text(`${siyiTotalSp(this.siyi).toLocaleString()} SP`)
             .fontSize(FONT_SIZE_CAPTION)
             .fontWeight(FontWeight.Medium)

@@ -149,8 +149,54 @@ export class CloudTtsEngine {
     this.started = false;
     this.voiceOverride = ''; // 显式会话音色即最终值（空值时合成层兜底官方音色）
     this.modelOverride = '';
+    // ★ 0.256.1：播报结果缓存命中——同文本+同配置再次点击喇叭=直接重播已合成音频，
+    //   零请求零计费（用户拍板「第二次发送很浪费」；value=段数组：各段独立 base64，
+    //   直接串接会因 padding 错位——按段播放原管线零解码风险）
+    const cacheKey = `vol|${this.presetEndpoint}|${this.presetKey}|${this.presetModel}|${this.presetVoice.trim()}|${trimmed}`;
+    const hit = this.resultCache.get(cacheKey);
+    if (hit !== undefined) {
+      this.resultCache.delete(cacheKey);
+      this.resultCache.set(cacheKey, hit); // LRU touch（Map 迭代序=插入序）
+      this.pendingCacheKey = '';
+      this.segments = [trimmed];
+      this.audioCache = hit.slice();
+      this.requestIndex = 1; // 全部「已合成」
+      this.playIndex = 0;
+      this.waitingForAudio = true;
+      this.started = false;
+      this.tryPlayNextAudio();
+      return true;
+    }
+    this.pendingCacheKey = cacheKey;
     this.requestNextSegment();
     return true;
+  }
+
+  // ★ 0.256.1：播报结果缓存（key=引擎+配置+全文；value=各段 base64 数组；LRU 上限 20 条）
+  private static readonly RESULT_CACHE_MAX = 20;
+  private resultCache: Map<string, string[]> = new Map();
+  private pendingCacheKey: string = '';
+
+  // 结果缓存写入（全部段合成完成时调用；命中重播路径 pendingCacheKey 为空=跳过）
+  private saveResultCache(): void {
+    const key = this.pendingCacheKey;
+    if (key.length === 0) {
+      return;
+    }
+    this.pendingCacheKey = '';
+    this.resultCache.delete(key);
+    this.resultCache.set(key, this.audioCache.slice());
+    if (this.resultCache.size > CloudTtsEngine.RESULT_CACHE_MAX) {
+      let oldestKey = '';
+      this.resultCache.forEach((_v: string[], k: string): void => {
+        if (oldestKey.length === 0) {
+          oldestKey = k; // Map 迭代序=插入序，首个即最旧
+        }
+      });
+      if (oldestKey.length > 0) {
+        this.resultCache.delete(oldestKey);
+      }
+    }
   }
 
   // 会话级显式参数（speakWithParams 写入；speak 由配置换算后同走该通道，保持单一合成管线）
@@ -364,6 +410,7 @@ export class CloudTtsEngine {
     if (this.playIndex >= this.audioCache.length) {
       if (this.audioCache.length >= this.segments.length) {
         // 全部播完——最后一段 completed 回调后收尾（completed 先于本调用的场景由此兜底）
+        this.saveResultCache(); // ★ 0.256.1：完整合成走完才写缓存（中断/失败不缓存）
         const s = this.session;
         this.stop();
         if (s.onComplete !== null && s.onComplete !== undefined) {

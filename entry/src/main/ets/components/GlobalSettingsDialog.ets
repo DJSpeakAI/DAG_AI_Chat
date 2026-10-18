@@ -33,6 +33,8 @@
 import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
+import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
+import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
@@ -46,10 +48,8 @@ import {
   writeExternalBackup, maybeAutoBackup, BackupPayload
 } from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
 import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关
-import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件）
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.232.1：弹窗宽度断点制（PC/Pad 固定 560 不做屏宽自适应——用户拍板「配置类 UI 自适应宽度难看」）
-import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面变更即时推桌面卡片
 import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.236.1：火山/自定义档试听（speakWithParams 显式传参）
 import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流式轻量 POST，零侵入 streamChat 主链路）
@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.251.0'; // ★ 0.251.0：AI流式后台保活续收(切后台不断流+完成叮咚);上一版 0.250.0：敏感词预过滤
+const APP_VERSION: string = 'v0.257.0'; // ★ 0.257.0：上架合规补全（安全拦截捕获+投诉举报入口+隐私政策审计留存）；上一版 0.256.1：TTS播报缓存
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -266,9 +266,6 @@ export struct GlobalSettingsDialog {
   //   currentTab 索引保持 0=API 配置 / 1=AI 偏好 / 3=云同步 不重排（避免误伤云同步分支）
   @Local currentTab: number = 0;
 
-  // ★ 0.224.0：卡面模式全局单通道（司忆区 Tab 即时控件——与复习页 ⚙ 同一 @ObservedV2 实例，
-  //   两处任一变更互相同步+即时推桌面卡片；@Local 接管 0.221.4 铁律）
-  @Local faceMode: FaceModeStore = connectFaceMode();
 
   // Tab1 编辑副本（点保存才写入持久化）★ 0.190.0：提供商化重构
   @Local editProvider: string = 'volcano';     // huawei / volcano / deepseek / custom
@@ -331,6 +328,7 @@ export struct GlobalSettingsDialog {
   //   不用重开设置弹窗；原 @Local syncGranted 开弹窗快照一次，开启后状态卡滞留「未开启」）
   @Local permGranted: boolean = false;
   cloudSwitch: CloudSyncStore = connectCloudSync();
+  private tabScroller: Scroller = new Scroller(); // ★ 0.251.2：Tab 轨道滚动器（选中 Tab 居中）
   @Computed
   get syncOn(): boolean {
     return this.permGranted && this.cloudSwitch.enabled;
@@ -359,15 +357,27 @@ export struct GlobalSettingsDialog {
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.196.8：云同步↔账号绑定——未登录拦截「开启」
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.195.0：复习显示（全局设置直达——0=关闭复习区）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.195.0：同上（知识卡）
-  // ★ 0.195.0：复习显示 Tab 输入态（0/1/2 快速项 + 自由输入框——与两库 ⚙ 设置同款布局）
+  // ★ 0.195.0：复习显示 Tab 输入态（0/1/2 快速项 + 自由输入框）；★ 0.253.0：交互重设计——
+  //   「确定」按钮与红色报错删除（用户拍板：底部已有「保存」，确定冗余且空输入报红字像 bug）；
+  //   输入合法值即时写编辑副本+输入框亮紫描边选中态；超 20 不写值（保存永远取最近合法选中）+
+  //   红描边弱警示（warn 由 @Computed 派生，源均为 @Local 响应可靠）
   @Local reviewWordInput: string = '';
-  @Local reviewWordError: string = '';
   @Local reviewCardInput: string = '';
-  @Local reviewCardError: string = '';
   // ★ 0.197.2：复习显示编辑副本——原即时生效无保存概念（用户反馈：要保存按钮，与 API/AI 偏好
   //   Tab 交互统一）；快速项/输入确定只写副本，底部「保存」统一落 store（saveAll）
   @Local editReviewLearn: number = 0;
   @Local editReviewKnowledge: number = 0;
+  // ★ 0.253.0：超范围弱警示（输入非空且 >20 时输入框红描边——无红色大字报错）
+  @Computed
+  get reviewWordWarn(): boolean {
+    const n = parseInt(this.reviewWordInput, 10);
+    return this.reviewWordInput.length > 0 && !Number.isNaN(n) && n > 20;
+  }
+  @Computed
+  get reviewCardWarn(): boolean {
+    const n = parseInt(this.reviewCardInput, 10);
+    return this.reviewCardInput.length > 0 && !Number.isNaN(n) && n > 20;
+  }
   // ★ 0.226.0：法律条款正文弹窗（-1=关闭 / 0=用户协议 / 1=隐私政策；替代系统 AlertDialog 灰弹窗）
   @Local legalViewing: number = -1;
 
@@ -777,15 +787,6 @@ export struct GlobalSettingsDialog {
     this.onClose();
   }
 
-  // ★ 0.224.0：切换卡面模式（即时生效全局单通道——写共享 store 即同步复习页 ⚙；即时推桌面卡片）
-  applyFaceMode(mode: string): void {
-    this.faceMode.mode = mode;
-    try {
-      setWidgetFace(this.getUIContext().getHostContext() as common.Context, mode);
-    } catch (_e) {
-      // 桌面卡片推送失败静默（下次快照重建自然携带）
-    }
-  }
 
   // ★ 0.150：保存——两 Tab 全部修改一次写入持久化 + toast 提示，不关弹窗（用户自己 ✕）
   saveAll(): void {
@@ -2135,46 +2136,9 @@ export struct GlobalSettingsDialog {
   @Builder
   reviewTabContent() {
     Column() {
-      // ── ★ 0.224.0：卡面模式（全局单通道——即时生效，不走下方编辑副本+保存流程；
-      //    与复习页 ⚙ 同一真相源互相同步，司忆区两处/桌面卡片全跟随）──
-      Text('卡面模式')
-        .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
-        .margin({ bottom: 6 })
-      Text('正反两面：先看题面，点击翻面后再评分；全局生效（复习页/司忆区/桌面卡片跟随），与复习页设置同步')
-        .fontSize(11)
-        .fontColor(TEXT_TERTIARY)
-        .margin({ bottom: 10 })
-      Row({ space: 6 }) {
-        Text('单面')
-          .fontSize(12)
-          .fontWeight(this.faceMode.mode !== 'double' ? 600 : 400)
-          .fontColor(this.faceMode.mode !== 'double' ? Color.White : TEXT_SECONDARY)
-          .height(30)
-          .padding({ left: 14, right: 14 })
-          .borderRadius(8)
-          .backgroundColor(this.faceMode.mode !== 'double' ? BRAND_PRIMARY : Color.Transparent)
-          .onClick(() => {
-            this.applyFaceMode('single');
-          })
-        Text('正反两面')
-          .fontSize(12)
-          .fontWeight(this.faceMode.mode === 'double' ? 600 : 400)
-          .fontColor(this.faceMode.mode === 'double' ? Color.White : TEXT_SECONDARY)
-          .height(30)
-          .padding({ left: 14, right: 14 })
-          .borderRadius(8)
-          .backgroundColor(this.faceMode.mode === 'double' ? BRAND_PRIMARY : Color.Transparent)
-          .onClick(() => {
-            this.applyFaceMode('double');
-          })
-      }
-      .padding(3)
-      .borderRadius(RADIUS_CONTROL)
-      .backgroundColor(SURFACE_SOFT)
-      .margin({ bottom: 16 })
 
-      // ── 单词库词条数 ──
+      // ── 单词库词条数（★ 0.253.0：去「确定」+ 即时选中交互——点 0/1/2 直选并清输入框；
+      //   输入合法值即时写编辑副本+输入框紫描边选中态；超 20 红描边弱警示不写值，无红色报错文案）──
       Column() {
         Text('单词库词条数')
           .fontSize(14)
@@ -2190,6 +2154,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
               this.editReviewLearn = 0;
+              this.reviewWordInput = ''; // ★ 0.253.0：清输入框防残留数字误导选中态
             })
           Button('1')
             .fontSize(14)
@@ -2201,6 +2166,7 @@ export struct GlobalSettingsDialog {
             .margin({ left: 8 })
             .onClick(() => {
               this.editReviewLearn = 1;
+              this.reviewWordInput = '';
             })
           Button('2')
             .fontSize(14)
@@ -2212,6 +2178,7 @@ export struct GlobalSettingsDialog {
             .margin({ left: 8 })
             .onClick(() => {
               this.editReviewLearn = 2;
+              this.reviewWordInput = '';
             })
           TextInput({ text: this.reviewWordInput, placeholder: '0~20' })
             .fontSize(14)
@@ -2222,34 +2189,24 @@ export struct GlobalSettingsDialog {
             .backgroundColor(SURFACE_NODE)
             .type(InputType.Number)
             .margin({ left: 8 })
-            .onChange((v: string) => {
-              this.reviewWordInput = v;
-              this.reviewWordError = '';
+            .border({
+              width: 1,
+              color: this.reviewWordWarn ? DANGER : (this.editReviewLearn > 2 ? BRAND_PRIMARY : Color.Transparent)
             })
-          Button('确定')
-            .fontSize(14)
-            .height(40)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(BRAND_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ left: 8 })
-            .padding({ left: 14, right: 14 })
-            .onClick(() => {
-              const n = parseInt(this.reviewWordInput, 10);
-              if (!Number.isNaN(n) && n >= 0 && n <= 20) {
-                this.editReviewLearn = n; // ★ 0.197.2：写编辑副本，保存统一落 store
-              } else {
-                this.reviewWordError = '请输入 0~20 的整数';
+            .onChange((v: string) => {
+              const cleaned = v.replace(/[^0-9]/g, ''); // ★ 0.252.0：即时清洗——剥全角/空格/不可见字符，防合法数字被误判
+              this.reviewWordInput = cleaned;
+              if (cleaned.length === 0) {
+                return; // 空=不写值，保持当前选中（无报错场景）
               }
+              const n = parseInt(cleaned, 10);
+              if (n >= 0 && n <= 20) {
+                this.editReviewLearn = n; // ★ 0.253.0：合法即选中（写编辑副本，保存统一落 store）；0/1/2 高亮自动随值切换
+              }
+              // 超 20：不写值（保存取最近合法选中），红描边弱警示由 reviewWordWarn 驱动
             })
         }
         .width('100%')
-        if (this.reviewWordError.length > 0) {
-          Text(this.reviewWordError)
-            .fontSize(12)
-            .fontColor(DANGER)
-            .margin({ top: 6 })
-        }
         Text('AI 回复底部复习区、提炼等待页每次展示的词条数；0=关闭（对话页只看对话）')
           .fontSize(11)
           .lineHeight(18)
@@ -2260,7 +2217,7 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 20 })
 
-      // ── 知识库卡片数 ──
+      // ── 知识库卡片数（★ 0.253.0：与单词库词条数同款交互重设计）──
       Column() {
         Text('知识库卡片数')
           .fontSize(14)
@@ -2276,6 +2233,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
               this.editReviewKnowledge = 0;
+              this.reviewCardInput = ''; // ★ 0.253.0：清输入框防残留数字误导选中态
             })
           Button('1')
             .fontSize(14)
@@ -2287,6 +2245,7 @@ export struct GlobalSettingsDialog {
             .margin({ left: 8 })
             .onClick(() => {
               this.editReviewKnowledge = 1;
+              this.reviewCardInput = '';
             })
           Button('2')
             .fontSize(14)
@@ -2298,6 +2257,7 @@ export struct GlobalSettingsDialog {
             .margin({ left: 8 })
             .onClick(() => {
               this.editReviewKnowledge = 2;
+              this.reviewCardInput = '';
             })
           TextInput({ text: this.reviewCardInput, placeholder: '0~20' })
             .fontSize(14)
@@ -2308,34 +2268,24 @@ export struct GlobalSettingsDialog {
             .backgroundColor(SURFACE_NODE)
             .type(InputType.Number)
             .margin({ left: 8 })
-            .onChange((v: string) => {
-              this.reviewCardInput = v;
-              this.reviewCardError = '';
+            .border({
+              width: 1,
+              color: this.reviewCardWarn ? DANGER : (this.editReviewKnowledge > 2 ? BRAND_PRIMARY : Color.Transparent)
             })
-          Button('确定')
-            .fontSize(14)
-            .height(40)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(BRAND_PRIMARY)
-            .borderRadius(RADIUS_CONTROL)
-            .margin({ left: 8 })
-            .padding({ left: 14, right: 14 })
-            .onClick(() => {
-              const n = parseInt(this.reviewCardInput, 10);
-              if (!Number.isNaN(n) && n >= 0 && n <= 20) {
-                this.editReviewKnowledge = n; // ★ 0.197.2：写编辑副本，保存统一落 store
-              } else {
-                this.reviewCardError = '请输入 0~20 的整数';
+            .onChange((v: string) => {
+              const cleaned = v.replace(/[^0-9]/g, ''); // ★ 0.252.0：即时清洗——剥全角/空格/不可见字符，防合法数字被误判
+              this.reviewCardInput = cleaned;
+              if (cleaned.length === 0) {
+                return; // 空=不写值，保持当前选中（无报错场景）
               }
+              const n = parseInt(cleaned, 10);
+              if (n >= 0 && n <= 20) {
+                this.editReviewKnowledge = n; // ★ 0.253.0：合法即选中（写编辑副本，保存统一落 store）
+              }
+              // 超 20：不写值（保存取最近合法选中），红描边弱警示由 reviewCardWarn 驱动
             })
         }
         .width('100%')
-        if (this.reviewCardError.length > 0) {
-          Text(this.reviewCardError)
-            .fontSize(12)
-            .fontColor(DANGER)
-            .margin({ top: 6 })
-        }
         Text('AI 回复底部复习区、提炼等待页每次展示的卡片数；0=关闭（对话页只看对话）')
           .fontSize(11)
           .lineHeight(18)
@@ -2448,7 +2398,22 @@ export struct GlobalSettingsDialog {
             }
             requestSyncPermission(context).then((granted: boolean) => {
               this.permGranted = granted; // ★ 0.196.10：状态卡实时刷新
-              this.showToastSafe(granted ? '云同步已开启' : '未授权，云同步保持关闭');
+              if (granted) {
+                this.showToastSafe('云同步已开启');
+                return;
+              }
+              // ★ 0.251.2：拒绝/系统不再弹窗场景不再只报「未授权」无出路（用户实测困惑：
+              //   点了开启却只说未授权）——toast 给手动路径 + 尝试直达系统应用详情页开权限
+              this.showToastSafe('未授权：请在系统「设置→应用→DAG AI Chat→权限」允许「跨设备同步」');
+              const want: Want = {
+                bundleName: 'com.huawei.hmos.settings',
+                abilityName: 'com.huawei.hmos.settings.MainAbility',
+                uri: 'application_info',
+                parameters: { pushParams: 'com.dagaichat.app' }
+              };
+              context.startAbility(want).catch(() => {
+                // 跳转失败静默——toast 手动路径已兜底
+              });
             });
           })
       } else {
@@ -2532,6 +2497,28 @@ export struct GlobalSettingsDialog {
     }
   }
 
+  // ★ 0.253.0：投诉举报入口（华为上架合规：便捷有效投诉举报渠道 + 公开 5 个工作日响应时限）
+  openComplaintMail(): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (context === undefined || context === null) {
+      this.copyFeedbackEmail();
+      return;
+    }
+    const subject = encodeURIComponent(`DAGAI 投诉举报（${APP_VERSION}）`);
+    const body = encodeURIComponent(
+      `投诉或举报内容描述：\n\n（请描述违规内容及发生位置，可附截图）\n\n—— 以下信息自动附加 ——\n应用版本：${APP_VERSION}\n设备型号：${deviceInfo.productModel}\n系统：${deviceInfo.osFullName}（API ${deviceInfo.sdkApiVersion}）`);
+    const url = `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`;
+    try {
+      context.openLink(url).catch(() => {
+        this.copyFeedbackEmail();
+        this.showToastSafe('未找到邮件应用，邮箱已复制请手动发送');
+      });
+    } catch (_e) {
+      this.copyFeedbackEmail();
+      this.showToastSafe('未找到邮件应用，邮箱已复制请手动发送');
+    }
+  }
+
   // ★ 0.226.0：法律条款正文入口（0=用户协议 / 1=隐私政策）；
   // ★ 0.190.8：AlertDialog 系统灰弹窗 → 自定义暗紫弹窗（legalViewing 驱动 build Stack 顶层渲染）
   openLegal(idx: number): void {
@@ -2563,11 +2550,29 @@ export struct GlobalSettingsDialog {
   // ★ 0.206.0：Tab 统一切换入口（埋点+原赋值；备份 Tab 进 Tab 时刷新备份快照）
   switchTab(n: number, name: string): void {
     this.currentTab = n;
- const _tp1: Record<string, string> = {}; _tp1['tab'] = name;
+  const _tp1: Record<string, string> = {}; _tp1['tab'] = name;
     track(this.getUIContext().getHostContext() as common.UIAbilityContext, 'settings_tab', _tp1); // 0.206.0 埋点
     if (n === 6) {
       this.refreshBackupSnapshot();
     }
+    this.centerActiveTab(); // ★ 0.251.2：选中 Tab 滚到轨道中部（用户三遍反馈「导航贴边」根治）
+  }
+
+  // ★ 0.251.2：选中 Tab 居中——量测选中胶囊与轨道中心差值，scrollTo 平移对中；
+  //   延迟 100ms 等选中态布局完成；量测失败静默保持原位（Try 包裹防极端场景崩）
+  centerActiveTab(): void {
+    setTimeout(() => {
+      try {
+        const tabRect = componentUtils.getRectangleById(`gtab_${this.currentTab}`);
+        const trackRect = componentUtils.getRectangleById('gtab_track');
+        const tabCenterX = tabRect.windowOffset.x + tabRect.size.width / 2;
+        const trackCenterX = trackRect.windowOffset.x + trackRect.size.width / 2;
+        const target = this.tabScroller.currentOffset().xOffset + (tabCenterX - trackCenterX);
+        this.tabScroller.scrollTo({ xOffset: Math.max(0, target), yOffset: 0, animation: true });
+      } catch (_e) {
+        // 静默
+      }
+    }, 100);
   }
 
   // 备份状态快照刷新（preferences 非响应式，进 Tab/操作后手动同步）
@@ -2863,22 +2868,23 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // 头衔等级卡（8 级「司」系：条件/充能折扣/每日嘉奖加成；★ 0.248.0「充值/奖励」→「充能/嘉奖」；
-      //   ★ 0.249.0：七级→八级（用户 2026-10-18 拍板——司墨/司简/司理/司微/司玄/司天/司忆令，Lv8=SP 永久免费））
+      // 头衔等级卡（8 级「司」系：含义/条件/充能折扣/每日嘉奖加成；★ 0.248.0「充值/奖励」→「充能/嘉奖」；
+      //   ★ 0.249.0：七级→八级（用户 2026-10-18 拍板——司墨/司简/司理/司微/司玄/司天/司忆令，Lv8=SP 永久免费）；
+      //   ★ 0.251.1：每级补头衔含义（用户 2026-10-18 拍板「司」系寓意文案），Lv8 权益尾巴「每日—」删除）
       Column({ space: 8 }) {
         Text('头衔等级')
           .fontSize(13)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        this.siyiLevelRow('Lv1', '好奇宝宝', '注册即得', '—', '基础嘉奖')
-        this.siyiLevelRow('Lv2', '司墨', '累计学习 7 天', '—', '嘉奖 +5%')
-        this.siyiLevelRow('Lv3', '司简', '累计 30 天', '充能 98 折', '嘉奖 +10%')
-        this.siyiLevelRow('Lv4', '司理', '累计 90 天', '充能 96 折', '嘉奖 +15%')
-        this.siyiLevelRow('Lv5', '司微', '累计 150 天', '充能 94 折', '嘉奖 +20%')
-        this.siyiLevelRow('Lv6', '司玄', '累计 210 天', '充能 90 折', '嘉奖 +25%')
-        this.siyiLevelRow('Lv7', '司天', '累计 240 天', '充能 85 折', '嘉奖 +30%')
-        this.siyiLevelRow('Lv8', '司忆令', '累计 365 天（一年封神）', 'SP 永久免费', '—')
+        this.siyiLevelRow('Lv1', '好奇宝宝', '一切的起点', '注册即得', '—', '基础嘉奖')
+        this.siyiLevelRow('Lv2', '司墨', '墨，代表文字与记录', '累计学习 7 天', '—', '嘉奖 +5%')
+        this.siyiLevelRow('Lv3', '司简', '简，代表竹简与载体', '累计 30 天', '充能 98 折', '嘉奖 +10%')
+        this.siyiLevelRow('Lv4', '司理', '理，代表逻辑与纹理', '累计 90 天', '充能 96 折', '嘉奖 +15%')
+        this.siyiLevelRow('Lv5', '司微', '微，代表微观、微分、精微', '累计 150 天', '充能 94 折', '嘉奖 +20%')
+        this.siyiLevelRow('Lv6', '司玄', '玄，代表玄妙、形而上', '累计 210 天', '充能 90 折', '嘉奖 +25%')
+        this.siyiLevelRow('Lv7', '司天', '天，代表天道、万物之规律', '累计 240 天', '充能 85 折', '嘉奖 +30%')
+        this.siyiLevelRow('Lv8', '司忆令', '最高神格！令，代表号令、法则制定者', '累计 365 天（一年封神）', 'SP 永久免费', '')
         Text('每日完成签到或学习任务计 1 天进度（每天最多 1 天）。中途断签：等级保留、连击冻结，可用补签卡续接。')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
@@ -2897,7 +2903,7 @@ export struct GlobalSettingsDialog {
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        this.siyiGainRow('每日签到', '+8,000 SP')
+        this.siyiGainRow('每日签到', '连签递增，最高 8,000 SP/天（第 7 天起满额）')
         this.siyiGainRow('完成每日司忆区学习', '+19,000 SP')
         this.siyiGainRow('连续签到 7 天', '额外 +10,000 SP')
         this.siyiGainRow('连续签到 30 天', '额外 +50,000 SP')
@@ -2940,41 +2946,72 @@ export struct GlobalSettingsDialog {
     .alignItems(HorizontalAlign.Center)
   }
 
-  // ★ 0.247.8：等级表行（左=等级头衔，右=条件与权益两行小字）
+  // ★ 0.247.8：等级表行；★ 0.251.1：三栏化（左=等级头衔，中=头衔含义小字填充留白，右=条件与权益两行小字）；
+  //   bonus 传空串时权益行只显 discount（Lv8「SP 永久免费」不再拼「· 每日—」尾巴，用户拍板删除）；
+  //   ★ 0.253.0：手机分治（用户实锤手机三栏挤一行→含义截断/条件折行乱）——宽屏保持三栏不动；
+  //   手机改两行：上行=Lv头衔（占满）+权益紫字右对齐，下行=「含义 · 条件」灰字自然换行不截断
   @Builder
-  siyiLevelRow(lv: string, title: string, cond: string, discount: string, bonus: string) {
-    Row() {
-      Text(`${lv} ${title}`)
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(TEXT_PRIMARY)
-        .layoutWeight(2)
-      Column({ space: 2 }) {
-        Text(cond)
-          .fontSize(11)
-          .fontColor(TEXT_SECONDARY)
-        Text(`${discount} · 每日${bonus}`)
-          .fontSize(11)
-          .fontColor(BRAND_SECONDARY)
+  siyiLevelRow(lv: string, title: string, meaning: string, cond: string, discount: string, bonus: string) {
+    if (this.windowMode.isTablet) {
+      Row({ space: 8 }) {
+        Text(`${lv} ${title}`)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(TEXT_PRIMARY)
+        Text(meaning)
+          .fontSize(10)
+          .fontColor(TEXT_TERTIARY)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Column({ space: 2 }) {
+          Text(cond)
+            .fontSize(11)
+            .fontColor(TEXT_SECONDARY)
+          Text(bonus === '' ? discount : `${discount} · 每日${bonus}`)
+            .fontSize(11)
+            .fontColor(BRAND_SECONDARY)
+        }
+        .alignItems(HorizontalAlign.End)
       }
-      .alignItems(HorizontalAlign.End)
-      .layoutWeight(3)
+      .width('100%')
+    } else {
+      Column({ space: 3 }) {
+        Row() {
+          Text(`${lv} ${title}`)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(TEXT_PRIMARY)
+            .layoutWeight(1)
+          Text(bonus === '' ? discount : `${discount} · 每日${bonus}`)
+            .fontSize(11)
+            .fontColor(BRAND_SECONDARY)
+        }
+        .width('100%')
+        Text(`${meaning} · ${cond}`)
+          .fontSize(10)
+          .lineHeight(15)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+      }
+      .width('100%')
     }
-    .width('100%')
   }
 
-  // ★ 0.247.8：获取途径行（左名右值）
+  // ★ 0.247.8：获取途径行（左名右值）；★ 0.253.0：值加 layoutWeight+右对齐（长值在剩余空间
+  //   自然换行，左侧名称永不被挤压——新用户礼包长文案手机端不再挤乱）
   @Builder
   siyiGainRow(name: string, value: string) {
     Row() {
       Text(name)
         .fontSize(12)
         .fontColor(TEXT_SECONDARY)
-      Blank()
       Text(value)
         .fontSize(12)
         .fontWeight(FontWeight.Medium)
         .fontColor(BRAND_SECONDARY)
+        .layoutWeight(1)
+        .textAlign(TextAlign.End)
     }
     .width('100%')
   }
@@ -3058,7 +3095,7 @@ export struct GlobalSettingsDialog {
 
       // 反馈与联系
       Column({ space: 10 }) {
-        Text('反馈与联系')
+        Text('反馈与投诉举报')
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontWeight(FontWeight.Medium)
           .fontColor(TEXT_SECONDARY)
@@ -3098,6 +3135,26 @@ export struct GlobalSettingsDialog {
           })
 
         Text('💡 建议附上问题描述与截图，便于快速定位；设备型号、系统版本、应用版本已自动填入邮件。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(TEXT_TERTIARY)
+          .width('100%')
+
+        // ★ 0.253.0：投诉举报入口（华为上架合规——便捷有效投诉举报渠道 + 公开响应时限）
+        Button('投诉举报')
+          .width('100%')
+          .height(40)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(SURFACE_SOFT)
+          .fontColor(BRAND_PRIMARY)
+          .borderRadius(RADIUS_CONTROL)
+          .margin({ top: 2 })
+          .onClick(() => {
+            this.openComplaintMail();
+          })
+
+        Text('如发现违法、违规或侵权内容，可通过上述渠道投诉举报，我们将在 5 个工作日内核实并回复。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(TEXT_TERTIARY)
@@ -3237,7 +3294,7 @@ export struct GlobalSettingsDialog {
 
         // Tab 切换行（★ 0.174.1：改分段控件——轨道 SEGMENTED_TRACK + 选中段 BRAND_PRIMARY，与画布页分段控件同规格；★ 0.167.8：删「画布」Tab）
         // ★ 0.205.3：①「备份」移到司忆区后（用户拍板）②横向 Scroll 包裹——6 个 Tab 超出弹窗最大宽度时可滑动（用户实测溢出）
-        Scroll() {
+        Scroll(this.tabScroller) { // ★ 0.251.2：滚动器走构造参数（ScrollAttribute 无 scroller 属性）
           Row() {
             Text('API 配置')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -3246,6 +3303,7 @@ export struct GlobalSettingsDialog {
             .padding({ left: 12, right: 12, top: 5, bottom: 5 })
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 0 ? BRAND_PRIMARY : Color.Transparent)
+            .id('gtab_0')
             .onClick(() => {
               this.switchTab(0, 'api');
             })
@@ -3257,6 +3315,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 1 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
+            .id('gtab_1')
             .onClick(() => {
               this.switchTab(1, 'pref');
             })
@@ -3268,6 +3327,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 2 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
+            .id('gtab_2')
             .onClick(() => {
               this.switchTab(2, 'siyi');
             })
@@ -3279,13 +3339,13 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 5 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
+            .id('gtab_5')
             .onClick(() => {
               this.switchTab(5, 'review');
               // 进 Tab 预填自定义值（>2 显示当前值，≤2 走快速项留空）
               this.reviewWordInput = this.learnCountStore.learnCount > 2 ? `${this.learnCountStore.learnCount}` : '';
               this.reviewCardInput = this.knowledgeCountStore.knowledgeCount > 2 ? `${this.knowledgeCountStore.knowledgeCount}` : '';
-              this.reviewWordError = '';
-              this.reviewCardError = '';
+
               // ★ 0.197.2：编辑副本回显（保存模式——每次进 Tab 重置为已保存值）
               this.editReviewLearn = this.learnCountStore.learnCount;
               this.editReviewKnowledge = this.knowledgeCountStore.knowledgeCount;
@@ -3298,6 +3358,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 6 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
+            .id('gtab_6')
             .onClick(() => {
               this.switchTab(6, 'backup');
               this.refreshBackupSnapshot(); // 进 Tab 刷新备份状态快照
@@ -3310,6 +3371,7 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 3 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
+            .id('gtab_3')
             .onClick(() => {
               this.switchTab(3, 'cloud');
             })
@@ -3321,12 +3383,14 @@ export struct GlobalSettingsDialog {
             .borderRadius(RADIUS_CONTROL)
             .backgroundColor(this.currentTab === 4 ? BRAND_PRIMARY : Color.Transparent)
             .margin({ left: 4 })
+            .id('gtab_4')
             .onClick(() => {
               this.switchTab(4, 'about');
             })
           }
         }
         .scrollable(ScrollDirection.Horizontal) // 0.205.3：Tab 超宽可横向滑动（Row 内容自适应宽度）
+        .id('gtab_track') // ★ 0.251.2：居中量测锚点（滚动器在 Scroll(this.tabScroller) 构造参数挂载）
         .scrollBar(BarState.Off) // 0.205.4 用户拍板：滚动杠不要
         .edgeEffect(EdgeEffect.Spring)
         .width('100%')

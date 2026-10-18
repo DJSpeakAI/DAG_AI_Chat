@@ -1075,7 +1075,7 @@ export struct KnowledgeBankPage {
               .type(InputType.Number)
               .margin({ left: 8 })
               .onChange((value: string) => {
-                this.cardCustomInput = value;
+                this.cardCustomInput = value.replace(/[^0-9]/g, ""); // ★ 0.252.0：即时清洗——剥全角/空格/不可见字符，防合法数字被误判
                 this.cardInputError = '';
               })
             Button('确定')
@@ -1087,7 +1087,8 @@ export struct KnowledgeBankPage {
               .margin({ left: 8 })
               .padding({ left: 14, right: 14 })
               .onClick(() => {
-                const n = parseInt(this.cardCustomInput, 10);
+                const cleaned = this.cardCustomInput.replace(/[^0-9]/g, ""); // ★ 0.252.0：提交兜底清洗（双防线）
+                const n = cleaned.length > 0 ? parseInt(cleaned, 10) : NaN;
                 if (!Number.isNaN(n) && n >= 0 && n <= 20) {
                   this.knowledgeCountStore.knowledgeCount = n;
                   this.cardSettingsVisible = false;

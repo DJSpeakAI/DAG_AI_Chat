@@ -18,7 +18,7 @@ import { streamChat } from '../utils/ApiClient';
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
 import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
-import { setWidgetFace } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面模式变更即时推桌面卡片
+
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分进度上云钩子（3 秒防抖）
 import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
@@ -29,6 +29,7 @@ import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默走 fallback）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：完成页未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
+import { FireworksOverlay } from './FireworksOverlay'; // ★ 0.255.1：完成页烟花顶层 Transparent（点击放烟花+透传按钮）；自动高密度 8s 后静默等点击
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -957,79 +958,19 @@ export struct ReviewPage {
     .backgroundColor(SURFACE_SOFT)
   }
 
-  // ★ 0.209.0：卡面模式分段控件（单面 | 正反两面——样式同 countSegment 分段）
-  // ★ 0.209.1 修复：带参 @Builder 按值传参不刷新（0.190.1 铁律复发）——无参化拆分，内部直读状态
-  // ★ 0.224.0：两库分治合并为全局单通道（用户拍板「不要分开、不要两头选」——与全局设置同 store 即时同步）
-  @Builder
-  unifiedFaceSegment(): void {
-    Row({ space: 6 }) {
-      Text('单面')
-        .fontSize(12)
-        .fontWeight(this.faceMode.mode !== 'double' ? 600 : 400)
-        .fontColor(this.faceMode.mode !== 'double' ? Color.White : TEXT_SECONDARY)
-        .height(30)
-        .padding({ left: 14, right: 14 })
-        .borderRadius(8)
-        .backgroundColor(this.faceMode.mode !== 'double' ? BRAND_PRIMARY : Color.Transparent)
-        .onClick(() => {
-          this.applyFace('single');
-        })
-      Text('正反两面')
-        .fontSize(12)
-        .fontWeight(this.faceMode.mode === 'double' ? 600 : 400)
-        .fontColor(this.faceMode.mode === 'double' ? Color.White : TEXT_SECONDARY)
-        .height(30)
-        .padding({ left: 14, right: 14 })
-        .borderRadius(8)
-        .backgroundColor(this.faceMode.mode === 'double' ? BRAND_PRIMARY : Color.Transparent)
-        .onClick(() => {
-          this.applyFace('double');
-        })
-    }
-    .padding(3)
-    .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(SURFACE_SOFT)
-  }
-
-  // ★ 0.224.0：切换卡面模式（即时生效全局——卡片复习/司忆区/桌面卡片全跟随；当前卡回正面+即时推桌面卡片）
-  applyFace(mode: string): void {
-    this.faceMode.mode = mode;
-    this.cardFlipped = false;
-    try {
-      setWidgetFace(this.getUIContext().getHostContext() as common.Context, mode);
-    } catch (_e) {
-      // 桌面卡片推送失败静默（下次快照重建自然携带）
-    }
-  }
+  // ★ 0.252.0：unifiedFaceSegment / applyFace 已删（切换单面入口移除——全局固定双面，
+  //   FaceModeStore.mode 恒 'double'；isDoubleFace 恒 true，卡面各分支自然全走双面路径零回归）
 
   @Builder
   countSettingsDialog() {
     Column() {
       Column() {
-        // ── ★ 0.209.0：卡面模式（用户需求：置于每日复习量上方）──
-        // ★ 0.224.0：全局单通道（与全局设置同一真相源——两处任一变更互相同步，勿两头选）
-        Text('卡面模式')
-          .fontSize(16)
-          .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
-        Text('正反两面：先看题面，点击卡片翻面后再评分；全局生效（司忆区/桌面卡片跟随）')
-          .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
-          .margin({ top: 4 })
-        Column() {
-          this.unifiedFaceSegment()
-        }
-        .width('100%')
-        .padding(12)
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
-        .margin({ top: 16 })
-        // ── 每日复习量（原有）──
+        // ── 每日复习量（原有；★ 0.252.0 卡面模式区块已删——全局固定双面，无切换入口）──
         Text('每日复习量')
           .fontSize(16)
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
-          .margin({ top: 20 })
+          .margin({ top: 4 })
         Text('进入复习页时，当日队列最多取多少条（到期+新卡）')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
@@ -1153,10 +1094,20 @@ export struct ReviewPage {
       Column() {
         this.topBar()
         if (this.finished) {
-          Column() {
-            Blank().layoutWeight(1)
-            this.doneArea()
-            Blank().layoutWeight(1)
+          // ★ 0.255.1：烟花层移 Stack 顶层 + HitTestBehavior.Transparent——
+          //   点空白=Canvas onClick 放烟花，事件同时透传下层（按钮照常响应不遮蔽）；
+          //   0.254.0 垫底层赌「无事件组件点击穿透」，上层 Column 铺满内容区拦截不可靠（用户实测点击无反应）。
+          //   烟花 Canvas 背景透明（destination-out 拖尾），盖在内容上不影响显示。
+          Stack() {
+            Column() {
+              Blank().layoutWeight(1)
+              this.doneArea()
+              Blank().layoutWeight(1)
+            }
+            .width('100%')
+            .height('100%') // Stack 内 layoutWeight 无效（0.255.1 修正：原 .layoutWeight(1) 高度塌陷靠 Stack 居中侥幸显示）
+            FireworksOverlay()
+              .hitTestBehavior(HitTestMode.Transparent)
           }
           .width('100%')
           .layoutWeight(1)

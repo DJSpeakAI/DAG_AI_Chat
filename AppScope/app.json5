@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000308, // ★ 0.251.0：AI流式后台保活续收(dataTransfer长时任务+实况窗进度+完成叮咚通知+90s看门狗,切后台不断流);上一版 0.250.0：敏感词预过滤;更早历史见 MEMORY.md
+     "versionCode": 1000320, // ★ 0.257.0：上架合规补全（TokenHub 安全拦截错误码捕获 + 投诉举报入口 + 隐私政策审计留存条款）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

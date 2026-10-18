@@ -206,6 +206,7 @@ function cleanupRequest(httpRequest: http.HttpRequest): void {
 interface StreamErrorInfo {
   code?: string;
   message?: string;
+  message_zh?: string; // ★ 0.253.0：腾讯 TokenHub 内容安全拦截官方中文提示（error.message_zh，优先展示中文）
 }
 interface StreamErrorBody {
   error?: StreamErrorInfo;
@@ -239,9 +240,12 @@ function extractStreamError(raw: string): string {
     }
     try {
       const json = JSON.parse(c) as StreamErrorBody;
-      if (json.error && (json.error.message !== undefined || json.error.code !== undefined)) {
+      if (json.error && (json.error.message !== undefined || json.error.code !== undefined ||
+        json.error.message_zh !== undefined)) {
         const code = json.error.code !== undefined ? json.error.code : '';
-        const message = json.error.message !== undefined ? json.error.message : '';
+        // ★ 0.253.0：优先官方中文（error.message_zh），召回英文原文仅作无中文时兜底
+        const message = json.error.message_zh !== undefined ? json.error.message_zh :
+          (json.error.message !== undefined ? json.error.message : '');
         return `API 返回错误${code.length > 0 ? `（${code}）` : ''}：${message}`;
       }
       if (json.message !== undefined && json.message.length > 0) {
@@ -266,6 +270,13 @@ function extractStreamError(raw: string): string {
 // ============================================================
 export function classifyStreamError(raw: string): string {
   const lower = raw.toLowerCase();
+  // ★ 0.253.0：内容安全拦截（腾讯 TokenHub：HTTP 451 / 业务码 CodeContentFiltered——
+  // 输入或输出触发平台安全策略）。属主动合规拦截非技术故障：给友好中文提示、不附原始英文
+  if (lower.includes('codecontentfiltered') || lower.includes('contentfiltered') ||
+    lower.includes('security policy') || lower.includes('content is blocked') ||
+    raw.includes('安全策略') || raw.includes('触发安全') || raw.includes('451')) {
+    return `内容触发安全策略，已被拦截\n💡 请调整内容后重新发送`;
+  }
   // 图片不支持（原 0.190.2 逻辑合并）
   if (lower.includes('image') || lower.includes('vision') || raw.includes('图片') || raw.includes('多模态')) {
     return `当前模型可能不支持图片\n💡 建议在 ⚙ 设置中切换标注「多模态（可发图）」的模型\n\n原始错误：${raw}`;
