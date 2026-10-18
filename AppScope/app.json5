@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000320, // ★ 0.257.0：上架合规补全（TokenHub 安全拦截错误码捕获 + 投诉举报入口 + 隐私政策审计留存条款）
+     "versionCode": 1000321, // ★ 0.259.0：补签券奖励制+SP消耗统计（升级发券+断签续接+统计第五卡+Lv8余额恒显999,999）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

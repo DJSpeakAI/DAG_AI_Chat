@@ -7,7 +7,8 @@
 //   云同步不用管默认全设备开启」）——isVip/试用打戳逻辑代码保留（云同步守卫仍依赖），仅本页 UI 不再呈现
 
 import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLogin,
-  SiyiPointStore, connectSiyiPoints, siyiTotalSp, siyiLevelTitle, SIYI_REDEEM_SP,
+  SiyiPointStore, connectSiyiPoints, siyiLevelTitle, SIYI_REDEEM_SP,
+  SignInStore, connectSignIn, siyiBalanceDisplay,
 
   StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
@@ -22,6 +23,7 @@ export struct BillingPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   subscription: SubscriptionStore = connectSubscription();
   siyi: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.0：司忆点资产（三池余额+礼包标记）
+  signIn: SignInStore = connectSignIn(); // ★ 0.259.0：补签券持有量（资产卡展示）
   statStore: StatisticsStore = connectStatistics(); // ★ 0.248.0：等级推导数据源（累计学习天数）
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.194.0：兑换前置登录（未登录不允许兑换）
   @Local redeemInput: string = '';
@@ -30,10 +32,6 @@ export struct BillingPage {
 
 
   // ★ 0.248.0：资产卡数据
-  totalSp(): number {
-    return siyiTotalSp(this.siyi);
-  }
-
   learnDays(): number {
     return getStatDays(this.statStore).length; // 累计学习天数=有学习活动的天数
   }
@@ -165,7 +163,8 @@ export struct BillingPage {
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
                 .fontColor(TEXT_SECONDARY)
-              Text(`${this.totalSp().toLocaleString()}`)
+              // ★ 0.259.0：Lv8 满级 SP 显示恒 999,999（「封神满格」纯显示层——真实余额/云同步不动）
+              Text(siyiBalanceDisplay(this.siyi, this.learnDays()))
                 .fontSize(28)
                 .fontWeight(700)
                 .fontColor(BRAND_SECONDARY)
@@ -179,6 +178,13 @@ export struct BillingPage {
                 .lineHeight(20)
                 .fontColor(TEXT_TERTIARY)
                 .margin({ top: 6 })
+              // ★ 0.259.0：补签券持有量（升级奖励制——与 SP 余额同屏，让「升级了」有获得感）
+              if (this.signIn.makeupVouchers > 0) {
+                Text(`补签券 ×${this.signIn.makeupVouchers}（等级升级奖励 · 断签时可续接连击）`)
+                  .fontSize(FONT_SIZE_CAPTION)
+                  .fontColor(BRAND_SECONDARY)
+                  .margin({ top: 4 })
+              }
               // 未登录 → 登录入口（兑换前置+新用户礼包随登录发放）
               if (!this.account.isLoggedIn) {
                 Button(this.isLoggingIn ? '登录中…' : '登录华为账号')

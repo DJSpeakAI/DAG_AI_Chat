@@ -35,6 +35,7 @@ class StatAgg {
   bubbles: number = 0;
   tokens: number = 0;
   siyi: number = 0; // ★ 0.202.3
+  spUsed: number = 0; // ★ 0.259.0：SP 消耗（充能/嘉奖合并口径——用户视角 SP 就是一种点数）
 }
 
 // ★ 0.202.3：测试数据 seed marker（上线清零时随 seedTestData 一起删除）
@@ -94,7 +95,9 @@ export struct StatisticsPage {
       const inT = Math.round((1200 + 2800 * growth) * weekend * jitter * (userM + 1) / 10);
       const outT = Math.round(inT * (0.5 + Math.random() * 0.5));
       const sy = Math.round((6 + 26 * growth) * weekend * jitter);
-      out.push({ date: key, userMsgs: userM, aiMsgs: aiM, bubbles: bub, inputTokens: inT, outputTokens: outT, siyi: sy });
+      // ★ 0.259.0：SP 消耗测试数据（柱状图验收用；量级≈token÷7×2 实扣口径的粗略近似）
+      const sp = Math.round(inT / 7 * 2 * (0.4 + Math.random() * 0.6));
+      out.push({ date: key, userMsgs: userM, aiMsgs: aiM, bubbles: bub, inputTokens: inT, outputTokens: outT, siyi: sy, spUsed: sp });
     }
     this.statStore.raw = JSON.stringify({ days: out } as StatDayData);
   }
@@ -112,6 +115,7 @@ export struct StatisticsPage {
         agg.bubbles += d.bubbles;
         agg.tokens += d.inputTokens + d.outputTokens;
         agg.siyi += d.siyi ?? 0;
+        agg.spUsed += d.spUsed ?? 0;
       }
     }
     return agg;
@@ -126,6 +130,7 @@ export struct StatisticsPage {
       agg.bubbles += days[i].bubbles;
       agg.tokens += days[i].inputTokens + days[i].outputTokens;
       agg.siyi += days[i].siyi ?? 0;
+      agg.spUsed += days[i].spUsed ?? 0;
     }
     return agg;
   }
@@ -159,6 +164,9 @@ export struct StatisticsPage {
     if (this.selectedMetric === 'siyi') {
       return d.siyi ?? 0;
     }
+    if (this.selectedMetric === 'sp') {
+      return d.spUsed ?? 0;
+    }
     return d.userMsgs + d.aiMsgs;
   }
 
@@ -171,6 +179,9 @@ export struct StatisticsPage {
     }
     if (this.selectedMetric === 'siyi') {
       return a.siyi;
+    }
+    if (this.selectedMetric === 'sp') {
+      return a.spUsed;
     }
     return a.msgs;
   }
@@ -185,11 +196,14 @@ export struct StatisticsPage {
     if (this.selectedMetric === 'siyi') {
       return '司忆量（次）——卡片被司忆区展示';
     }
+    if (this.selectedMetric === 'sp') {
+      return 'SP 消耗（司忆点）';
+    }
     return '对话条数（条）';
   }
 
   fmtMetric(v: number): string {
-    if (this.selectedMetric === 'token' && v >= 10000) {
+    if ((this.selectedMetric === 'token' || this.selectedMetric === 'sp') && v >= 10000) {
       return `${(v / 1000).toFixed(1)}k`;
     }
     return `${v}`;
@@ -611,6 +625,32 @@ export struct StatisticsPage {
             .margin({ bottom: 12 })
             .onClick(() => {
               this.selectedMetric = 'siyi';
+            })
+
+            // ── 块⑤：SP 消耗（★ 0.259.0 新增——司忆点消耗流量；充能/嘉奖合并口径，两池明细看账单页）──
+            Column() {
+              Text('SP 消耗')
+                .fontSize(FONT_SIZE_CARD_TITLE_SM)
+                .fontWeight(600)
+                .fontColor(TEXT_PRIMARY)
+                .margin({ bottom: 8 })
+              this.StatRow('累计消耗', this.fmtMetric(this.sumAll().spUsed))
+              this.StatRow('今日 / 昨日', `${this.fmtMetric(this.sumRange(this.todayStart(), this.todayStart() + 86400000).spUsed)} / ${this.fmtMetric(this.sumRange(this.todayStart() - 86400000, this.todayStart()).spUsed)}`)
+              this.StatRow('本周 / 上周', `${this.fmtMetric(this.sumRange(this.weekStart(0), this.weekStart(1)).spUsed)} / ${this.fmtMetric(this.sumRange(this.weekStart(-1), this.weekStart(0)).spUsed)}`)
+              Text('AI 对话消耗的司忆点流量（充能与嘉奖合并统计）——存量余额见账单页')
+                .fontSize(11)
+                .fontColor(TEXT_TERTIARY)
+                .margin({ top: 6 })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .padding(14)
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(SURFACE_NODE)
+            .border({ width: this.selectedMetric === 'sp' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .margin({ bottom: 12 })
+            .onClick(() => {
+              this.selectedMetric = 'sp';
             })
           }
           .width('100%')

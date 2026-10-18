@@ -7,9 +7,9 @@
 
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.9：logoutHuaweiID 删——退出确认弹窗移 Index 根挂载，确认后走 doLogout
 import { SubscriptionStore, connectSubscription, isVip, stampFreeTrialOnLogin,
-  SiyiPointStore, connectSiyiPoints, siyiTotalSp, siyiLevelTitle,
+  SiyiPointStore, connectSiyiPoints, siyiLevelTitle, siyiBalanceDisplay,
   StatisticsStore, connectStatistics, getStatDays,
-  SignInStore, connectSignIn, isSignedToday, connectSignInDialog } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin 打戳；★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）；★ 0.256.0：签到入口（红点驱动）
+  SignInStore, connectSignIn, isSignedToday, connectSignInDialog } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin 打戳；★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）；★ 0.256.0：签到入口（红点驱动）；★ 0.259.0：Lv8 满级 SP 显示恒 999,999（siyiBalanceDisplay 收口）
 import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { openSettingsTab } from './GlobalSettingsDialog'; // ★ 0.248.0：账户区 SP 行点击→设置弹窗司忆点 Tab
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.248.0：PC(2in1) 隐藏「桌面卡片」入口（系统不提供桌面卡片）
@@ -983,7 +983,7 @@ export struct AppSideBar {
                 .offset({ x: 3, y: -2 })
             }
           }
-          Text(`${siyiTotalSp(this.siyi).toLocaleString()} SP`)
+          Text(`${siyiBalanceDisplay(this.siyi, this.siyiLearnDays())} SP`) // ★ 0.259.0：Lv8 满级恒显 999,999（显示层收口，真实余额不动）
             .fontSize(FONT_SIZE_CAPTION)
             .fontWeight(FontWeight.Medium)
             .fontColor(BRAND_SECONDARY)

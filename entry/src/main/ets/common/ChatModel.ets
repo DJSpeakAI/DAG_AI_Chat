@@ -694,6 +694,7 @@ export interface StatDayEntry {
   inputTokens: number;  // 输入 token 累计
   outputTokens: number; // 输出 token 累计
   siyi?: number;        // ★ 0.202.3：司忆量（单词/知识卡被司忆区展示的次数；可选兼容旧数据——读取处 ?? 0）
+  spUsed?: number;      // ★ 0.259.0：SP 消耗量（consumeSiyiSp 收口累加；可选兼容旧数据——读取处 ?? 0）
 }
 
 export interface StatDayData {
@@ -890,8 +891,30 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
   remain -= b;
   const p = Math.min(remain, Math.max(0, store.permanentSp - store.consumedPermanentSp));
   store.consumedPermanentSp += p;
+  recordSpUsed(g + b + p); // ★ 0.259.0：SP 消耗统计埋点（单一收口——一切新扣点场景自动带上；实扣额才计）
   scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
   return true;
+}
+
+// ★ 0.259.0：SP 消耗按天统计（统计页第五卡数据源）——只累加已存在的当天行、绝不创建新行：
+//   守住「行存在=当天有学习活动」不变式（learnDays=行数=等级头衔依据），杜绝纯消耗虚增
+//   学习天数误触 Lv8 免扣的理论风险。实际场景 SP 消耗必伴随 AI 对话（userMsg 已建行），零丢失。
+function recordSpUsed(amount: number): void {
+  if (amount <= 0) {
+    return;
+  }
+  const store = connectStatistics();
+  const days = getStatDays(store);
+  const key = statDateKey(Date.now());
+  for (let i = 0; i < days.length; i++) {
+    if (days[i].date === key) {
+      days[i].spUsed = (days[i].spUsed ?? 0) + amount;
+      store.raw = JSON.stringify({ days: days } as StatDayData);
+      scheduleRowFlush(); // 统计落盘即防抖上行（cfg:stat-days——多端消耗数据一致）
+      return;
+    }
+  }
+  // 当天无行——不创建（learnDays 口径保护；丢一条统计可接受，等级数据安全优先）
 }
 
 // 等级头衔（0.249.0 八级表，用户 2026-10-18 拍板「司」系）：Lv1 好奇宝宝注册即得 / Lv2 司墨 7 / Lv3 司简 30 /
@@ -930,6 +953,21 @@ export function isSiyiSpFree(learnDays: number): boolean {
   return learnDays >= SIYI_LV8_DAYS;
 }
 
+// ★ 0.259.0：当前累计学习天数（=统计行数；余额展示判定用便捷收口）
+export function currentLearnDays(): number {
+  return getStatDays(connectStatistics()).length;
+}
+
+// ★ 0.259.0：Lv8 满级 SP 余额显示口径（用户拍板「给他填满，永远 999,999 封神爽感」）——
+//   所有对用户可见的 SP 余额展示点统一走此函数：Lv8 态恒显 '999,999'；纯显示层——
+//   真实余额字段/云同步/统计一律不动（免扣保证实际余额永不减少，显示不撒谎）
+export function siyiBalanceDisplay(store: SiyiPointStore, learnDays: number): string {
+  if (isSiyiSpFree(learnDays)) {
+    return '999,999';
+  }
+  return siyiTotalSp(store).toLocaleString();
+}
+
 // 新用户礼包分档（用户 2026-10-18 拍板）：上线首月注册=200 万（≈免费畅用一月）；次月起新用户=100 万
 // ⚠️ SIYI_FIRST_MONTH_END 为首月截止占位——上线时间确定后更新此常量即可
 export const SIYI_FIRST_MONTH_END: number = new Date(2026, 10, 30, 23, 59, 59).getTime();
@@ -965,6 +1003,10 @@ export class SignInStore {
   @Trace streak: number = 0;          // 当前连击天数
   @Trace maxStreak: number = 0;       // 历史最高连击
   @Trace guideShown: boolean = false; // 首登签到引导弹窗已展示标志（只弹一次）
+  // ★ 0.259.0 补签券（升级奖励制，尾部追加默认值——Schema 铁律合规；本地不同步=与连击本地语义一致）
+  @Trace makeupVouchers: number = 0;      // 持有券数
+  @Trace makeupGrantedLevel: number = 0;  // 已发券等级基线（防重复发放）
+  @Trace makeupDates: string[] = [];      // 已补签日期（防同一日重复补签）
 }
 
 export function connectSignIn(): SignInStore {
@@ -1079,6 +1121,62 @@ function maybeShowSignInGuide(): void {
 }
 
 // ============================================================
+// ★ 0.259.0：补签券（升级奖励制，用户拍板每级 +1）——因努力升级而奖励的券，非购买
+//   阶梯：Lv2 司墨 1 张 / Lv3 司简 2 / Lv4 司理 3 / Lv5 司微 4 / Lv6 司玄 5 / Lv7 司天 6；
+//   Lv8 司忆令不另送券——满级专属权益=SP 显示恒 999,999（§3.6）
+//   使用：只补「昨天」（唯一补签日最简防刷），断签前 streak+1 续接（后悔药语义）
+// ============================================================
+
+// 等级应得券总额（纯函数）：Lv1=0 / Lv2~Lv7=等级-1 / Lv8 及以上=6（不随 Lv8 增发）
+export function makeupVouchersForLevel(level: number): number {
+  if (level >= 7) {
+    return 6;
+  }
+  if (level >= 2) {
+    return level - 1;
+  }
+  return 0;
+}
+
+// 升级发券（notifyLevelUp 单一收口内调用）：补齐「新等级应得总额−已发基线」（跳级自动补差）
+function grantMakeupVouchers(newLevel: number): number {
+  const store = connectSignIn();
+  const grant = makeupVouchersForLevel(newLevel) - makeupVouchersForLevel(store.makeupGrantedLevel);
+  if (grant > 0) {
+    store.makeupVouchers += grant;
+  }
+  store.makeupGrantedLevel = Math.max(store.makeupGrantedLevel, newLevel);
+  return grant;
+}
+
+// 断签可补判定（弹窗展示补签按钮依据）：今天未签 && 昨天未签 && 昨天未补过 && 持有券>0
+export function canMakeupYesterday(store: SignInStore, today: string): boolean {
+  if (store.makeupVouchers <= 0 || store.signDates.indexOf(today) >= 0) {
+    return false;
+  }
+  const yesterday = shiftDateStr(today, -1);
+  return store.signDates.indexOf(yesterday) < 0 && store.makeupDates.indexOf(yesterday) < 0;
+}
+
+// 使用补签券（只补昨天）：昨天记入已签+已补集合，streak=断签前 streak+1（续接不重新计数），
+//   lastSignDate 推到昨天（今天再签到 nextStreak 自然 +1）；today 由调用方走 todayStrWithOffset 传入
+export function useMakeupVoucher(store: SignInStore, today: string): boolean {
+  if (!canMakeupYesterday(store, today)) {
+    return false;
+  }
+  const yesterday = shiftDateStr(today, -1);
+  store.makeupVouchers -= 1;
+  store.makeupDates.push(yesterday);
+  store.signDates.push(yesterday);
+  store.streak += 1; // 续接语义：断签前 streak（字段保留历史值）+1
+  if (store.streak > store.maxStreak) {
+    store.maxStreak = store.streak;
+  }
+  store.lastSignDate = yesterday; // 今天再签到 nextStreak(yesterday, streak, today)=streak+1
+  return true;
+}
+
+// ============================================================
 // ★ 0.256.0：称号升级检测（头衔此前静默变化，补升级提醒弹窗）
 //   桥=AppStorageV2 应用级（lastLevel 基线 + pendingLevel 待展示）；
 //   检测点=recordStat（本端学习落盘）+ mergeStatDaysRow（云下行天数吸收）两路；
@@ -1088,6 +1186,7 @@ function maybeShowSignInGuide(): void {
 export class LevelUpBridge {
   @Trace lastLevel: number = 0;    // 已通知等级基线（0=未初始化）
   @Trace pendingLevel: number = 0; // 待展示升级弹窗等级（>0 即弹，关闭清零）
+  @Trace pendingMakeupGrant: number = 0; // ★ 0.259.0：本次升级发放补签券数（升级弹窗「获得补签券 ×N」）
 }
 
 export function connectLevelUpBridge(): LevelUpBridge {
@@ -1131,7 +1230,7 @@ export const SIYI_LEVEL_PERKS: string[] = [
   '嘉奖 +20% · 充能 94 折',
   '嘉奖 +25% · 充能 90 折',
   '嘉奖 +30% · 充能 85 折',
-  'AI 对话 SP 永久免费',
+  'AI 对话 SP 永久免费 · 余额恒显 999,999', // ★ 0.259.0 补满级显示口径
 ];
 
 // 等级头衔文案（按等级数值取用）——与 siyiLevelTitle 八级表同源（⚠️ 双份维护，siyiLevelTitle 为真相源）
@@ -1152,10 +1251,17 @@ export function notifyLevelUp(learnDays: number): void {
   const level = siyiLevelOf(learnDays);
   if (bridge.lastLevel === 0) {
     bridge.lastLevel = level; // 冷启动/首检基线——不弹（老用户登录即 Lv8 也不打扰）
+    // ★ 0.259.0：冷启动基线同步发券基线（不发券——防历史数据升级误发/重复追发）；
+    //   APP 未上线无存量用户，此为防御性对齐（盘值更高时保留盘值——多端 stat-days 吸收场景）
+    const signIn = connectSignIn();
+    if (signIn.makeupGrantedLevel < level) {
+      signIn.makeupGrantedLevel = level;
+    }
     return;
   }
   if (level > bridge.lastLevel) {
     bridge.lastLevel = level;
+    bridge.pendingMakeupGrant = grantMakeupVouchers(level); // ★ 0.259.0：升级发券（阶梯补差；Lv8 返 0 不展示）
     bridge.pendingLevel = level; // 触发 Index 根挂载弹窗
   }
 }
@@ -3015,6 +3121,10 @@ function mergeStatDaysRow(v: string | undefined): void {
     }
     if ((c.siyi ?? 0) > (l.siyi ?? 0)) {
       l.siyi = c.siyi ?? 0;
+      changed = true;
+    }
+    if ((c.spUsed ?? 0) > (l.spUsed ?? 0)) { // ★ 0.259.0：SP 消耗 max 合并（单调递增语义同 siyi）
+      l.spUsed = c.spUsed ?? 0;
       changed = true;
     }
   }

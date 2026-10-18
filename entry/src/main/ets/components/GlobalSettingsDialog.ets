@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.257.0'; // ★ 0.257.0：上架合规补全（安全拦截捕获+投诉举报入口+隐私政策审计留存）；上一版 0.256.1：TTS播报缓存
+const APP_VERSION: string = 'v0.259.0'; // ★ 0.259.0：补签券奖励制+SP消耗统计;上一版 0.257.0：上架合规
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2884,8 +2884,8 @@ export struct GlobalSettingsDialog {
         this.siyiLevelRow('Lv5', '司微', '微，代表微观、微分、精微', '累计 150 天', '充能 94 折', '嘉奖 +20%')
         this.siyiLevelRow('Lv6', '司玄', '玄，代表玄妙、形而上', '累计 210 天', '充能 90 折', '嘉奖 +25%')
         this.siyiLevelRow('Lv7', '司天', '天，代表天道、万物之规律', '累计 240 天', '充能 85 折', '嘉奖 +30%')
-        this.siyiLevelRow('Lv8', '司忆令', '最高神格！令，代表号令、法则制定者', '累计 365 天（一年封神）', 'SP 永久免费', '')
-        Text('每日完成签到或学习任务计 1 天进度（每天最多 1 天）。中途断签：等级保留、连击冻结，可用补签卡续接。')
+        this.siyiLevelRow('Lv8', '司忆令', '最高神格！令，代表号令、法则制定者', '累计 365 天（一年封神）', 'SP 永久免费 · 余额恒显 999,999', '')
+        Text('每日完成签到或学习任务计 1 天进度（每天最多 1 天）。中途断签：等级保留、连击冻结，可用补签券续接。')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
           .width('100%')
@@ -2925,7 +2925,7 @@ export struct GlobalSettingsDialog {
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        Text('· 全部 SP 永久有效（充值、嘉奖与新用户礼包均不过期）\n· 消耗时先扣嘉奖 SP，嘉奖用尽后自动扣充能 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆令」AI 对话 SP 永久免费（累计学习 365 天一年封神）')
+        Text('· 全部 SP 永久有效（充值、嘉奖与新用户礼包均不过期）\n· 消耗时先扣嘉奖 SP，嘉奖用尽后自动扣充能 SP\n· 等级中断后保留头衔，补签券由等级升级奖励获得，可续接连击\n· 满级「司忆令」AI 对话 SP 永久免费、余额恒显 999,999（累计学习 365 天一年封神）')
           .fontSize(12)
           .fontColor(TEXT_SECONDARY)
           .width('100%')

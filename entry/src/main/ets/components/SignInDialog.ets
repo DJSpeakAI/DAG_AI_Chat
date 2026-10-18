@@ -11,7 +11,8 @@ import {
   SignInStore, connectSignIn, SiyiPointStore, connectSiyiPoints,
   DebugDayOffsetStore, connectDebugDayOffset, SignInDialogBridge, connectSignInDialog,
   LevelUpBridge, connectLevelUpBridge, SIYI_LEVEL_PERKS, SIYI_LEVEL_TITLES,
-  todayStrWithOffset, nextStreak, signInRewardSp, milestoneBonusSp, isSignedToday, doSignIn
+  todayStrWithOffset, nextStreak, signInRewardSp, milestoneBonusSp, isSignedToday, doSignIn,
+  canMakeupYesterday, useMakeupVoucher
 } from '../common/ChatModel';
 import { SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // 宽屏断点（弹窗宽度收敛）
@@ -23,6 +24,7 @@ export struct SignInDialog {
   siyi: SiyiPointStore = connectSiyiPoints();
   debugOffset: DebugDayOffsetStore = connectDebugDayOffset();
   @Local signedAmount: number = 0; // 刚签到发放总额（>0=成功态；关闭弹窗清零）
+  @Local makeupJustUsed: boolean = false; // ★ 0.259.0：刚补签成功反馈态（显示「连击已续接」；关闭清零）
   // 宽屏断点——@ObservedV2 实例须挂 @Local 才可靠响应（0.209.1 铁律）
   @Local windowMode: WindowMode = connectWindowMode();
   @Computed get isTablet(): boolean {
@@ -60,6 +62,18 @@ export struct SignInDialog {
   onClose(): void {
     this.dialogBridge.visible = false;
     this.signedAmount = 0;
+    this.makeupJustUsed = false;
+  }
+
+  // ★ 0.259.0：断签可补判定（展示补签按钮依据——券>0 && 今天未签 && 昨天未签未补）
+  canMakeup(): boolean {
+    return canMakeupYesterday(this.signIn, this.today());
+  }
+
+  onMakeupClick(): void {
+    if (useMakeupVoucher(this.signIn, this.today())) {
+      this.makeupJustUsed = true;
+    }
   }
 
   @Builder
@@ -163,6 +177,35 @@ export struct SignInDialog {
             .fontFamily(FONT_INTER_SEMIBOLD)
             .fontColor(TEXT_PRIMARY)
             .margin({ bottom: 12 })
+
+          // ── ★ 0.259.0：断签补签块（昨天漏签 && 持有补签券——「后悔药」续接连击）──
+          if (this.makeupJustUsed) {
+            Text(`连击已续接（当前 ${this.signIn.streak} 天）——今日签到后变 ${this.signIn.streak + 1} 天`)
+              .fontSize(FONT_SIZE_CAPTION)
+              .lineHeight(18)
+              .fontColor(BRAND_SECONDARY)
+              .margin({ bottom: 10 })
+          } else if (this.canMakeup()) {
+            Text(`昨日漏签，连击已断（此前 ${this.signIn.streak} 天）`)
+              .fontSize(FONT_SIZE_CAPTION)
+              .lineHeight(18)
+              .fontColor(TEXT_TERTIARY)
+              .margin({ bottom: 6 })
+            Button(`使用补签券 ×1 续接连击（剩余 ${this.signIn.makeupVouchers} 张）`)
+              .width('100%')
+              .height(40)
+              .fontSize(FONT_SIZE_BODY)
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(Color.Transparent)
+              .fontColor(BRAND_SECONDARY)
+              .borderRadius(RADIUS_CONTROL)
+              .border({ width: 1, color: BRAND_SECONDARY })
+              .margin({ bottom: 10 })
+              .onClick(() => {
+                this.onMakeupClick();
+              })
+          }
+
           Text(`今日可领 ${this.todayGainText()}`)
             .fontSize(FONT_SIZE_BODY)
             .lineHeight(22)
@@ -194,6 +237,14 @@ export struct SignInDialog {
             .onClick(() => {
               this.onSignClick();
             })
+        }
+
+        // ★ 0.259.0：补签券持有量小字（>0 才显示——等级升级奖励获得，可在断签时续接连击）
+        if (this.signIn.makeupVouchers > 0) {
+          Text(`补签券 ×${this.signIn.makeupVouchers}（等级升级奖励 · 断签时可续接连击）`)
+            .fontSize(10)
+            .fontColor(TEXT_TERTIARY)
+            .margin({ top: 10 })
         }
 
         // 日期小字（长按/右键=调试日期偏移菜单；偏移≠0 时醒目提示）
@@ -256,6 +307,15 @@ export struct LevelUpDialog {
           .lineHeight(22)
           .fontColor(TEXT_SECONDARY)
           .margin({ bottom: 6 })
+
+        // ★ 0.259.0：升级发补签券（奖励的仪式感放在升级这一刻——因努力而奖励；Lv8 满级改 SP 恒显 999,999 不送券）
+        if (this.bridge.pendingMakeupGrant > 0) {
+          Text(`🎉 获得补签券 ×${this.bridge.pendingMakeupGrant}（断签时可续接连击）`)
+            .fontSize(FONT_SIZE_BODY)
+            .lineHeight(22)
+            .fontColor(BRAND_SECONDARY)
+            .margin({ bottom: 6 })
+        }
 
         Text('坚持每日学习，下一级头衔正在等你')
           .fontSize(FONT_SIZE_CAPTION)
