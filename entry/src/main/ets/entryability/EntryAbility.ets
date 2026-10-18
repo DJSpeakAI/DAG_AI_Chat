@@ -23,6 +23,7 @@ import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核心（云函数通道前置）
 import { flushTrackQueue } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报
+import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -52,6 +53,7 @@ export default class EntryAbility extends UIAbility {
     this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（冷启动路径——method/params 在 want.parameters）
     this.registerWidgetCallee(); // ★ 0.204.1：桌面卡片 call（热路径——进程存活/解冻后走 Callee，onCreate 时注册一次）
     this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
+    initAiStreamGuard(this.context); // ★ 0.251.0：AI 后台保活守卫初始化（长时任务/通知需 UIAbilityContext）
     // ★ 0.230.1：0.228.4 临时清洗钩子 wipeCloudRows 已删除（伪墓碑止血改由 initCloudDb 内
     //   一次性幂等清洗接管——正本 server 同步；此入口曾是全量 del 行写入口，数据毁灭地雷拆除）
   }
@@ -229,6 +231,7 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.153：回前台——清除全局后台标志
     const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
     lifecycle.isBackground = false;
+    setAiStreamBackground(false); // ★ 0.251.0：守卫前后台标志（完成通知仅后台发）
     // ★ 0.206.2：回前台补发埋点队列——真机实证 onBackground 里发网络必被鸿蒙后台限制掐掉
     //   （前台满批实测秒到，退后台 flush 全军覆没）；回前台网络已恢复，此处是可靠补发点
     //   （失败仍有 0.206.2 队列回滚兜底 + 下次满批/onForeground 再试）
@@ -244,10 +247,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
-    // ★ 0.153：切后台——置全局后台标志（ChatPage @Monitor 感知后中断 AI 提炼：
-    // 鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）
+    // ★ 0.153：切后台——置全局后台标志（★ 0.251.0 起仅作 UI 状态用：AI 请求不再主动中断，
+    //   由 AiStreamGuard 长时任务保活续收——0.153「切后台必断」策略整体反转，用户拍板）
     const lifecycle = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
     lifecycle.isBackground = true;
+    setAiStreamBackground(true); // ★ 0.251.0：守卫前后台标志
     // ★ 0.228.0：行模式全量 flush 上行（本地 RDB 写入不受后台网络限制——推云交给 autoSync 轮/
     //   下次前台 forceCloudSyncNow；3 秒防抖未到点的残余变更由本 flush 兜底收口）
     try {

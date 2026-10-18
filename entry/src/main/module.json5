@@ -32,6 +32,12 @@
         "label": "$string:app_short_name",
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
+        // ★ 0.251.0：dataTransfer 长时任务声明（AI 流式后台保活——用户拍板，用户触发、
+        //   进度可见（实况窗 3s 更新）、结束即停三原则过审；KEEP_BACKGROUND_RUNNING 权限
+        //   0.204.1 已声明（桌面卡片），此处只补 backgroundModes 声明）
+        "backgroundModes": [
+          "dataTransfer"
+        ],
         "exported": true,
         "skills": [
           {

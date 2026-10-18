@@ -38,6 +38,7 @@ import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeIte
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
 import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）
+import { ContentFilter, FilterHit } from '../utils/ContentFilter'; // ★ 0.250.0：敏感词本地预过滤（上架合规应用侧兜底防线）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, orderedReviewWords, orderedReviewCards, rotateSlice, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）；★ 0.237.3：换一批（orderedReviewWords/Cards 全序视图 + rotateSlice 环绕轮换）
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：司忆区跟随全局卡面模式（单面/双面）
@@ -51,7 +52,7 @@ import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数�
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
-import { AppLifecycleStore } from '../entryability/EntryAbility'; // ★ 0.153：AppLifecycleStore（全局前后台标志，@Monitor 监听切后台中断 AI 提炼）；★ 0.181.0：ThemeStore 移除（锁暗色后色值全量收敛 DesignTokens，getThemeStore 链路删除）
+// ★ 0.251.0：AppLifecycleStore import 随 0.153「切后台中断提炼」策略反转删除（后台保活见 utils/AiStreamGuard.ets）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog, isKnownTextOnlyModel, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）；★ 0.230.0：加共享开态 store
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一——chevron SVG 旋转两态）
@@ -683,9 +684,9 @@ export struct ChatPage {
   private knowledgeExtractTimer: number = -1; // 计时器 ID（-1 = 未启动）
   // ★ 0.160.2：AI 回复秒表已按用户决定整体移除（多轮修复未达预期，回复区保持干净）；
   // 提炼弹窗秒表（上方 knowledgeExtractSeconds 一套）保留勿动。
-  // ★ 0.153：全局前后台标志（EntryAbility onForeground/onBackground 维护）——
-  // NavDestination 无 onPageHide 生命周期，借 @Monitor 监听此标志实现切后台中断提炼
-  @Local appLifecycle: AppLifecycleStore = AppStorageV2.connect(AppLifecycleStore, 'app-lifecycle', () => new AppLifecycleStore()) as AppLifecycleStore;
+   // ★ 0.251.0：0.153「切后台中断提炼」@Monitor 已随后台保活策略整体反转删除
+   //   （appLifecycle 字段与 import 一并清理）——AI 请求由 ApiClient 层 AiStreamGuard
+   //   长时任务保活续收，切后台不再断流（用户拍板，全案 docs/0.165+/0.251.0）
   // ★ 0.160：弹窗内复习区——AI 提炼等待期顺便学习（词库 N 词 + 知识库 M 卡，N/M 由 ⚙ 设置驱动）；
   // 弹窗打开时抽一次固定（渲染不重抽、不闪烁），样式与气泡底部复习区一致
   @Local editReviewWords: WordItem[] = [];
@@ -1776,6 +1777,15 @@ export struct ChatPage {
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
+    // ★ 0.250.0：敏感词本地预过滤（输入侧兜底初筛——命中即本地拦截不出网，主防线=平台侧过滤；
+    //   埋点只报类别不报词内容，隐私红线）
+    const inputHit: FilterHit | null = ContentFilter.checkInput(this.inputText);
+    if (inputHit !== null) {
+      const _fh: Record<string, string> = {}; _fh['cat'] = inputHit.category;
+      track(this.getUIContext().getHostContext() as common.Context, 'filter_input_hit', _fh);
+      this.showToastSafe('消息包含违规内容，已停止发送，请修改后重试');
+      return;
+    }
   const _tp1: Record<string, string> = {}; _tp1['mode'] = this.sendMode;
     track(this.getUIContext().getHostContext() as common.Context, 'send_message', _tp1); // 0.206.0 埋点：发送（含模式）
     // ★ 0.190.2：纯文本模型发图拦截（用户批准方案）——预设清单已知纯文本 + 本次发送含图
@@ -1861,6 +1871,9 @@ export struct ChatPage {
 
     // ★ 0.217.0 端侧大模型全线回滚（个人开发者白名单不通过=企业限定，0.216.0~0.216.2 时代终结）
 
+    // ★ 0.250.0：输出侧实时扫描器（仅政治+色情两表防科普误杀；尾巴缓冲防 chunk 边界切词漏检）
+    const outScanner = ContentFilter.makeOutputScanner();
+
     this.streamController = streamChat(
       messagesToSend,
       this.apiConfig,
@@ -1870,6 +1883,25 @@ export struct ChatPage {
           aiMsg.content = '';
         }
         aiMsg.content += chunk;
+        // ★ 0.250.0：输出侧命中即中断流（平台侧漏网兜底；cancel 后 ApiClient 全回调静默，
+        //   安全文案不会被 onError 覆盖——0.250.0 已核 ApiClient cancelled 三处守卫）
+        const outHit: FilterHit | null = outScanner.scan(chunk);
+        if (outHit !== null) {
+          const _fo: Record<string, string> = {}; _fo['cat'] = outHit.category;
+          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fo);
+          if (this.streamController) {
+            this.streamController.cancel();
+          }
+          aiMsg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
+          this.isLoading = false;
+          this.streamController = null;
+          this.streamPhase = 0;
+          this.streamingMsgId = '';
+          this.mirrorStreamToLive(streamBubbleId, aiMsg);
+          this.saveTree();
+          this.showToastSafe('回复包含违规内容，已拦截');
+          return;
+        }
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：流式写穿（防 reconcile 孤儿化丢流尾）
         // ★ 0.191.0：接收态已删——首字节到达即清占位，等待态消失，「正在接收内容」永远显示不出来
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
@@ -1982,6 +2014,9 @@ export struct ChatPage {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
     }
 
+    // ★ 0.250.0：输出侧实时扫描器（同 sendMessage——重新生成同属 AI 输出，合规口径一致）
+    const regenScanner = ContentFilter.makeOutputScanner();
+
     this.streamController = streamChat(
       messagesToSend,
       this.apiConfig,
@@ -1991,6 +2026,24 @@ export struct ChatPage {
           msg.content = '';
         }
         msg.content += chunk;
+        // ★ 0.250.0：输出侧命中即中断流（同 sendMessage 口径）
+        const regenHit: FilterHit | null = regenScanner.scan(chunk);
+        if (regenHit !== null) {
+          const _fo2: Record<string, string> = {}; _fo2['cat'] = regenHit.category;
+          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fo2);
+          if (this.streamController) {
+            this.streamController.cancel();
+          }
+          msg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
+          this.isLoading = false;
+          this.streamController = null;
+          this.streamPhase = 0;
+          this.streamingMsgId = '';
+          this.mirrorStreamToLive(regenBubbleId, msg);
+          this.saveTree();
+          this.showToastSafe('回复包含违规内容，已拦截');
+          return;
+        }
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：流式写穿（防 reconcile 孤儿化丢流尾）
         // ★ 0.191.0：接收态已删（同 sendMessage——死代码）
         this.scroller.scrollEdge(Edge.Bottom);
@@ -3318,29 +3371,12 @@ export struct ChatPage {
   // ① Operation timeout 底层网络超时 ② AI 服务返回业务错误 ③ 本地代码异常
   friendlyKnowledgeError(raw: string): string {
     if (raw.toLowerCase().includes('timeout')) {
-      return '后台网络超时：APP切后台后，系统限制网络，本次AI生成中断。请保持应用在前台重试。';
+      return '网络连接超时：请检查网络后重试。'; // ★ 0.251.0：后台保活已上，超时不再归因切后台（旧文案「系统限制后台网络」作废）
     }
     if (raw.startsWith('AI服务错误：')) {
       return `AI服务返回错误：${raw.substring(7)}，请检查API Key/模型配置。`;
     }
     return '本地处理异常：生成卡片失败，请重试。';
-  }
-
-  // ★ 0.153：应用切后台监听（NavDestination 无 onPageHide 生命周期，借 EntryAbility
-  // 维护的全局标志 + AppStorageV2 + @Monitor 实现）——提炼进行中直接 abort
-  // （鸿蒙限制后台网络，长连接必断，干等只会白耗输入 token）；
-  // 停止计时 + 弹窗提示，回前台可查看提示后重试
-  @Monitor('appLifecycle.isBackground')
-  onAppBackgroundChange(): void {
-    if (this.appLifecycle.isBackground && this.knowledgeEditLoading) {
-      if (this.knowledgeQueryController) {
-        this.knowledgeQueryController.cancel();
-        this.knowledgeQueryController = null;
-      }
-      this.knowledgeEditLoading = false;
-      this.knowledgeEditError = '提炼已暂停：应用切到后台，鸿蒙系统会限制后台网络，无法稳定接收结果。';
-      this.stopExtractTimer();
-    }
   }
 
   // 「入知识库」：关闭菜单 → 打开编辑弹窗 → 发起 AI 提炼。

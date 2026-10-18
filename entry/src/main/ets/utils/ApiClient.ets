@@ -24,6 +24,7 @@ import { ChatMessage, ApiConfig, generateMessageId, connectPhoneticAccent } from
 import { WordQueryResult } from '../common/WordModel'; // ★ 0.145：AI 查词结果结构
 import { KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：AI 卡片草稿结果结构
 import { KNOWLEDGE_QUERY_PROMPT, KNOWLEDGE_IMAGE_QUERY_PROMPT, KNOWLEDGE_IMAGE_QUERY_PROMPT_NOTE } from '../common/Prompts'; // ★ 0.193.0：卡片提炼 prompt 单一真相源（C 项数字锚定优化）
+import { acquireAiStream, releaseAiStream, touchAiStream, notifyAiStreamTerminal, AiStreamToken } from './AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（长时任务+进度通知+看门狗，本函数=全部 AI 链单一咽喉）
 
 // ========== 接口定义 ==========
 // 多模态内容片段 — 文本
@@ -319,9 +320,20 @@ export function streamChat(
   onChunk: (text: string) => void,
   onDone: (inputTokens: number, outputTokens: number, cachedTokens: number) => void, // ★ 0.247.4：尾部追加缓存命中（token 数）
   onError: (error: string) => void,
-  onReasoning?: (text: string) => void // ★ 0.132：深度思考内容回调（可选）
+  onReasoning?: (text: string) => void, // ★ 0.132：深度思考内容回调（可选）
+  sceneLabel: string = 'AI 回复' // ★ 0.251.0：场景标签（后台完成通知文案用）
 ): StreamController {
   let cancelled = false;
+  // ★ 0.251.0：后台保活令牌——申请/释放全收口本函数（聊天/查词/提炼/圈注四链唯一咽喉，
+  //   页面零侵入）；终结三出口（onDone/onError/cancel）+ 看门狗死流均走 guardFinish 幂等收口
+  const guardToken: AiStreamToken = acquireAiStream(sceneLabel);
+  let guardDone = false;
+  const guardFinish = (): void => {
+    if (!guardDone) {
+      guardDone = true;
+      releaseAiStream(guardToken);
+    }
+  };
   const httpRequest = http.createHttp();
   let sseBuffer = '';
   let pendingBytes: Uint8Array = new Uint8Array(0); // ★ 0.132：字节级缓冲，防 UTF-8 多字节字符被 TCP chunk 切断
@@ -334,6 +346,8 @@ export function streamChat(
     if (cancelled) {
       return;
     }
+    // ★ 0.251.0：网络活性心跳——任何字节到达即算活着（看门狗不误杀收心跳的死连接）
+    touchAiStream(guardToken, 0);
     // ★ 0.132：字节级累积，只在最后一个 \n 边界处解码——被切断的多字节字符必然位于
     // 最后一个 \n 之后，等下个 chunk 拼齐后才解码，杜绝 U+FFFD 乱码导致的 JSON 解析失败
     const incoming = new Uint8Array(data);
@@ -379,6 +393,17 @@ export function streamChat(
     if (parsed.usage) {
       trackedUsage = parsed.usage;
     }
+    // ★ 0.251.0：实收字符计数（texts+reasonings——后台进度通知「已接收 N 字」）
+    let touchedChars = 0;
+    for (let i = 0; i < parsed.texts.length; i++) {
+      touchedChars += parsed.texts[i].length;
+    }
+    for (let i = 0; i < parsed.reasonings.length; i++) {
+      touchedChars += parsed.reasonings[i].length;
+    }
+    if (touchedChars > 0) {
+      touchAiStream(guardToken, touchedChars);
+    }
   });
 
   // 流式结束回调
@@ -420,11 +445,15 @@ export function streamChat(
     if (!deliveredAny) {
       const diag = extractStreamError(rawPreview);
       if (diag.length > 0) {
+        notifyAiStreamTerminal(false, sceneLabel); // ★ 0.251.0：后台失败提醒（前台静默）
+        guardFinish();
         onError(diag);
         cleanupRequest(httpRequest);
         return;
       }
     }
+    notifyAiStreamTerminal(true, sceneLabel); // ★ 0.251.0：后台完成"叮咚"（前台静默不打扰）
+    guardFinish();
     onDone(trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0,
       trackedUsage?.prompt_tokens_details?.cached_tokens ?? 0); // ★ 0.247.4：缓存命中随 usage 下发
     cleanupRequest(httpRequest);
@@ -457,11 +486,15 @@ export function streamChat(
       if (cancelled) {
         return;
       }
+      notifyAiStreamTerminal(false, sceneLabel); // ★ 0.251.0
+      guardFinish();
       onError(err.message);
       cleanupRequest(httpRequest);
     });
   } catch (e) {
     if (!cancelled) {
+      notifyAiStreamTerminal(false, sceneLabel); // ★ 0.251.0
+      guardFinish();
       onError(e instanceof Error ? e.message : '请求发起失败');
     }
     cleanupRequest(httpRequest);
@@ -472,7 +505,19 @@ export function streamChat(
     cancel: () => {
       cancelled = true;
       cleanupRequest(httpRequest);
+      guardFinish(); // ★ 0.251.0：用户取消（静默出口）——守卫必须收口，结束即停
     }
+  };
+  // ★ 0.251.0：看门狗死流回调（AiStreamGuard 巡检 90s 无数据触发）：cancel + onError 中文提示
+  guardToken.onStall = () => {
+    if (cancelled) {
+      return;
+    }
+    cancelled = true;
+    cleanupRequest(httpRequest);
+    notifyAiStreamTerminal(false, sceneLabel);
+    guardFinish();
+    onError('网络停滞：90 秒未收到 AI 数据，已自动中断，请重试');
   };
   return controller;
 }
@@ -580,7 +625,9 @@ export function queryWord(
         onError('AI 返回内容无法解析为词条，请重试');
       }
     },
-    onError
+    onError,
+    undefined,
+    'AI 查词' // ★ 0.251.0：后台通知场景标签
   );
 }
 
@@ -728,7 +775,9 @@ export function queryKnowledge(
       }
       onError('AI 返回内容无法解析为卡片，请重试');
     },
-    onError
+    onError,
+    undefined,
+    'AI 提炼' // ★ 0.251.0：后台通知场景标签
   );
 }
 
@@ -799,7 +848,9 @@ export function queryKnowledgeFromImage(
       }
       onError('AI 无法从图片中解析出卡片内容，请重试');
     },
-    onError
+    onError,
+    undefined,
+    'AI 圈注提炼' // ★ 0.251.0：后台通知场景标签
   );
 }
 
