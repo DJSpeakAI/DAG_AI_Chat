@@ -2650,6 +2650,29 @@ function reconcileWithRows(rows: CloudRow[]): void {
     deleteRowLocal('word_pool');
     deleteRowLocal('knowledge_pool');
   }
+  // ★ 0.259.1：复活型脏对自愈——node 行戳 > 墓碑戳（历史 bug 版本上行污染，2026-10-19 真机实锤
+  //   42/42 全为此型）的节点每次下行 LWW 复活入池=用户实测「先弹出整个然后又删掉」的僵尸源；
+  //   自愈=重打新墓碑（新戳恒>node 戳，墓碑上行全端收敛根除）+本端当轮即剔（dels 抬戳走剔除分支，
+  //   顺带触发 deleteRowLocal 清压制行）。id 已注册 tombstonedIds（下行 del 注册在先）——flush 永不对抗。
+  let revivedDirty = 0;
+  cloudNodes.forEach((v: string, k: string): void => {
+    const nid = k.substring('node:'.length);
+    const ndelT = dels.get(nid);
+    if (ndelT !== undefined && ndelT < (ts.get(k) ?? 0)) {
+      writeTombstone(nid);
+      dels.set(nid, Date.now() + 1);
+      revivedDirty++;
+    }
+  });
+  cloudTabs.forEach((v: string, k: string): void => {
+    const tid = k.substring('tab:'.length);
+    const tdelT = dels.get(tid);
+    if (tdelT !== undefined && tdelT < (ts.get(k) ?? 0)) {
+      writeTombstone(tid);
+      dels.set(tid, Date.now() + 1);
+      revivedDirty++;
+    }
+  });
   // 各域合并
   const nodesChanged = mergeNodes(cloudNodes, dels, ts);
   const tabsChanged = mergeTabs(cloudTabs, dels, ts);
