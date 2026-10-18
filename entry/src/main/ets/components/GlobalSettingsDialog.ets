@@ -30,13 +30,13 @@
 // 技术栈：鸿蒙 ArkUI V2（@ComponentV2 / @Local / @Param）
 // ============================================================
 
-import { common } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext
+import { common, abilityAccessCtrl } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext；★ 0.259.2：abilityAccessCtrl（被拒后 requestPermissionOnSetting 直达权限面板）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）
-import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）
+import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.259.1'; // ★ 0.259.1：云同步复活型脏对自愈;上一版 0.259.0：补签券+SP消耗统计
+const APP_VERSION: string = 'v0.259.2'; // ★ 0.259.2：云同步授权提示加长+直达权限面板;上一版 0.259.1：云同步复活型脏对自愈
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -848,12 +848,48 @@ export struct GlobalSettingsDialog {
   }
 
   // ★ 0.149：showToast 可能抛异常（编译器警告「Function may throw exceptions」），try-catch 静默包裹
-  showToastSafe(msg: string): void {
+  // ★ 0.259.2：加可选时长参数（默认 1500 不变——其余调用点零影响）；系统只认 1500/10000 两档
+  showToastSafe(msg: string, duration: number = 1500): void {
     try {
-      this.getUIContext().getPromptAction().showToast({ message: msg, duration: 1500 });
+      this.getUIContext().getPromptAction().showToast({ message: msg, duration });
     } catch (_e) {
       // 静默失败（toast 非关键路径）
     }
+  }
+
+  // ★ 0.259.2：授权被拒后直达权限面板——requestPermissionOnSetting 专治「用户拒绝过、
+  //   系统不再弹授权窗」场景：直接拉起本应用的权限设置面板（手机/Pad 半屏权限面板、
+  //   PC 系统设置该应用权限页——三端形态由系统 API 统一处理，零分端代码）；用户在面板
+  //   上开了「跨设备同步」→ 当场激活云同步 + 刷新状态卡。API 异常兜底=跳系统应用详情页
+  //   （原 0.251.2 行为，不崩溃）。
+  openPermissionPanelFlow(context: common.UIAbilityContext): void {
+    // toast 手动路径兜底说明（10 秒顶格——1.5 秒一闪用户看不清，实测反馈）
+    this.showToastSafe('未授权：请在系统「设置→应用→DAG AI Chat→权限」允许「跨设备同步」', 10000);
+    (async () => {
+      try {
+        const atm = abilityAccessCtrl.createAtManager();
+        const result = await atm.requestPermissionOnSetting(context,
+          ['ohos.permission.DISTRIBUTED_DATASYNC']);
+        if (result.length > 0 && result[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+          // 用户在权限面板上开了权限：当场激活云同步 + 刷新面板状态
+          this.permGranted = true;
+          connectCloudSync().enabled = true;
+          activateCloudSync();
+          this.showToastSafe('云同步已开启');
+        }
+      } catch (_e) {
+        // 兜底：直达面板失败（异常/机型不支持）→ 跳系统应用详情页（原 0.251.2 行为）
+        const want: Want = {
+          bundleName: 'com.huawei.hmos.settings',
+          abilityName: 'com.huawei.hmos.settings.MainAbility',
+          uri: 'application_info',
+          parameters: { pushParams: 'com.dagaichat.app' }
+        };
+        context.startAbility(want).catch(() => {
+          // 跳转失败静默——toast 手动路径已兜底
+        });
+      }
+    })();
   }
 
   // ★ 0.190.0：当前提供商在 PROVIDER_PRESETS 中的下标（-1 = 自定义配置）
@@ -2402,18 +2438,10 @@ export struct GlobalSettingsDialog {
                 this.showToastSafe('云同步已开启');
                 return;
               }
-              // ★ 0.251.2：拒绝/系统不再弹窗场景不再只报「未授权」无出路（用户实测困惑：
-              //   点了开启却只说未授权）——toast 给手动路径 + 尝试直达系统应用详情页开权限
-              this.showToastSafe('未授权：请在系统「设置→应用→DAG AI Chat→权限」允许「跨设备同步」');
-              const want: Want = {
-                bundleName: 'com.huawei.hmos.settings',
-                abilityName: 'com.huawei.hmos.settings.MainAbility',
-                uri: 'application_info',
-                parameters: { pushParams: 'com.dagaichat.app' }
-              };
-              context.startAbility(want).catch(() => {
-                // 跳转失败静默——toast 手动路径已兜底
-              });
+              // ★ 0.259.2：拒绝/系统不再弹窗场景——toast 手动路径加长 10s（1.5s 一闪看不清，
+              //   用户实测）+ requestPermissionOnSetting 直达权限面板（不再只跳应用详情页
+              //   还要用户手点「权限」）
+              this.openPermissionPanelFlow(context);
             });
           })
       } else {
@@ -2554,6 +2582,13 @@ export struct GlobalSettingsDialog {
     track(this.getUIContext().getHostContext() as common.UIAbilityContext, 'settings_tab', _tp1); // 0.206.0 埋点
     if (n === 6) {
       this.refreshBackupSnapshot();
+    }
+    if (n === 3) {
+      // ★ 0.259.2：切到云同步 Tab 重查系统权限——permGranted 是开弹窗快照，用户绕道
+      //   系统设置手动开权限回来后状态卡不刷新的兜底（0.229.24 登记的同源 UI bug）
+      isCloudSyncGranted().then((granted: boolean) => {
+        this.permGranted = granted;
+      });
     }
     this.centerActiveTab(); // ★ 0.251.2：选中 Tab 滚到轨道中部（用户三遍反馈「导航贴边」根治）
   }

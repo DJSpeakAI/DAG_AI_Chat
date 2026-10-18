@@ -120,7 +120,8 @@ export function initCloudDb(context: common.UIAbilityContext): void {
 }
 
 // ★ 0.165.1：激活端云同步（幂等）——设分布式表 + autoSync + 订阅下行 + 立即追赶
-function activateCloudSync(): void {
+// ★ 0.259.2：加 export（用户拍板的红线最小例外——GlobalSettingsDialog 权限面板开权限后当场激活）
+export function activateCloudSync(): void {
   if (rdbStore === null || cloudSyncActive) {
     return;
   }
