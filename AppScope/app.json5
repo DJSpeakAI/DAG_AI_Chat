@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000303, // ★ 0.249.0：等级头衔八级表+Lv8司忆令SP永久免费(实扣/闸门豁免+明细行免费标识);上一版 0.248.8：划词菜单修复;更早历史见 MEMORY.md
+    "versionCode": 1000306, // ★ 0.249.3：查看器缩放整体回滚(滚轮/捏合/双击)+触摸长按保存菜单修复;上一版 0.249.2：滚轮漂移修复;更早历史见 MEMORY.md
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

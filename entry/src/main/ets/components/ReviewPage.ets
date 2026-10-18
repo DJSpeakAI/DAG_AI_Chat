@@ -28,6 +28,7 @@ import { REVIEW_HARD, REVIEW_GOOD, REVIEW_EASY, REVIEW_HARD_BG, REVIEW_GOOD_BG, 
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（原居本文件——外提防 WidgetHostBridge 反向成环）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默走 fallback）
+import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：完成页未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -125,6 +126,7 @@ export struct ReviewPage {
   @Local finished: boolean = false;
   @Local aiText: string = '';
   @Local aiLoading: boolean = false;
+  @Local aiTextFromAi: boolean = false; // ★ 0.249.1：鼓励语是否真为 AI 生成（未登录/失败降级=本地 fallback，不显示 AI 标识）
 
   aboutToAppear(): void {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
@@ -300,6 +302,7 @@ export struct ReviewPage {
     // ★ 0.248.2：AI 合规守卫——未登录不调 AI（自动触发场景静默走本地 fallback，不弹窗打扰）
     if (this.aiPreference.encourageMode === 'off' || !connectHuaweiAccount().isLoggedIn) {
       this.aiText = fallback;
+      this.aiTextFromAi = false;
       return;
     }
     const dataText = `今天完成了一轮卡片复习：共复习 ${total} 个${unit}（生疏 ${hard}、尚可 ${good}、熟知 ${easy}）`;
@@ -318,10 +321,12 @@ export struct ReviewPage {
       },
       () => {
         this.aiLoading = false;
+        this.aiTextFromAi = true; // ★ 0.249.1：AI 成功生成——显示 AI 内容标识
       },
       (errMsg: string) => {
         this.aiLoading = false;
         this.aiText = fallback; // AI 失败降级默认鼓励（用户拍板：鼓励永远要有）
+        this.aiTextFromAi = false;
       },
       (reasoning: string) => {
         // 复习鼓励无需思考流展示，空回调占位（同统计页）
@@ -523,6 +528,11 @@ export struct ReviewPage {
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 4 })
       }
+      // ★ 0.249.1：AI 内容标识（卡片内容可能由 AI 提炼生成——文案样式复刻对话区 0.247.3，单词/知识卡两 tab 共用本容器恒显）
+      Text('内容由 AI 生成 · 仅供参考')
+        .fontSize(11)
+        .fontColor(TEXT_TERTIARY)
+        .margin({ top: 8 })
       }
       .width('100%')
       .padding(32)
@@ -644,6 +654,13 @@ export struct ReviewPage {
             .fontColor(BRAND_SECONDARY)
             .textAlign(TextAlign.Center)
             .lineHeight(21)
+          // ★ 0.249.1：AI 生成标识（仅 AI 成功生成时显示；未登录/失败降级=本地文案不标——口径不骗人）
+          if (this.aiTextFromAi) {
+            Text('内容由 AI 生成 · 仅供参考')
+              .fontSize(11)
+              .fontColor(TEXT_TERTIARY)
+              .margin({ top: 6 })
+          }
         }
       }
       .width('86%')
@@ -654,6 +671,23 @@ export struct ReviewPage {
       .margin({ top: 20 })
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
+      // ★ 0.249.1：未登录 → 登录入口（AI 鼓励限实名华为账号用户——合规口径同 0.248.2/0.248.3；
+      //   点击弹全局登录引导，登录成功后重进完成页即走 AI 生成）
+      if (!connectHuaweiAccount().isLoggedIn) {
+        Button('登录后体验 AI 鼓励')
+          .fontSize(13)
+          .fontWeight(600)
+          .fontColor(BRAND_SECONDARY)
+          .height(36)
+          .padding({ left: 16, right: 16 })
+          .backgroundColor(Color.Transparent)
+          .borderRadius(RADIUS_CONTROL)
+          .border({ width: 1, color: BRAND_SECONDARY })
+          .margin({ top: 12 })
+          .onClick(() => {
+            connectConfirmDialog().aiLoginPromptVisible = true;
+          })
+      }
       // ★ 0.196.2 用户拍板：两选项——继续复习（把明天之后的内容提前背）/ 完成（返回）
       Row({ space: 12 }) {
         if (this.hasFutureContent()) {

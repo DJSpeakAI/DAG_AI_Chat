@@ -16,6 +16,7 @@ import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.202.3：测试数据 seed m
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY } from '../common/DesignTokens';
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默置空）
+import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：鼓励卡未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
 import { BG_CANVAS } from '../common/DesignTokens'; // ★ 0.230.0
 
 // 柱状图桶（一个周期一根柱）
@@ -53,6 +54,7 @@ export struct StatisticsPage {
   @Local rangeMode: number = 0; // 0=日 1=周 2=月 3=年
   @Local aiText: string = '';
   @Local aiLoading: boolean = false;
+  @Local aiTextFromAi: boolean = false; // ★ 0.249.1：鼓励语是否真为 AI 生成（失败降级文案不显示 AI 标识）
 
   aboutToAppear(): void {
     this.seedTestData(); // ★ 0.202.3：一年测试数据（一次性注入——上线前删除本方法+marker 即清零）
@@ -333,10 +335,12 @@ export struct StatisticsPage {
       },
       () => {
         this.aiLoading = false;
+        this.aiTextFromAi = true; // ★ 0.249.1：AI 成功生成——显示 AI 内容标识
       },
       (errMsg: string) => {
         this.aiLoading = false;
         this.aiText = '鼓励生成失败，请检查 API 配置后重进本页重试';
+        this.aiTextFromAi = false;
       },
       (reasoning: string) => {
         // 统计鼓励无需思考流展示，空回调占位
@@ -395,12 +399,39 @@ export struct StatisticsPage {
                     .fontSize(FONT_SIZE_BODY)
                     .fontColor(TEXT_TERTIARY)
                     .margin({ top: 8 })
+                } else if (this.aiText.length === 0 && !connectHuaweiAccount().isLoggedIn) {
+                  // ★ 0.249.1：未登录 → 登录入口（AI 鼓励限实名华为账号用户——合规口径同 0.248.2/0.248.3；
+                  //   点击弹全局登录引导，登录成功后重进本页即走 AI 生成）
+                  Text('登录华为账号后可生成 AI 鼓励')
+                    .fontSize(FONT_SIZE_BODY)
+                    .fontColor(TEXT_TERTIARY)
+                    .margin({ top: 8 })
+                  Button('去登录')
+                    .fontSize(13)
+                    .fontWeight(600)
+                    .fontColor(BRAND_SECONDARY)
+                    .height(32)
+                    .padding({ left: 14, right: 14 })
+                    .backgroundColor(Color.Transparent)
+                    .borderRadius(RADIUS_CONTROL)
+                    .border({ width: 1, color: BRAND_SECONDARY })
+                    .margin({ top: 8 })
+                    .onClick(() => {
+                      connectConfirmDialog().aiLoginPromptVisible = true;
+                    })
                 } else {
                   Text(this.aiText.length > 0 ? this.aiText : '（进入本页自动生成）')
                     .fontSize(FONT_SIZE_BODY)
                     .lineHeight(22)
                     .fontColor(TEXT_SECONDARY)
                     .margin({ top: 8 })
+                  // ★ 0.249.1：AI 生成标识（仅 AI 成功生成时显示；失败降级文案不标——口径不骗人）
+                  if (this.aiTextFromAi) {
+                    Text('内容由 AI 生成 · 仅供参考')
+                      .fontSize(11)
+                      .fontColor(TEXT_TERTIARY)
+                      .margin({ top: 6 })
+                  }
                 }
               }
               .width('100%')

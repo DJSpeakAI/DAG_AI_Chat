@@ -121,29 +121,6 @@ export function parseTextToRows(text: string, format: string): ImportRow[] {
   return rows;
 }
 
-/** CSV 字段转义（含逗号/引号/换行时加引号包裹） */
-function csvEscape(s: string): string {
-  if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
-    return '"' + s.replace(/"/g, '""') + '"';
-  }
-  return s;
-}
-
-/**
- * 卡片数组 → CSV 文本（UTF-8 BOM；列：标题,背面,标签）。
- * scopeName 用于首行注释（导出来源），空则省略。
- */
-export function cardsToCsv(cards: KnowledgeCard[], scopeName: string): string {
-  const lines: string[] = ['标题,背面,标签'];
-  for (let i = 0; i < cards.length; i++) {
-    const c = cards[i];
-    lines.push(csvEscape(c.title) + ',' + csvEscape(c.definition) + ',' + csvEscape(c.tags));
-  }
-  const body = lines.join('\r\n');
-  const head = scopeName.length > 0 ? '# DAGAI 知识库导出：' + scopeName + '（' + cards.length + ' 张）\r\n' : '';
-  return '\uFEFF' + head + body;
-}
-
 /** ★ 0.225.0：TXT 导出（标题\t背面\t标签——与 TXT 导入同构 roundtrip；首行注释行 # 开头导入端跳过空列自然兼容） */
 export function cardsToTxt(cards: KnowledgeCard[], scopeName: string): string {
   const lines: string[] = ['标题\t背面\t标签'];

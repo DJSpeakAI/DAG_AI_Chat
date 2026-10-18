@@ -27,8 +27,8 @@
 import { WordItem, WordBankStore, WordFolder, WordFolderNavStore, connectWordFolderNav, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.222.19：单词库文件夹体系（对标知识库）
 import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
 import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics, addWordFolder, renameWordFolder, deleteWordFolder, moveWords, copyWords, wordFolderChain, moveWordFolder, copyWordFolder, deleteWordFolderCascade, copyRootWordFolder, clearRootWordFolder } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）；★ 0.222.19：单词库文件夹 CRUD + 单词移动/复制
-// ★ 0.208.0：单词库 DagPack 导入导出（只走 DagPack——用户拍板不做 Anki/表格）
-import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord } from '../utils/PackUtil';
+// ★ 0.208.0：单词库 DagPack 导入导出（只走 DagPack——用户拍板不做 Anki/表格）；★ 0.249.1：随包带文件夹结构 + 导入勾选树
+import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord, PackFolder, packFolderPath, packSubtreeRefs, packWordCount } from '../utils/PackUtil';
 import { readTextFile } from '../utils/ImportUtil';
 import { requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.3：导入导出守卫（上架合规——用户拍板必须登录）
 import { fileIo, picker } from '@kit.CoreFileKit';
@@ -110,6 +110,13 @@ export struct WordBankPage {
 
   // ★ 0.148: batch-delete confirm dialog state (always shown, no no-remind)
   @Local batchConfirmVisible: boolean = false;
+
+  // ── ★ 0.249.1：DagPack 导入预览勾选树（对标知识库——文件夹勾选 + AI 内容提醒）──
+  @Local wpPreviewVisible: boolean = false;
+  @Local wpPack: DagPack = { format: '', version: 0, kind: '', exportedAt: 0, origin: '', folders: [], cards: [], words: [] };
+  @Local wpFileName: string = '';
+  @Local wpSel: string[] = [];      // 勾选的顶层文件夹 refId（勾=导其子树）
+  @Local wpRootSel: boolean = true; // 根级散词勾选
 
   // ── ★ 0.222.19：文件夹弹窗态（对标知识库 KnowledgeBankPage）──
   @Local folderDialogVisible: boolean = false;  // 新建/重命名共用弹窗
@@ -357,7 +364,7 @@ export struct WordBankPage {
   // ★ 0.208.0：单词库 DagPack 导入导出
   // ============================================================
 
-  /** 导出整库单词为 DagPack（wordbank 类，全量平铺） */
+  /** 导出整库单词为 DagPack（wordbank 类；★ 0.249.1 随包带文件夹结构 + AI 隐式标识） */
   async doExportWordPack(): Promise<void> {
     // ★ 0.248.3：导出守卫（上架合规——用户拍板导入导出必须登录）
     if (!requireLoginForCloud()) {
@@ -368,7 +375,8 @@ export struct WordBankPage {
         this.showToast('单词库为空，无可导出');
         return;
       }
-      const json = packToJson(buildWordPack(this.wordBank));
+      const p = buildWordPack(this.wordBank);
+      const json = packToJson(p);
       const saver = new picker.DocumentViewPicker();
       const saveOpt = new picker.DocumentSaveOptions();
       saveOpt.newFileNames = ['DAGAI_单词库.dagpack'];
@@ -381,13 +389,13 @@ export struct WordBankPage {
       fileIo.closeSync(f);
       const tp: Record<string, string> = {}; tp['kind'] = 'wordbank'; tp['count'] = `${this.wordBank.words.length}`;
       track(this.getUIContext().getHostContext() as Context, 'export_dagpack', tp);
-      this.showToast(`已导出 ${this.wordBank.words.length} 个单词 → DagPack`);
+      this.showToast(`已导出 ${this.wordBank.words.length} 个单词 · ${p.folders.length} 个文件夹 → DagPack`);
     } catch (_e) {
       this.showToast('导出失败');
     }
   }
 
-  /** 导入单词包：word 重词自动跳过（addWordToBank 自带幂等拒绝） */
+  /** 导入单词包第一步：选文件 → 解析 → 勾选树预览弹窗（★ 0.249.1 对标知识库：文件夹勾选 + AI 提醒；重词幂等跳过） */
   async pickWordPackFile(): Promise<void> {
     // ★ 0.248.3：导入守卫（上架合规——用户拍板导入导出必须登录）
     if (!requireLoginForCloud()) {
@@ -407,26 +415,208 @@ export struct WordBankPage {
         this.showToast('不是有效的 DagPack 单词包（wordbank v1）');
         return;
       }
-      let added = 0;
-      let skipped = 0;
-      for (let i = 0; i < p.words.length; i++) {
-        const pw: PackWord = p.words[i];
-        if (pw.word.trim().length === 0) {
-          continue;
-        }
-        const item = new WordItem(pw.word.trim(), pw.fullName, pw.usPhonetic, pw.explain, '', 0, 0, 0, 0, 0);
-        if (addWordToBank(this.wordBank, item)) {
-          added++;
-        } else {
-          skipped++; // 已存在同词——保留原词（含复习进度），幂等
-        }
-      }
-      const tp: Record<string, string> = {}; tp['format'] = 'dagpack'; tp['count'] = `${added}`;
-      track(this.getUIContext().getHostContext() as Context, 'batch_import', tp);
-      this.showToast(`导入 ${added} 词${skipped > 0 ? `，跳过重复 ${skipped}` : ''}`);
+      this.wpPack = p;
+      this.wpFileName = uris[0].substring(uris[0].lastIndexOf('/') + 1);
+      // 默认全选：顶层文件夹全勾 + 根级散词勾（知识库同款——接收端细粒度可自行取消）
+      this.wpSel = p.folders.filter((f: PackFolder): boolean => f.parentRef === '').map((f: PackFolder): string => f.refId);
+      this.wpRootSel = true;
+      this.wpPreviewVisible = true;
     } catch (_e) {
       this.showToast('选文件失败');
     }
+  }
+
+  /** ★ 0.249.1：弹窗辅助——包内路径名 / 子树词数 / 根级散词数 / 勾选切换（对标知识库 packPreview 弹窗辅助） */
+  wpFolderPathName(refId: string): string {
+    return packFolderPath(this.wpPack, refId);
+  }
+
+  wpSubtreeWordCount(refId: string): number {
+    return packWordCount(this.wpPack, refId);
+  }
+
+  wpRootWordCount(): number {
+    return packWordCount(this.wpPack, '');
+  }
+
+  toggleWpSel(refId: string): void {
+    if (this.wpSel.includes(refId)) {
+      this.wpSel = this.wpSel.filter((r: string): boolean => r !== refId);
+    } else {
+      this.wpSel = [...this.wpSel, refId];
+    }
+  }
+
+  /** 勾选确认 → 入库：新子树挂当前文件夹（绝不合并现有目录——同名并存）；重词幂等跳过 */
+  confirmWpImport(): void {
+    const p = this.wpPack;
+    // 纳入 refs = 各勾选顶层 ref 的子树并集
+    const inRefs: string[] = [];
+    for (let i = 0; i < this.wpSel.length; i++) {
+      for (const sr of packSubtreeRefs(p, this.wpSel[i])) {
+        if (!inRefs.includes(sr)) {
+          inRefs.push(sr);
+        }
+      }
+    }
+    // 文件夹映射新建（包根 refId '' → 当前目录；按父先于子迭代建链）
+    const idMap: Map<string, string> = new Map<string, string>();
+    idMap.set('', this.wbFolderNav.folderId);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < p.folders.length; i++) {
+        const f = p.folders[i];
+        if (idMap.has(f.refId) || !inRefs.includes(f.refId)) {
+          continue;
+        }
+        const pid = idMap.get(f.parentRef);
+        if (pid !== undefined) {
+          idMap.set(f.refId, addWordFolder(this.wordBank, f.name, pid));
+          changed = true;
+        }
+      }
+    }
+    // 词按勾选落库（folderRef 未勾选 → 跳过；根级散词按 wpRootSel）
+    let added = 0;
+    let skipped = 0;
+    const ws: PackWord[] = p.words ?? [];
+    for (let i = 0; i < ws.length; i++) {
+      const pw = ws[i];
+      if (pw.word.trim().length === 0) {
+        continue;
+      }
+      const fr = pw.folderRef ?? '';
+      const inSel = fr.length === 0 ? this.wpRootSel : inRefs.includes(fr);
+      if (!inSel) {
+        continue;
+      }
+      const targetFolderId = fr.length === 0 ? this.wbFolderNav.folderId : (idMap.get(fr) ?? this.wbFolderNav.folderId);
+      const item = new WordItem(pw.word.trim(), pw.fullName, pw.usPhonetic, pw.explain, '', 0, 0, 0, 0, 0, targetFolderId);
+      if (addWordToBank(this.wordBank, item)) {
+        added++;
+      } else {
+        skipped++; // 已存在同词——保留原词（含复习进度），幂等
+      }
+    }
+    const tp: Record<string, string> = {}; tp['format'] = 'dagpack'; tp['count'] = `${added}`;
+    track(this.getUIContext().getHostContext() as Context, 'batch_import', tp);
+    this.showToast(`导入 ${added} 词${skipped > 0 ? `，跳过重复 ${skipped}` : ''}`);
+    this.wpPreviewVisible = false;
+  }
+
+  /** ★ 0.249.1：DagPack 勾选树弹窗（对标知识库）——顶层文件夹全路径行（勾=导其子树）+ 根级散词行 + AI 内容提醒 */
+  @Builder
+  wpPreviewDialog() {
+    Column() {
+      Column() {
+        Text('导入 DagPack · 选择要接收的内容')
+          .fontSize(16)
+          .fontWeight(600)
+          .fontColor(TEXT_PRIMARY)
+        Text(`${this.wpFileName} · ${this.wpPack.folders.length} 个文件夹 · ${(this.wpPack.words ?? []).length} 个词 · 新子树挂当前文件夹`)
+          .fontSize(12)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 6 })
+        Text('导入内容可能包含 AI 生成的内容，请注意甄别')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 2 })
+        Scroll() {
+          Column() {
+            ForEach(this.wpPack.folders, (f: PackFolder) => {
+              if (f.parentRef === '') {
+                Row() {
+                  Image(this.wpSel.includes(f.refId) ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off'))
+                    .width(20)
+                    .height(20)
+                    .margin({ right: 10 })
+                    .onClick(() => {
+                      this.toggleWpSel(f.refId);
+                    })
+                  Text('📁 ' + this.wpFolderPathName(f.refId))
+                    .fontSize(13)
+                    .fontColor(TEXT_PRIMARY)
+                    .layoutWeight(1)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(`${this.wpSubtreeWordCount(f.refId)} 词`)
+                    .fontSize(12)
+                    .fontColor(TEXT_TERTIARY)
+                }
+                .width('100%')
+                .padding(10)
+                .borderRadius(8)
+                .backgroundColor(SURFACE_SOFT)
+                .margin({ top: 6 })
+                .onClick(() => {
+                  this.toggleWpSel(f.refId);
+                })
+              }
+            }, (f: PackFolder) => f.refId)
+            if (this.wpRootWordCount() > 0) {
+              Row() {
+                Image(this.wpRootSel ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off'))
+                  .width(20)
+                  .height(20)
+                  .margin({ right: 10 })
+                  .onClick(() => {
+                    this.wpRootSel = !this.wpRootSel;
+                  })
+                Text('📄 根级散词（不属于任何文件夹）')
+                  .fontSize(13)
+                  .fontColor(TEXT_PRIMARY)
+                  .layoutWeight(1)
+                Text(`${this.wpRootWordCount()} 词`)
+                  .fontSize(12)
+                  .fontColor(TEXT_TERTIARY)
+              }
+              .width('100%')
+              .padding(10)
+              .borderRadius(8)
+              .backgroundColor(SURFACE_SOFT)
+              .margin({ top: 6 })
+              .onClick(() => {
+                this.wpRootSel = !this.wpRootSel;
+              })
+            }
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .margin({ top: 8 })
+        .constraintSize({ maxHeight: 300 })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(SURFACE_SOFT)
+            .fontColor(TEXT_SECONDARY)
+            .onClick(() => {
+              this.wpPreviewVisible = false;
+            })
+          Button('导入所选')
+            .layoutWeight(1)
+            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(Color.White)
+            .onClick(() => {
+              this.confirmWpImport();
+            })
+        }
+        .margin({ top: 12 })
+      }
+      .width('86%')
+      .constraintSize({ maxHeight: '80%' })
+      .padding(18)
+      .borderRadius(14)
+      .backgroundColor(BG_APP)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(OVERLAY)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      this.wpPreviewVisible = false;
+    })
   }
 
   openAddEditor(): void {
@@ -2313,6 +2503,10 @@ export struct WordBankPage {
         if (this.phoneticConfirmVisible) {
           this.phoneticConfirmDialog()
         }
+        // ★ 0.249.1：DagPack 导入勾选树弹窗（文件夹勾选 + AI 提醒，最顶层）
+        if (this.wpPreviewVisible) {
+          this.wpPreviewDialog()
+        }
         // ★ 0.222.19：文件夹/移动复制弹窗（最顶层，对标知识库）
         if (this.folderDialogVisible || this.wbFolderNav.folderAction === 'newfolder') {
           this.folderDialog()
@@ -2385,6 +2579,11 @@ export struct WordBankPage {
       }
       if (this.batchConfirmVisible) {
         this.batchConfirmVisible = false;
+        return true;
+      }
+      // ★ 0.249.1：DagPack 导入勾选树弹窗——返回键先关
+      if (this.wpPreviewVisible) {
+        this.wpPreviewVisible = false;
         return true;
       }
       // ★ 0.185.0: phonetic accent confirm closes before settings dialog

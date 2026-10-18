@@ -587,26 +587,12 @@ export struct ChatPage {
   @Local imageViewerVisible: boolean = false;
   @Local imageViewerIndex: number = 0;
   @Local imageViewerImages: string[] = [];
-  // ★ 0.246.0：查看器缩放+单击/双击判定（对齐知识库 0.211.2 血统：捏合跟手 1~4、双击切换 1↔2.5、单击 320ms 关闭）
-  @Local viewerScale: number = 1;
   @Local viewerMenuVisible: boolean = false; // ★ 0.247.1：触摸长按保存菜单开态（PC 右键走 bindContextMenu 原样）
-  // ★ 0.247.4：放大态平移——单指拖/PC 左键拖=移动画面（scale>1 才生效；滚轮缩放归 onAxisEvent 不再抢 pan）
-  @Local viewerOffsetX: number = 0;
-  @Local viewerOffsetY: number = 0;
-  private viewerPanBaseX: number = 0;  // 平移手势起点基线（offset 累计值从基线续接，防跳变——画布 0.215.8 同款）
-  private viewerPanBaseY: number = 0;
-  private viewerLastTap: number = 0;
-  private viewerCloseTimerId: number = -1;
-
-  // ★ 0.246.0：每次打开查看器重置缩放（防上次放大态残留）
+  // ★ 0.249.3：缩放回滚后仅重置菜单态；每次打开查看器菜单不开（防上次残留）
   @Monitor('imageViewerVisible')
   onViewerVisibleChange(): void {
     if (this.imageViewerVisible) {
-      this.viewerScale = 1;
-      this.viewerOffsetX = 0; // ★ 0.247.4：平移一并归零（上次放大态位移不残留）
-      this.viewerOffsetY = 0;
-      this.viewerLastTap = 0;
-      this.viewerMenuVisible = false; // ★ 0.247.1：菜单态一并重置
+      this.viewerMenuVisible = false;
     }
   }
   // ★ 0.145：划词翻译状态（替代原长按菜单/文本预览/删除确认——旧二级弹窗整体移除）
@@ -2404,11 +2390,7 @@ export struct ChatPage {
     }
     this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
     this.stopExtractTimer(); // ★ 0.153：组件销毁清除提炼计时器，防内存泄漏
-    // ★ 0.246.0：查看器延迟关闭计时器销毁（项目铁律：定时器组件销毁必须销毁）
-    if (this.viewerCloseTimerId >= 0) {
-      clearTimeout(this.viewerCloseTimerId);
-      this.viewerCloseTimerId = -1;
-    }
+    // ★ 0.249.3：查看器延迟关闭计时器随缩放/双击判定一起回滚删除，此处不再清理
   }
 
   // 选择图片：调用相册多选，转 Base64 存入 pendingImages
@@ -3689,41 +3671,6 @@ export struct ChatPage {
     this.imageViewerImages = [this.knowledgeImageUri];
     this.imageViewerIndex = 0;
     this.imageViewerVisible = true;
-  }
-
-  // ★ 0.246.0：查看器缩放缓动（250ms EaseOut——对齐知识库 0.211.2；捏合跟手不经此，松手归位走动画）
-  private applyViewerScale(target: number): void {
-    const clamped = Math.min(4, Math.max(1, target));
-    this.getUIContext().animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
-      this.viewerScale = clamped;
-      if (clamped <= 1) {
-        // ★ 0.247.4：缩回原大小时平移同步归位（放大平移后双击缩回=画面回正中）
-        this.viewerOffsetX = 0;
-        this.viewerOffsetY = 0;
-      }
-    });
-  }
-
-  // ★ 0.246.0：单击/双击手动判定（0.173.x 铁律只绑 count:1；300ms 内第二击=双击缩放，否则延迟 320ms 关闭）
-  private viewerTapHandled(): void {
-    const now = Date.now();
-    if (now - this.viewerLastTap < 300) {
-      this.viewerLastTap = 0;
-      if (this.viewerCloseTimerId >= 0) {
-        clearTimeout(this.viewerCloseTimerId);
-        this.viewerCloseTimerId = -1;
-      }
-      this.applyViewerScale(this.viewerScale > 1 ? 1 : 2.5);
-    } else {
-      this.viewerLastTap = now;
-      if (this.viewerCloseTimerId >= 0) {
-        clearTimeout(this.viewerCloseTimerId);
-      }
-      this.viewerCloseTimerId = setTimeout(() => {
-        this.viewerCloseTimerId = -1;
-        this.imageViewerVisible = false;
-      }, 320);
-    }
   }
 
   // ★ 0.246.0：保存当前查看图片（免权限走 DocumentViewPicker 系统保存对话框 + fileIo 写入；
@@ -5567,6 +5514,13 @@ export struct ChatPage {
                 .fontSize(16)
                 .fontWeight(600)
                 .fontColor(this.knowledgeEditLoading ? BRAND_SECONDARY : (TEXT_PRIMARY))
+                .margin({ bottom: 2 })
+
+              // ★ 0.249.1：AI 内容标识（划词「入知识库」与屏幕圈选「存入知识库」两路口共用本弹窗——
+              //   弹窗本质=AI 提炼草稿编辑器，恒显灰色小字，样式复刻对话区 0.247.3 标识）
+              Text('内容由 AI 生成 · 仅供参考')
+                .fontSize(11)
+                .fontColor(TEXT_TERTIARY)
                 .margin({ bottom: 12 })
 
               // AI 提炼失败提示（输入框仍可手动填写）
@@ -6008,10 +5962,11 @@ export struct ChatPage {
         }
 
         // 全屏图片浏览器
-        // ★ 0.246.0：升级为缩放查看器（对齐知识库 0.211.2 血统）——捏合跟手缩放 1~4 / 双击切换 1↔2.5 /
-        //   单击 320ms 关闭 / 右滑关闭 / × 关闭
-        // ★ 0.247.1：①捏合降速 0.5（用户实测"双手指放大太快不丝滑"）②PC 滚轮/触控板缩放（垂直 pan 事件
-        //   sourceTool=MOUSE/TOUCHPAD，Finger 源忽略）③触摸长按弹保存菜单（RightClick 长按映射实测未生效）
+        // ★ 0.246.0 曾升级缩放查看器（捏合/双击/滚轮/放大平移，后续 0.247.1/0.247.4/0.249.2 三轮调参）
+        //   ——★ 0.249.3 用户拍板整体回滚：放大体验不佳、使用场景少，回归 Swiper+× 原始形态；
+        //   保留保存能力（PC 右键菜单 / 手机+Pad 触摸长按菜单），并修「触摸长按菜单跳不出来」：
+        //   ①缩放手势全删后 Image 手势只剩长按+单击（捏合/平移/轴事件识别竞争全部消失）
+        //   ②补 draggable(false)——Image 默认可拖拽，系统拖拽识别器会抢触摸长按（嫌疑源）
         if (this.imageViewerVisible) {
           Stack() {
             Swiper() {
@@ -6020,63 +5975,23 @@ export struct ChatPage {
                   .objectFit(ImageFit.Contain)
                   .width('100%')
                   .height('100%')
-                  .scale({ x: this.viewerScale, y: this.viewerScale })
-                  .translate({ x: this.viewerOffsetX, y: this.viewerOffsetY }) // ★ 0.247.4：放大态平移
+                  .draggable(false)
                   .gesture(
-                    PinchGesture({ fingers: 2 })
-                      .onActionUpdate((event: GestureEvent) => {
-                        // ★ 0.247.1 降速 ×0.5；★ 0.247.4 用户实测手机/Pad 仍太快→再降到 ×0.3
-                        const step = 1 + (event.scale - 1) * 0.3;
-                        this.viewerScale = Math.min(4, Math.max(1, this.viewerScale * step));
-                      })
-                      .onActionEnd(() => {
-                        if (this.viewerScale < 1) {
-                          this.applyViewerScale(1);
-                        }
-                      })
-                  )
-                  .gesture(
-                    // ★ 0.247.4：放大态平移（scale>1 才动作）——单指拖/PC 左键拖=移动画面，三端同逻辑；
-                    //   scale=1 时挂空垂直 pan 占位（不动作、不干扰 Swiper 水平翻页——原滚轮 pan 同款竞争关系）；
-                    //   滚轮缩放已整体迁出 pan 归 onAxisEvent（下方），滚轮不再触发此 Pan（画布 0.215.4 实锤）
-                    PanGesture({ direction: this.viewerScale > 1 ? PanDirection.All : PanDirection.Vertical })
-                      .onActionStart(() => {
-                        this.viewerPanBaseX = this.viewerOffsetX;
-                        this.viewerPanBaseY = this.viewerOffsetY;
-                      })
-                      .onActionUpdate((event: GestureEvent) => {
-                        if (this.viewerScale <= 1) {
-                          return;
-                        }
-                        this.viewerOffsetX = this.viewerPanBaseX + event.offsetX;
-                        this.viewerOffsetY = this.viewerPanBaseY + event.offsetY;
-                      })
-                  )
-                  .onAxisEvent((event: AxisEvent) => {
-                    // ★ 0.247.4：PC 滚轮/触控板缩放改轴事件直连（画布 0.215.5 先例——getVerticalAxisValue
-                    //   方向真载体；上滚 v<0=放大 1.04、下滚 v>0=缩小 0.96，与画布方向/速度同款）；
-                    //   替换 0.247.1 的垂直 pan 模拟（方向反了+与放大平移抢手势两症同源）
-                    const v = event.getVerticalAxisValue();
-                    if (v !== 0) {
-                      const f = v < 0 ? 1.04 : 0.96;
-                      this.viewerScale = Math.min(4, Math.max(1, this.viewerScale * f));
-                    }
-                  })
-                  .gesture(
-                    // ★ 0.247.1：触摸长按 500ms 弹保存菜单（用户实测手机/Pad 长按无保存入口）
+                    // ★ 0.247.1：触摸长按 500ms 弹保存菜单（手机/Pad）；★ 0.249.3 缩放回滚后无手势竞争
                     LongPressGesture({ duration: 500 })
                       .onAction(() => {
                         this.viewerMenuVisible = true;
                       })
                   )
                   .gesture(
+                    // ★ 0.249.3：单击即关（双击缩放已回滚，无需 320ms 延迟判定）；菜单开着=先收菜单
                     TapGesture({ count: 1 })
                       .onAction(() => {
                         if (this.viewerMenuVisible) {
                           this.viewerMenuVisible = false; // 菜单开着点图=收菜单，不关查看器
                           return;
                         }
-                        this.viewerTapHandled();
+                        this.imageViewerVisible = false;
                       })
                   )
                   .bindContextMenu(this.viewerSaveMenu, ResponseType.RightClick)

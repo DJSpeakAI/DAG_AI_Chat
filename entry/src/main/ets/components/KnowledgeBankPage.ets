@@ -39,7 +39,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade, copyRootFolder, clearRootFolder } from '../utils/KnowledgeStoreUtil';
-import { ImportRow, readTextFile, parseTextToRows, cardsToCsv, cardsToTxt, cardsToXlsxBuffer, readXlsxRows } from '../utils/ImportUtil';
+import { ImportRow, readTextFile, parseTextToRows, cardsToTxt, cardsToXlsxBuffer, readXlsxRows } from '../utils/ImportUtil'; // ★ 0.249.1：cardsToCsv 随 CSV 导出删除（用户拍板）
 // ★ 0.207.1 DagPack：知识库模块化导出/导入（发送端粗粒度·接收端勾选细粒度——用户拍板）
 import { DagPack, PackFolder, buildKnowledgePack, packToJson, parseDagPack, packChildFolders, packCardCount, packSubtreeRefs, packFolderPath } from '../utils/PackUtil';
 // ★ 0.208.0 Anki：apkg 导入（知识库专用——单词库不���，用户拍板）
@@ -2058,42 +2058,6 @@ export struct KnowledgeBankPage {
     this.showToast(`已导入 ${n} 张`);
     this.importPreviewVisible = false;
   }
-
-  /** 导出当前视图卡片为 CSV（无搜索=当前文件夹全部；搜索中=结果集——导出所见） */
-  async doExportCsv(): Promise<void> {
-    // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
-    if (!requireLoginForCloud()) {
-      return;
-    }
-
-    try {
-      const cards = this.filteredCards;
-      if (cards.length === 0) {
-        this.showToast('当前没有卡片可导出');
-        return;
-      }
-      const names = this.currentChain.map((x: KFolder): string => x.name).join('/');
-      const scopeName = names.length === 0 ? '知识库根目录' : names;
-      const csv = cardsToCsv(cards, scopeName);
-      // ★ 写法抄 BackupUtil 0.205.1 定稿：DocumentViewPicker.save + Options 实例（本 SDK 无 DocumentSavePicker 类）
-      const saver = new picker.DocumentViewPicker();
-      const saveOpt = new picker.DocumentSaveOptions();
-      saveOpt.newFileNames = ['DAGAI_知识库.csv'];
-      const uris: string[] = await saver.save(saveOpt);
-      if (uris.length === 0) {
-        return;
-      }
-      const f = fileIo.openSync(uris[0], fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-      fileIo.writeSync(f.fd, csv); // 0.205.1 教训：WRITE_ONLY|CREATE|TRUNC 组合（autoCreateEmptyFile 预创建坑在 save picker 无此问题，写入字节数隐含校验）
-      fileIo.closeSync(f);
-      const tp: Record<string, string> = {}; tp['count'] = `${cards.length}`;
-      track(this.getUIContext().getHostContext() as Context, 'export_csv', tp);
-      this.showToast(`已导出 ${cards.length} 张 → CSV`);
-    } catch (_e) {
-      this.showToast('导出失败');
-    }
-  }
-
   // ★ 0.225.0：TXT 导出（用户拍板菜单四格式）——复刻 doExportCsv 全链（当前文件夹语义+保存选择器+写入校验）
   async doExportTxt(): Promise<void> {
     // ★ 0.248.3：导入/导出守卫（上架合规——用户拍板必须登录）
@@ -2271,16 +2235,6 @@ export struct KnowledgeBankPage {
             this.plusMenuVisible = false;
             this.doExportTxt();
           })
-        Divider().color(STROKE_CARD)
-        Text('CSV')
-          .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
-          .padding({ top: 10, bottom: 10, left: 14, right: 14 })
-          .onClick(() => {
-            this.plusMenuVisible = false;
-            this.doExportCsv();
-          })
-        Divider().color(STROKE_CARD)
         Text('XLSX')
           .fontSize(14)
           .fontColor(BRAND_SECONDARY)
@@ -2606,6 +2560,11 @@ export struct KnowledgeBankPage {
           .fontSize(12)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 6 })
+        // ★ 0.249.1：AI 内容显式提醒（导入内容可能含 AI 生成，口径与 DagPack/apkg 弹窗一致）
+        Text('导入内容可能包含 AI 生成的内容，请注意甄别')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 2 })
         Scroll() {
           Column() {
             ForEach(this.importRows.slice(0, 10), (r: ImportRow, i: number) => {
@@ -2753,6 +2712,11 @@ export struct KnowledgeBankPage {
           .fontSize(12)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 6 })
+        // ★ 0.249.1：AI 内容显式提醒（合规：《人工智能生成合成内容标识办法》——包内卡片可能含 AI 提炼内容）
+        Text('导入内容可能包含 AI 生成的内容，请注意甄别')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 2 })
         Scroll() {
           Column() {
             ForEach(this.packData.folders, (f: PackFolder) => {
@@ -2864,6 +2828,11 @@ export struct KnowledgeBankPage {
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 6 })
         Text('Anki 复习进度不迁移（DAGAI 从新卡开始，用自己的算法）；音频不迁移（App 自带语音）')
+          .fontSize(11)
+          .fontColor(TEXT_TERTIARY)
+          .margin({ top: 2 })
+        // ★ 0.249.1：AI 内容显式提醒（合规：《人工智能生成合成内容标识办法》——包内卡片可能含 AI 提炼内容）
+        Text('导入内容可能包含 AI 生成的内容，请注意甄别')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
           .margin({ top: 2 })

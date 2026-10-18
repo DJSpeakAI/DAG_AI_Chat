@@ -27,13 +27,18 @@ export interface PackCard {
   folderRef: string; // '' = 包根级散卡
 }
 
-/** ★ 0.208.0：单词库包条目（wordbank 类——全量平铺，无文件夹；word 重词幂等合并） */
+/** ★ 0.208.0：单词库包条目（wordbank 类——word 重词幂等合并） */
 export interface PackWord {
   word: string;
   fullName: string;
   usPhonetic: string;
   explain: string;
+  folderRef?: string; // ★ 0.249.1：所属文件夹 ref（可选——v1 旧包无此字段，导入端按 '' 根目录处理）
 }
+
+/** ★ 0.249.1：DagPack 隐式 AI 标识（合规：《人工智能生成合成内容标识办法》第五条——文件内嵌属性信息；
+ *  包内容可能含 AI 提炼的卡片/释义，导出时随文件落盘，导入端 UI 同步显式提醒） */
+export const DAGPACK_AI_NOTICE: string = '本包内容可能包含 AI 生成的内容，请注意甄别';
 
 export interface DagPack {
   format: string;
@@ -44,6 +49,7 @@ export interface DagPack {
   folders: PackFolder[];
   cards: PackCard[];
   words?: PackWord[]; // ★ 0.208.0：kind='wordbank' 时使用
+  aiNotice?: string;  // ★ 0.249.1：隐式 AI 标识（尾部追加——旧包无此字段，新版导入旧包不显示提醒）
 }
 
 /** 收集 rootFolderId 子树的全部文件夹 id（含自身；'' = 整库含根级散卡） */
@@ -101,7 +107,7 @@ export function buildKnowledgePack(store: KnowledgeBankStore, rootFolderId: stri
       });
     }
   }
-  const p: DagPack = { format: 'dagpack', version: 1, kind: 'knowledge', exportedAt: Date.now(), origin: 'DAGAI', folders: folders, cards: cards };
+  const p: DagPack = { format: 'dagpack', version: 1, kind: 'knowledge', exportedAt: Date.now(), origin: 'DAGAI', folders: folders, cards: cards, aiNotice: DAGPACK_AI_NOTICE };
   return p;
 }
 
@@ -135,15 +141,31 @@ export function parseDagPack(raw: string): DagPack | undefined {
 // ★ 0.208.0：单词库包（wordbank 类）——全量平铺导出 / word 幂等合并导入
 // ============================================================
 
-/** 单词库全量打包（用户拍板：单词库只走 DagPack，不做 Anki/表格导入） */
+/**
+ * 单词库全量打包（用户拍板：单词库只走 DagPack，不做 Anki/表格导入）。
+ * ★ 0.249.1：随包带文件夹结构（folders + folderRef）——对标知识库，导入端可按文件夹勾选接收；
+ * 旧版 app 导入新包自动忽略 folders/folderRef（词全部落根目录，向后兼容零破坏）。
+ */
 export function buildWordPack(store: WordBankStore): DagPack {
+  // 两遍法：先建全量 id→refId 映射，再写 folders（parentRef 引用需要全部映射就位——同 buildKnowledgePack）
+  const refMap: Map<string, string> = new Map<string, string>();
+  let seq = 0;
+  for (let i = 0; i < store.folders.length; i++) {
+    seq++;
+    refMap.set(store.folders[i].id, 'wf' + seq);
+  }
+  const folders: PackFolder[] = [];
+  for (let i = 0; i < store.folders.length; i++) {
+    const f = store.folders[i];
+    folders.push({ refId: refMap.get(f.id) ?? '', name: f.name, parentRef: refMap.get(f.parentId) ?? '' });
+  }
   const words: PackWord[] = [];
   for (let i = 0; i < store.words.length; i++) {
     const w = store.words[i];
-    const pw: PackWord = { word: w.word, fullName: w.fullName, usPhonetic: w.usPhonetic, explain: w.explain };
+    const pw: PackWord = { word: w.word, fullName: w.fullName, usPhonetic: w.usPhonetic, explain: w.explain, folderRef: refMap.get(w.folderId) ?? '' };
     words.push(pw);
   }
-  const p: DagPack = { format: 'dagpack', version: 1, kind: 'wordbank', exportedAt: Date.now(), origin: 'DAGAI', folders: [], cards: [], words: words };
+  const p: DagPack = { format: 'dagpack', version: 1, kind: 'wordbank', exportedAt: Date.now(), origin: 'DAGAI', folders: folders, cards: [], words: words, aiNotice: DAGPACK_AI_NOTICE };
   return p;
 }
 
@@ -170,6 +192,16 @@ export function packCardCount(p: DagPack, refId: string): number {
     }
   }
   return p.cards.filter((c: PackCard): boolean => refs.includes(c.folderRef)).length;
+}
+
+/** ★ 0.249.1：包内某 ref 子树的单词数（含子孙文件夹；'' = 包根级散词数）——wordbank 导入勾选树渲染用 */
+export function packWordCount(p: DagPack, refId: string): number {
+  const ws: PackWord[] = p.words ?? [];
+  if (refId === '') {
+    return ws.filter((w: PackWord): boolean => (w.folderRef ?? '').length === 0).length;
+  }
+  const refs: string[] = packSubtreeRefs(p, refId);
+  return ws.filter((w: PackWord): boolean => refs.includes(w.folderRef ?? '')).length;
 }
 
 /** ref 子树全部 refs（勾选计算用） */
