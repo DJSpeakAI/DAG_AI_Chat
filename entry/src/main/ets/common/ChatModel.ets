@@ -892,28 +892,40 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
   return true;
 }
 
-// 等级头衔（0.247.7 七级表）：Lv1 注册即得 / Lv2 累计7天 / Lv3 30 / Lv4 90 / Lv5 180 / Lv6 300 / Lv7 连续365
-// 累计口径=统计有学习活动的天数（StatisticsStore days 行数）；Lv7 连续性收紧待签到引擎落地
+// 等级头衔（0.249.0 八级表，用户 2026-10-18 拍板「司」系）：Lv1 好奇宝宝注册即得 / Lv2 司墨 7 / Lv3 司简 30 /
+//   Lv4 司理 90 / Lv5 司微 150 / Lv6 司玄 210 / Lv7 司天 240 / Lv8 司忆令 365（一年封神，SP 永久免费）
+// 累计口径=统计有学习活动的天数（StatisticsStore days 行数，cfg:stat-days 云同步多端一致）；等级中断保留头衔
 export function siyiLevelTitle(learnDays: number): string {
-  if (learnDays >= 365) {
-    return 'Lv7 司忆宗师';
+  if (learnDays >= SIYI_LV8_DAYS) {
+    return 'Lv8 司忆令';
   }
-  if (learnDays >= 300) {
-    return 'Lv6 领域先哲';
+  if (learnDays >= 240) {
+    return 'Lv7 司天';
   }
-  if (learnDays >= 180) {
-    return 'Lv5 知识织网';
+  if (learnDays >= 210) {
+    return 'Lv6 司玄';
+  }
+  if (learnDays >= 150) {
+    return 'Lv5 司微';
   }
   if (learnDays >= 90) {
-    return 'Lv4 深度沉思';
+    return 'Lv4 司理';
   }
   if (learnDays >= 30) {
-    return 'Lv3 逻辑筑基';
+    return 'Lv3 司简';
   }
   if (learnDays >= 7) {
-    return 'Lv2 探索学徒';
+    return 'Lv2 司墨';
   }
   return 'Lv1 好奇宝宝';
+}
+
+// Lv8 司忆令免扣判定（0.249.0，用户拍板「SP 永久免费」真免扣）——AI 回复实扣 0+余额闸门豁免；
+// 与 siyiLevelTitle 同源同常量，learnDays=累计学习天数只增不减，达成后免扣状态永不回退
+export const SIYI_LV8_DAYS = 365;
+
+export function isSiyiSpFree(learnDays: number): boolean {
+  return learnDays >= SIYI_LV8_DAYS;
 }
 
 // 新用户礼包分档（用户 2026-10-18 拍板）：上线首月注册=200 万（≈免费畅用一月）；次月起新用户=100 万

@@ -647,7 +647,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.248.7') // ★ 0.248.7：SP实扣链路+缓存行恒显示;上一版 0.248.5：SP有效期取消;更早历史见 MEMORY.md
+        Text('v0.249.0') // ★ 0.249.0：等级头衔八级表+Lv8司忆令SP永久免费;上一版 0.248.8：划词菜单修复;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

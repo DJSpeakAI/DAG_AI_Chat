@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.248.7'; // ★ 0.248.7：SP实扣链路+缓存行恒显示;上一版 0.248.5：SP有效期取消
+const APP_VERSION: string = 'v0.249.0'; // ★ 0.249.0：等级头衔八级表+Lv8司忆令SP永久免费;上一版 0.248.8：划词菜单修复
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2863,7 +2863,8 @@ export struct GlobalSettingsDialog {
       .backgroundColor(SURFACE_NODE)
       .border({ width: 1, color: STROKE_CARD })
 
-      // 头衔等级卡（7 级：条件/充能折扣/每日嘉奖加成；★ 0.248.0「充值/奖励」→「充能/嘉奖」）
+      // 头衔等级卡（8 级「司」系：条件/充能折扣/每日嘉奖加成；★ 0.248.0「充值/奖励」→「充能/嘉奖」；
+      //   ★ 0.249.0：七级→八级（用户 2026-10-18 拍板——司墨/司简/司理/司微/司玄/司天/司忆令，Lv8=SP 永久免费））
       Column({ space: 8 }) {
         Text('头衔等级')
           .fontSize(13)
@@ -2871,12 +2872,13 @@ export struct GlobalSettingsDialog {
           .fontColor(TEXT_PRIMARY)
           .width('100%')
         this.siyiLevelRow('Lv1', '好奇宝宝', '注册即得', '—', '基础嘉奖')
-        this.siyiLevelRow('Lv2', '探索学徒', '累计学习 7 天', '—', '嘉奖 +5%')
-        this.siyiLevelRow('Lv3', '逻辑筑基', '累计 30 天', '充能 98 折', '嘉奖 +10%')
-        this.siyiLevelRow('Lv4', '深度沉思', '累计 90 天', '充能 96 折', '嘉奖 +15%')
-        this.siyiLevelRow('Lv5', '知识织网', '累计 180 天', '充能 94 折', '嘉奖 +20%')
-        this.siyiLevelRow('Lv6', '领域先哲', '累计 300 天', '充能 90 折', '嘉奖 +25%')
-        this.siyiLevelRow('Lv7', '司忆宗师', '连续 365 天每日学习', '充能 85 折', '嘉奖 +30%')
+        this.siyiLevelRow('Lv2', '司墨', '累计学习 7 天', '—', '嘉奖 +5%')
+        this.siyiLevelRow('Lv3', '司简', '累计 30 天', '充能 98 折', '嘉奖 +10%')
+        this.siyiLevelRow('Lv4', '司理', '累计 90 天', '充能 96 折', '嘉奖 +15%')
+        this.siyiLevelRow('Lv5', '司微', '累计 150 天', '充能 94 折', '嘉奖 +20%')
+        this.siyiLevelRow('Lv6', '司玄', '累计 210 天', '充能 90 折', '嘉奖 +25%')
+        this.siyiLevelRow('Lv7', '司天', '累计 240 天', '充能 85 折', '嘉奖 +30%')
+        this.siyiLevelRow('Lv8', '司忆令', '累计 365 天（一年封神）', 'SP 永久免费', '—')
         Text('每日完成签到或学习任务计 1 天进度（每天最多 1 天）。中途断签：等级保留、连击冻结，可用补签卡续接。')
           .fontSize(11)
           .fontColor(TEXT_TERTIARY)
@@ -2917,7 +2919,7 @@ export struct GlobalSettingsDialog {
           .fontWeight(600)
           .fontColor(TEXT_PRIMARY)
           .width('100%')
-        Text('· 全部 SP 永久有效（充值、嘉奖与新用户礼包均不过期）\n· 消耗时先扣嘉奖 SP，嘉奖用尽后自动扣充能 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆宗师」充能时按 85 折额外赠送等值 SP')
+        Text('· 全部 SP 永久有效（充值、嘉奖与新用户礼包均不过期）\n· 消耗时先扣嘉奖 SP，嘉奖用尽后自动扣充能 SP\n· 等级中断后保留头衔，补签卡（1,000 SP/张，每月限 2 张）可续接连击\n· 满级「司忆令」AI 对话 SP 永久免费（累计学习 365 天一年封神）')
           .fontSize(12)
           .fontColor(TEXT_SECONDARY)
           .width('100%')

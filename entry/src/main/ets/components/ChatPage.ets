@@ -32,7 +32,7 @@ import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（Doc
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
 
- import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）
+ import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）
  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
@@ -479,6 +479,14 @@ struct CodeBlockView {
               this.onMenuDisappear();
             }
           })
+          .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
+            onAppear: () => {
+              this.onMenuAppear(this.textKey);
+            },
+            onDisappear: () => {
+              this.onMenuDisappear();
+            }
+          })
           .onTextSelectionChange((start: number, end: number) => {
             this.onSelChange(this.textKey, this.content, start, end);
           })
@@ -507,6 +515,14 @@ struct CodeBlockView {
             .borderRadius(RADIUS_CONTROL)
             .copyOption(CopyOptions.LocalDevice)
             .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.SELECT, {
+              onAppear: () => {
+                this.onMenuAppear(this.textKey);
+              },
+              onDisappear: () => {
+                this.onMenuDisappear();
+              }
+            })
+            .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, TextResponseType.LONG_PRESS, {
               onAppear: () => {
                 this.onMenuAppear(this.textKey);
               },
@@ -1160,6 +1176,14 @@ export struct ChatPage {
           this.clearSelectionState();
         }
       })
+      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+        onAppear: () => {
+          this.selKey = selKey;
+        },
+        onDisappear: () => {
+          this.clearSelectionState();
+        }
+      })
       .onTextSelectionChange((start: number, end: number) => {
         // ★ 0.237.1：取词基准=渲染态文本（前缀+剥行内标记）——选区偏移按渲染 Span 序列计，
         //   用 blockPlainText（原始行含 **）会整体前移选错词
@@ -1306,6 +1330,14 @@ export struct ChatPage {
                     this.clearSelectionState();
                   }
                 })
+                .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                  onAppear: () => {
+                    this.selKey = `${keyBase}h${ci}`;
+                  },
+                  onDisappear: () => {
+                    this.clearSelectionState();
+                  }
+                })
                 .onTextSelectionChange((start: number, end: number) => {
                   this.handleSelectionChange(`${keyBase}h${ci}`, cell, start, end);
                 })
@@ -1340,6 +1372,14 @@ export struct ChatPage {
                   .textAlign(TextAlign.Center)
                   .copyOption(CopyOptions.LocalDevice)
                   .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
+                    onAppear: () => {
+                      this.selKey = `${keyBase}r${ri}c${ci}`;
+                    },
+                    onDisappear: () => {
+                      this.clearSelectionState();
+                    }
+                  })
+                  .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                     onAppear: () => {
                       this.selKey = `${keyBase}r${ri}c${ci}`;
                     },
@@ -1742,14 +1782,15 @@ export struct ChatPage {
     }
     // ★ 0.248.7：SP 余额闸门（实扣链路上线——余额为 0 拦截发送并引导充能；余额>0 放行，
     //   单次消耗远小于余额不做预估拦截，回复完成按实扣、不足扣到 0 为止）
-    if (siyiTotalSp(this.siyiStore) <= 0) {
+    //   ★ 0.249.0：Lv8 司忆令「SP 永久免费」豁免（用户拍板真免扣——免扣账号余额 0 照常发送）
+    if (!this.spFree() && siyiTotalSp(this.siyiStore) <= 0) {
       connectConfirmDialog().spRechargePromptVisible = true;
       return;
     }
     if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
- const _tp1: Record<string, string> = {}; _tp1['mode'] = this.sendMode;
+  const _tp1: Record<string, string> = {}; _tp1['mode'] = this.sendMode;
     track(this.getUIContext().getHostContext() as common.Context, 'send_message', _tp1); // 0.206.0 埋点：发送（含模式）
     // ★ 0.190.2：纯文本模型发图拦截（用户批准方案）——预设清单已知纯文本 + 本次发送含图
     //   → 弹窗提醒切换多模态；多模态/自定义/清单外 ID 能力未知不拦截（等对方报错走关键词提示）
@@ -1860,7 +1901,9 @@ export struct ChatPage {
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
         aiMsg.cacheHitTokens = cachedTokens;
-        consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
+        if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
+          consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
+        }
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
         // 流式完成时滚到底部
@@ -1908,8 +1951,8 @@ export struct ChatPage {
       connectConfirmDialog().aiLoginPromptVisible = true;
       return;
     }
-    // ★ 0.248.7：SP 余额闸门（同 sendMessage——重生成同属 AI 调用，实扣口径一致）
-    if (siyiTotalSp(this.siyiStore) <= 0) {
+    // ★ 0.248.7：SP 余额闸门（同 sendMessage——重生成同属 AI 调用，实扣口径一致；★ 0.249.0：Lv8 免扣豁免）
+    if (!this.spFree() && siyiTotalSp(this.siyiStore) <= 0) {
       connectConfirmDialog().spRechargePromptVisible = true;
       return;
     }
@@ -1977,7 +2020,9 @@ export struct ChatPage {
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
         msg.cacheHitTokens = cachedTokens;
-        consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
+        if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
+          consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
+        }
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
         this.scroller.scrollEdge(Edge.Bottom);
@@ -2615,6 +2660,9 @@ export struct ChatPage {
     if (msg.outputTokens <= 0) {
       return '';
     }
+    if (this.spFree()) { // ★ 0.249.0：Lv8 司忆令免扣——明细行同步免费标识（展示与实扣一致军令：显示扣多少就扣多少，免费就显示免费）
+      return '司忆令 · 本轮免费';
+    }
     const hit = Math.min(msg.cacheHitTokens, msg.inputTokens);
     const miss = msg.inputTokens - hit;
     const inSp = Math.round((miss * SP_INPUT_PRICE_RATIO + hit * SP_HIT_PRICE_RATIO) / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
@@ -2630,6 +2678,12 @@ export struct ChatPage {
     const inSp = Math.round((miss * SP_INPUT_PRICE_RATIO + hit * SP_HIT_PRICE_RATIO) / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
     const outSp = Math.round(msg.outputTokens * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
     return inSp + outSp;
+  }
+
+  // ★ 0.249.0：Lv8 司忆令免扣判定（用户拍板「SP 永久免费」）——learnDays=累计学习天数（cfg:stat-days
+  //   云同步多端一致，只增不减、达成后免扣状态永不回退）；两处发送闸门+两处实扣+明细行统一走此封装
+  spFree(): boolean {
+    return isSiyiSpFree(getStatDays(this.statStore).length);
   }
 
   // ★ 0.247.3：token 明细弹层 builder（感叹号弹出）——无参 @Builder 直读 tokenInfoText 快照；
@@ -4491,14 +4545,22 @@ export struct ChatPage {
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现，不再留侧边空间）；0.190.3 原 90%、0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
-                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
-                            onAppear: () => {
-                              this.selKey = `${msg.messageId}|u`;
-                            },
-                            onDisappear: () => {
-                              this.clearSelectionState();
-                            }
-                          })
+                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
+                             onAppear: () => {
+                               this.selKey = `${msg.messageId}|u`;
+                             },
+                             onDisappear: () => {
+                               this.clearSelectionState();
+                             }
+                           })
+                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                             onAppear: () => {
+                               this.selKey = `${msg.messageId}|u`;
+                             },
+                             onDisappear: () => {
+                               this.clearSelectionState();
+                             }
+                           })
                           // ★ 0.145：选中变化回调——闭包捕获 msg.content，按段内偏移截取选中文本
                           .onTextSelectionChange((start: number, end: number) => {
                             this.handleSelectionChange(`${msg.messageId}|u`, msg.content, start, end);
@@ -4595,14 +4657,22 @@ export struct ChatPage {
                                  .fontColor(TEXT_PRIMARY)
                                  .copyOption(CopyOptions.LocalDevice)
                                  // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
-                                 .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
-                                   onAppear: () => {
-                                     this.selKey = `${msg.messageId}|${idx}`;
-                                   },
-                                   onDisappear: () => {
-                                     this.clearSelectionState();
-                                   }
-                                 })
+                                  .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
+                                    onAppear: () => {
+                                      this.selKey = `${msg.messageId}|${idx}`;
+                                    },
+                                    onDisappear: () => {
+                                      this.clearSelectionState();
+                                    }
+                                  })
+                                  .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                                    onAppear: () => {
+                                      this.selKey = `${msg.messageId}|${idx}`;
+                                    },
+                                    onDisappear: () => {
+                                      this.clearSelectionState();
+                                    }
+                                  })
                                  // ★ 0.145：选中变化回调——闭包捕获 seg.content，按段内偏移截取选中文本
                                  .onTextSelectionChange((start: number, end: number) => {
                                    this.handleSelectionChange(`${msg.messageId}|${idx}`, entry.seg.content, start, end);
@@ -4714,6 +4784,14 @@ export struct ChatPage {
                                             this.clearSelectionState();
                                           }
                                         })
+                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                          onAppear: () => {
+                                            this.selKey = `${msg.messageId}|rw${idx}`;
+                                          },
+                                          onDisappear: () => {
+                                            this.clearSelectionState();
+                                          }
+                                        })
                                         .onTextSelectionChange((start: number, end: number) => {
                                           this.handleSelectionChange(`${msg.messageId}|rw${idx}`, '📚 ' + w.word, start, end);
                                         })
@@ -4767,14 +4845,22 @@ export struct ChatPage {
                                           .onClick(() => {
                                             this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                           })
-                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
-                                           onAppear: () => {
-                                             this.selKey = `${msg.messageId}|rwf${idx}`;
-                                           },
-                                           onDisappear: () => {
-                                             this.clearSelectionState();
-                                           }
-                                         })
+                                          .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
+                                            onAppear: () => {
+                                              this.selKey = `${msg.messageId}|rwf${idx}`;
+                                            },
+                                            onDisappear: () => {
+                                              this.clearSelectionState();
+                                            }
+                                          })
+                                          .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                            onAppear: () => {
+                                              this.selKey = `${msg.messageId}|rwf${idx}`;
+                                            },
+                                            onDisappear: () => {
+                                              this.clearSelectionState();
+                                            }
+                                          })
                                          .onTextSelectionChange((start: number, end: number) => {
                                            this.handleSelectionChange(`${msg.messageId}|rwf${idx}`, w.fullName, start, end);
                                          })
@@ -4793,14 +4879,22 @@ export struct ChatPage {
                                          .onClick(() => {
                                            this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                          })
-                                        .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
-                                          onAppear: () => {
-                                            this.selKey = `${msg.messageId}|rwe${idx}`;
-                                          },
-                                          onDisappear: () => {
-                                            this.clearSelectionState();
-                                          }
-                                        })
+                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
+                                           onAppear: () => {
+                                             this.selKey = `${msg.messageId}|rwe${idx}`;
+                                           },
+                                           onDisappear: () => {
+                                             this.clearSelectionState();
+                                           }
+                                         })
+                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                           onAppear: () => {
+                                             this.selKey = `${msg.messageId}|rwe${idx}`;
+                                           },
+                                           onDisappear: () => {
+                                             this.clearSelectionState();
+                                           }
+                                         })
                                         .onTextSelectionChange((start: number, end: number) => {
                                           this.handleSelectionChange(`${msg.messageId}|rwe${idx}`, w.explain, start, end);
                                         })
@@ -4885,6 +4979,14 @@ export struct ChatPage {
                                                 this.clearSelectionState();
                                               }
                                             })
+                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                              onAppear: () => {
+                                                this.selKey = `${msg.messageId}|rk${idx}`;
+                                              },
+                                              onDisappear: () => {
+                                                this.clearSelectionState();
+                                              }
+                                            })
                                             .onTextSelectionChange((start: number, end: number) => {
                                               this.handleSelectionChange(`${msg.messageId}|rk${idx}`, card.title, start, end);
                                             })
@@ -4909,14 +5011,22 @@ export struct ChatPage {
                                            .onClick(() => {
                                              this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                            })
-                                           .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
-                                             onAppear: () => {
-                                               this.selKey = `${msg.messageId}|rkd${idx}`;
-                                             },
-                                             onDisappear: () => {
-                                               this.clearSelectionState();
-                                             }
-                                           })
+                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.SELECT, {
+                                              onAppear: () => {
+                                                this.selKey = `${msg.messageId}|rkd${idx}`;
+                                              },
+                                              onDisappear: () => {
+                                                this.clearSelectionState();
+                                              }
+                                            })
+                                            .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, TextResponseType.LONG_PRESS, {
+                                              onAppear: () => {
+                                                this.selKey = `${msg.messageId}|rkd${idx}`;
+                                              },
+                                              onDisappear: () => {
+                                                this.clearSelectionState();
+                                              }
+                                            })
                                            .onTextSelectionChange((start: number, end: number) => {
                                              this.handleSelectionChange(`${msg.messageId}|rkd${idx}`, card.definition, start, end);
                                            })
@@ -5091,7 +5201,9 @@ export struct ChatPage {
                                   //   恒不透传 cached_tokens（长前缀同前缀两轮 curl 实锤恒 0），原「命中才显示」
                                   //   设计下该行永不出现；改两态：命中>0 紫色省钱行（builder 分色）、未命中普通行
                                   //   消除「功能消失了」的困惑，云端将来支持命中时自然显示省钱）
-                                  if (msg.inputTokens > 0) {
+                                  if (this.spFree()) { // ★ 0.249.0：Lv8 免扣——免费账号无节省概念，缓存行不显示
+                                    this.tokenInfoCacheLine = '';
+                                  } else if (msg.inputTokens > 0) {
                                     if (msg.cacheHitTokens > 0) {
                                       const percent = Math.round((msg.cacheHitTokens / msg.inputTokens) * 100);
                                       const savedSp = Math.round(msg.cacheHitTokens * SP_CACHE_SAVING_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
@@ -6483,6 +6595,14 @@ export struct ChatPage {
                         this.clearSelectionState();
                       }
                     })
+                    .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                      onAppear: () => {
+                        this.selKey = 'cz|w';
+                      },
+                      onDisappear: () => {
+                        this.clearSelectionState();
+                      }
+                    })
                     .onTextSelectionChange((start: number, end: number) => {
                       this.handleSelectionChange('cz|w', this.codeZoomContent, start, end);
                     })
@@ -6508,6 +6628,14 @@ export struct ChatPage {
                       .borderRadius(RADIUS_CONTROL)
                       .copyOption(CopyOptions.LocalDevice)
                       .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
+                        onAppear: () => {
+                          this.selKey = 'cz|s';
+                        },
+                        onDisappear: () => {
+                          this.clearSelectionState();
+                        }
+                      })
+                      .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                         onAppear: () => {
                           this.selKey = 'cz|s';
                         },
@@ -6635,6 +6763,14 @@ export struct ChatPage {
                               this.clearSelectionState();
                             }
                           })
+                          .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                            onAppear: () => {
+                              this.selKey = `tzh${ci}`;
+                            },
+                            onDisappear: () => {
+                              this.clearSelectionState();
+                            }
+                          })
                           .onTextSelectionChange((start: number, end: number) => {
                             this.handleSelectionChange(`tzh${ci}`, cell, start, end);
                           })
@@ -6660,6 +6796,14 @@ export struct ChatPage {
                             .textAlign(TextAlign.Center)
                             .copyOption(CopyOptions.LocalDevice)
                             .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.SELECT, {
+                              onAppear: () => {
+                                this.selKey = `tzr${ri}c${ci}`;
+                              },
+                              onDisappear: () => {
+                                this.clearSelectionState();
+                              }
+                            })
+                            .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
                               onAppear: () => {
                                 this.selKey = `tzr${ri}c${ci}`;
                               },

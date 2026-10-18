@@ -65,7 +65,7 @@ export interface WidgetState {
   noMore?: string;  // 0.204.2：'y'=全部学完（含未来）——完成态隐藏继续按钮显示「全部学完」文案；主应用重建快照时重置
   face?: string;    // ★ 0.224.0：卡面模式（'single' | 'double'——跟全局 FaceModeStore，经快照注入卡片进程）
   flipped?: string; // ★ 0.224.0：当前卡是否已翻面（'y' | 'n'——双面模式卡身点击切换；评分/切库/换卡重置）
-  siyiLine?: string; // ★ 0.248.0：司忆点资产行（「Lv2 探索学徒 · 12 万 SP」——宿主拼好整串注入，卡片进程禁连 store 0.204.1 铁律）
+  siyiLine?: string; // ★ 0.248.0：司忆点资产行（「Lv2 司墨 · 12 万 SP」——宿主拼好整串注入，卡片进程禁连 store 0.204.1 铁律）
 }
 
 /** 待回放评分（卡片上产生；主应用按 happenedAt 顺序 applyRating 到真数据） */
