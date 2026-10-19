@@ -13,6 +13,7 @@ import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLog
 
   StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
+import { needsAgreement, needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：协议两段门禁（弹窗 Index 根挂载）
 import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases } from '../utils/IapUtil'; // ★ 0.261.0：SP 充能 IAP（华为收银台）
 import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
@@ -124,6 +125,17 @@ export struct BillingPage {
   // ★ 0.194.0：账单页登录（兑换/试用的前置条件）——成功后统一打 30 天试用戳
   doLoginFromBilling(): void {
     if (this.isLoggingIn) {
+      return;
+    }
+    // ★ 0.264.0：协议两段门禁（基础协议+华为协议弹窗均 Index 根挂载，同意后经 pendingAction='login' 续跑登录）
+    if (needsAgreement()) {
+      connectAgreementBridge().pendingAction = 'login';
+      connectAgreementBridge().promptVisible = true;
+      return;
+    }
+    if (needsHwAgreement()) {
+      connectAgreementBridge().pendingAction = 'login';
+      connectAgreementBridge().hwPromptVisible = true;
       return;
     }
     this.isLoggingIn = true;

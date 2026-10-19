@@ -40,8 +40,23 @@ export struct AppConfirmDialog {
   // ★ 0.196.10：确认钮放左侧（用户拍板：登录引导弹窗「左下角登录华为账号，右边取消」；
   //   默认 false = 取消左/确认右标准序）
   @Param confirmOnLeft: boolean = false;
+  // ★ 0.263.0：可选勾选框（空串=不显示，现有调用点零波及）——「退出并清空本机数据」等高危附带动作；
+  //   勾选态由组件自持（@Local），visible 复位时归零防跨次残留
+  @Param checkboxLabel: string = '';
+  // ★ 0.263.0：勾选态下确认钮替换文字（空串=不替换），防误触高危确认
+  @Param checkedConfirmText: string = '';
+  @Local checkboxChecked: boolean = false;
   @Event onConfirm: () => void = () => {};
   @Event onCancel: () => void = () => {};
+  // ★ 0.263.0：checkbox 模式下确认钮改走此事件（携带勾选态）；普通模式仍走 onConfirm
+  @Event onConfirmChecked: (checked: boolean) => void = () => {};
+
+  @Monitor('visible')
+  onVisibleChange(): void {
+    if (!this.visible) {
+      this.checkboxChecked = false; // 弹窗关闭复位——复用实例不残留上次勾选
+    }
+  }
 
   // ★ 0.225.2：宽屏断点——@ObservedV2 实例须挂 @Local 才可靠响应 @Trace（同 KnowledgeBankPage）
   @Local windowMode: WindowMode = connectWindowMode();
@@ -66,10 +81,11 @@ export struct AppConfirmDialog {
       })
   }
 
-  // 确认钮（主紫）
+  // 确认钮（主紫；★ 0.263.0：勾选态且有替换文案时切换按钮文字，明确高危动作）
   @Builder
   confirmButtonBuilder() {
-    Button(this.confirmText)
+    Button(this.checkboxLabel !== '' && this.checkboxChecked && this.checkedConfirmText !== ''
+      ? this.checkedConfirmText : this.confirmText)
       .layoutWeight(1)
       .height(48)
       .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -78,7 +94,11 @@ export struct AppConfirmDialog {
       .fontColor(this.theme.textPrimary)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
-        this.onConfirm();
+        if (this.checkboxLabel !== '') {
+          this.onConfirmChecked(this.checkboxChecked);
+        } else {
+          this.onConfirm();
+        }
       })
   }
 
@@ -108,6 +128,24 @@ export struct AppConfirmDialog {
           .fontSize(FONT_SIZE_BODY)
           .lineHeight(22)
           .fontColor(this.theme.textSecondary)
+
+        // ★ 0.263.0：可选勾选框（checkboxLabel 空串不渲染）——整行可点切换
+        if (this.checkboxLabel !== '') {
+          Row({ space: 8 }) {
+            Image(this.checkboxChecked ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off'))
+              .width(20)
+              .height(20)
+            Text(this.checkboxLabel)
+              .fontSize(FONT_SIZE_BODY)
+              .fontColor(this.theme.textSecondary)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .margin({ top: 14 })
+          .onClick(() => {
+            this.checkboxChecked = !this.checkboxChecked;
+          })
+        }
 
         // 双按钮：默认取消左/确认右；confirmOnLeft 时确认左/取消右（0.196.10 登录引导）
         Row({ space: 10 }) {

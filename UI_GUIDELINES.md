@@ -496,3 +496,16 @@
 4. 固定操作按钮区与内容滚动区（List——卡片进程 Scroll 不支持）分层，按钮永远不被内容挤出或遮挡。
 5. 滚动条强制隐藏（`scrollBar(BarState.Off)`——窄卡省空间）。
 6. 改状态交互（评分/切库/翻面/继续）统一过全局动作门闸（500ms）+ 动作后置灰 1.5s 反馈；翻面热区只挂题面区，操作控件永不与翻面冒泡叠加（0.255.0 切库根治）。
+
+
+## 二十一、协议门禁与隐私政策敏感信息突出展示（★ 0.264.0 协议合规修订定稿）
+
+### 21.1 两段协议门禁（同意拆分）
+- **基础门禁（总门槛）**：首启/版本落后时弹，只含《用户协议》《隐私政策》两份；「不同意，退出」（左）/「同意并进入」（右）；不同意→二次挽留「不同意将无法使用本应用」→仍不同意=退出应用；勾选未勾选点同意=按钮抖动提示（**不置灰**——保持可点给负反馈）。
+- **华为协议门禁（登录门槛）**：华为账号登录前单独弹《华为账号用户认证协议》（系统浏览器外链）；「不同意」（左，仅取消登录不退出）/「同意并登录」（右）；同意一次即可不随版本重置。
+- 判定唯一真相源 `utils/Agreement.ets`：`needsAgreement()`/`needsHwAgreement()`/`markAgreed()`/`markHwAgreed()`；弹窗经 `AgreementBridge`（promptVisible/hwPromptVisible）Index 根 Stack 双挂载 `AgreementDialog`（mode='basic'/'hw' 同组件两形态）；登录链路门禁检查一律收口在 `Index.doLogin`（边栏/BillingPage 直调 `loginWithHuaweiID` 的入口自行补两段检查）。
+
+### 21.2 隐私政策敏感条款突出展示（华为审核独立项）
+- 「1. 本地存储」与「2. AI 服务与安全审计」两条在隐私政策展示层加粗：`fontWeight(Medium)` + `textPrimary`（正文其余 `Normal`+`textSecondary`）。
+- 判定用 `isPrivacySensitiveSection(sec)`（前缀匹配，**禁止按数组索引**——隐私政策章节增删会使索引漂移）；所有渲染隐私政策正文处（设置·法律条款弹窗、协议同意弹窗正文页）统一生效。
+- 协议正文唯一真相源 `utils/Agreement.ets` 的 `USER_AGREEMENT_SECTIONS`/`PRIVACY_SECTIONS`；华为账号认证协议恒系统浏览器外链展示（不自拟文本、不用应用内 WebView）。

@@ -265,7 +265,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-     const PAGE_VER = '0.248.7.1'; // ★ 0.248.7.1：常亮持久化+自愈（服务端 keepalive.json 落盘+上线边沿重放+60s 续命；前端常亮态改服务端权威——刷新页面不再丢按钮态）+同步套件三端账户资产域断言 // ★ 0.244.0.1：云同步陈旧渲染双 bug 回归用例（NODE-LAYOUT/NODE-CHILD-INTACT） // 更早历史见 MEMORY.md 版本表
+     const PAGE_VER = '0.263.0.1'; // ★ 0.263.0.1：LOGIN-WIPE 用例（app 0.263.0 退出并清空本机数据配套——弹窗勾选/空库/RDB 清零三断言） // 上版 0.248.7.1：常亮持久化+自愈 // 更早历史见 MEMORY.md 版本表
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;

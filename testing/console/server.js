@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.248.7.1'; // ★ 0.248.7.1 常亮持久化+自愈（keepalive.json 落盘/上线边沿重放/60s 续命，配套 app 0.248.7）+同步套件三端账户资产域断言；上版 0.244.0.1 云同步陈旧渲染回归用例// 更早历史见 MEMORY.md 版本表
+const VERSION = '0.263.0.1'; // ★ 0.263.0.1 新增 LOGIN-WIPE 用例（app 0.263.0 退出并清空本机数据配套：弹窗勾选断言/空库断言/RDB 清零断言）；上版 0.248.7.1 常亮持久化+自愈// 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -1506,6 +1506,72 @@ const CASES = [
       const h = await hilogErrors(serial);
       ctx.log('同步链路 hilog 无错误', h.ok ? (h.n === 0 ? 'pass' : 'fail') : 'warn', h.ok ? `ERROR 计数=${h.n}` : 'hilog 读取异常');
       await autoLogout(ctx, serial, dev); // ★ 0.229.20 入口隔离收尾：退出账号+同步开关强制关（0.196.8）
+    } },
+  // ★ 0.263.0 新功能配套（§12.13 军令）：退出华为账号确认弹窗可勾选「同时清空本机数据」——
+  //   路径=边栏头像（logoutConfirmVisible 弹窗，与 LOGIN-LOGOUT 测的首页「退出账号」直退按钮是两条不同链路）
+  { id: 'LOGIN-WIPE', suite: 'login', name: '退出并清空·勾选清零本机数据（弹窗勾选→按钮变「退出并清空」→自退重启→未登录+空库+RDB清零）', semi: true, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '退出并清空（全链路 UI 断言）'); return; }
+      await coldStart(serial);
+      let d0 = await dumpCountText(serial, '已登录');
+      if (d0.n === 0) {
+        ctx.log('前置·未登录', 'info', '自动点头像登录（静默授权）造出已登录态，再测退出并清空');
+        if (dev.id === 'phone') {
+          const csOk = await ensureCanvas(serial, ctx.log);
+          const drOk = csOk ? await openPhoneDrawer(serial, ctx.log) : { ok: false };
+          if (!drOk.ok) { const dk = await dumpLayout(serial); if (!dk.text.includes('未登录')) { ctx.log('⓪ 手机抽屉未开', 'fail', '抽屉唤出失败——头像不可达'); return; } }
+        }
+        const av = await uiClickCheckbox(serial, '未登录', { waitMs: 3000 });
+        if (av.ok) ctx.log('自动点边栏账号头像（登录）', 'pass', `已点击 (${av.x},${av.y})（${av.how}）`);
+        await ctx.checkpoint({ label: '【人工仅授权·请看屏幕】静默授权通常零点击；若弹华为授权页点「同意并继续」', deviceId: dev.id,
+          detect: async () => (await dumpCountText(serial, '已登录')).n >= 1 });
+        d0 = await dumpCountText(serial, '已登录');
+      }
+      if (d0.n === 0) { ctx.log('前置：已登录态', 'skip', '未能进入已登录态（授权未完成）——排查后重跑'); return; }
+      await dismissLoginDialogs(serial, ctx.log);
+      // ① 已登录态点边栏头像 → 弹「退出华为账号」确认弹窗（0.196.9 确认弹窗 + 0.263.0 勾选框）
+      if (dev.id === 'phone') {
+        const csOk = await ensureCanvas(serial, ctx.log);
+        const drOk = csOk ? await openPhoneDrawer(serial, ctx.log) : { ok: false };
+        if (!drOk.ok) { const dk = await dumpLayout(serial); if (!dk.text.includes('已登录')) { ctx.log('① 手机抽屉未开', 'fail', '抽屉唤出失败——头像不可达'); return; } }
+      }
+      const av2 = await uiClickCheckbox(serial, '已登录', { waitMs: 2500 });
+      if (!av2.ok) { ctx.log('① 点边栏头像', 'fail', av2.err || '定位失败——「华为账号已登录」行不可见'); return; }
+      ctx.log('① 点边栏头像（已登录态）', 'pass', `已点击 (${av2.x},${av2.y})——拉起「退出华为账号」确认弹窗`);
+      await sleep(1200);
+      const d1 = await ctx.art.dump(`LOGIN-WIPE-${dev.id}`, 'dump-dialog.json', serial);
+      const hasTitle = d1.text.includes('退出华为账号');
+      const hasCheck = d1.text.includes('同时清空本机全部数据');
+      ctx.log('★确认弹窗含勾选项', hasTitle && hasCheck ? 'pass' : 'fail',
+        hasTitle && hasCheck ? '标题「退出华为账号」+勾选行「同时清空本机全部数据（借给他人前勾选）」均在' : `标题=${hasTitle} 勾选行=${hasCheck}（0.263.0 新 UI 缺失）`);
+      if (!hasCheck) return;
+      // ② 点勾选行 → 确认钮文案翻转为「退出并清空」（防误触高危确认设计）
+      const ck = await uiClickText(serial, '同时清空本机全部数据', { waitMs: 1200 });
+      if (!ck.ok) { ctx.log('② 点勾选行', 'fail', ck.err || '定位失败'); return; }
+      const d2 = await dumpLayout(serial);
+      const armed = d2.ok && d2.text.includes('退出并清空');
+      ctx.log('★勾选后确认钮=「退出并清空」', armed ? 'pass' : 'fail', armed ? '按钮文案已随勾选态切换（高危动作明确化）' : 'dump 未见「退出并清空」——勾选未生效或按钮文案未切换');
+      if (!armed) return;
+      // ③ 点「退出并清空」→ toast+1.2s 后自退 → coldStart 重开兜底
+      const go = await uiClickText(serial, '退出并清空', { waitMs: 1500 });
+      ctx.log('③ 点「退出并清空」', go.ok ? 'pass' : 'fail', go.ok ? `已点击 (${go.x},${go.y})——登出+清零+自退` : (go.err || '定位失败'));
+      if (!go.ok) return;
+      await sleep(3500); // toast 1.5s + 自退 1.2s + 余量
+      await coldStart(serial);
+      await sleep(1500);
+      // ④ 断言终态：未登录 + 词库空 + RDB 清零（云端零影响——结构性保证=先停同步再清+不产生墓碑，见 DataWipeUtil）
+      const d3 = await ctx.art.dump(`LOGIN-WIPE-${dev.id}`, 'dump-after.json', serial);
+      const loggedN = (d3.text.match(/已登录/g) || []).length;
+      ctx.log('★清空重启后=未登录', loggedN === 0 ? 'pass' : 'fail', `已登录×${loggedN}${loggedN > 0 ? '（登出未生效）' : ''}`);
+      const g = await grepPref(serial, 'word-bank');
+      const emptyWords = g.found && /"words":\s*\[\s*\]/.test(g.sample);
+      ctx.log('★词库落盘=空数组', g.found ? (emptyWords ? 'pass' : 'fail') : 'warn',
+        g.found ? `${g.path} → ${g.sample.slice(0, 160)}${emptyWords ? '' : '（words 非空——清零未落盘或 preset 复活）'}` : '候选路径未命中（UI 断言已兜底）');
+      const c = await dbCount(serial, null);
+      ctx.log('★云同步 RDB=0 行', c.ok ? (c.n === 0 ? 'pass' : 'fail') : 'warn',
+        c.ok ? `cloud_data 总行数=${c.n}（行=上行事实，清零=与卸载重装等价；云端数据不受影响——重新登录开同步全量恢复）` : `sqlite 读取异常：${c.raw}`);
+      ctx.log('收尾说明', 'info', '本机数据已清（借人场景语义）。云端零影响：重新登录+开云同步即全量恢复。设备留在未登录空库态——后续 LOGIN-LOGOUT 会自动登录复位');
     } },
   { id: 'LOGIN-LOGOUT', suite: 'login', name: '退出登录·回到未登录基线（自包含：未登录先自动头像登录，再测退出）', semi: true, scope: 'each',
     run: async (ctx) => {

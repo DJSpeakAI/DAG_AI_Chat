@@ -54,7 +54,7 @@ import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenT
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.236.1：火山/自定义档试听（speakWithParams 显式传参）
 import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流式轻量 POST，零侵入 streamChat 主链路）
 
-import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回
+import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME, isPrivacySensitiveSection } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回；★ 0.264.0：隐私敏感条款判定（华为审核独立项）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, RADIUS_NODE, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, ThemeBadgeStore, connectAppTheme, connectThemeBadge, chooseThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题（外观卡）
@@ -189,7 +189,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.262.0'; // ★ 0.262.0：深浅色主题跟随系统（三态 AppTheme+新用户首启弹窗+外观卡）;上一版 0.261.0：IAP 支付接入 SP 充能
+const APP_VERSION: string = 'v0.264.0'; // ★ 0.264.0：协议合规修订定稿（门禁拆分两段征求+协议 v2.0）;上一版 0.263.0：退出华为账号可勾选「同时清空本机数据」
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -3624,8 +3624,10 @@ export struct GlobalSettingsDialog {
                 Text(section)
                   .fontSize(13)
                   .lineHeight(20)
-                  .fontColor(idx === 0 ? this.theme.textPrimary : this.theme.textSecondary)
-                  .fontWeight(idx === 0 ? FontWeight.Medium : FontWeight.Normal)
+                  .fontColor(idx === 0 || (this.legalViewing === 1 && isPrivacySensitiveSection(section))
+                    ? this.theme.textPrimary : this.theme.textSecondary)
+                  .fontWeight(idx === 0 || (this.legalViewing === 1 && isPrivacySensitiveSection(section))
+                    ? FontWeight.Medium : FontWeight.Normal)
                   .margin({ bottom: 10 })
                   .width('100%')
               }, (section: string, idx: number) => `${idx}`)

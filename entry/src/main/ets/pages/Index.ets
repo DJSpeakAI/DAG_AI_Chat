@@ -37,6 +37,7 @@ import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsS
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
+import { clearAllLocalUserData } from '../utils/DataWipeUtil'; // ★ 0.263.0：退出登录「同时清空本机数据」（借给他人前场景）
 import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启动构建桌面卡片快照
@@ -47,7 +48,7 @@ import { connectDailyReviewCount } from '../components/ReviewPage'; // ★ 0.204
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
 import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：阅读并同意弹窗（首启/边栏/云同步三入口共用）
 import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
-import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, AGREEMENT_CHECK_PREFIX } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案
+import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, needsHwAgreement, markHwAgreed, AGREEMENT_CHECK_PREFIX } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分
 import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
 import { ThemeChooseDialog } from '../components/ThemeChooseDialog'; // ★ 0.262.0：新用户首启主题选择弹窗（协议同意后弹）
 import { AppTheme, connectAppTheme, connectThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员
@@ -117,9 +118,17 @@ struct Index {
     }
     // ★ 0.226.0：未同意协议 → 先弹同意弹窗（记待执行动作，同意后由 onAgreementAgree 续跑登录）
     //   首页 PC/Pad 勾选路径已先 markAgreed，不会再进此分支
+    // ★ 0.264.0：基础门禁只含《用户协议》《隐私政策》两份（华为协议拆到登录门禁单独征求）
     if (needsAgreement()) {
       this.agreementBridge.pendingAction = fromSyncEntry ? 'sync' : 'login';
       this.agreementBridge.promptVisible = true;
+      return;
+    }
+    // ★ 0.264.0：华为账号用户认证协议门禁（登录门槛——不同意仅取消登录不退出应用；
+    //   同意一次即可不随版本重置；三登录入口+云同步引导+AI 引导全汇入 doLogin 天然全覆盖）
+    if (needsHwAgreement()) {
+      this.agreementBridge.pendingAction = fromSyncEntry ? 'sync' : 'login';
+      this.agreementBridge.hwPromptVisible = true;
       return;
     }
     this.isProcessing = true;
@@ -160,21 +169,42 @@ struct Index {
     });
   }
 
-  // ★ 0.164：点击退出账号
-  doLogout() {
+  // ★ 0.164：点击退出账号；★ 0.263.0：wipe=true 一并清空本机数据（借给他人前场景）
+  doLogout(wipe: boolean) {
     if (this.isProcessing) {
       return;
     }
     this.isProcessing = true;
     this.loginTip = '';
+    // ★ 0.263.0：先关云同步开关再登出再清数据（顺序铁律——清零必须在同步停止后进行，
+    //   否则墓碑上行会把云端数据一并删掉，换设备登录无法恢复）
+    disableCloudSyncOnLogout(this.getUIContext());
     const context = this.getUIContext().getHostContext() as common.Context;
     logoutHuaweiID(context).then((tip: string) => {
       this.isProcessing = false;
       if (tip !== '') {
         this.loginTip = tip;
       }
-      // ★ 0.196.8：退出 → 云同步开关强制关（本地登录态无论成败都已清空，云侧已无账号会话）
-      disableCloudSyncOnLogout(this.getUIContext());
+      if (wipe) {
+        // 清空本机数据（词库/知识库/气泡树/统计/SP/签到等）→ 云端不受影响 → 重启到干净状态
+        clearAllLocalUserData(context).then(() => {
+          try {
+            this.getUIContext().getPromptAction().showToast({
+              message: '已退出登录，本机数据已清空', duration: 1500
+            });
+          } catch (_e) {
+            // 静默
+          }
+          // 落盘完成后再自退（重开=未登录空库全新状态；内存工作区随进程一并清干净）
+          setTimeout(() => {
+            try {
+              (context as common.UIAbilityContext).terminateSelf();
+            } catch (_e) {
+              // 自退失败静默——数据已清，用户手动重开同样干净
+            }
+          }, 1200);
+        });
+      }
     });
   }
 
@@ -379,9 +409,35 @@ struct Index {
     }
   }
 
-  // 同意弹窗——暂不同意（返回原页面，不退出应用；本地功能照常可用）
+  // ★ 0.226.0→0.264.0 语义升级：基础门禁「不同意」=退出应用（总门槛；2026-10-19 用户二次拍板
+  //   推翻「不同意不退出」旧案）。仅当二次挽留「仍不同意，退出」才走到这里——防误触直接退出
   onAgreementReject(): void {
     this.agreementBridge.promptVisible = false;
+    this.agreementBridge.pendingAction = '';
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      context.terminateSelf(); // 退出应用（0.263.0 清空数据自退同款 API）
+    } catch (_e) {
+      // 退出失败静默——弹窗已关，用户重进再走门禁
+    }
+  }
+
+  // ★ 0.264.0：华为协议登录门禁——同意并登录（落 hwAgreed 再按 pendingAction 续跑登录/云同步）
+  onHwAgreementAgree(): void {
+    this.agreementBridge.hwPromptVisible = false;
+    markHwAgreed();
+    const action = this.agreementBridge.pendingAction;
+    this.agreementBridge.pendingAction = '';
+    if (action === 'sync') {
+      this.doLogin(true);
+    } else {
+      this.doLogin(false);
+    }
+  }
+
+  // ★ 0.264.0：华为协议登录门禁——不同意（仅取消登录，本地三板块照用，不退出应用）
+  onHwAgreementReject(): void {
+    this.agreementBridge.hwPromptVisible = false;
     this.agreementBridge.pendingAction = '';
   }
 
@@ -576,7 +632,7 @@ struct Index {
               .borderRadius(RADIUS_CONTROL)
               .enabled(!this.isProcessing)
               .onClick(() => {
-                this.doLogout();
+                this.doLogout(false); // 手机首页旧入口：纯退出不清数据（清零走边栏头像确认弹窗勾选）
               })
           }
           .margin({ top: 24 })
@@ -641,7 +697,7 @@ struct Index {
                   this.homeAgreed = true;
                 })
             }
-            Text(AGREEMENT_CHECK_PREFIX + '《用户协议》《隐私政策》《华为账号用户认证协议》')
+            Text(AGREEMENT_CHECK_PREFIX + '《用户协议》《隐私政策》') // ★ 0.264.0：基础门禁两份协议（华为协议登录时单独征求）
               .fontSize(FONT_SIZE_CAPTION)
               .lineHeight(18)
               .fontColor(this.theme.textTertiary)
@@ -663,7 +719,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.262.0') // ★ 0.262.0：深浅色主题跟随系统（三态 AppTheme+新用户首启弹窗+外观卡）;上一版 0.261.0：IAP 支付接入 SP 充能;更早历史见 MEMORY.md
+        Text('v0.264.0') // ★ 0.264.0：协议合规修订定稿（门禁拆分两段征求+协议 v2.0+华为协议链接核实落地）;上一版 0.263.0：退出华为账号可勾选「同时清空本机数据」;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -746,15 +802,22 @@ struct Index {
       }
     })
     // ★ 0.196.9：退出华为账号确认（原注释位——上移为恢复弹窗让位）
+    // ★ 0.263.0：加「同时清空本机数据」勾选框（借给他人前场景——云端数据不受影响，重新登录可恢复）
     AppConfirmDialog({
       visible: this.confirmDialog.logoutConfirmVisible,
       title: '退出华为账号',
-      message: '退出后将停止云同步，本地学习数据不受影响。',
+      message: '退出后将停止云同步。云空间数据不受影响，重新登录可恢复。',
+      checkboxLabel: '同时清空本机全部数据（借给他人前勾选）',
+      checkedConfirmText: '退出并清空',
       confirmText: '退出',
       cancelText: '取消',
       onConfirm: () => {
         this.confirmDialog.logoutConfirmVisible = false;
-        this.doLogout();
+        this.doLogout(false);
+      },
+      onConfirmChecked: (checked: boolean) => {
+        this.confirmDialog.logoutConfirmVisible = false;
+        this.doLogout(checked);
       },
       onCancel: () => {
         this.confirmDialog.logoutConfirmVisible = false;
@@ -829,6 +892,7 @@ struct Index {
       }
     })
     // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）
+    // ★ 0.264.0：基础门禁（两份协议，不同意=挽留后退出应用）
     AgreementDialog({
       visible: this.agreementBridge.promptVisible,
       onAgree: () => {
@@ -836,6 +900,17 @@ struct Index {
       },
       onReject: () => {
         this.onAgreementReject();
+      }
+    })
+    // ★ 0.264.0：华为协议登录门禁弹窗（hw 形态；同意=markHwAgreed+续跑登录，不同意=仅取消登录）
+    AgreementDialog({
+      visible: this.agreementBridge.hwPromptVisible,
+      mode: 'hw',
+      onAgree: () => {
+        this.onHwAgreementAgree();
+      },
+      onReject: () => {
+        this.onHwAgreementReject();
       }
     })
     // ★ 0.226.0：体验改进计划引导（同意协议后首次弹一次；单独、非捆绑、默认关）
