@@ -7,5 +7,5 @@
   "quotaRedPct": 80,
   "syncIntervalMs": 600000,
   "detailRetainDays": 90,
-  "reports": { "enabled": false, "clientId": "", "clientKey": "" }
+  "reports": { "enabled": false, "clientId": "", "clientSecret": "", "appId": "" }
 }

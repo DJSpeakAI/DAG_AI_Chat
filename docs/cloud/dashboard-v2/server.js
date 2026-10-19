@@ -32,12 +32,94 @@ let CFG = {
   quotaRedPct: 80,
   syncIntervalMs: 10 * 60 * 1000, // 10 分钟增量同步（保护读配额 5 万/天）
   detailRetainDays: 90,
-  reports: { enabled: false, clientId: '', clientKey: '' } // Reports API 凭证位（一期占位）
+  reports: { enabled: false, clientId: '', clientSecret: '', appId: '' } // Connect API 凭证（开发者级凭证→API客户端创建；appId=应用 APP ID）
 };
 try {
   const c = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf-8'));
   CFG = Object.assign(CFG, c);
 } catch (_e) { /* 无 config.json 用默认 */ }
+
+// ★ Reports API（华为 AI 2026-10-19 回复实锤 + 本机实测校正）：
+//   token：POST https://connect-api.cloud.huawei.com/api/oauth2/v1/token（JSON，48h 有效）
+//   报表：GET https://connect-api.cloud.huawei.com/api/report/harmony-report/v1/harmony/{接口}/{appId}
+//         双请求头 Authorization: Bearer + client_id；窗口≤180 天，UTC YYYYMMDD；响应含 fileURL 下载 CSV
+//   ⚠️ 项目设置→常规的 Client ID/Secret 是应用级凭证——实测调 Reports 报「client id or secret error」，
+//     必须用「开发者中心→开发者管理→ID、证书和Profile→凭证→开发者级凭证→API客户端凭证」创建的一套
+const REPORT_API = 'https://connect-api.cloud.huawei.com';
+let rptToken = '', rptTokenExp = 0;
+
+function rptCfgOk() { return CFG.reports && CFG.reports.enabled && CFG.reports.clientId && CFG.reports.clientSecret && CFG.reports.appId; }
+
+async function getRptToken() {
+  if (rptToken && Date.now() < rptTokenExp) return rptToken;
+  const body = JSON.stringify({ grant_type: 'client_credentials', client_id: CFG.reports.clientId, client_secret: CFG.reports.clientSecret });
+  const r = await new Promise((resolve) => {
+    const u = new URL(REPORT_API + '/api/oauth2/v1/token');
+    const req = require('https').request({ hostname: u.hostname, path: u.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
+      let d = ''; res.on('data', c => d += c); res.on('end', () => resolve({ code: res.statusCode, body: d }));
+    });
+    req.on('error', () => resolve({ code: 0, body: '' }));
+    req.end(body);
+  });
+  try {
+    const j = JSON.parse(r.body);
+    if (j.access_token) {
+      rptToken = j.access_token;
+      rptTokenExp = Date.now() + ((Number(j.expires_in) || 172800) * 1000) - 300000;
+      return rptToken;
+    }
+    throw new Error('auth: ' + (j.ret && j.ret.msg ? j.ret.msg : r.body.slice(0, 120)));
+  } catch (e) { throw new Error('token 失败——凭证无效或网络异常：' + e.message); }
+}
+
+function httpGet(url, headers) {
+  return new Promise((resolve, reject) => {
+    const req = require('https').request(url, { method: 'GET', headers: headers || {} }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve({ code: res.statusCode, buf: Buffer.concat(chunks), location: res.headers.location || '' }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// 拉一类报表 → fileURL → 下载 CSV → 存 data/reports/ 并解析（首行表头）
+async function pullReport(kind, startDay, endDay) {
+  const token = await getRptToken();
+  const url = REPORT_API + '/api/report/harmony-report/v1/harmony/' + kind + '/' + CFG.reports.appId +
+    '?language=zh-CN&startTime=' + startDay + '&endTime=' + endDay;
+  const r = await httpGet(url, { 'Authorization': 'Bearer ' + token, 'client_id': CFG.reports.clientId });
+  if (r.code !== 200) throw new Error(kind + ' 接口 HTTP ' + r.code + '：' + r.buf.toString('utf-8').slice(0, 150));
+  let j = null;
+  try { j = JSON.parse(r.buf.toString('utf-8')); } catch (_e) { throw new Error(kind + ' 响应非 JSON'); }
+  if (!j.fileURL) throw new Error(kind + ' 无 fileURL：' + JSON.stringify(j).slice(0, 200));
+  // 下载 CSV（先裸下载，403 再带 token 重试）
+  let f = await httpGet(j.fileURL, {});
+  if (f.code !== 200) f = await httpGet(j.fileURL, { 'Authorization': 'Bearer ' + token });
+  if (f.code !== 200) throw new Error(kind + ' CSV 下载 HTTP ' + f.code);
+  let text = f.buf.toString('utf-8');
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // 去 BOM
+  const lines = text.split(/\r?\n/).filter(x => x.trim() !== '');
+  const header = lines.length ? lines[0].split(',') : [];
+  const rows = lines.slice(1).map(x => x.split(','));
+  if (!fs.existsSync(path.join(DATA_DIR, 'reports'))) fs.mkdirSync(path.join(DATA_DIR, 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(DATA_DIR, 'reports', kind + '.csv'), text);
+  return { kind, startDay, endDay, pulledAt: Date.now(), header, rows };
+}
+
+async function pullAllReports() {
+  const today = new Date(Date.now() - 864e5); // 昨天为止（当天数据未结算）
+  const end = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+  const s = new Date(today.getTime() - 29 * 864e5); // 近 30 天窗
+  const start = s.getFullYear() + String(s.getMonth() + 1).padStart(2, '0') + String(s.getDate()).padStart(2, '0');
+  const out = { ok: true, pulledAt: Date.now(), appDownload: null, userAnalysis: null, error: null };
+  try { out.appDownload = await pullReport('appDownloadAnalysisExport', start, end); } catch (e) { out.error = String(e.message || e); }
+  try { out.userAnalysis = await pullReport('userAnalysisExport', start, end); } catch (e) { if (out.error) out.error += ' | '; out.error = (out.error || '') + String(e.message || e); }
+  fs.writeFileSync(path.join(DATA_DIR, 'reports', 'last.json'), JSON.stringify(out));
+  return out;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -285,7 +367,14 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, spAggregate());
     } else if (url === '/api/meta') {
       sendJson(res, 200, { ok: true, rows: MEM.size, lastSyncT: lastSyncT, lastSyncAt: lastSyncAt, quota: quotaStatus(),
-        reports: { enabled: !!(CFG.reports && CFG.reports.enabled) } });
+        reports: { enabled: rptCfgOk() } });
+    } else if (url === '/api/reports/pull') {
+      if (!rptCfgOk()) { sendJson(res, 200, { ok: false, error: '未配置凭证（config.json reports 段：enabled/clientId/clientSecret/appId）' }); return; }
+      sendJson(res, 200, await pullAllReports());
+    } else if (url === '/api/reports') {
+      let last = null;
+      try { last = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'reports', 'last.json'), 'utf-8')); } catch (_e) {}
+      sendJson(res, 200, { ok: true, enabled: rptCfgOk(), last: last });
     } else if (url === '/api/sync') {
       await syncFromCloud();
       sendJson(res, 200, { ok: true, rows: MEM.size, lastSyncAt: lastSyncAt });
@@ -308,3 +397,6 @@ server.listen(CFG.port, () => {
 });
 syncFromCloud().then(() => { /* 首启即同步 */ });
 setInterval(syncFromCloud, CFG.syncIntervalMs);
+// Reports：启动 60s 后拉一次（若已配置），此后每日一拉（报表 T+1 结算，日拉足够）
+setTimeout(() => { if (rptCfgOk()) pullAllReports().then(r => console.log('[dash] reports pull: ' + (r.error ? r.error : 'ok'))); }, 60000);
+setInterval(() => { if (rptCfgOk()) pullAllReports().then(() => {}); }, 24 * 3600 * 1000);

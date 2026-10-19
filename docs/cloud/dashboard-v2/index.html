@@ -156,7 +156,8 @@
     <div id="quotaBox"></div>
   </div>
   <div class="card">
-    <h2>规模数据（Reports API：DAU / 新增 / 留存 / 下载安装 / 崩溃）</h2>
+    <h2>规模数据（Reports API：下载安装 / 用户分析 · CSV 报表，近 30 天窗）</h2>
+    <div class="controls"><button class="btn" onclick="pullReports()">立即拉取报表</button><span class="hint" id="rptMeta"></span></div>
     <div id="reportsBox"></div>
   </div>
 </div>
@@ -202,7 +203,7 @@ async function loadAll() {
   const sel = document.getElementById('eventSel');
   sel.innerHTML = Object.keys(cj.events).map(e => '<option value="' + e + '">' + cj.events[e] + '（' + e + '）</option>').join('');
   if (curEvent) sel.value = curEvent; else curEvent = sel.value;
-  renderTabs(); renderShot(); renderChart(); renderSp(); renderQuota(); renderReports();
+  renderTabs(); renderShot(); renderChart(); renderSp(); renderQuota(); loadReports();
 }
 
 async function syncNow() {
@@ -398,15 +399,45 @@ function renderQuota() {
     '<div class="hint">' + q.note + '</div>';
 }
 
-function renderReports() {
+async function pullReports() {
+  document.getElementById('rptMeta').textContent = '拉取中…（换token→请求报表→下载CSV，约 10~30 秒）';
+  const r = await fetch('/api/reports/pull').then(x => x.json());
+  document.getElementById('rptMeta').textContent = '';
+  renderReports(r);
+}
+
+function renderReports(forced) {
   const box = document.getElementById('reportsBox');
+  const data = forced || RPT_LAST;
   if (!META || !META.reports || !META.reports.enabled) {
-    box.innerHTML = '<div class="empty">未接入 —— Reports API 授权（client_id / access_token）拿到后在服务端 config.json reports 段填入并 enabled:true<br><br>' +
-      '接入后展示：DAU / 新增用户 / 留存 / 下载安装（IAPExport 收入在 Tab3）；平台侧数据留存 14 个月，本地 JSON 分卷即长期持久层</div>';
+    box.innerHTML = '<div class="empty">未配置凭证 —— 老机器 config.json 的 reports 段填 enabled:true + clientId + clientSecret + appId<br>' +
+      '凭证创建：开发者中心 → 开发者管理 → ID、证书和Profile → 凭证 → 开发者级凭证 → API客户端凭证 → 创建<br>' +
+      '（⚠️ 不是「项目设置→常规」的 Client ID/Secret——那套实测调不通 Reports）</div>';
     return;
   }
-  box.innerHTML = '<div class="empty">已配置凭证——数据拉取渲染随授权细节落地（当前版本占位）</div>';
+  if (!data) { box.innerHTML = '<div class="empty">已配置凭证，暂未拉取——点上方「立即拉取报表」</div>'; return; }
+  if (data.error && !data.appDownload && !data.userAnalysis) {
+    box.innerHTML = '<div class="empty">拉取失败：' + data.error + '<br><br>若含「client id or secret error」=凭证不对；若「无 fileURL」=该窗口无报表数据（应用未上架时正常）</div>';
+    return;
+  }
+  const tbl = (r, title) => {
+    if (!r) return '<div class="card"><h2>' + title + '：无数据</h2></div>';
+    let h = '<div class="card" style="margin-bottom:14px"><h2>' + title + '（' + r.rows.length + ' 行 · 拉取于 ' + new Date(r.pulledAt).toLocaleString() + '）</h2>';
+    h += '<div style="max-height:340px;overflow:auto"><table class="tb"><tr>' + r.header.map(x => '<th>' + x + '</th>').join('') + '</tr>';
+    r.rows.slice(-60).reverse().forEach(row => { h += '<tr>' + row.map(x => '<td>' + x + '</td>').join('') + '</tr>'; });
+    h += '</table></div></div>';
+    return h;
+  };
+  box.innerHTML = tbl(data.appDownload, '下载安装报表（appDownloadAnalysisExport）') + tbl(data.userAnalysis, '用户分析报表（userAnalysisExport）') +
+    (data.error ? '<div class="hint">部分失败：' + data.error + '</div>' : '');
 }
+
+async function loadReports() {
+  const r = await fetch('/api/reports').then(x => x.json());
+  RPT_LAST = r.last;
+  renderReports();
+}
+let RPT_LAST = null;
 
 window.addEventListener('resize', () => [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart].forEach(c => c && c.resize()));
 loadAll();
