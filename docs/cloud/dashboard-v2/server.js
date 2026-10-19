@@ -204,26 +204,28 @@ async function syncFromCloud() {
     return;
   }
   try {
-    let rounds = 0;
+    // ★ 2001018 教训：Cloud DB 单次 query 上限 1000 条——正序分页翻页（游标=页内最大 t，
+    //   >= 边界重拉由 e|t Map 去重吸收；60 轮=6 万条上限）
+    let round = 0;
     let added = 0;
-    while (rounds < 50) { // 增量循环：单次上限 1 万，满批续拉（>= 防同 t 漏拉，Map 去重保幂等）
+    while (round < 60) {
       const coll = db.collection('events');
-      const arr = await coll.query().greaterThanOrEqualTo('t', lastSyncT).orderByDesc('t').limit(10000).get();
-      let maxT = lastSyncT;
+      const arr = await coll.query().greaterThanOrEqualTo('t', lastSyncT).orderByAsc('t').limit(1000).get();
+      let pageMax = lastSyncT;
       const touched = new Set();
       for (const o of arr) {
         const ev = { e: String(o.getFieldValue('e') || ''), p: String(o.getFieldValue('p') || ''), t: Number(o.getFieldValue('t') || 0) };
-        if (ev.t < lastSyncT || MEM.has(ev.e + '|' + ev.t)) continue;
+        if (MEM.has(ev.e + '|' + ev.t)) continue;
         MEM.set(ev.e + '|' + ev.t, ev);
-        if (ev.t > maxT) maxT = ev.t;
+        if (ev.t > pageMax) pageMax = ev.t;
         touched.add(dayKey(ev.t));
         added++;
       }
       for (const day of touched) persistDay(day);
-      lastSyncT = Math.max(lastSyncT, maxT);
+      lastSyncT = Math.max(lastSyncT, pageMax);
       fs.writeFileSync(STATE_FILE, JSON.stringify({ lastSyncT: lastSyncT }));
-      if (arr.length < 10000) break;
-      rounds++;
+      if (arr.length < 1000) break;
+      round++;
     }
     lastSyncAt = Date.now();
     console.log('[dash] sync +' + added + ' rows, total ' + MEM.size + ', lastT=' + lastSyncT);
