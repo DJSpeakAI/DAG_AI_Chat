@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.263.0.1'; // ★ 0.263.0.1 新增 LOGIN-WIPE 用例（app 0.263.0 退出并清空本机数据配套：弹窗勾选断言/空库断言/RDB 清零断言）；上版 0.248.7.1 常亮持久化+自愈// 更早历史见 MEMORY.md 版本表
+const VERSION = '0.266.0.1'; // ★ 0.266.0.1：华为协议门禁自动同意（0.264.0 遗留）+ LOGIN-REVOKE 撤回门禁用例 + SYNC-CLOSE 云同步关闭入口用例（app 0.266.0 配套）；上版 0.263.0.1 LOGIN-WIPE// 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -1029,6 +1029,24 @@ async function pcClickText(serial, keyword, opts = {}) {
   }
   return { ok: false, err: `PC 两屏（${disps.join('/')}）app 子树内未找到含「${keyword}」控件${opts.exact ? '（精确）' : ''}——窗口可能在别的屏或文案变化，盯屏 /api/dump?dev=pc` };
 }
+// ★ 0.266.0.1：华为账号认证协议门禁自动同意（0.264.0 门禁拆分的测试台配套遗留——
+//   点「登录华为账号」后 app 先弹 hw 形态 AgreementDialog「华为账号登录/同意并登录」，
+//   不点掉它授权页永不拉起、checkpoint 必 180s 假超时；hwAgreed 持久化同意一次不再弹，
+//   本函数幂等「有则点之」，已同意设备零打扰）
+async function hwAgreeIfAny(dev, serial, log) {
+  const isPc = !canUiDump(dev);
+  if (isPc) {
+    // PC 双屏通道：两屏子树找「同意并登录」（pcClickText 自带 contains 匹配）
+    const c = await pcClickText(serial, '同意并登录', { waitMs: 2200 });
+    if (c.ok) { if (log) log('华为协议门禁·自动点「同意并登录」', 'pass', `已点击 (${c.x},${c.y})@屏${c.disp}（0.264.0 登录前单独征求；同意一次不再弹）`); return true; }
+    return false; // 未弹出=已同意过，正常
+  }
+  const d = await dumpLayout(serial);
+  if (!d.ok || !d.text.includes('同意并登录')) return false;
+  const c = await uiClickText(serial, '同意并登录', { exact: true, waitMs: 2200 });
+  if (log) log('华为协议门禁·自动点「同意并登录」', c.ok ? 'pass' : 'fail', c.ok ? `已点击 (${c.x},${c.y})（0.264.0 登录前单独征求；同意一次不再弹）` : (c.err || '点击失败'));
+  return c.ok;
+}
 // ★ 统一登录引导（三端）：coldStart → 协议模态自动同意 → 点首页「登录华为账号」（三端首页账号卡同款，
 //   Index.ets:589——手机无首页勾选框走协议模态放行路径已由 agreeDialogIfAny 覆盖）→
 //   唯一人工=华为授权页（checkpoint 自动探测；'华为账号已登录'含子串'已登录'，dumpCountText 三端通用）→
@@ -1048,6 +1066,8 @@ async function ensureLoginFlow(ctx, dev, skipCold) {
     const b = await pcClickText(serial, '登录华为账号', { exact: true, waitMs: 2500 });
     ctx.log('① 点首页「登录华为账号」（PC 多屏通道）', b.ok ? 'pass' : 'fail', b.ok ? `已点击 (${b.x},${b.y})@屏${b.disp}（0.229.25 实证通道固化）` : (b.err || ''));
     if (!b.ok) return false;
+    // ★ 0.266.0.1：华为协议门禁（0.264.0 拆分）——fresh 首登会弹，不点掉授权页不来
+    await hwAgreeIfAny(dev, serial, ctx.log);
   } else {
     const n0 = (await dumpCountText(serial, '已登录')).n;
     if (n0 >= 1) { ctx.log('已登录', 'pass', '首页「华为账号已登录」——跳过登录（fresh 场景跑 BOOT 前应未登录）'); return true; }
@@ -1060,6 +1080,8 @@ async function ensureLoginFlow(ctx, dev, skipCold) {
       const ag2 = await agreeDialogIfAny(serial, ctx.log);
       if (ag2.agreed && ag2.ok) ctx.log('② 协议模态自动同意续跑登录', 'pass', 'pendingAction=login 续跑拉华为授权（0.226.0 手机路径）');
     }
+    // ★ 0.266.0.1：华为协议门禁（0.264.0 拆分）——基础协议同意后/已同意态点登录，还会弹华为协议征求
+    await hwAgreeIfAny(dev, serial, ctx.log);
   }
   const r = await ctx.checkpoint({ label: `【人工仅授权·请看 ${dev.label}】测试台已自动点完协议与「登录华为账号」。静默授权零点击；若弹华为授权页点「同意并继续」（有「阅读并同意」勾选框先勾再点）`, deviceId: dev.id,
     detect: isPc ? (async () => (await grepPref(serial, 'huawei-account')).found) // ★ 0.241.0.5：PC 登录态探测改持久化通道——cloud_data 是"同步活"不是"登录态"（首轮实锤：登录成功但同步未开=0 行恒不通过→180s 假超时）
@@ -1439,6 +1461,8 @@ const CASES = [
       const av = await uiClickCheckbox(serial, '未登录', { waitMs: 3000 });
       if (av.ok) ctx.log('① 自动点边栏账号头像（行首图标）', 'pass', `已点击 (${av.x},${av.y})（${av.how}——0.196.3 未登录点头像拉起登录）`);
       else ctx.log('① 头像自动定位失败', 'warn', (av.err || '') + '——请人工点边栏底部账号头像');
+      // ★ 0.266.0.1：头像点击后 0.264.0 华为协议门禁先弹（fresh 首登）——不点掉授权页不来
+      await hwAgreeIfAny(dev, serial, ctx.log);
       const r = await ctx.checkpoint({ label: '【人工仅授权·请看 Pad】头像已自动点（失败才需人工点边栏底部账号头像）→ 华为授权页弹出时点「同意并继续」（有「阅读并同意」勾选框先勾再点；系统账号已授权=静默完成、无需任何点击）', deviceId: dev.id,
         detect: async () => (await dumpCountText(serial, '已登录')).n >= 1 });
       if (r.state === 'timeout') { ctx.log('人工授权', 'fail', '180s 内未完成授权'); return; }
@@ -1478,6 +1502,8 @@ const CASES = [
       const s4 = await uiClickText(serial, '登录华为账号', { waitMs: 2500, near: '需要登录', exact: true });
       ctx.log('④ 自动点引导窗「登录华为账号」', s4.ok ? 'pass' : 'fail', s4.ok ? `已点击 (${s4.x},${s4.y})（fromSyncEntry 入口即意图）` : (s4.err || ''));
       if (!s4.ok) return;
+      // ★ 0.266.0.1：引导窗点登录后 0.264.0 华为协议门禁先弹（fresh 首登）——不点掉授权页不来
+      await hwAgreeIfAny(dev, serial, ctx.log);
       // ⑤ 系统权限弹窗（首次开同步弹「发现和连接附近的设备」）：两按钮都含'允许'关键字（不允许/允许）——必须取最后命中
       await sleep(3000);
       const dp = await dumpLayout(serial);
@@ -1524,6 +1550,7 @@ const CASES = [
         }
         const av = await uiClickCheckbox(serial, '未登录', { waitMs: 3000 });
         if (av.ok) ctx.log('自动点边栏账号头像（登录）', 'pass', `已点击 (${av.x},${av.y})（${av.how}）`);
+        await hwAgreeIfAny(dev, serial, ctx.log); // ★ 0.266.0.1：fresh 首登华为协议门禁先弹——不点掉授权页不来
         await ctx.checkpoint({ label: '【人工仅授权·请看屏幕】静默授权通常零点击；若弹华为授权页点「同意并继续」', deviceId: dev.id,
           detect: async () => (await dumpCountText(serial, '已登录')).n >= 1 });
         d0 = await dumpCountText(serial, '已登录');
@@ -1586,6 +1613,7 @@ const CASES = [
         const av = await uiClickCheckbox(serial, '未登录', { waitMs: 3000 });
         if (av.ok) {
           ctx.log('自动点边栏账号头像（行首图标）', 'pass', `已点击 (${av.x},${av.y})（${av.how}）`);
+          await hwAgreeIfAny(dev, serial, ctx.log); // ★ 0.266.0.1：fresh 首登华为协议门禁先弹——不点掉授权页不来
           await ctx.checkpoint({ label: '【人工仅授权·请看 Pad】静默授权通常零点击；若弹出华为授权页点「同意并继续」', deviceId: dev.id,
             detect: async () => (await dumpCountText(serial, '已登录')).n >= 1 });
         }
@@ -1646,6 +1674,100 @@ const CASES = [
       if (pre && pre.login === true && logged === 0) { ctx.log('★覆盖安装登录态保留', 'fail', '装机前快照=已登录、装后已登录×0——登录态被覆盖安装丢失（真红线：不卸载的 -r 安装绝不该清沙箱）'); return; }
       if (logged === 0) { ctx.log('登录态保留', 'skip', '当前未登录——本用例须【覆盖安装】模式且此前已登录时跑（fresh 模式必清）'); return; }
       ctx.log('★覆盖安装登录态保留', 'pass', `已登录×${logged}${pre && pre.login ? '（装机前快照=已登录，装后保留 ✓）' : ''}（覆盖安装不清沙箱，华为登录态与协议同意均保留）`);
+    } },
+  // ★ 0.266.0.1 新增（§12.13 军令，app 0.266.0 配套）：撤回同意=全撤+立即弹首启门禁（方案 A）——
+  //   真实路径复刻：设置→关于→法律条款→撤回同意→确认弹窗「撤回并重新阅读」→ 首启门禁立即弹出
+  //   （设置弹窗同帧关闭）→ 重新同意恢复 → 登录态保留。数据侧尽力断言 agreement-v1 / cloud-sync-switch 落盘翻转。
+  //   全自动零人工（撤回不触发华为授权页）semi:false；PC 无 UI 通道走数据侧尽力（BOOT-AGREE 同款模式）
+  { id: 'LOGIN-REVOKE', suite: 'login', name: '撤回同意·全撤+首启门禁立即重弹+重新同意恢复（0.266.0 方案A：关云同步+回门禁，数据不删）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      // 撤前状态实录（恢复判据+断言基线）：登录态 / 同步开关
+      const preSwitch = await grepPref(serial, 'cloud-sync-switch');
+      const preSwitchOn = preSwitch.found && preSwitch.sample.includes('true');
+      if (!canUiDump(dev)) {
+        // PC 数据侧尽力：agreement-v1 撤回后 agreed:false（UI 链路已由 Pad/手机验证）
+        ctx.log('PC 数据侧尽力', 'info', '撤回 UI 链路（设置→关于→撤回同意）须人工/Pad 通道——此处仅核协议态数据');
+        const g = await grepPref(serial, 'agreement-v1');
+        ctx.log('agreement-v1 现态', g.found ? 'pass' : 'info', g.found ? `${g.path} → ${g.sample.slice(0, 160)}` : '盘上无 agreement-v1（未同意或未落盘）');
+        return;
+      }
+      await coldStart(serial);
+      await agreeDialogIfAny(serial, ctx.log); // 前置自愈：未同意先同意（撤回得有东西可撤）
+      // 导航：设置弹窗（手机=画布抽屉内入口，LOGIN-SYNC 同款）
+      if (dev.id === 'phone') {
+        const csOk = await ensureCanvas(serial, ctx.log);
+        const drOk = csOk ? await openPhoneDrawer(serial, ctx.log) : { ok: false };
+        if (!drOk.ok) { const dk = await dumpLayout(serial); if (!dk.text.includes('设置')) { ctx.log('⓪ 手机抽屉未开', 'fail', '抽屉未开——设置入口不可达'); return; } }
+      }
+      const s1 = await uiClickText(serial, '设置', { waitMs: 2500 });
+      ctx.log('① 点「设置」开全局设置弹窗', s1.ok ? 'pass' : 'fail', s1.ok ? `已点击 (${s1.x},${s1.y})` : (s1.err || ''));
+      if (!s1.ok) return;
+      // 关于 Tab（Tab 栏横向 Scroll——手机 7 Tab「关于」可能被裁，点不到先左滑 Tab 栏再点）
+      let tab = await uiClickText(serial, '关于', { exact: true, waitMs: 1800 });
+      if (!tab.ok) {
+        const dt = await dumpLayout(serial);
+        const tm = String((JSON.parse(dt.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        const tw = tm ? +tm[3] : 2560, th = tm ? +tm[4] : 1700;
+        await sh(serial, `uitest uiInput swipe ${Math.round(tw * 0.8)} ${Math.round(th * 0.16)} ${Math.round(tw * 0.2)} ${Math.round(th * 0.16)} 400`, 15000);
+        await sleep(900);
+        tab = await uiClickText(serial, '关于', { exact: true, waitMs: 1800 });
+      }
+      ctx.log('② 点「关于」Tab', tab.ok ? 'pass' : 'fail', tab.ok ? `已点击 (${tab.x},${tab.y})` : (tab.err || 'Tab 栏滚动后仍不可见'));
+      if (!tab.ok) return;
+      // 法律条款区在关于 Tab 底部——上滑两屏露出「撤回同意」（scrW/scrH 取 dump 根节点 bounds，CHAT-ACTIONS 同款）
+      let rv = await uiClickText(serial, '撤回同意', { exact: true, waitMs: 1500 });
+      if (!rv.ok) {
+        const dm = await dumpLayout(serial);
+        const scrM = String((JSON.parse(dm.text).attributes || {}).bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+        const scrW = scrM ? +scrM[3] : 2560, scrH = scrM ? +scrM[4] : 1700;
+        const sw2 = `uitest uiInput swipe ${Math.round(scrW / 2)} ${Math.round(scrH * 0.35)} ${Math.round(scrW / 2)} ${Math.round(scrH * 0.8)} 450`;
+        await sh(serial, sw2, 20000); await sleep(700);
+        await sh(serial, sw2, 20000); await sleep(700);
+        rv = await uiClickText(serial, '撤回同意', { exact: true, waitMs: 1500 });
+      }
+      ctx.log('③ 点「撤回同意」（滚动露出法律条款区）', rv.ok ? 'pass' : 'fail', rv.ok ? `已点击 (${rv.x},${rv.y})` : (rv.err || '未找到——盯屏 /api/dump 校准'));
+      if (!rv.ok) return;
+      // 确认弹窗（0.266.0 二次确认）→「撤回并重新阅读」
+      const cf = await uiClickText(serial, '撤回并重新阅读', { exact: true, waitMs: 1800 });
+      ctx.log('④ 确认弹窗·点「撤回并重新阅读」', cf.ok ? 'pass' : 'fail', cf.ok ? `已点击 (${cf.x},${cf.y})（高危二次确认）` : (cf.err || '确认弹窗未弹出'));
+      if (!cf.ok) return;
+      await sleep(1500);
+      // ★主断言：首启门禁立即重弹 + 设置弹窗同帧关闭
+      const d2 = await ctx.art.dump(`LOGIN-REVOKE-${dev.id}`, 'dump-gate.json', serial);
+      const gateUp = d2.text.includes('同意并继续');
+      const gsdGone = !d2.text.includes('全局设置');
+      ctx.log('★首启门禁立即重弹', gateUp ? 'pass' : 'fail', gateUp ? '「同意并继续」在屏（0.266.0 四连动作④）' : '门禁未弹出——撤回只 toast 未拉门禁（旧版行为回归）');
+      ctx.log('★设置弹窗同帧关闭', gsdGone ? 'pass' : 'fail', gsdGone ? '「全局设置」标题已消失（onClose 先于弹门禁）' : '设置弹窗仍开着——可能遮挡门禁');
+      // 数据侧尽力：agreement-v1 翻回未同意（flush 有延迟，重试 6 次）
+      let gAg = null, agOff = false;
+      for (let i = 0; i < 6 && !agOff; i++) {
+        gAg = await grepPref(serial, 'agreement-v1');
+        agOff = gAg.found && gAg.sample.includes('false');
+        if (!agOff) await sleep(2000);
+      }
+      ctx.log('agreement-v1 撤回落盘（尽力）', gAg && gAg.found ? (agOff ? 'pass' : 'warn') : 'warn',
+        gAg && gAg.found ? `${gAg.path} → ${gAg.sample.slice(0, 160)}${agOff ? '' : '（12s 内未见 false——门禁 UI 断言已兜底，此为 flush 延迟）'}` : '盘上无 agreement-v1（未同意态本来就没有——撤回即删字段）');
+      // 恢复：重新同意（勾选+同意并继续+暂不加入体验改进）
+      const re = await agreeDialogIfAny(serial, ctx.log);
+      if (!re.agreed) { ctx.log('恢复·重新同意', 'fail', '门禁重弹后自动同意未生效——后续用例协议态将异常'); return; }
+      ctx.log('⑤ 重新同意恢复', 'pass', '勾选+「同意并继续」+「暂不加入」全自动完成');
+      // 登录态保留断言（撤回不退登录——次断言：仅撤前已登录时报）
+      const d3 = await dumpLayout(serial);
+      const loggedNow = (d3.text.match(/已登录/g) || []).length;
+      ctx.log('撤回不退登录（撤前已登录时）', loggedNow >= 1 ? 'pass' : 'info', `已登录×${loggedNow}（撤回只重置协议态不动账号会话）`);
+      // 云同步联动断言+恢复：撤前开着→撤后必关（0.266.0 四连动作②）→ openSyncViaSettings 重开
+      if (preSwitchOn) {
+        let swOff = false, gSw = null;
+        for (let i = 0; i < 6 && !swOff; i++) {
+          gSw = await grepPref(serial, 'cloud-sync-switch');
+          swOff = !gSw.found || gSw.sample.includes('false');
+          if (!swOff) await sleep(2000);
+        }
+        ctx.log('★撤回联动关云同步（落盘尽力）', swOff ? 'pass' : 'warn', gSw && gSw.found ? `${gSw.path} → ${gSw.sample.slice(0, 140)}` : '开关文件未生成（关态本就可能不落盘）——UI 门禁断言为主');
+        const reopen = await openSyncViaSettings(ctx, dev);
+        ctx.log('恢复·重开云同步', reopen ? 'pass' : 'fail', reopen ? '设置页自愈链已重开（后续 sync 套件前置不受污染）' : 'openSyncViaSettings 未成功——后续 sync 用例可能受影响');
+      }
     } },
 
   // ---------- ★ 0.241.0.4 sync-boot 三端从零引导（fresh 装机后：协议→登录→开同步→三端收敛；用户拍板唯一人工=华为授权页） ----------
@@ -1767,6 +1889,81 @@ const CASES = [
       else ctx.log('cloud-sync-switch', 'warn', `候选路径未命中（${g.tried.join(' / ')}）——持久化文件登录/开同步后生成，此通道为尽力确认`);
       if (canUiDump(dev)) { const d = await ctx.art.dump(`SYNC-SWITCH-${dev.id}`, 'dump-ui.json', serial); ctx.log('UI 状态快照', d.ok ? 'pass' : 'warn', 'dumpLayout 已存证（设置页开关态人工抽查）'); }
       else uiSkip(ctx.log, dev, 'UI 状态快照');
+    } },
+  // ★ 0.266.0.1 新增（§12.13 军令，app 0.266.0 配套）：云同步页「关闭云同步」入口——
+  //   真实路径复刻：设置→云同步 Tab→（前置自愈：未开则先开）→断言「关闭云同步」按钮在→点击→
+  //   状态卡翻「云同步未开启」+「开启云同步」回归→重开恢复（收尾不留脏态）。
+  //   前置=已登录+已授权设备（sync 套件 BOOT 链后标准态；未登录如实 skip 不虚构）；全程无授权页 semi:false
+  { id: 'SYNC-CLOSE', suite: 'sync', name: '云同步关闭入口·关→状态翻转→重开恢复（0.266.0 新 UI：开启态渲染「关闭云同步」按钮）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      const isPc = !canUiDump(dev);
+      const click = (kw, o) => (isPc ? pcClickText(serial, kw, o) : uiClickText(serial, kw, o));
+      // 前置①：已登录（未登录如实 skip——本用例不动登录链路，避免与 login 套件边界纠缠）
+      if (isPc) {
+        const loginOk = (await grepPref(serial, 'huawei-account')).found;
+        if (!loginOk) { ctx.log('前置·登录态', 'skip', 'PC 未登录——先跑 sync-boot/login 套件造登录态'); return; }
+      } else {
+        await coldStart(serial);
+        const n = (await dumpCountText(serial, '已登录')).n;
+        if (n === 0) { ctx.log('前置·登录态', 'skip', '未登录——先跑 sync-boot/login 套件造登录态（本用例只测开/关翻转不碰授权）'); return; }
+        await agreeDialogIfAny(serial, ctx.log); // 前置自愈（协议撤回态跑 sync 套件时兜底）
+      }
+      // 前置②：同步须为开启态——导航到云同步 Tab 看状态卡，未开则先开
+      if (!isPc && dev.id === 'phone') {
+        const csOk = await ensureCanvas(serial, ctx.log);
+        const drOk = csOk ? await openPhoneDrawer(serial, ctx.log) : { ok: false };
+        if (!drOk.ok) { const dk = await dumpLayout(serial); if (!dk.text.includes('设置')) { ctx.log('⓪ 手机抽屉未开', 'fail', '设置入口不可达'); return; } }
+      }
+      const s1 = await click('设置', { waitMs: 2500 });
+      ctx.log('① 点「设置」', s1.ok ? 'pass' : 'fail', s1.ok ? `已点击 (${s1.x},${s1.y})${isPc ? '@PC 通道' : ''}` : (s1.err || ''));
+      if (!s1.ok) return;
+      const s2 = await click('云同步', { waitMs: 2200 });
+      ctx.log('② 点「云同步」Tab', s2.ok ? 'pass' : 'fail', s2.ok ? `已点击 (${s2.x},${s2.y})` : (s2.err || ''));
+      if (!s2.ok) return;
+      const has = async (kw) => {
+        if (isPc) { for (const disp of [15, 0]) { const d = await dumpAuditNodes(serial, disp); if (d.ok && d.nodes.some((x) => String(x.text || '').includes(kw))) return true; } return false; }
+        const d = await dumpLayout(serial);
+        return d.ok && d.text.includes(kw);
+      };
+      if (!(await has('关闭云同步'))) {
+        ctx.log('前置·同步未开（无关闭按钮）', 'info', '先开同步造出开启态——点「开启云同步」');
+        await ensureSyncPerm(serial, ctx.log); // CLI 预授权（PC 双屏系统弹窗不可靠的根治，openSyncViaSettings 同款）
+        const on1 = await click('开启云同步', { waitMs: 3000 });
+        if (!on1.ok) { ctx.log('前置·开同步', 'fail', on1.err || '「开启云同步」不可见——状态卡异常，盯屏 /api/dump'); return; }
+        await sleep(2500);
+        const nowOn = await has('关闭云同步');
+        ctx.log('前置·同步已开', nowOn ? 'pass' : 'fail', nowOn ? '「关闭云同步」按钮已渲染（0.266.0 开启态新 UI）' : '开启后仍无关闭按钮——同步开启未生效');
+        if (!nowOn) return;
+      } else {
+        ctx.log('前置·同步已开', 'pass', '「关闭云同步」按钮在屏（0.266.0 开启态新 UI）');
+      }
+      // ★主链路：点「关闭云同步」→ 状态卡翻「云同步未开启」+「开启云同步」回归
+      const c1 = await click('关闭云同步', { exact: true, waitMs: 2600 });
+      ctx.log('③ 点「关闭云同步」', c1.ok ? 'pass' : 'fail', c1.ok ? `已点击 (${c1.x},${c1.y})——setCloudSyncEnabled(false) 登录态保持` : (c1.err || ''));
+      if (!c1.ok) return;
+      await sleep(1800);
+      const closed = await has('开启云同步');
+      const stillClose = await has('关闭云同步');
+      ctx.log('★关闭后状态翻转', closed && !stillClose ? 'pass' : 'fail',
+        closed && !stillClose ? '「开启云同步」回归=未开启态 ✓（状态卡+按钮双证）' : `开启钮=${closed} 关闭钮仍在=${stillClose}——盯屏 /api/dump`);
+      // 开关落盘（尽力，flush 延迟重试 6 次——0.259.x 同款竞态防御）
+      let swOff = false, gSw = null;
+      for (let i = 0; i < 6 && !swOff; i++) {
+        gSw = await grepPref(serial, 'cloud-sync-switch');
+        swOff = !gSw.found || gSw.sample.includes('false');
+        if (!swOff) await sleep(2000);
+      }
+      ctx.log('cloud-sync-switch 关态落盘（尽力）', swOff ? 'pass' : 'warn',
+        gSw && gSw.found ? `${gSw.path} → ${gSw.sample.slice(0, 140)}` : '开关文件未生成（关态不落盘）——UI 双证已兜底');
+      // 恢复：重开同步（收尾不留脏态——后续 cross 用例依赖同步活）
+      await ensureSyncPerm(serial, ctx.log);
+      const c2 = await click('开启云同步', { exact: true, waitMs: 2600 });
+      ctx.log('④ 恢复·重开云同步', c2.ok ? 'pass' : 'fail', c2.ok ? `已点击 (${c2.x},${c2.y})——恢复开启态` : (c2.err || ''));
+      if (!c2.ok) return;
+      await sleep(2500);
+      const backOn = await has('关闭云同步');
+      ctx.log('★重开成功（关闭按钮回归）', backOn ? 'pass' : 'fail', backOn ? '开启态恢复——同步链路完好' : '重开后无「关闭云同步」——开启未生效');
     } },
   { id: 'SYNC-DOMAIN', suite: 'sync', name: '全域多端一致·行数+键集签名（词库/卡片/气泡/墓碑/账户资产）', semi: false, scope: 'cross',
     run: async (ctx) => {

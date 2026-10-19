@@ -31,12 +31,13 @@
 // ============================================================
 
 import { common, abilityAccessCtrl } from '@kit.AbilityKit'; // ★ 0.165.2：requestSyncPermission 需要 UIAbilityContext；★ 0.259.2：abilityAccessCtrl（被拒后 requestPermissionOnSetting 直达权限面板）
+import { notificationManager } from '@kit.NotificationKit'; // ★ 0.267.1：后台回复通知卡（isNotificationEnabled 查状态）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填设备型号/系统版本（@kit.BasicKit 在本 SDK 无配置文件，改直接模块导入）
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
- import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）
-import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）
+  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）
+import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref, ProfileStore, connectProfileObservations, clearAllObservations, activeObservationCount } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关+清空画像入口（WP5）
@@ -191,7 +192,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.265.0'; // ★ 0.265.0：记忆引擎一期（画像观察行+分支摘要头+token埋点+深度记忆开关）;上一版 0.264.0：协议合规修订定稿
+const APP_VERSION: string = 'v0.268.0'; // ★ 0.268.0：司忆区AI智慧排序（发送时预触发语义重排+✨语境优先微标）;上一版 0.269.0：钩子模式两段式长回复
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -263,6 +264,8 @@ export struct GlobalSettingsDialog {
   @Local bkBusy: boolean = false;       // picker/写入进行中（防重复点击）
   // ★ 0.206.0：体验改进计划开关（埋点隐私闸门，默认关——开弹窗见关于 Tab）
   @Local trkEnabled: boolean = false;
+  // ★ 0.266.0：撤回同意确认弹窗（关于 Tab 法律条款区触发——高危动作二次确认）
+  @Local revokeConfirmVisible: boolean = false;
 
   // ★ 0.262.0：三态主题（深浅色跟随系统）——外观卡数据源 + 「新」角标状态
   theme: AppTheme = connectAppTheme();
@@ -327,15 +330,21 @@ export struct GlobalSettingsDialog {
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
   // ★ 0.234.0：注意力锚点编辑副本（锚点卡片开关/密度档/分章折叠开关——保存模式同称呼/鼓励）
-  @Local editAnchorMode: string = 'on';       // off / on（默认开=钩子模式）
+  // ★ 0.269.0：anchorMode 三态（off 关 / smart 智能锚点·默认 / companion 伴读模式）+ 伴读确认会话 flag
+  @Local editAnchorMode: string = 'smart';     // off / smart / companion
   @Local editAnchorDensity: string = 'standard'; // dense 密 / standard 中（默认）/ sparse 疏
   @Local editFoldMode: string = 'on';         // off / on（默认开=折叠模式）
+  @Local companionConfirmed: boolean = false; // ★ 0.269.0：伴读二次确认会话 flag（确认一次本会话不再弹——Q5「一次点完永久生效」精神，切走再切回重弹=知情提示无害）
+  @Local companionConfirmVisible: boolean = false; // ★ 0.269.0：伴读确认弹窗开态（AppConfirmDialog 暗紫双键——系统灰弹窗 0.196.9 起弃用）
   // ★ 0.265.0 记忆引擎一期 WP5：深度记忆总开关编辑副本（默认开；关闭=不注入画像卡/摘要头、
   //   不触发画像更新与失活摘要——记忆系统出 bug 时的用户自救开关，数据保留）+ 清空画像确认弹窗态
   @Local editMemoryMode: string = 'on';       // off / on（默认开）
   @Local clearProfileVisible: boolean = false; // 清空画像二次确认（AppConfirmDialog）
   memoryPref: MemoryPrefStore = connectMemoryPref();
   profileStore: ProfileStore = connectProfileObservations();
+  // ★ 0.267.1：后台回复通知开关状态（true=已开启；默认 true 防未授权用户误显「未开启」闪烁——
+  //   查询异步回填；开弹窗/切到 AI 偏好 Tab 时刷新，从系统设置回来状态即时正确）
+  @Local notifEnabled: boolean = true;
   // ★ 0.196.10：云同步状态改响应式——permGranted（系统权限，开弹窗时异步查一次）&&
   //   cloudSwitch.enabled（应用级开关 @Trace，登录弹窗开启/退出强制关时**实时刷新**状态卡，
   //   不用重开设置弹窗；原 @Local syncGranted 开弹窗快照一次，开启后状态卡滞留「未开启」）
@@ -415,6 +424,8 @@ export struct GlobalSettingsDialog {
     this.testOk = false;
     // 0.206.0：体验改进计划开关回显（默认关）
     this.trkEnabled = isTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext);
+    // ★ 0.267.1：通知开关初始快照（AI 偏好 Tab 后台回复通知卡）
+    this.refreshNotifEnabled();
     // provider 合法性兜底（防异常值；不合法按端点重新推断）
     let providerValid = this.editProvider === PROVIDER_CUSTOM;
     for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
@@ -464,7 +475,8 @@ export struct GlobalSettingsDialog {
     this.editMemoryMode = this.memoryPref.memoryMode; // ★ 0.265.0：深度记忆开关编辑副本
     // ★ 0.234.0：注意力锚点编辑副本回显；★ 0.237.0 两档制归一——遗留 'standard'（旧中档）归疏，
     //   不改写已落盘数据（保存时随选择落新值）
-    this.editAnchorMode = this.anchorPref.anchorMode;
+    // ★ 0.269.0：anchorMode 三态归一回显——遗留 'on' 归 'smart'（0.237.0 脏检查坑同源：不改写盘值）
+    this.editAnchorMode = normalizeAnchorMode(this.anchorPref.anchorMode);
     this.editAnchorDensity = this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse';
     this.editFoldMode = this.anchorPref.foldMode;
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
@@ -804,6 +816,13 @@ export struct GlobalSettingsDialog {
 
   // ★ 0.150：保存——两 Tab 全部修改一次写入持久化 + toast 提示，不关弹窗（用户自己 ✕）
   saveAll(): void {
+    // ★ 0.269.0（Q5 裁决）：首次切「伴读模式」二次确认——知情扣费（SP 军令文化）+ 预估量级给足预期；
+    //   确认一次本会话不再弹；「暂不」=锚点档回跳当前实际值、其余修改照常保存
+    if (this.editAnchorMode === 'companion' &&
+      normalizeAnchorMode(this.anchorPref.anchorMode) !== 'companion' && !this.companionConfirmed) {
+      this.companionConfirmVisible = true;
+      return;
+    }
     // ★ 0.190.0：Tab1 提供商化写入（预设端点强制回内置值，防旧数据残留）
     this.apiConfig.provider = this.editProvider;
     this.apiConfig.apiKey = this.editKey.trim();
@@ -906,6 +925,31 @@ export struct GlobalSettingsDialog {
         });
       }
     })();
+  }
+
+  // ★ 0.267.1：刷新通知开关状态（无参=查本应用；失败静默保持现状）
+  refreshNotifEnabled(): void {
+    notificationManager.isNotificationEnabled().then((on: boolean) => {
+      this.notifEnabled = on;
+    }).catch(() => {
+      // 查询失败静默（默认 true 展示「已开启」，宁可漏显按钮不误报）
+    });
+  }
+
+  // ★ 0.267.1：一键直达本应用通知设置页（0.251.0 通知授权被拒后的唯一出路——系统红线：
+  //   应用无法静默开启通知、申请窗仅弹一次；官方 settings 范式 uri=systemui_notification_settings
+  //   + pushParams 包名直达本应用开关页，跳转失败降级 toast 手动路径兜底——对齐 0.251.2 模式）
+  openNotificationSettings(): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const want: Want = {
+      bundleName: 'com.huawei.hmos.settings',
+      abilityName: 'com.huawei.hmos.settings.MainAbility',
+      uri: 'systemui_notification_settings',
+      parameters: { pushParams: 'com.dagaichat.app' }
+    };
+    context.startAbility(want).catch(() => {
+      this.showToastSafe('跳转失败，请到系统设置 > 通知和状态栏 > DAG AI Chat 中手动开启');
+    });
   }
 
   // ★ 0.190.0：当前提供商在 PROVIDER_PRESETS 中的下标（-1 = 自定义配置）
@@ -1645,13 +1689,14 @@ export struct GlobalSettingsDialog {
       //   icon=项目喇叭 svg 三件套同款（消息喇叭/单词发音同源）；试听中变「停止」）
       Button() {
         Row({ space: 6 }) {
-          Image(this.ttsPreviewing ? $r('app.media.speaker_playing') : $r('app.media.speaker'))
+          // ★ 0.267.0：图标/文字双色——常态=恒白版 speaker_brand（紫底）；试听中=speaker_playing（跟随主题墨色，surfaceHover 底）
+          Image(this.ttsPreviewing ? $r('app.media.speaker_playing') : $r('app.media.speaker_brand'))
             .width(14)
             .height(14)
             .objectFit(ImageFit.Contain)
           Text(this.ttsPreviewing ? '停止试听' : '试听')
             .fontSize(14)
-            .fontColor(Color.White)
+            .fontColor(this.ttsPreviewing ? this.theme.textPrimary : Color.White)
         }
       }
       .type(ButtonType.Normal)
@@ -2023,27 +2068,63 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .margin({ bottom: 24 })
 
-      // ★ 0.234.0 ②：注意力锚点（钩子模式）——开关 + 密度档 + 提示小字（任务书 §6.3）
+      // ★ 0.234.0 ②：注意力锚点（钩子模式）——三态分段 + 密度档 + 提示小字（任务书 §6.3）
+      // ★ 0.269.0：单开关扩三态（Q5 裁决：关 / 智能锚点·默认 / 伴读模式·两段式，首切伴读二次确认）
       Column() {
-        Row({ space: 10 }) {
-          Column({ space: 2 }) {
-            Text('锚点卡片')
-              .fontSize(14)
-              .fontColor(this.theme.textPrimary)
-            Text('中/长回复中插入考考你、前方高能、换个说法等锚点卡片')
-              .fontSize(11)
-              .lineHeight(18)
-              .fontColor(this.theme.textTertiary)
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.editAnchorMode === 'on' })
-            .selectedColor(this.theme.brandPrimary)
-            .onChange((on: boolean) => {
-              this.editAnchorMode = on ? 'on' : 'off';
+        Column({ space: 2 }) {
+          Text('锚点与伴读')
+            .fontSize(14)
+            .fontColor(this.theme.textPrimary)
+          Text('中/长回复中插入注意力钩子；伴读模式为长回复额外编排阅读节奏')
+            .fontSize(11)
+            .lineHeight(18)
+            .fontColor(this.theme.textTertiary)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+
+        // 三态分段控件（关 / 智能锚点 / 伴读模式——this.theme.segmentedTrack 轨道+激活段主紫，
+        //   与密度档同款样式）
+        Row() {
+          Text('关')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editAnchorMode === 'off' ? this.theme.textPrimary : this.theme.textSecondary)
+            .backgroundColor(this.editAnchorMode === 'off' ? this.theme.brandPrimary : Color.Transparent)
+            .onClick(() => {
+              this.editAnchorMode = 'off';
+            })
+          Text('智能锚点')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editAnchorMode === 'smart' ? this.theme.textPrimary : this.theme.textSecondary)
+            .backgroundColor(this.editAnchorMode === 'smart' ? this.theme.brandPrimary : Color.Transparent)
+            .onClick(() => {
+              this.editAnchorMode = 'smart';
+            })
+          Text('伴读模式')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editAnchorMode === 'companion' ? this.theme.textPrimary : this.theme.textSecondary)
+            .backgroundColor(this.editAnchorMode === 'companion' ? this.theme.brandPrimary : Color.Transparent)
+            .onClick(() => {
+              this.editAnchorMode = 'companion';
             })
         }
         .width('100%')
+        .padding(4)
+        .margin({ top: 10 })
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.theme.segmentedTrack)
 
         // 密度分段控件（★ 0.237.0 两档制——用户拍板去掉「中」：密 400 / 疏 800 字，默认疏；
         //   疏档 AI 全文 2~3 个锚点、密档 3~5 个；this.theme.segmentedTrack 轨道+激活段主紫）
@@ -2077,7 +2158,7 @@ export struct GlobalSettingsDialog {
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(this.theme.segmentedTrack)
 
-        Text('💡 开启后，中/长回复中会插入考考你、前方高能、换个说法等锚点卡片，读长文时轻轻拉回注意力；密档锚点更频繁、疏档更克制。关闭后 AI 按原文回复。短回复与听播模式不插入。')
+        Text('💡 智能锚点：中/长回复中插入考考你、前方高能、换个说法等钩子，读长文时轻轻拉回注意力。伴读模式：长回复生成后由 AI 二次编排阅读节奏（喘息/进度/简单说/文末延伸），额外消耗少量 SP，文末「延伸」可点击拉分支深挖。密档钩子更频繁、疏档更克制。关闭后 AI 按原文回复。短回复与听播模式不插入。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)
@@ -2217,6 +2298,45 @@ export struct GlobalSettingsDialog {
           .onClick(() => {
             this.clearProfileVisible = true;
           })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
+      // ★ 0.267.1：后台回复通知卡（用户需求「把 TA 自动打开」——系统红线应用无法静默开启，
+      //   申请窗仅弹一次（0.251.0 首次 AI 请求场景化申请）；被拒后唯一出路=系统设置页，
+      //   本卡实时显状态+未开启时一键直达本应用通知开关页）
+      Column() {
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('后台回复通知')
+              .fontSize(14)
+              .fontColor(this.theme.textPrimary)
+            Text('AI 切后台生成时的进度实况窗与完成提醒（不影响回复内容本身）')
+              .fontSize(11)
+              .lineHeight(18)
+              .fontColor(this.theme.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Text(this.notifEnabled ? '已开启' : '未开启')
+            .fontSize(11)
+            .fontColor(this.notifEnabled ? this.theme.success : this.theme.danger)
+        }
+        .width('100%')
+
+        if (!this.notifEnabled) {
+          Button('一键去开启（跳系统通知设置）')
+            .fontSize(13)
+            .fontColor(this.theme.textSecondary)
+            .backgroundColor(this.theme.surfaceSoft)
+            .borderRadius(RADIUS_CONTROL)
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .margin({ top: 10 })
+            .onClick(() => {
+              this.openNotificationSettings();
+            })
+        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -2464,7 +2584,21 @@ export struct GlobalSettingsDialog {
       // ★ 0.196.12：未登录/VIP 两分支按钮样式完全相同——合并为一个 Button，onClick 内分流
       //   （原两分支重复 12 行样式代码；非 VIP 分支样式不同保持独立）
       if (this.syncOn) {
-        // 云同步已开启：不渲染开启按钮（重复授权弹窗无意义；状态卡绿色已自明）
+        // ★ 0.266.0：关闭云同步入口（用户需求——此前页面只有「开」没有「关」，想停同步只能退出账号）
+        //   直接关+toast（用户拍板：可逆操作、登录态保持、云端数据不删，随时可重开）
+        Button('关闭云同步')
+          .width('100%')
+          .height(48)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(this.theme.surfaceHover)
+          .fontColor(this.theme.textSecondary)
+          .borderRadius(RADIUS_CONTROL)
+          .margin({ bottom: 16 })
+          .onClick(() => {
+            setCloudSyncEnabled(false); // 0.196.8 现成函数：enabled=false + deactivate（登录态保持，与退出账号无关）
+            this.showToastSafe('云同步已关闭，数据仅保存在本设备，可随时重新开启');
+          })
       } else if (!this.account.isLoggedIn || isVip(this.subscription)) {
         Button('开启云同步')
           .width('100%')
@@ -2626,10 +2760,27 @@ export struct GlobalSettingsDialog {
     }
   }
 
-  // ★ 0.226.0：撤回同意——回到未同意态（重新 gate 登录/云同步），本地功能不受影响
+  // ★ 0.226.0：撤回同意；★ 0.266.0 方案 A 重构（用户拍板）——撤回=全部三项协议+立即回到首启状态：
+  //   ①重置全部同意态（revokeAgreement 内含用户协议/隐私政策/华为认证协议三态）
+  //   ②云同步若开着→立即关（个保法第 15 条：撤回同意后不得继续处理个人信息——原版「撤回了还在同步」矛盾根治）
+  //   ③体验改进若开着→一并关（级联撤回子同意，setTrackingEnabled 内部清未上报队列）
+  //   ④关设置弹窗→立即弹首启门禁（不同意=二次挽留→仍不同意=退出应用，0.264.0 链路天然继承）
+  //   本机与云端数据均不删除（重新同意+重开云同步后恢复如初）
   revokeAgreementNow(): void {
+    this.revokeConfirmVisible = false;
     revokeAgreement();
-    this.showToastSafe('已撤回同意，登录/云同步将重新要求同意');
+    if (this.syncOn) {
+      setCloudSyncEnabled(false);
+    }
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    if (isTrackingEnabled(ctx)) {
+      setTrackingEnabled(ctx, false);
+      this.trkEnabled = false;
+    }
+    this.onClose(); // 关设置弹窗（门禁弹窗挂 Index 根 Stack 顶层，层级天然在上）
+    const bridge = connectAgreementBridge();
+    bridge.pendingAction = '';
+    bridge.promptVisible = true;
   }
 
   // ============================================================
@@ -2650,6 +2801,10 @@ export struct GlobalSettingsDialog {
       isCloudSyncGranted().then((granted: boolean) => {
         this.permGranted = granted;
       });
+    }
+    if (n === 1) {
+      // ★ 0.267.1：切到 AI 偏好 Tab 重查通知开关——用户从系统通知设置页回来状态即时刷新
+      this.refreshNotifEnabled();
     }
     this.centerActiveTab(); // ★ 0.251.2：选中 Tab 滚到轨道中部（用户三遍反馈「导航贴边」根治）
   }
@@ -3400,12 +3555,14 @@ export struct GlobalSettingsDialog {
           this.openHuaweiAgreement();
         })
 
-        Text('💡 协议内容与首次启动的同意弹窗一致；数据默认存储在设备本地，登录后才可能云同步。')
+        // ★ 0.266.0：文案改写（用户反馈原「协议内容与首次启动的同意弹窗一致」含糊——撤回语义逐项说清）
+        Text('💡 撤回同意将同时撤回《用户协议》《隐私政策》《华为账号用户认证协议》的同意，并立即关闭云同步；重新同意后方可继续使用本应用。本机与云端数据均不会删除。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)
           .width('100%')
 
+        // ★ 0.266.0：高危动作二次确认（0.264.0「不同意=退出」同款防误触哲学）
         Button('撤回同意')
           .width('100%')
           .height(36)
@@ -3414,7 +3571,7 @@ export struct GlobalSettingsDialog {
           .fontColor(this.theme.textSecondary)
           .borderRadius(RADIUS_CONTROL)
           .onClick(() => {
-            this.revokeAgreementNow();
+            this.revokeConfirmVisible = true;
           })
       }
       .width('100%')
@@ -3733,6 +3890,40 @@ export struct GlobalSettingsDialog {
         },
         onCancel: () => {
           this.clearProfileVisible = false;
+        }
+      })
+
+      // ★ 0.266.0：撤回同意二次确认（方案 A——确认后四连动作见 revokeAgreementNow）
+      AppConfirmDialog({
+        visible: this.revokeConfirmVisible,
+        title: '撤回同意',
+        message: '将同时撤回《用户协议》《隐私政策》《华为账号用户认证协议》的同意，云同步将立即关闭，需重新阅读并同意后才能继续使用本应用（不同意将退出应用）。本机与云端数据均不会删除。',
+        confirmText: '撤回并重新阅读',
+        cancelText: '暂不撤回',
+        onConfirm: () => {
+          this.revokeAgreementNow();
+        },
+        onCancel: () => {
+          this.revokeConfirmVisible = false;
+        }
+      })
+
+      // ★ 0.269.0：首次切「伴读模式」二次确认（Q5 裁决——知情扣费+预估量级；确认续走保存、暂不回跳档位照存其余）
+      AppConfirmDialog({
+        visible: this.companionConfirmVisible,
+        title: '开启伴读模式？',
+        message: '开启后，长回复会额外消耗少量司忆点 SP，为你编排阅读节奏（第二次 AI 处理，插入喘息、进度、简单说、文末延伸等钩子）。\n量级参考：一篇 2000 字长回复的伴读编排约多消耗 600 SP；Lv8 司忆令账号免费。编排失败或取消只扣内容生成部分。',
+        confirmText: '开启',
+        cancelText: '暂不',
+        onConfirm: () => {
+          this.companionConfirmVisible = false;
+          this.companionConfirmed = true;
+          this.saveAll();
+        },
+        onCancel: () => {
+          this.companionConfirmVisible = false;
+          this.editAnchorMode = normalizeAnchorMode(this.anchorPref.anchorMode); // 分段控件回跳当前实际值
+          this.saveAll();
         }
       })
     }

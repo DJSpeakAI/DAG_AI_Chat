@@ -85,6 +85,7 @@ export class AppTheme {
   @Trace overlayLight: string = 'rgba(0,0,0,0.25)';
   @Trace shadowColor: string = 'rgba(0,0,0,0.40)'; // ★ 0.262.0 新增：卡片/菜单阴影基色（暗=黑系，浅=深紫黑 8%）
   @Trace shadowColorSoft: string = 'rgba(0,0,0,0.25)'; // 轻阴影档（浮层小阴影——浅色同挂浅基色）
+  @Trace hookBg: string = 'rgba(124,77,255,0.08)'; // ★ 0.269.0 新增：钩子竖线块背景（品牌紫 8% 透明叠加——深浅色各自基色，禁硬编码）
 
   // 切换主题：重算生效态 + 整表赋值 + 落盘（persist=false 用于新用户「暂 dark 待弹窗」不落盘）
   applyMode(m: ThemeMode, sysDark: boolean, persist: boolean = true): void {
@@ -157,6 +158,7 @@ export class AppTheme {
     this.overlayLight = 'rgba(0,0,0,0.25)';
     this.shadowColor = 'rgba(0,0,0,0.40)';
     this.shadowColorSoft = 'rgba(0,0,0,0.25)';
+    this.hookBg = 'rgba(124,77,255,0.08)'; // ★ 0.269.0：钩子竖线块背景（深色档紫基 8%）
   }
 
   // 浅色=新设计一套（0.262.0 终值表：紫味浅灰底/白卡；主紫加深达标；透明度基色统一 29,18,48）
@@ -194,6 +196,7 @@ export class AppTheme {
     this.overlayLight = 'rgba(0,0,0,0.18)';
     this.shadowColor = 'rgba(29,18,48,0.08)';
     this.shadowColorSoft = 'rgba(29,18,48,0.08)';
+    this.hookBg = 'rgba(108,62,232,0.08)'; // ★ 0.269.0：钩子竖线块背景（浅色档浅紫基 8%）
   }
 }
 

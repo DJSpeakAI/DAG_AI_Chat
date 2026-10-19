@@ -567,7 +567,7 @@ export struct KnowledgeBankPage {
         }
       })
       Column() {
-        Image($r('app.media.trash'))
+        Image($r('app.media.trash_brand'))
           .width(20)
           .height(20)
       }

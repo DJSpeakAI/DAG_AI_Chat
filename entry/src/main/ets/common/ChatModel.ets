@@ -668,14 +668,27 @@ export function connectAiPreference(): AiPreference {
 
 // ★ 0.234.0：注意力锚点偏好（锚点卡片/密度/分章折叠三字段）——独立全新 key 'anchor-pref-v1'
 // （0.143 铁律：绝不往 ai-preference-v2 旧快照类加字段；独立 key 让称呼/鼓励零迁移零风险）
-// anchorMode：锚点卡片开关（off/on，默认开=钩子模式）；anchorDensity：密度档
-// （★ 0.237.0 两档制，用户拍板去掉「中」：dense 密 400 / sparse 疏 800 字，默认疏；
+// anchorDensity：密度档（★ 0.237.0 两档制，用户拍板去掉「中」：dense 密 400 / sparse 疏 800 字，默认疏；
 //   遗留 'standard' 值由 breathThreshold/设置分段兜底为疏，不改写已落盘数据）；foldMode：长文分章折叠开关（off/on，默认开）
+// ★ 0.269.0 anchorMode 三态值域：off=关 / smart=智能锚点（单段式，默认） / companion=伴读模式（两段式）；
+//   遗留 'on' 值不改写（★ 0.237.0 脏检查坑——AnchorPref 自身也是该 key 的 connect 工厂，改写旧值
+//   会触发持久化脏写），一律由消费侧归一函数归到 'smart'（写入时机=GSD 保存，语义完全等价）
 @ObservedV2
 export class AnchorPref {
-  @Trace anchorMode: string = 'on';
+  @Trace anchorMode: string = 'smart';
   @Trace anchorDensity: string = 'sparse';
   @Trace foldMode: string = 'on';
+}
+
+// ★ 0.269.0：anchorMode 归一（遗留 'on'→'smart'；一切比较侧统一走此函数，0.237.0 脏检查坑同源纪律）
+export function normalizeAnchorMode(mode: string): string {
+  if (mode === 'companion') {
+    return 'companion';
+  }
+  if (mode === 'off') {
+    return 'off';
+  }
+  return 'smart'; // 'on'（存量）/'smart'/一切非法档位一律归智能锚点
 }
 
 // ★ 0.234.0：连接注意力锚点偏好持久化实例

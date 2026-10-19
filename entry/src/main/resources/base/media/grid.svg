@@ -1,7 +1,7 @@
 <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="18.000000" height="18.000000" fill="none" customFrame="#000000">
 	<rect id="grid" width="18.000000" height="18.000000" x="0.000000" y="0.000000" />
-	<rect id="格1" x="2.5" y="2.5" width="5.5" height="5.5" rx="1.2" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-width="1.500000" />
-	<rect id="格2" x="10" y="2.5" width="5.5" height="5.5" rx="1.2" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-width="1.500000" />
-	<rect id="格3" x="2.5" y="10" width="5.5" height="5.5" rx="1.2" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-width="1.500000" />
-	<rect id="格4" x="10" y="10" width="5.5" height="5.5" rx="1.2" stroke="rgb(255,255,255)" stroke-opacity="0.650980413" stroke-width="1.500000" />
+	<rect id="格1" x="2.5" y="2.5" width="5.5" height="5.5" rx="1.2" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-width="1.500000" />
+	<rect id="格2" x="10" y="2.5" width="5.5" height="5.5" rx="1.2" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-width="1.500000" />
+	<rect id="格3" x="2.5" y="10" width="5.5" height="5.5" rx="1.2" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-width="1.500000" />
+	<rect id="格4" x="10" y="10" width="5.5" height="5.5" rx="1.2" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-width="1.500000" />
 </svg>

@@ -1,0 +1,7 @@
+<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="18.000000" height="18.000000" fill="none" customFrame="#000000">
+	<circle id="bubble-top" cx="9" cy="4.5" r="2.75" stroke="rgb(255,255,255)" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<circle id="bubble-left" cx="4.5" cy="13.5" r="2.75" stroke="rgb(255,255,255)" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<circle id="bubble-right" cx="13.5" cy="13.5" r="2.75" stroke="rgb(255,255,255)" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="link-left" d="M7.5 6.75 L5.5 11.25" stroke="rgb(255,255,255)" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="link-right" d="M10.5 6.75 L12.5 11.25" stroke="rgb(255,255,255)" stroke-opacity="1" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+</svg>

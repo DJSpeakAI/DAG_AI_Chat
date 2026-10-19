@@ -712,14 +712,14 @@ struct Index {
         if (this.loginTip !== '') {
           Text(this.loginTip)
             .fontSize(12)
-            .fontColor('#E53935')
+            .fontColor(this.theme.danger) // ★ 0.267.0：硬编码红改主题 token（浅色档 #D93025）
             .margin({ top: 8 })
             .maxLines(8) // ★ 0.164.4：调试期 2→8 行，容纳错误码+服务端 message 完整显示
             .textAlign(TextAlign.Center)
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.265.0') // ★ 0.265.0：记忆引擎一期（画像观察行+分支摘要头+token埋点+深度记忆开关）;上一版 0.264.0：协议合规修订定稿;更早历史见 MEMORY.md
+        Text('v0.268.0') // ★ 0.268.0：司忆区AI智慧排序（发送时预触发语义重排+✨语境优先微标）；上一版 0.269.0：钩子模式两段式长回复;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

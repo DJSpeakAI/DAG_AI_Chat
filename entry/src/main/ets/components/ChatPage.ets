@@ -32,8 +32,8 @@ import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（Doc
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
 
- import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）
- import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）
+  import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT, HOOK_SYSTEM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）；★ 0.269.0：HOOK_SYSTEM_PROMPT（两段式②段伴读编排 prompt——任务书 §七终版）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -48,7 +48,7 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
-  import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）；★ 0.237.1：blockRenderedText（划词取词基准=渲染态文本）
+  import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, HookSpec, parseHookJsonResponse, scanBlockSpans, mergeHooksIntoContent } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）；★ 0.237.1：blockRenderedText（划词取词基准=渲染态文本）；★ 0.269.0：两段式钩子合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
@@ -66,6 +66,7 @@ import { ProfileStore, connectProfileObservations, buildCardView, updateProfileF
   noteInactiveNode, buildSiblingHeadsContext, bindMemoryEngine, memoryTokenEstimate,
   MemoryInjectStatsStore, connectMemoryInjectStats, recordMemoryInjectStats,
   connectMemoryPref, isMemoryOn } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎一期（画像观察行+分支摘要头+注入埋点）
+import { triggerAiRerank, getRerankWordIds, getRerankCardIds, rerankDisplayBatch } from '../utils/AiRerank'; // ★ 0.268.0：司忆区 AI 智慧排序（发送时预触发+渲染时消费 AI 序，失败静默兜底本地序）
 
 // ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
 const glowHighlight: boolean = true;
@@ -575,6 +576,14 @@ export struct ChatPage {
   anchorPref: AnchorPref = connectAnchorPref(); // ★ 0.234.0：注意力锚点偏好（锚点卡片/密度/分章折叠，独立 key 'anchor-pref-v1'）
   // ★ 0.234.0：流式中的消息 ID（该消息走平铺直显不折叠；onDone 瞬间清空触发收拢）
   @Local streamingMsgId: string = '';
+  // ============================================================
+  // ★ 0.269.0 钩子模式两段式长回复：②段伴读编排状态（消息级状态机 arranging→merged；
+  //   同一时间只允许一个进行中②段——Q4 非阻塞裁决：发新消息/重生成/切分支自动取消旧②段）
+  // ============================================================
+  @Local hookArrangingMsgId: string = '';        // ②段进行中的消息 ID（空=无）
+  @Local hookEstSp: number = 0;                  // 状态行预估 SP（按①段全文字数估算，扣点前给足预期）
+  hookSpByMsg: Map<string, number> = new Map(); // ②段实扣 SP 暂存（明细弹层「伴读编排 Y SP」拆分行；会话级——Schema 红线不进 ChatMessage）
+  hookController: StreamController | null = null; // ②段流控制器（取消/regenerate 防乱序）
   // ★ 0.234.0：折叠展开状态视图（msgId → 展开节 index 集；整体替换触发 V2 刷新——0.222.2 铁律；
   //   持久真身在模块级 chatFoldMemory，切页面回来保留）
   @Local foldStateView: Map<string, Set<number>> = new Map();
@@ -656,6 +665,7 @@ export struct ChatPage {
   @Local tokenInfoMsgId: string = '';
   @Local tokenInfoText: string = '';
   @Local tokenInfoCacheLine: string = ''; // ★ 0.247.4：缓存命中行（空串=不渲染——无缓存数据/旧消息；★ 0.248.7 恒显示后仅输入 token 缺失时为空）
+  @Local tokenInfoHookLine: string = ''; // ★ 0.269.0：伴读编排拆分行（空串=不渲染——非伴读消息/免扣/②段未成功；Q9 明细弹层拆分）
   @Local tokenInfoCacheHit: boolean = false; // ★ 0.248.7：缓存行命中态（true=品牌紫省钱行 / false=普通色未命中行）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.161：学习数量（单词库 ⚙ 设置，默认 2；驱动气泡复习区+提炼弹窗复习区词条数）
@@ -669,6 +679,10 @@ export struct ChatPage {
   @Local rerollSeq: number = 0;
   private rerollWordOffsets: Map<string, number> = new Map();   // 生词轮换偏移（msgId → 跳过词数）
   private rerollCardOffsets: Map<string, number> = new Map();  // 知识卡轮换偏移（msgId → 跳过卡数）
+  // ★ 0.268.0：AI 智慧排序——本地序→AI 序延迟到达的替换脉冲（150ms 透明度渐变，防突兀闪烁）
+  //   + 展开卡护栏挂起队列（用户已展开任一复习卡时延迟替换，收起后再切——任务书 Q3 终裁）
+  @Local siyiSwapPulse: boolean = false;
+  private pendingRerankMsgIds: Set<string> = new Set();
   // ★ 0.146：知识库卡片编辑弹窗状态（AI 生成草稿 → 用户编辑确认 → 入库；AI 不直接入库）
   @Local knowledgeEditVisible: boolean = false;  // 编辑弹窗可见
   @Local knowledgeCardTitle: string = '';        // 标题输入框内容（AI 草稿自动填充，可自由编辑）
@@ -951,8 +965,14 @@ export struct ChatPage {
   // ============================================================
 
   // 锚点相关设置指纹（缓存失效依据：开关/密度变化即全量重算）
+  // ★ 0.269.0：anchorMode 三态（off/smart/companion）参与指纹须走归一（遗留 'on' 与 'smart' 同指纹，防假失效重算）
   anchorFingerprint(): string {
-    return `${this.anchorPref.anchorMode}_${this.anchorPref.anchorDensity}_${this.anchorPref.foldMode}`;
+    return `${normalizeAnchorMode(this.anchorPref.anchorMode)}_${this.anchorPref.anchorDensity}_${this.anchorPref.foldMode}`;
+  }
+
+  // ★ 0.269.0：锚点开判定（smart/companion 均视为开；off 关）——一切「锚点是否生效」比较侧统一走此封装
+  anchorsEnabled(): boolean {
+    return normalizeAnchorMode(this.anchorPref.anchorMode) !== 'off';
   }
 
   // 消息段落 → FoldItem 流（代码/表格段的后处理防线：内含锚点标记时剔除标记留文案——任务书 §3.4 双防线）
@@ -1001,7 +1021,7 @@ export struct ChatPage {
     if (!isPlaceholder && msg.content.trim().length > 0) {
       const segs = this.parseMarkdown(msg.content);
       let items = this.buildFoldItems(segs);
-      if (this.anchorPref.anchorMode === 'on' && !msg.isPodcastMode) {
+      if (this.anchorsEnabled() && !msg.isPodcastMode) {
         items = insertLocalAnchors(items, breathThreshold(this.anchorPref.anchorDensity));
       }
       // 平铺重组：按段收集 text/anchor 条目（breath 已按段归属——只在文本块后插，代码/表格段恒无块）
@@ -1086,6 +1106,8 @@ export struct ChatPage {
   }
 
   // 锚点徽标文案（★ 0.237.0 六档映射——钩子树砍2留2加3；禁止 emoji）
+  // ★ 0.269.0 钩子体系四类（§六胶囊定稿）：breath=歇口气 / digest=简单说 / progress=到这里了 / bait=延伸；
+  //   旧五类（quiz/hook/rephrase/predict/recap）保留于单段式中回复
   anchorBadge(type: string): string {
     if (type === 'quiz') {
       return '考考你';
@@ -1102,7 +1124,16 @@ export struct ChatPage {
     if (type === 'recap') {
       return '一句话锁住';
     }
-    return '到这里了'; // breath 本地保底（进度实感定位，替代旧「歇口气」）
+    if (type === 'breath') {
+      return '歇口气';
+    }
+    if (type === 'digest') {
+      return '简单说';
+    }
+    if (type === 'bait') {
+      return '延伸';
+    }
+    return '到这里了'; // progress（本地保底进度实感）
   }
 
   // 锚点卡片浮现动画（淡入+上移 8vp+200ms；ForEach key 稳定 → 每卡只播一次）
@@ -1206,39 +1237,56 @@ export struct ChatPage {
       )
   }
 
-  // ★ 0.234.0：锚点卡片——紫系胶囊卡（暗紫底 12% 透明+紫描边）+ 左徽标 + 右文案（14fp/this.theme.textSecondary，
-  //   单行截断省略）；浮现动画淡入+上移 8vp（每卡只播一次——key 稳定）；禁止 emoji（任务书 §5.3）
+  // ★ 0.269.0：锚点/钩子统一竖线块（任务书 §六 UI 定稿——中回复/长回复一套渲染代码，Q7 裁决）：
+  //   左侧 2.5vp 主紫竖线（brandPrimary token 深浅自适应）+ 缩进 12vp + 品牌紫 8% 透明背景（hookBg token）+
+  //   行首紫底白字胶囊；breath/digest/progress 零点击；bait 尾部「→ 拉分支深挖」紫色弱高亮可点
+  //   （Q8 豁免条款——点击=创建子气泡+预填引子问题待发送）；浮现动画淡入+上移（每卡只播一次）
   @Builder
   AnchorCard(blk: MdBlock) {
     Row({ space: 8 }) {
       Text(this.anchorBadge(blk.anchorType))
-        .fontSize(11)
+        .fontSize(this.fs(10))
         .fontWeight(500)
-        .fontColor(this.theme.brandSecondary)
-        .padding({ left: 9, right: 9, top: 3, bottom: 3 })
-        .borderRadius(10)
-        .backgroundColor('rgba(124,77,255,0.28)')
+        .fontColor(Color.White)
+        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+        .borderRadius(8)
+        .backgroundColor(this.theme.brandPrimary)
+        .flexShrink(0)
       Text(blk.anchorText)
         .fontSize(this.fs(14))
         .fontColor(this.theme.textSecondary)
         .layoutWeight(1)
-        // ★ 0.246.0：去 maxLines(1)+Ellipsis——锚点（勾子）生成内容显示全部，长文自动换行不截断（用户拍板「后面...绝对不行」）
+      if (blk.anchorType === 'bait') {
+        Text('→ 拉分支深挖')
+          .fontSize(this.fs(12))
+          .fontColor(this.theme.brandSecondary)
+          .flexShrink(0)
+          .onClick(() => {
+            // ★ 0.269.0 Q8：点击=创建子气泡+预填引子问题（待用户发送，不自动发）
+            this.addBubble([], `关于「${blk.anchorText}」这一点，请展开深入讲讲`, '');
+          })
+      }
     }
     .width('100%')
-    .padding({ left: 10, right: 10, top: 7, bottom: 7 })
-    .margin({ top: 4, bottom: 4 })
-    .borderRadius(16)
-    .backgroundColor('rgba(124,77,255,0.12)')
-    .border({ width: 0.5, color: this.theme.strokeBrand })
     .alignItems(VerticalAlign.Center)
+    .padding({ left: 12, right: 8, top: 6, bottom: 6 })
+    .margin({ top: 4, bottom: 4 })
+    .borderRadius(4)
+    .backgroundColor(this.theme.hookBg)
+    .border({
+      width: { left: 2.5 },
+      color: { left: this.theme.brandPrimary },
+      radius: { topLeft: 2, bottomLeft: 2 }
+    })
     .transition(this.anchorTransition())
   }
 
-  // ★ 0.234.0：单块分发（平铺富文本段与折叠章节条目共用）——锚点卡片/分割线/引用/列表缩进/标题字号
+  // 单块分发（平铺富文本段与折叠章节条目共用）——锚点竖线块/分割线/引用/列表缩进/标题字号
+  // ★ 0.269.0：锚点渲染统一竖线块（中回复/长回复一套代码两种密度——Q7 裁决）
   @Builder
   RichBlockView(blk: MdBlock, keyBase: string) {
     if (blk.kind === 'anchor') {
-      if (this.anchorPref.anchorMode === 'on') {
+      if (this.anchorsEnabled()) {
         this.AnchorCard(blk)
       } else {
         // 锚点关=无卡片：降级普通文本行（文案保留——「关闭后 AI 按原文回复」）
@@ -1832,6 +1880,7 @@ export struct ChatPage {
   }
 
   async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
+    this.cancelHookArrangement('new'); // ★ 0.269.0：发新消息自动取消进行中②段（Q4 非阻塞，不挡发送）
     // ★ 0.190.4：卡死自愈（须在 guard 前）——isLoading=true 但 streamController=null 是异常态
     //   （正常流两者同步设置/清除；真机实测超时出错后偶发卡此态，guard 挡死后续所有发送
     //   「发送不出去」），检测到即强制恢复放行，用户永远不会再被卡死
@@ -1887,6 +1936,21 @@ export struct ChatPage {
     }
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
     aiMsg.model = this.apiConfig.model; // ★ 0.224.3：请求发出时打标模型 ID（操作行显示——用户跨模型对比"这个漂亮回复是哪个模型的"）
+    // ★ 0.268.0：AI 智慧排序预触发（fire-and-forget——任务书 Q2 终裁：发送瞬间问题+话题标签
+    //   已齐备，无需等 AI 回复；AI 回复完成渲染司忆区时消费结果，多数场景已就绪=零闪烁）。
+    //   重排输入=问题文本+topicTags（空则 summaryHead 兜底——Q5 终裁，两家一致否决用户画像）；
+    //   候选池=两库本地全序前 20（候选 <4/无 key/超 20 次日限在引擎内部静默终止）；
+    //   单条气泡只触发 1 次（messageId 幂等），换一批复用不重调。
+    if (this.currentBubble !== null && this.currentBubble !== undefined) {
+      const rb = this.currentBubble;
+      const rerankTopics = rb.topicTags.length > 0 ? rb.topicTags.join('、') : rb.summaryHead;
+      triggerAiRerank(aiMsg.messageId, userMsg.content, rerankTopics,
+        orderedReviewWords(this.wordBank, Date.now()),
+        orderedReviewCards(this.knowledgeBank, Date.now()),
+        this.apiConfig,
+        (): void => { this.onRerankBatchReady(aiMsg.messageId); },
+        (): void => { this.onRerankBatchReady(aiMsg.messageId); });
+    }
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.inputText = '';
@@ -2013,6 +2077,7 @@ export struct ChatPage {
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
         this.finishStreamFold(aiMsg); // ★ 0.234.0：完成瞬间解析章节→一次性收拢（前 1/3 展开，springMotion 收拢动画）
+        this.maybeStartHookArrangement(aiMsg, streamBubbleId); // ★ 0.269.0：①段完成→②段伴读编排（条件不满足静默跳过）
       },
       (errMsg: string) => {
         // onError：解锁 + 日志 + 错误气泡
@@ -2045,6 +2110,7 @@ export struct ChatPage {
   // ★ 0.149：刷新按钮——原位重新生成指定 AI 回复（置加载占位后按链路上下文重新请求，
   // buildBranchMessageList 自动剔除占位使旧回复不进入新请求；消息不删、位置不变）
   async regenerateMessage(msg: ChatMessage): Promise<void> {
+    this.cancelHookArrangement('new'); // ★ 0.269.0：重生成先 abort 旧②段防乱序（§四.4 状态机并发）
     // ★ 0.190.4：卡死自愈（同 sendMessage，须在 guard 前）
     if (this.isLoading && this.streamController === null) {
       this.isLoading = false;
@@ -2156,6 +2222,7 @@ export struct ChatPage {
         this.scroller.scrollEdge(Edge.Bottom);
         this.saveTree(); // ★ 0.151：按模式分池保存
         this.finishStreamFold(msg); // ★ 0.234.0：重新生成完成——重走收拢（默认展开集重置）
+        this.maybeStartHookArrangement(msg, regenBubbleId); // ★ 0.269.0：重生成同样走②段伴读编排
       },
       (errMsg: string) => {
         // onError：解锁 + 错误提示
@@ -2225,7 +2292,9 @@ export struct ChatPage {
     //   （用户痛点锚点：本地语音「连星号星号都要读进去」，云端本地双引擎共用清洗）
     // ★ 0.234.0：锚点标记先剥壳留文案（stripAnchorMarks keepText=true）——朗读全文含收起章节、
     //   不读 [[anchor 等标记字符（任务书 §2.4/§5.4：全文照发，折叠状态不参与 TTS）
-    const speakText = mdToSpeakableText(stripAnchorMarks(msg.content, true));
+    // ★ 0.269.0：TTS 遇锚点/钩子块直接跳过不朗读（终稿拍板——钩子是视觉阅读辅助，朗读无意义；
+    //   keepText false=标记行整行滤除；听播内容本无锚点、短回复无锚点，两模式零影响）
+    const speakText = mdToSpeakableText(stripAnchorMarks(msg.content, false));
     if (speakText.length === 0) {
       this.showToastSafe('该消息没有可朗读的文本（代码/符号内容已跳过）');
       return;
@@ -2852,6 +2921,17 @@ export struct ChatPage {
           .textAlign(TextAlign.Center)
           .width('100%')
       }
+      // ★ 0.269.0：伴读编排拆分行（Q9——「内容生成 X SP + 伴读编排 Y SP」明细透明拆分；空串不渲染）
+      if (this.tokenInfoHookLine.length > 0) {
+        Divider()
+          .color(this.theme.strokeCard)
+          .margin({ top: 9, bottom: 9 })
+        Text(this.tokenInfoHookLine)
+          .fontSize(13)
+          .fontColor(this.theme.brandSecondary)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+      }
     }
     .width(272) // ★ 0.247.6：定宽——Divider 无固有宽会把无约束 Column 撑满整行（0.239.0 同款坑：弹层被拉成全宽条），定宽+文字居中收口；★ 0.247.8：216→272（用户拍板「拉宽一点」——两行文字各自单行显示，4 行收 2 行）
     .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -3242,12 +3322,143 @@ export struct ChatPage {
     })
   }
 
+  // ★ 0.268.0：AI 序生效判定/映射——rerank 缓存命中且有序（id 接回库对象，被删跳过；
+  //   引用不落地=云同步整库重建天然免疫，0.248.6 教训消费端零特殊处理）
+  aiOrderedWordObjects(messageId: string): WordItem[] {
+    const ids = getRerankWordIds(messageId);
+    if (ids.length === 0) {
+      return [];
+    }
+    const byId = new Map<string, WordItem>();
+    for (let i = 0; i < this.wordBank.words.length; i++) {
+      byId.set(this.wordBank.words[i].id, this.wordBank.words[i]);
+    }
+    const out: WordItem[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const w = byId.get(ids[i]);
+      if (w !== undefined) {
+        out.push(w);
+      }
+    }
+    return out;
+  }
+
+  aiOrderedCardObjects(messageId: string): KnowledgeCard[] {
+    const ids = getRerankCardIds(messageId);
+    if (ids.length === 0) {
+      return [];
+    }
+    const byId = new Map<string, KnowledgeCard>();
+    for (let i = 0; i < this.knowledgeBank.cards.length; i++) {
+      byId.set(this.knowledgeBank.cards[i].id, this.knowledgeBank.cards[i]);
+    }
+    const out: KnowledgeCard[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const c = byId.get(ids[i]);
+      if (c !== undefined) {
+        out.push(c);
+      }
+    }
+    return out;
+  }
+
+  // ★ 0.268.0：AI 重排结果到达（词库/卡库各自回调，可能先后两次）——
+  //   该消息司忆区已按本地序渲染 → 就地替换缓存条目 + rerollSeq++ 重算（150ms 淡入脉冲）；
+  //   未渲染（AI 回复流式中/占位）→ 不动，首次渲染 getReviewWords 直接走 AI 序分支；
+  //   护栏（任务书 Q3）：用户已展开任一复习卡时挂起，收起后再替换（防展开态下条目被换走）。
+  onRerankBatchReady(messageId: string): void {
+    if (!this.reviewCache.has(messageId) && !this.knowledgeReviewCache.has(messageId)) {
+      return; // 司忆区尚未渲染（或该库无 AI 序）——首抽时自然消费
+    }
+    if (this.reviewExpandKey !== '') {
+      this.pendingRerankMsgIds.add(messageId); // 展开中：挂起等收起
+      return;
+    }
+    this.applyRerankSwapFor(messageId);
+  }
+
+  // 挂起队列应用（收起展开卡后调；队列空零副作用）
+  applyRerankSwap(): void {
+    if (this.reviewExpandKey !== '') {
+      return; // 仍有展开（防御，正常不会走到）
+    }
+    const ids: string[] = [];
+    this.pendingRerankMsgIds.forEach((mid: string) => {
+      ids.push(mid);
+    });
+    for (let i = 0; i < ids.length; i++) {
+      this.applyRerankSwapFor(ids[i]);
+      this.pendingRerankMsgIds.delete(ids[i]);
+    }
+  }
+
+  // 就地替换该消息两库缓存为 AI 序（换过一批时保留偏移语义：AI 候选池内继续轮换）
+  applyRerankSwapFor(messageId: string): void {
+    let touched = false;
+    if (this.reviewCache.has(messageId) && getRerankWordIds(messageId).length > 0) {
+      const swapped = this.buildAiWordBatch(messageId);
+      if (swapped !== null) {
+        this.reviewCache.set(messageId, new ReviewCacheEntry(0, swapped));
+        touched = true;
+      }
+    }
+    if (this.knowledgeReviewCache.has(messageId) && getRerankCardIds(messageId).length > 0) {
+      const swappedC = this.buildAiCardBatch(messageId);
+      if (swappedC !== null) {
+        this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(0, swappedC));
+        touched = true;
+      }
+    }
+    if (!touched) {
+      return;
+    }
+    this.rerollSeq++; // 触发两区 ForEach 重算（缓存分支返回 AI 序新批）
+    this.siyiSwapPulse = true; // 150ms 透明度渐变替换（不做骨架屏——附属区不喧宾夺主）
+    setTimeout(() => {
+      this.siyiSwapPulse = false;
+    }, 150);
+  }
+
+  // AI 序展示批（供首抽与替换两路共用）：非未来卡优先 + 未来卡 ≤1 张末位提权（Q1 终裁）；
+  // 已换过一批（offset>0）时保持轮换语义——在 AI 候选池上按原偏移环绕取批（任务书补充采纳项）
+  buildAiWordBatch(messageId: string): WordItem[] | null {
+    const ordered = this.aiOrderedWordObjects(messageId);
+    if (ordered.length === 0) {
+      return null;
+    }
+    const n = Math.max(1, this.learnCountStore.learnCount);
+    const offset = this.rerollWordOffsets.get(messageId);
+    if (offset !== undefined && offset > 0) {
+      return rotateSlice(ordered, offset, n);
+    }
+    const now = Date.now();
+    return rerankDisplayBatch(ordered, n,
+      (w: WordItem): boolean => w.reviewCount > 0 && w.nextReviewAt > now);
+  }
+
+  buildAiCardBatch(messageId: string): KnowledgeCard[] | null {
+    const ordered = this.aiOrderedCardObjects(messageId);
+    if (ordered.length === 0) {
+      return null;
+    }
+    const n = Math.max(1, this.knowledgeCountStore.knowledgeCount);
+    const offset = this.rerollCardOffsets.get(messageId);
+    if (offset !== undefined && offset > 0) {
+      return rotateSlice(ordered, offset, n);
+    }
+    const now = Date.now();
+    return rerankDisplayBatch(ordered, n,
+      (c: KnowledgeCard): boolean => c.reviewCount > 0 && c.nextReviewAt > now);
+  }
+
   // 生词复习：按消息 ID 取 N 词（N=学习数量，单词库 ⚙ 设置）。
   // ★ 0.187.0：选词改走记忆算法（到期词按遗忘风险 R 升序 → 新词 → 未来词，替换纯随机）；
   // 缓存按消息 ID 永久固定（历史消息稳定），已删除的词读取时滤除；
   // 展示即复习——真到期的词计数 + 顺延 6h（未到期不计数：防重启重抽虚增，到期闸门防抖）
   // ★ 0.237.3：第二参 rerollSeq 仅为让 ForEach 渲染闭包建立依赖（换一批触发重算）；
   // 重抽走轮换分支——全序环绕取批，零复习副作用（不计数/不顺延/不埋点，防刷学习统计）
+  // ★ 0.268.0：AI 序就绪时首抽走 AI 序展示批（同款展示即复习副作用）；换一批轮换池=
+  //   AI 序对象数组（AI 候选池内沿用 rotateSlice 轮换——任务书补充采纳项）
   getReviewWords(messageId: string, rerollSeq: number = 0): WordItem[] {
     const cached = this.reviewCache.get(messageId);
     if (cached) {
@@ -3280,9 +3491,28 @@ export struct ChatPage {
     const now = Date.now();
     const cachedOffset = this.rerollWordOffsets.get(messageId);
     if (cachedOffset !== undefined && cachedOffset > 0) {
-      const rerolled = rotateSlice(orderedReviewWords(this.wordBank, now), cachedOffset, this.learnCountStore.learnCount);
+      // ★ 0.268.0：AI 序生效时轮换池=AI 序（候选池内轮换）；未生效=现状本地全序
+      const aiPool = this.aiOrderedWordObjects(messageId);
+      const pool = aiPool.length > 0 ? aiPool : orderedReviewWords(this.wordBank, now);
+      const rerolled = rotateSlice(pool, cachedOffset, this.learnCountStore.learnCount);
       this.reviewCache.set(messageId, new ReviewCacheEntry(0, rerolled));
       return rerolled;
+    }
+    // ★ 0.268.0：AI 序就绪（预触发先于首抽返回）——按 AI 序构建展示批（未来卡 ≤1 末位提权）
+    const aiBatch = this.buildAiWordBatch(messageId);
+    if (aiBatch !== null) {
+      let aiMutated = false;
+      for (let i = 0; i < aiBatch.length; i++) {
+        if (applyPassiveReview(aiBatch[i], now)) { // 展示即复习（未来卡内部闸门不计数不顺延）
+          aiMutated = true;
+        }
+      }
+      if (aiMutated) {
+        noteBankMutation();
+      }
+      recordStat(this.statStore, 'siyi', aiBatch.length, 0);
+      this.reviewCache.set(messageId, new ReviewCacheEntry(0, aiBatch));
+      return aiBatch;
     }
     const items = pickReviewWords(this.wordBank, this.learnCountStore.learnCount, now);
     let mutated = false; // ★ 0.223.0：展示即复习进度变更追踪（未到期不虚报）
@@ -3371,6 +3601,9 @@ export struct ChatPage {
   // ★ 0.187.0：点词条展开/收起 3 档评分（👆 图标勾引点击——点词即展开）
   onReviewWordTap(key: string): void {
     this.reviewExpandKey = this.reviewExpandKey === key ? '' : key;
+    if (this.reviewExpandKey === '') {
+      this.applyRerankSwap(); // ★ 0.268.0：收起后应用挂起的 AI 序替换（Q3 护栏）
+    }
   }
 
   // ★ 0.187.0：评分落库——按评分规则更新 S 与下次复习（方案B：现在+S），收起按钮
@@ -3384,6 +3617,7 @@ export struct ChatPage {
     next.set(key, rating);
     this.reviewRatedMap = next; // Map 整体替换触发 V2 刷新
     this.reviewExpandKey = '';
+    this.applyRerankSwap(); // ★ 0.268.0：评分收起后应用挂起的 AI 序替换（Q3 护栏）
   }
 
   // ★ 0.187.0：评分区（气泡复习区 + 提炼弹窗共用 @Builder）——
@@ -3406,39 +3640,39 @@ export struct ChatPage {
       Row({ space: 6 }) {
         Button() {
           Column() {
-            Text('生疏').fontSize(13).fontWeight(600).fontColor('#E5484D')
+            Text('生疏').fontSize(13).fontWeight(600).fontColor(this.theme.reviewHard)
             Text(`${formatIntervalDays(previewIntervalDays(w, 'hard'))}后`).fontSize(9).fontColor(this.theme.textTertiary)
           }
         }
         .layoutWeight(1)
         .constraintSize({ maxWidth: 96 })
-        .backgroundColor('#26E5484D')
+        .backgroundColor(this.theme.reviewHardBg)
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
           this.onReviewRate(key, w, 'hard');
         })
         Button() {
           Column() {
-            Text('尚可').fontSize(13).fontWeight(600).fontColor('#F5A623')
+            Text('尚可').fontSize(13).fontWeight(600).fontColor(this.theme.reviewGood)
             Text(`${formatIntervalDays(previewIntervalDays(w, 'good'))}后`).fontSize(9).fontColor(this.theme.textTertiary)
           }
         }
         .layoutWeight(1)
         .constraintSize({ maxWidth: 96 })
-        .backgroundColor('#26F5A623')
+        .backgroundColor(this.theme.reviewGoodBg)
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
           this.onReviewRate(key, w, 'good');
         })
         Button() {
           Column() {
-            Text('熟知').fontSize(13).fontWeight(600).fontColor('#3BB273')
+            Text('熟知').fontSize(13).fontWeight(600).fontColor(this.theme.reviewEasy)
             Text(`${formatIntervalDays(previewIntervalDays(w, 'easy'))}后`).fontSize(9).fontColor(this.theme.textTertiary)
           }
         }
         .layoutWeight(1)
         .constraintSize({ maxWidth: 96 })
-        .backgroundColor('#263BB273')
+        .backgroundColor(this.theme.reviewEasyBg)
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
           this.onReviewRate(key, w, 'easy');
@@ -3892,6 +4126,7 @@ export struct ChatPage {
   // 缓存按消息 ID 永久固定（同 0.187.0 单词库修复：杜绝加卡触发全量重抽的虚假复习），
   // 已删除的卡读取时滤除；展示即复习（到期闸门防抖）。
   // ★ 0.237.3：第二参 rerollSeq 同 getReviewWords（换一批渲染依赖）；重抽走轮换分支零副作用
+  // ★ 0.268.0：AI 序就绪时首抽走 AI 序展示批（未来卡 ≤1 末位提权）；换一批轮换池=AI 序（同生词区）
   getKnowledgeCards(messageId: string, rerollSeq: number = 0): KnowledgeCard[] {
     const cached = this.knowledgeReviewCache.get(messageId);
     if (cached) {
@@ -3922,9 +4157,28 @@ export struct ChatPage {
     const now = Date.now();
     const cachedOffset = this.rerollCardOffsets.get(messageId);
     if (cachedOffset !== undefined && cachedOffset > 0) {
-      const rerolled = rotateSlice(orderedReviewCards(this.knowledgeBank, now), cachedOffset, this.knowledgeCountStore.knowledgeCount);
+      // ★ 0.268.0：AI 序生效时轮换池=AI 序；未生效=现状本地全序
+      const aiPool = this.aiOrderedCardObjects(messageId);
+      const pool = aiPool.length > 0 ? aiPool : orderedReviewCards(this.knowledgeBank, now);
+      const rerolled = rotateSlice(pool, cachedOffset, this.knowledgeCountStore.knowledgeCount);
       this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(0, rerolled));
       return rerolled;
+    }
+    // ★ 0.268.0：AI 序就绪——按 AI 序构建展示批（未来卡 ≤1 末位提权）
+    const aiBatch = this.buildAiCardBatch(messageId);
+    if (aiBatch !== null) {
+      let aiMutated = false;
+      for (let i = 0; i < aiBatch.length; i++) {
+        if (applyPassiveReview(aiBatch[i], now)) {
+          aiMutated = true;
+        }
+      }
+      if (aiMutated) {
+        noteBankMutation();
+      }
+      recordStat(this.statStore, 'siyi', aiBatch.length, 0);
+      this.knowledgeReviewCache.set(messageId, new KnowledgeReviewCacheEntry(0, aiBatch));
+      return aiBatch;
     }
     const items = pickReviewCards(this.knowledgeBank, this.knowledgeCountStore.knowledgeCount, now);
     let mutated = false; // ★ 0.223.0：展示即复习进度变更追踪
@@ -3948,7 +4202,7 @@ export struct ChatPage {
   swipeDeleteMessagePanel(msg: ChatMessage) {
     Row() {
       Column() {
-        Image($r('app.media.trash'))
+        Image($r('app.media.trash_brand'))
           .width(20)
           .height(20)
       }
@@ -4125,6 +4379,7 @@ export struct ChatPage {
     if (!this.currentBubble) {
       return;
     }
+    this.cancelHookArrangement('switch'); // ★ 0.269.0：切分支自动取消进行中②段（Q4；bait 拉分支同走此口）
     if (this.isLoading) {
       return; // ★ 0.151-D：流式回复进行中禁止新建——切换当前气泡会导致流式回调写错气泡
     }
@@ -4409,6 +4664,8 @@ export struct ChatPage {
   //   新增 SECTION_PROMPT（长回复且 锚点开或折叠开——## 分节是折叠地基，两开关谁开都需要）+
   //   ANCHOR_LONG（长回复且锚点开）/ ANCHOR_MEDIUM（中回复且锚点开）；短回复与听播零注入（范围红线）
   // ★ 0.237.0：ANCHOR_LONG 改密度档联动（buildAnchorLongPrompt——疏 2~3 个/密 3~5 个，任务书 §六）
+  // ★ 0.269.0（Q3 裁决）：伴读档长回复①段剥离锚点指令（钩子改由②段专职编排，①段出纯内容）；
+  //   SECTION_PROMPT 照常注入（## 分节是折叠地基，与锚点指令无关）；中回复一律沿用单段锚点零改动
   buildPreferencePrompt(isPodcast: boolean): string {
     let prompt = '';
     const nickname = this.aiPreference.aiNickname.trim();
@@ -4417,12 +4674,15 @@ export struct ChatPage {
     }
     if (!isPodcast) {
       const long = this.replyLengthMode === 'long';
-      if (long && (this.anchorPref.anchorMode === 'on' || this.anchorPref.foldMode === 'on')) {
+      const mode = normalizeAnchorMode(this.anchorPref.anchorMode);
+      if (long && (this.anchorsEnabled() || this.anchorPref.foldMode === 'on')) {
         prompt += SECTION_PROMPT;
       }
-      if (this.anchorPref.anchorMode === 'on') {
+      if (this.anchorsEnabled()) {
         if (long) {
-          prompt += buildAnchorLongPrompt(this.anchorPref.anchorDensity);
+          if (mode !== 'companion') { // ★ 0.269.0：伴读档①段剥离锚点指令（两段式，钩子归②段）
+            prompt += buildAnchorLongPrompt(this.anchorPref.anchorDensity);
+          }
         } else if (this.replyLengthMode === 'medium') {
           prompt += ANCHOR_MEDIUM_PROMPT;
         }
@@ -4455,6 +4715,143 @@ export struct ChatPage {
       return false;
     }
     return this.richPlanFor(msg).sectionable;
+  }
+
+  // ============================================================
+  // ★ 0.269.0 钩子模式两段式长回复：②段伴读编排（任务书 §五时序 / §四.4 状态机）
+  // idle →（onDone 且 伴读档+长回复+≥800 字）→ arranging（状态行+取消钮）→ merged（合成落账）
+  // 失败/取消：①原文保留 + 渲染层 breath 保底自动补 + 只扣①段（军令 #3/#4）
+  // ============================================================
+
+  // ①段全文 → 带块编号的②段输入（[块N]\n内容——AI 数块零歧义，afterPara 对齐极准；任务书 §四.1）
+  buildNumberedHookInput(content: string): string {
+    const lines = content.split('\n');
+    const spans = scanBlockSpans(lines);
+    const out: string[] = [];
+    let prevEnd = -1;
+    for (let i = 0; i < spans.length; i++) {
+      const seg = lines.slice(prevEnd + 1, spans[i].endLine + 1).join('\n');
+      out.push(`[块${i + 1}]\n${seg}`);
+      prevEnd = spans[i].endLine;
+    }
+    return out.join('\n\n');
+  }
+
+  // ②段 SP 预估（状态行小字——输入≈全文字数粗估 + 输出≈钩子 JSON ~500 token；扣点前给足预期）
+  estimateHookSp(content: string): number {
+    const inSp = Math.round(content.length * SP_INPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+    const outSp = Math.round(500 * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+    return inSp + outSp;
+  }
+
+  // ②段编排入口（两处 onDone 尾部调用；任一条件不满足=静默跳过零成本）
+  maybeStartHookArrangement(msg: ChatMessage, streamBubbleId: string): void {
+    if (normalizeAnchorMode(this.anchorPref.anchorMode) !== 'companion') {
+      return;
+    }
+    if (msg.role !== 'assistant' || msg.isPodcastMode) {
+      return;
+    }
+    if (this.replyLengthMode !== 'long') {
+      return;
+    }
+    const plain = stripAnchorMarks(msg.content, false).trim();
+    if (plain.length < 800) {
+      return; // ≥800 字触发（对齐 breath 疏档阈值——任务书 Q5）
+    }
+    if (this.hookArrangingMsgId.length > 0) {
+      this.cancelHookArrangement('new'); // 同一消息同一时间只允许一个进行中②段（§四.4）
+    }
+    const ctx = this.getUIContext().getHostContext() as common.Context;
+    const pTrig: Record<string, string> = {};
+    pTrig['ev'] = 'trigger';
+    pTrig['len'] = `${plain.length}`;
+    track(ctx, 'hook_two_stage', pTrig);
+    // 状态行 + 预估（Lv8 免扣显示 0）
+    this.hookArrangingMsgId = msg.messageId;
+    this.hookEstSp = this.spFree() ? 0 : this.estimateHookSp(msg.content);
+    let buf = '';
+    const hookMsgs: ChatMessage[] = [
+      new ChatMessage(generateMessageId(), 'system', HOOK_SYSTEM_PROMPT),
+      new ChatMessage(generateMessageId(), 'user', this.buildNumberedHookInput(msg.content))
+    ];
+    this.hookController = streamChat(
+      hookMsgs,
+      this.apiConfig,
+      (chunk: string) => {
+        buf += chunk; // ②段不直显，仅累积 JSON（气泡保持①段内容可正常阅读）
+      },
+      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
+        // ②段 onDone：解析 → 校验合成 → SP 累加落账 → 埋点
+        const finishing = (): void => {
+          this.hookArrangingMsgId = '';
+          this.hookController = null;
+          const hooks = parseHookJsonResponse(buf);
+          const merged = mergeHooksIntoContent(hooks, msg.content);
+          if (merged === msg.content) {
+            // 空钩子/全被滤：①原文保留（渲染层 breath 保底自动补）；hooks 空=解析失败，非空=全滤降级
+            const pFail: Record<string, string> = {};
+            pFail['ev'] = hooks.length === 0 ? 'parse_fail' : 'degrade';
+            track(ctx, 'hook_two_stage', pFail);
+            this.saveTree();
+            return;
+          }
+          // SP 累加一次性扣（军令 #2：两段累加；②段 token 并入消息统计，按差额补扣——展示与扣点同源）
+          if (!this.spFree()) {
+            const before = this.spCostOf(msg);
+            msg.inputTokens += inputTokens;
+            msg.outputTokens += outputTokens;
+            msg.cacheHitTokens += cachedTokens;
+            const delta = this.spCostOf(msg) - before;
+            if (delta > 0) {
+              const bal0 = siyiTotalSp(this.siyiStore);
+              consumeSiyiSp(this.siyiStore, delta);
+              this.trackSpConsume(msg, false, bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'hook');
+              this.hookSpByMsg.set(msg.messageId, delta); // 明细弹层「伴读编排 Y SP」拆分行（会话级暂存）
+            }
+          }
+          const pOk: Record<string, string> = {};
+          pOk['ev'] = 'success';
+          pOk['n'] = `${hooks.length}`;
+          track(ctx, 'hook_two_stage', pOk);
+          msg.content = merged; // 重渲染：钩子竖线块带浮现动画平滑插入
+          this.mirrorStreamToLive(streamBubbleId, msg);
+          this.saveTree();
+        };
+        // ~250ms 高度过渡（EaseInOut 与章节折叠同时长定式）；不 scrollEdge——保持滚动视口偏移（Q4：读到一半不被强制跳位）
+        if (animOn) {
+          this.getUIContext().animateTo({ duration: 250, curve: Curve.EaseInOut }, finishing);
+        } else {
+          finishing();
+        }
+      },
+      (_errMsg: string) => {
+        // ②段失败=①内容保留+降级 breath 本地保底（渲染层 anchorsEnabled 自动跑）+只扣①段（军令 #3）
+        this.hookArrangingMsgId = '';
+        this.hookController = null;
+        const pDeg: Record<string, string> = {};
+        pDeg['ev'] = 'degrade';
+        track(ctx, 'hook_two_stage', pDeg);
+        this.saveTree();
+      },
+      undefined,
+      '伴读编排'
+    );
+  }
+
+  // ②段取消（用户点「取消」/发新消息/重生成/切分支——Q4 非阻塞；cancel 后 ApiClient 回调静默，状态就地清理）
+  cancelHookArrangement(reason: string): void {
+    if (this.hookController !== null) {
+      this.hookController.cancel();
+      this.hookController = null;
+    }
+    if (this.hookArrangingMsgId.length > 0) {
+      const pCancel: Record<string, string> = {};
+      pCancel['ev'] = 'cancel';
+      pCancel['rs'] = reason;
+      track(this.getUIContext().getHostContext() as common.Context, 'hook_two_stage', pCancel);
+      this.hookArrangingMsgId = '';
+    }
   }
 
   // ★ 0.159：返回逻辑统一入口——顶栏自定义返回按钮与系统返回手势（onBackPressed）共用；
@@ -4839,13 +5236,25 @@ export struct ChatPage {
                           // ★ UI 定稿：普通词 2 行（词+音标/释义）、缩略词 3 行（+全称）；行内超宽横向滑动，不换行不省略，行高恒定
                           // ★ 0.248.6：加数量>0 判断——设置设 0（=关闭）时词条抽空但 Divider 仍渲染，
                           //   视觉上多出一条空横线；关闭语义须整块不渲染（含分隔线），两区同理
-                          if (this.wordBank.words.length > 0 && this.learnCountStore.learnCount > 0) {
-                           Divider()
-                             .strokeWidth(0.5)
-                             .color(this.theme.strokeCard)
-                             .margin({ top: 8, bottom: 6 })
-                           Column() {
-                               ForEach(this.getReviewWords(msg.messageId, this.rerollSeq), (w: WordItem, idx: number) => {
+                           if (this.wordBank.words.length > 0 && this.learnCountStore.learnCount > 0) {
+                            // ★ 0.268.0：分隔线+「✨ 语境优先」微标（AI 序对该消息生效时才出现；
+                            //   灰紫 10vp 小字对齐灰色辅助字规范，附属区不喧宾夺主）
+                            Row() {
+                              Divider()
+                                .strokeWidth(0.5)
+                                .color(this.theme.strokeCard)
+                                .layoutWeight(1)
+                              if (getRerankWordIds(msg.messageId).length > 0) {
+                                Text('✨ 语境优先')
+                                  .fontSize(10)
+                                  .fontColor(this.theme.brandSecondary)
+                                  .margin({ left: 6 })
+                              }
+                            }
+                            .alignItems(VerticalAlign.Center)
+                            .margin({ top: 8, bottom: 6 })
+                            Column() {
+                                ForEach(this.getReviewWords(msg.messageId, this.rerollSeq), (w: WordItem, idx: number) => {
                                 // ★ 0.233.0：单词词条拆两行（用户拍板「不能把单词和下面的解释内容放在一起一起滑——
                                 //   拆开来」；体验对齐知识卡 0.232.1 标题/内容行分离）：词行（三角+词+音标+喇叭）常驻
                                 //   独立横滑，全称+释义内容行独立横滑——滑解释时单词始终可见不动
@@ -5010,24 +5419,39 @@ export struct ChatPage {
                                 // 回退内容自适应（96 钳制恒 300vp），前三轮（0.196.0 固定宽/0.198.1 layoutWeight/
                                 // 0.198.2 百分比）在 Scroll 内怎么改都溢出；评分区内容固定无需滚动，移出后恢复
                                 // 气泡内容区（90%屏-padding10）约束，'30%' 生效——手机自动缩窄、平板钳 96 窄胶囊
-                                this.ratingArea(`${msg.messageId}|${w.id}`, w)
+                                 this.ratingArea(`${msg.messageId}|${w.id}`, w)
                               }, (w: WordItem) => w.word)
-                           }
-                           .alignItems(HorizontalAlign.Start)
-                         }
+                            }
+                            .alignItems(HorizontalAlign.Start)
+                            // ★ 0.268.0：AI 序延迟到达替换时 150ms 透明度渐变（Q3 终裁——先本地序、
+                            //   结果到了淡入替换，不做骨架屏）；脉冲 @Local 驱动全消息共用（150ms 短暂无感）
+                            .opacity(this.siyiSwapPulse ? 0.4 : 1)
+                            .animation({ duration: 150 })
+                          }
 
                           // ★ 0.146：知识卡片复习区——库非空时在 AI 气泡底部展示随机 N 张
                           // （N=知识卡片数量，知识库 ⚙ 设置，★ 0.161.2 单卡改多卡；与上方单词复习区并列，
                           // 📖 前缀区分知识库卡片/单词卡片；缓存按消息 ID；每卡独立横向滚动行、纵向排列——与生词区同款）
                           // ★ UI 定稿：卡片 2 行（标题+图片icon/定义）；有图才显示 🖼️ 指示（不用小缩略图）；行内超宽横向滑动
                           // ★ 0.248.6：加数量>0 判断（同生词区——设 0 关闭时整块连同分隔线一起消失）
-                          if (this.knowledgeBank.cards.length > 0 && this.knowledgeCountStore.knowledgeCount > 0) {
-                            Divider()
-                              .strokeWidth(0.5)
-                              .color(this.theme.strokeCard)
-                              .margin({ top: 6, bottom: 6 })
+                           if (this.knowledgeBank.cards.length > 0 && this.knowledgeCountStore.knowledgeCount > 0) {
+                            // ★ 0.268.0：分隔线+「✨ 语境优先」微标（同生词区——AI 序生效时才出现）
+                            Row() {
+                              Divider()
+                                .strokeWidth(0.5)
+                                .color(this.theme.strokeCard)
+                                .layoutWeight(1)
+                              if (getRerankCardIds(msg.messageId).length > 0) {
+                                Text('✨ 语境优先')
+                                  .fontSize(10)
+                                  .fontColor(this.theme.brandSecondary)
+                                  .margin({ left: 6 })
+                              }
+                            }
+                            .alignItems(VerticalAlign.Center)
+                            .margin({ top: 6, bottom: 6 })
                             Column() {
-                               ForEach(this.getKnowledgeCards(msg.messageId, this.rerollSeq), (card: KnowledgeCard, idx: number) => {
+                                ForEach(this.getKnowledgeCards(msg.messageId, this.rerollSeq), (card: KnowledgeCard, idx: number) => {
                                 // ★ 0.232.1 标题/内容行分离（用户需求锚点：定义很长横滑时标题跟着滑走被覆盖——
                                 //   拆开=标题行常驻不动，仅定义行独立横滑，看内容时标题始终可见）
                                 Column() {
@@ -5157,11 +5581,14 @@ export struct ChatPage {
                                    .margin({ top: idx > 0 ? 6 : 0 })
                                    // ★ 0.188.0：评分区——展开 3 档按钮 / 已评分显示下次复习
                                    // ★ 0.198.3 评分区移出横向 Scroll（同生词区根因——Scroll 内宽度约束失效）
-                                   this.ratingArea(`${msg.messageId}|${card.id}`, card)
-                                }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
-                            }
-                            .alignItems(HorizontalAlign.Start)
-                          }
+                                 this.ratingArea(`${msg.messageId}|${card.id}`, card)
+                                 }, (card: KnowledgeCard, idx: number) => `${idx}_${card.title}`)
+                             }
+                             .alignItems(HorizontalAlign.Start)
+                             // ★ 0.268.0：同生词区——AI 序替换 150ms 透明度渐变
+                             .opacity(this.siyiSwapPulse ? 0.4 : 1)
+                             .animation({ duration: 150 })
+                           }
                           }
                           .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现）；0.190.3 原 90%、0.148 原约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
@@ -5169,7 +5596,30 @@ export struct ChatPage {
                         .backgroundColor(this.theme.surfaceNode)
                         .alignItems(HorizontalAlign.Start) // ★ 0.145：气泡内段落保持左对齐（阅读习惯），气泡整体位置由外层 alignItems 控制
 
-                        // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
+                         // ★ 0.269.0：②段伴读编排状态行（气泡尾部轻量状态——Q4 裁决 A：灰色小字+取消钮，
+                         //   不加蒙层不置灰；预估 SP 扣点前给足预期，Lv8 免扣不显示消耗段）
+                         if (this.hookArrangingMsgId === msg.messageId) {
+                           Row({ space: 8 }) {
+                             Text(this.spFree() || this.hookEstSp <= 0
+                               ? '正在编排阅读节奏…'
+                               : `正在编排阅读节奏… · 约消耗 ${this.hookEstSp} SP`)
+                               .fontSize(11)
+                               .fontColor(this.theme.textTertiary)
+                               .layoutWeight(1)
+                             Text('取消')
+                               .fontSize(11)
+                               .fontColor(this.theme.brandSecondary)
+                               .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                               .onClick(() => {
+                                 this.cancelHookArrangement('user');
+                               })
+                           }
+                           .width('100%')
+                           .padding({ left: 10, right: 10 })
+                           .margin({ top: 4, bottom: 2 })
+                         }
+
+                         // ★ 0.133：AI 消息操作行（token 统计 + 朗读喇叭三态：🔈 空闲 / ⏳ 合成中 / 🔊 播放中）
                         // ★ 0.146：移入包裹容器——行宽自适应，左缘对齐气泡内文字（margin left 10 = 气泡 padding 10）
                         if (msg.role === 'assistant') {
                           // ★ 0.224.4：操作行整齐划一（用户三要求）——统一间隙 Row({space:8})、按钮 padding 对称 4
@@ -5301,6 +5751,9 @@ export struct ChatPage {
                                   } else {
                                     this.tokenInfoCacheLine = '';
                                   }
+                                  // ★ 0.269.0：伴读编排拆分行快照（会话级 hookSpByMsg 暂存——②段成功补扣过的消息才有）
+                                  const hookSp = this.hookSpByMsg.get(msg.messageId);
+                                  this.tokenInfoHookLine = hookSp !== undefined ? `其中伴读编排 ${hookSp} SP` : '';
                                 }
                               })
                               .constraintSize({ maxWidth: '60%' })
@@ -5433,7 +5886,7 @@ export struct ChatPage {
                 //   品牌紫圆钮+白色 trash.svg 回收站图标（同知识库/单词库滑出删除面板设计语言），
                 //   小号规格 20×20 圆钮 + 12×12 图标骑缩略图右上角
                 Column() {
-                  Image($r('app.media.trash'))
+                  Image($r('app.media.trash_brand'))
                     .width(12)
                     .height(12)
                 }

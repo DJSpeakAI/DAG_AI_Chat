@@ -37,6 +37,21 @@
 
 **用法**：组件内成员 `theme: AppTheme = connectAppTheme()`，引用 `this.theme.bgApp`（@Trace 全局同实例，主题切换即时生效）。**带参 @Builder 禁止以参数传色值**——体内直读 `this.theme.xxx`（0.190.1 丢响应式老雷）。
 
+## 一a、图标颜色与白字适配（★ 0.267.0）
+
+**SVG 图标一律资源限定词双版**（`setColorMode` 联动，不依赖 fillColor——其对 stroke 型 svg 无官方保证）：
+
+| 版本 | 目录 | 颜色 |
+|------|------|------|
+| 深色版 | `resources/dark/media/` | 原白色描边 `rgb(255,255,255)`（含既有 opacity） |
+| 浅色版 | `resources/base/media/` | 墨色描边 `rgb(29,18,48)`（同 opacity，跟随 textPrimary 基色）；辅助紫图标（user/wrap/nowrap/zoom/chevron_fold）`#5D3FD3`；checkbox_on 紫底 `#6C3EE8`+白勾不变 |
+
+**紫底例外（恒白资源）**：挂在 brandPrimary/danger/评分三档等**实色品牌底**上的图标，两种模式都必须保持白色——用 `_brand` 后缀独立资源（base 与 dark 放同一份白色 svg）：`trash_brand`（滑出删除圆钮/待发图删除角标）、`speaker_brand`（GSD 试听按钮常态）。**同一图标双场景并存时（如 trash 既在紫底圆钮又在消息操作行）拆两个资源名**，禁止一个资源赌两边。
+
+**白字白图铁律**：`Color.White` / 白色 svg **只允许出现在实色品牌底上**（紫底/红底/评分色底——两种模式下白字对比度均达标）；theme 系表面（surfaceNode/surfaceSoft/透明底/bgCanvas）上的文字与图标一律走 `this.theme.*` token 或资源限定词图标。**状态切换改底色的按钮（如试听中紫底→surfaceHover）文字/图标必须跟随状态双色**（0.267.0 GSD 试听按钮实例）。
+
+**新增图标流程**：先白版入 `base/media/`+`dark/media/` 双目录 → 浅色版改墨色 → 挂紫底则另建 `_brand` 恒白版 → 引用处按背景归类引用。
+
 ## 二、圆角 Token（5 档）
 
 | 常量名 | 值 | 用途 |
@@ -509,3 +524,36 @@
 - 「1. 本地存储」与「2. AI 服务与安全审计」两条在隐私政策展示层加粗：`fontWeight(Medium)` + `textPrimary`（正文其余 `Normal`+`textSecondary`）。
 - 判定用 `isPrivacySensitiveSection(sec)`（前缀匹配，**禁止按数组索引**——隐私政策章节增删会使索引漂移）；所有渲染隐私政策正文处（设置·法律条款弹窗、协议同意弹窗正文页）统一生效。
 - 协议正文唯一真相源 `utils/Agreement.ets` 的 `USER_AGREEMENT_SECTIONS`/`PRIVACY_SECTIONS`；华为账号认证协议恒系统浏览器外链展示（不自拟文本、不用应用内 WebView）。
+
+
+## 二十二、锚点/钩子统一竖线块（★ 0.269.0 钩子模式两段式长回复定稿——中回复/长回复一套渲染代码）
+
+### 22.1 竖线块形态（替代 0.234.0 锚点胶囊卡）
+- 左侧竖线：宽 **2.5vp**、色 `theme.brandPrimary`（深浅色各自基色，**禁硬编码 #7C4DFF 字面量**）、左缘圆角 2；
+- 缩进 `padding-left 12vp`；背景品牌紫 8% 透明叠加（`theme.hookBg` token——深色紫基/浅色浅紫基）；
+- 行首胶囊：主紫底白字小胶囊（fontSize 10、radius 8、padding 2/8），文案随类型：
+  `breath=歇口气` / `progress=到这里了`（含「第X节 · 约Y字」实感文案）/ `digest=简单说` / `bait=延伸`；
+  单段式中回复旧五类保留原徽标文案（考考你/前方高能/换个说法/先猜再看/一句话锁住）；
+- 正文文案 `fs(14)` textSecondary、自动换行不截断（0.246.0 拍板延续）；随对话页 chat-font-scale 同缩放。
+
+### 22.2 点击豁免条款（唯一例外）
+- breath / digest / progress 及全部单段式锚点类：**零点击**（注意力拉回类不打断、不考人）；
+- **仅 bait（文末引子）豁免**：尾部小字「→ 拉分支深挖」（brandSecondary 紫弱高亮 fontSize 12），点击=创建子气泡 + 预填引子对应问题待用户发送（不自动发）。
+
+### 22.3 行为规范
+- TTS 朗读遇锚点/钩子块**整行跳过不朗读**（钩子是视觉阅读辅助；听播内容本无锚点零影响）；
+- 导出/复制一律 `stripAnchorMarks(content, false)` 滤标记只出原文（复制全文链路既有行为延续）；
+- ②段伴读编排状态行：气泡尾部灰色小字「正在编排阅读节奏… · 约消耗 Y SP」+「取消」（brandSecondary）；不加蒙层不置灰；
+- 钩子浮现动画：淡入+上移 8vp 200ms（ForEach key 稳定每卡只播一次）+ content 合并 250ms EaseInOut 高度过渡，保持滚动视口偏移不跳位。
+
+## 二十三、司忆区「✨ 语境优先」微标（★ 0.268.0 AI 智慧排序定稿）
+
+### 23.1 形态与位置
+- 分隔线行内右侧：`Row { Divider().layoutWeight(1) + 微标 }`（Divider 让出弹性宽度，微标贴行尾）；上下 margin 沿用各区原值（生词区 8/6、卡区 6/6）；
+- 文字规格：`✨ 语境优先` fontSize **10**、色 `theme.brandSecondary`（辅助紫=提示语义，同 0.188.0 紫色三角先例）；左 margin 6；垂直居中 `alignItems(VerticalAlign.Center)`。
+
+### 23.2 出现与替换规则
+- **仅 AI 序对该消息生效时渲染**（`getRerankWordIds/getRerankCardIds` 命中）——生词区/卡区各自独立判定；失效/超时/离线/超限一律无微标（本地序零感知）；
+- AI 序晚于本地序渲染到达：内容替换时 **150ms 透明度渐变**（容器 opacity 0.4→1，`.animation({duration:150})`）——不做骨架屏（附属区不喧宾夺主）；
+- 用户已展开任一复习卡（`reviewExpandKey !== ''`）时挂起替换，收起后再切（防展开态条目被换走）；
+- 换一批在 AI 候选池内轮换，微标保持显示（AI 序仍生效）。

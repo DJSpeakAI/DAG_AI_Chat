@@ -241,7 +241,9 @@ const RE_ANCHOR: RegExp = /^\[\[anchor:([a-zA-Z]+)\|(.+)\]\]$/;
 
 // ★ 0.237.0：锚点类型白名单（六类——5 类 AI 生成 + breath 本地保留）；
 //   砍 link（联想权只属于用户，AI 发散联想必然不对味——link 输入一律降级普通文本）
-const ANCHOR_TYPES: string[] = ['quiz', 'hook', 'rephrase', 'predict', 'recap', 'breath'];
+// ★ 0.269.0：钩子模式两段式扩三类——digest（简单说）/ progress（到这里了，本地保底专用）/
+//   bait（文末引子）；quiz/predict 仅保留于单段式中回复既有锚点体系（两段式长回复移除）
+const ANCHOR_TYPES: string[] = ['quiz', 'hook', 'rephrase', 'predict', 'recap', 'breath', 'digest', 'progress', 'bait'];
 
 function isAnchorType(type: string): boolean {
   for (let i = 0; i < ANCHOR_TYPES.length; i++) {
@@ -704,7 +706,7 @@ export function splitFoldSections(items: FoldItem[]): FoldSection[] {
 }
 
 // 默认展开集：≥3 节（order>0 的章/段计数）返回 前 ceil(N/3) 节 + 开篇引言 的 index 集；
-//   <3 节返回 null（折叠无意义，平铺全显）
+// <3 节返回 null（折叠无意义，平铺全显）
 export function initExpandedSet(sections: FoldSection[]): Set<number> | null {
   let numberedCount = 0;
   for (let i = 0; i < sections.length; i++) {
@@ -729,4 +731,358 @@ export function initExpandedSet(sections: FoldSection[]): Set<number> | null {
     }
   }
   return set;
+}
+
+// ============================================================
+// ★ 0.269.0 钩子模式两段式长回复：本地合成器（任务书 §四/§八）
+// ②段轻模型输出结构化 JSON 钩子数组 → 本地校验钳位 → [[anchor:类型|文案]] 标记插入。
+// 全部纯函数（ohosTest 双消费，§12.13 军令）：
+//   parseHookJsonResponse（JSON 正则兜底抠取）/ scanBlockSpans（块边界扫描）/
+//   mergeHooksIntoContent（校验+钳位+插入+progress 本地保底）
+// 设计铁律（任务书 §四.1 最高危坑）：afterPara=渲染块索引，代码块/表格=不可分割单块，
+//   禁止 \n\n 裸拆分——块边界由 scanBlockSpans 状态机产出（围栏/表格/块级同款规则）
+// ============================================================
+
+// ②段钩子规格（AI 输出 JSON 条目：afterPara=块索引从 1 起，插在该块之后）
+export class HookSpec {
+  afterPara: number = 0;
+  type: string = '';
+  text: string = '';
+}
+
+// ②段响应兜底抠取：模型加废话/markdown 围栏也能抠出 JSON 数组（遵循度三重防线之三——
+//   不直接降级）；抠不到/解析失败/字段缺失 → 空数组（调用侧走本地保底）
+export function parseHookJsonResponse(raw: string): HookSpec[] {
+  const first = raw.indexOf('[');
+  const last = raw.lastIndexOf(']');
+  if (first < 0 || last <= first) {
+    return [];
+  }
+  let arr: Record<string, Object>[] = [];
+  try {
+    arr = JSON.parse(raw.substring(first, last + 1)) as Record<string, Object>[];
+  } catch (_e) {
+    return [];
+  }
+  const out: HookSpec[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rec = arr[i];
+    const t = rec['type'];
+    const x = rec['text'];
+    if (typeof t !== 'string' || typeof x !== 'string') {
+      continue; // 字段缺失丢弃（Q1 裁决）
+    }
+    const ap = Number(rec['afterPara']);
+    if (!Number.isFinite(ap)) {
+      continue;
+    }
+    const spec = new HookSpec();
+    spec.afterPara = Math.floor(ap);
+    spec.type = t;
+    spec.text = x.trim();
+    if (spec.text.length === 0) {
+      continue;
+    }
+    out.push(spec);
+  }
+  return out;
+}
+
+// 块边界扫描产物：kind=块类型（插入位置校验用），endLine=块最后一行行号（0 起），
+//   sec=该块止的 ## 节序号（progress 模板用），chars=该块止本节累计正文字数
+export class BlockSpan {
+  kind: string = 'p';
+  endLine: number = 0;
+  sec: number = 0;
+  chars: number = 0;
+}
+
+// 行字符量（正文计——围栏行/表格分隔行不计，与 foldItemCharCount 同语义的行级版）
+function spanLineChars(line: string): number {
+  const t = line.trim();
+  if (t.length >= 3 && t.substring(0, 3) === '```') {
+    return 0; // 围栏开关行
+  }
+  if (isTableSeparatorLine(line)) {
+    return 0; // 表格分隔行
+  }
+  return t.length;
+}
+
+// 块边界扫描（mergeHooksIntoContent 专用）：围栏整体一块 / 连续表格行一块 /
+//   其余按 parseBlockMd 同款规则（锚点/hr/标题/列表单行块、引用与段落连续行合并块）。
+//   与 parseBlockMd 的差异：本函数带行号定位与节/字数上下文（插入点定位需求），不改既有签名
+export function scanBlockSpans(lines: string[]): BlockSpan[] {
+  const spans: BlockSpan[] = [];
+  let sec = 0;
+  let secChars = 0;
+  const push = (kind: string, endLine: number): void => {
+    const s = new BlockSpan();
+    s.kind = kind;
+    s.endLine = endLine;
+    s.sec = sec;
+    s.chars = secChars;
+    spans.push(s);
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const t = line.trim();
+    if (t === '') {
+      i++;
+      continue;
+    }
+    // 代码围栏：开→关整体一块（未闭合=流式安全尾部，止于末行）
+    if (t.length >= 3 && t.substring(0, 3) === '```') {
+      let j = i + 1;
+      while (j < lines.length) {
+        const ft = lines[j].trim();
+        if (ft.length >= 3 && ft.substring(0, 3) === '```') {
+          break;
+        }
+        secChars += spanLineChars(lines[j]);
+        j++;
+      }
+      const end = j < lines.length ? j : lines.length - 1;
+      push('code', end);
+      i = end + 1;
+      continue;
+    }
+    // 表格：连续 | 行整体一块
+    if (t.charAt(0) === '|') {
+      let j = i;
+      while (j < lines.length && lines[j].trim().charAt(0) === '|') {
+        secChars += spanLineChars(lines[j]);
+        j++;
+      }
+      push('table', j - 1);
+      i = j;
+      continue;
+    }
+    // 锚点标记行：单块（不计字数不占节）
+    if (RE_ANCHOR.test(t)) {
+      push('anchor', i);
+      i++;
+      continue;
+    }
+    // 标题：单块（h2 开新节——节字数清零，h2 本体不计）
+    const header = RE_HEADER.exec(line);
+    if (header !== null && header[2].length > 0) {
+      const kind = 'h' + header[1].length;
+      if (kind === 'h2') {
+        sec += 1;
+        secChars = 0;
+      }
+      push(kind, i);
+      i++;
+      continue;
+    }
+    // 分割线：单块
+    if (RE_HR.exec(line) !== null) {
+      push('hr', i);
+      i++;
+      continue;
+    }
+    // 列表：每行一块（与 parseBlockMd 同语义）
+    if (RE_UL.exec(line) !== null || RE_OL.exec(line) !== null) {
+      secChars += spanLineChars(line);
+      push('li', i);
+      i++;
+      continue;
+    }
+    // 引用：连续引用行合并一块
+    if (RE_QUOTE.test(t)) {
+      let j = i;
+      while (j < lines.length) {
+        const jt = lines[j].trim();
+        if (jt === '' || !RE_QUOTE.test(jt)) {
+          break;
+        }
+        secChars += spanLineChars(lines[j]);
+        j++;
+      }
+      push('quote', j - 1);
+      i = j;
+      continue;
+    }
+    // 段落：连续普通行合并一块（空行/上述块起点止步）
+    let j = i;
+    while (j < lines.length) {
+      const nl = lines[j];
+      const nt = nl.trim();
+      if (nt === '') {
+        break;
+      }
+      if (RE_ANCHOR.test(nt) || RE_HR.exec(nl) !== null || RE_HEADER.exec(nl) !== null ||
+        RE_UL.exec(nl) !== null || RE_OL.exec(nl) !== null || RE_QUOTE.test(nt) ||
+        (nt.length >= 3 && nt.substring(0, 3) === '```') || nt.charAt(0) === '|') {
+        break;
+      }
+      secChars += spanLineChars(nl);
+      j++;
+    }
+    push('p', j - 1);
+    i = j;
+  }
+  return spans;
+}
+
+// progress 保底文案模板（本地确定性注入——{sec}/{chars} 由合成时就地解析）
+const PROGRESS_TPL: string = '到这里了——第{sec}节 · 本节刚讲了约{chars}字';
+
+function resolveProgressText(sec: number, chars: number): string {
+  if (sec <= 0) {
+    return `到这里告一段落了，这一段约 ${chars} 字，下面是新的内容`;
+  }
+  return PROGRESS_TPL.replace('{sec}', String(sec)).replace('{chars}', String(chars));
+}
+
+// 两段式钩子合法类型（AI 侧三类；progress=本地保底专用，AI 输出 progress 一律降级 breath）
+const HOOK_AI_TYPES: string[] = ['breath', 'digest', 'bait'];
+
+function isHookAiType(t: string): boolean {
+  for (let i = 0; i < HOOK_AI_TYPES.length; i++) {
+    if (HOOK_AI_TYPES[i] === t) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 全文字数 → 消化类钩子应有数（任务书 §七数量硬约束：800~1500:2 / 1500~3000:3 / >3000:4）
+function hookQuotaFor(totalChars: number): number {
+  if (totalChars > 3000) {
+    return 4;
+  }
+  if (totalChars > 1500) {
+    return 3;
+  }
+  return 2;
+}
+
+// 已规划钩子（规范化后的插入计划；after=目标块下标 0 起）
+class PlannedHook {
+  after: number = 0;
+  type: string = '';
+  text: string = '';
+}
+
+// 合成器主函数：钩子数组 + ①段全文 → 插标记后的 content。
+// 校验链（Q1/Q10 裁决）：越界钳位 / 字段缺失丢弃（parseHookJsonResponse 已滤）/ 类型非法降级 breath /
+//   bait 恒 afterPara=最后一块且超 1 截断（保留最后一条）/ 消化类禁插标题与列表块后（后移至下一合法块）/
+//   开篇前两块钳位 ≥2 / 同位去重；钩子不足配额 → progress 本地保底补齐（距上一钩子 ≥800 字处，
+//   避开已有钩子占位）；全部失败/空钩子 → 原文返回（调用侧另有 breath 渲染保底兜底）
+export function mergeHooksIntoContent(hooks: HookSpec[], content: string): string {
+  const lines = content.split('\n');
+  const spans = scanBlockSpans(lines);
+  const n = spans.length;
+  if (n === 0) {
+    return content;
+  }
+  // 全文正文字数（配额基准）+ 每行止累计字数（保底间距基准）
+  const cum: number[] = [];
+  let totalChars = 0;
+  for (let l = 0; l < lines.length; l++) {
+    totalChars += spanLineChars(lines[l]);
+    cum.push(totalChars);
+  }
+  // 消化钩子规范化
+  const planned: PlannedHook[] = [];
+  let baitText = '';
+  let baitSeen = false;
+  for (let i = 0; i < hooks.length; i++) {
+    const h = hooks[i];
+    if (h.type === 'bait') {
+      // bait：保留最后一条（文末引子语义取最后），固定插在最后一块后
+      baitText = h.text;
+      baitSeen = true;
+      continue;
+    }
+    const type = isHookAiType(h.type) ? h.type : 'breath'; // 类型非法降级 breath
+    let after = h.afterPara - 1; // 转块下标（0 起）
+    if (after < 1) {
+      after = 1; // 开篇前两块禁插：钳位至第 2 块（下标 1）
+    }
+    if (after > n - 2) {
+      after = n - 2; // 倒数第一块=文末（bait 专属位），消化类不抢尾
+    }
+    // 禁插标题/列表/锚点/分割线块后：后移至下一合法块（找不到丢弃）
+    let ok = false;
+    while (after >= 0 && after < n) {
+      const k = spans[after].kind;
+      if (k !== 'li' && k !== 'anchor' && k.charAt(0) !== 'h' && k !== 'hr') {
+        ok = true;
+        break;
+      }
+      after++;
+    }
+    if (!ok || after >= n) {
+      continue;
+    }
+    const p = new PlannedHook();
+    p.after = after;
+    p.type = type;
+    p.text = h.text;
+    planned.push(p);
+  }
+  // 同位去重（保留首条）
+  const seenAt = new Set<number>();
+  const finalHooks: PlannedHook[] = [];
+  for (let i = 0; i < planned.length; i++) {
+    if (!seenAt.has(planned[i].after)) {
+      seenAt.add(planned[i].after);
+      finalHooks.push(planned[i]);
+    }
+  }
+  // progress 本地保底：消化类不足配额时，在距上一钩子 ≥800 字的合法块边界补 progress
+  const quota = hookQuotaFor(totalChars);
+  let lastHookPos = 0; // 上一个钩子出现处的累计字数
+  for (let i = 0; i < finalHooks.length; i++) {
+    const el = spans[finalHooks[i].after].endLine;
+    const pos = el < cum.length ? cum[el] : 0;
+    if (pos > lastHookPos) {
+      lastHookPos = pos;
+    }
+  }
+  for (let si = 1; si < n - 1 && finalHooks.length < quota; si++) {
+    const k = spans[si].kind;
+    if (k === 'li' || k === 'anchor' || k.charAt(0) === 'h' || k === 'hr') {
+      continue;
+    }
+    if (seenAt.has(si)) {
+      continue;
+    }
+    const pos = spans[si].endLine < cum.length ? cum[spans[si].endLine] : 0;
+    if (pos - lastHookPos >= 800) {
+      const segChars = spans[si].chars > 0 ? spans[si].chars : Math.max(pos - lastHookPos, 0);
+      const p = new PlannedHook();
+      p.after = si;
+      p.type = 'progress';
+      p.text = resolveProgressText(spans[si].sec, segChars);
+      finalHooks.push(p);
+      seenAt.add(si);
+      lastHookPos = pos;
+    }
+  }
+  // bait 恒最后一块后
+  if (baitSeen && baitText.length > 0) {
+    const p = new PlannedHook();
+    p.after = n - 1;
+    p.type = 'bait';
+    p.text = baitText;
+    finalHooks.push(p);
+  }
+  if (finalHooks.length === 0) {
+    return content;
+  }
+  // 按块下标排序后从后往前插（行号不位移）；标记行前后补空行确保独占成块
+  finalHooks.sort((a: PlannedHook, b: PlannedHook): number => a.after - b.after);
+  const out = lines.slice();
+  for (let i = finalHooks.length - 1; i >= 0; i--) {
+    const h = finalHooks[i];
+    const endLine = spans[h.after].endLine;
+    const marker = `[[anchor:${h.type}|${h.text}]]`;
+    out.splice(endLine + 1, 0, '', marker, '');
+  }
+  return out.join('\n');
 }
