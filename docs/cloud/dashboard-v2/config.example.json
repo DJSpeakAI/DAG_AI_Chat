@@ -1,0 +1,11 @@
+{
+  "port": 8766,
+  "password": "changeme",
+  "spCostPer10kCny": 0.05,
+  "dailyWriteQuota": 20000,
+  "quotaYellowPct": 60,
+  "quotaRedPct": 80,
+  "syncIntervalMs": 600000,
+  "detailRetainDays": 90,
+  "reports": { "enabled": false, "clientId": "", "clientKey": "" }
+}

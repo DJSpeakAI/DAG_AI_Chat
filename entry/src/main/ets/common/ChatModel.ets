@@ -24,6 +24,7 @@ import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, revive
 import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
+import { trackUidAuto } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
@@ -986,6 +987,11 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
   store.giftSp += amount;
   // ★ 0.248.5：有效期取消——不再设置 giftSpExpireAt（礼包永久）
   scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  const _gp: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（发放收口单一挂点）
+  _gp['src'] = 'welcome';
+  _gp['sp'] = `${amount}`;
+  _gp['bal'] = `${siyiTotalSp(store)}`;
+  trackUidAuto('sp_grant', _gp);
   return true;
 }
 
@@ -1101,6 +1107,11 @@ export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string
   const total = signInRewardSp(store.streak) + milestoneBonusSp(store.streak);
   siyi.bonusSp += total;
   scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  const _sg: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（签到发放）
+  _sg['src'] = 'sign';
+  _sg['sp'] = `${total}`;
+  _sg['bal'] = `${siyiTotalSp(siyi)}`;
+  trackUidAuto('sp_grant', _sg);
   return total;
 }
 
@@ -1346,6 +1357,11 @@ export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPoi
   history.push(`兑换码 ${code.substring(0, 4)}****｜+${SIYI_REDEEM_SP / 10000} 万司忆点｜${new Date().toLocaleDateString()}`);
   store.purchaseHistory = JSON.stringify(history);
   scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  const _rd: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（兑码发放）
+  _rd['src'] = 'redeem';
+  _rd['sp'] = `${SIYI_REDEEM_SP}`;
+  _rd['bal'] = `${siyiTotalSp(siyi)}`;
+  trackUidAuto('sp_grant', _rd);
   return true;
 }
 

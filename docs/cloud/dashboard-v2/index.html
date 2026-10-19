@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAGAI 埋点看板 v2</title>
+<script src="https://registry.npmmirror.com/echarts/5.5.0/files/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #17131f; color: #e8e2f5; font-family: 'Microsoft YaHei', sans-serif; padding: 16px 20px; }
+  h1 { font-size: 18px; color: #b9a5ff; }
+  .top { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+  .top .sub { color: #8a7fa8; font-size: 12px; }
+  .btn { background: #2c2440; color: #cfc2f5; border: 1px solid #4a3d75; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+  .btn.active { background: #6c4fe0; color: #fff; border-color: #8f78ec; }
+  .card { background: #201a2e; border: 1px solid #342a52; border-radius: 10px; padding: 14px; margin-bottom: 16px; }
+  .card h2 { font-size: 14px; color: #b9a5ff; margin-bottom: 10px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs .tab { padding: 7px 18px; border-radius: 8px; cursor: pointer; font-size: 13px; background: #201a2e; border: 1px solid #342a52; color: #cfc2f5; }
+  .tabs .tab.active { background: #6c4fe0; color: #fff; border-color: #8f78ec; }
+  .tabs .tab.dim::after { content: '（二期）'; font-size: 10px; opacity: .6; }
+  .page { display: none; }
+  .page.show { display: block; }
+  .shotwrap { position: relative; display: inline-block; max-width: 100%; }
+  .shotwrap img { max-width: 100%; border-radius: 8px; display: block; }
+  .mark { position: absolute; transform: translate(-50%, -50%); background: rgba(108,79,224,.92); border: 2px solid #b9a5ff;
+          color: #fff; border-radius: 14px; padding: 3px 9px; font-size: 12px; cursor: pointer; white-space: nowrap;
+          box-shadow: 0 0 10px rgba(108,79,224,.7); z-index: 2; }
+  .mark small { opacity: .75; font-size: 10px; margin-right: 3px; }
+  .mark.zero { background: rgba(90,80,120,.85); border-color: #7a6da0; box-shadow: none; }
+  .controls { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+  select { background: #2c2440; color: #cfc2f5; border: 1px solid #4a3d75; border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  .stat { display: inline-block; background: #2c2440; border-radius: 8px; padding: 8px 14px; margin-right: 8px; margin-bottom: 8px; }
+  .stat b { color: #b9a5ff; font-size: 18px; margin-left: 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+  .chart { width: 100%; height: 300px; }
+  .chart.tall { height: 340px; }
+  .hint { color: #8a7fa8; font-size: 11px; margin-top: 6px; }
+  .empty { color: #8a7fa8; font-size: 12px; padding: 20px; text-align: center; }
+  .quota-bar { height: 14px; background: #2c2440; border-radius: 7px; overflow: hidden; border: 1px solid #342a52; }
+  .quota-bar i { display: block; height: 100%; background: #4fae6d; }
+  .quota-bar.yellow i { background: #c7a23d; }
+  .quota-bar.red i { background: #c75656; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; }
+  .tag.g { background: rgba(79,174,109,.2); color: #7ed99a; }
+  .tag.y { background: rgba(199,162,61,.2); color: #e8c96a; }
+  .tag.r { background: rgba(199,86,86,.2); color: #e88a8a; }
+  table.tb { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.tb th, table.tb td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #342a52; }
+  table.tb th { color: #8a7fa8; font-weight: normal; }
+  table.tb td b { color: #b9a5ff; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>DAGAI 埋点看板 v2</h1>
+  <span class="sub" id="meta"></span>
+  <span style="flex:1"></span>
+  <button class="btn" onclick="syncNow()">手动同步</button>
+  <button class="btn" onclick="loadAll()">刷新</button>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-p="p1" onclick="switchTab('p1')">① 行为埋点</div>
+  <div class="tab" data-p="p2" onclick="switchTab('p2')">② SP 消耗与发放</div>
+  <div class="tab dim" data-p="p3" onclick="switchTab('p3')">③ 收入</div>
+  <div class="tab" data-p="p4" onclick="switchTab('p4')">④ 规模与质量</div>
+  <div class="tab dim" data-p="p5" onclick="switchTab('p5')">⑤ 告警</div>
+</div>
+
+<!-- ============ Tab1 行为埋点（0.206.dash 平移） ============ -->
+<div class="page show" id="p1">
+  <div class="card">
+    <h2>App 界面热区还原（标注 = 被埋点按钮 · 数字 = 窗口内点击数 · 点击跳转图表）</h2>
+    <div class="controls">
+      <span class="hint">热区时间窗：</span>
+      <button class="btn" data-win="day" onclick="setWin('day')">今天</button>
+      <button class="btn" data-win="week" onclick="setWin('week')">近 7 天</button>
+      <button class="btn" data-win="month" onclick="setWin('month')">近 30 天</button>
+      <button class="btn active" data-win="all" onclick="setWin('all')">全部</button>
+    </div>
+    <div class="controls" id="pageTabs"></div>
+    <div id="shotArea" class="shotwrap"></div>
+  </div>
+  <div class="card">
+    <h2>事件分布柱状图</h2>
+    <div class="controls">
+      <select id="eventSel" onchange="renderChart()"></select>
+      <button class="btn active" data-g="hour" onclick="setGran('hour')">小时</button>
+      <button class="btn" data-g="day" onclick="setGran('day')">天</button>
+      <button class="btn" data-g="week" onclick="setGran('week')">周</button>
+      <button class="btn" data-g="month" onclick="setGran('month')">月</button>
+      <button class="btn" data-g="year" onclick="setGran('year')">年</button>
+    </div>
+    <div id="stats"></div>
+    <div id="chart" style="width:100%;height:340px"></div>
+    <div class="hint">带参数事件（如设置Tab、评分）按参数值分色堆叠；同参数含义见 docs/埋点字典.md</div>
+  </div>
+</div>
+
+<!-- ============ Tab2 SP 消耗与发放（0.260.0 新增） ============ -->
+<div class="page" id="p2">
+  <div class="card">
+    <h2>SP 总览（成本 ¥ 换算系数在服务端 config.json spCostPer10kCny —— 调参改配置不改码）</h2>
+    <div id="spStats"></div>
+    <div class="hint">¥ 为内部成本口径（SP→token→服务商计价），app 内对用户禁 ¥-SP 换算不受此影响</div>
+  </div>
+  <div class="card">
+    <h2>日消耗 / 日发放曲线 + 发放消耗比（健康带 0.6~1.2：长期>1.2=奖励过度稀释付费转化，<0.6=活跃不足）</h2>
+    <div class="controls">
+      <button class="btn active" data-sg="day" onclick="setSpGran('day')">日</button>
+      <button class="btn" data-sg="week" onclick="setSpGran('week')">周</button>
+      <button class="btn" data-sg="month" onclick="setSpGran('month')">月</button>
+    </div>
+    <div id="spTrend" class="chart tall"></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h2>消耗按模型分布</h2>
+      <div id="spModel" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>消耗按匿名 uid TOP10</h2>
+      <div id="spUid" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>人均日消耗分位（防极端值带偏均值）</h2>
+      <div id="spPct"></div>
+      <div class="hint">分布单元=uid×自然日消耗量；P50=一半用户单日低于此值，P90=九成低于此值</div>
+    </div>
+    <div class="card">
+      <h2>SP 余额分布（取每 uid 最新 bal；月底大量结余>50% = 定价偏高或奖励过度，月初集中耗尽 = 该加量或降系数）</h2>
+      <div id="spBal" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>缓存命中率分布（SP 成本最大变量——命中率掉=成本红线误判源头）</h2>
+      <div id="spHit" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>发放来源构成</h2>
+      <div id="spSrc" class="chart"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab3 收入（二期占位） ============ -->
+<div class="page" id="p3">
+  <div class="card"><div class="empty">二期：IAPExport 定时拉取（node-cron）+ CSV 解析 + 收入走势 + 毛利视图（收入对冲 SP 成本）+ 兑码人工登记过渡<br><br>前置依赖：AGC Reports API IAPExport 授权（client_id/access_token——待向华为 AI 索取授权流程后接入）</div></div>
+</div>
+
+<!-- ============ Tab4 规模与质量 ============ -->
+<div class="page" id="p4">
+  <div class="card">
+    <h2>Cloud DB 写配额余量（免费配额 2 万次/天）</h2>
+    <div id="quotaBox"></div>
+  </div>
+  <div class="card">
+    <h2>规模数据（Reports API：DAU / 新增 / 留存 / 下载安装 / 崩溃）</h2>
+    <div id="reportsBox"></div>
+  </div>
+</div>
+
+<!-- ============ Tab5 告警（二期占位） ============ -->
+<div class="page" id="p5">
+  <div class="card"><div class="empty">二期：分级滞回红线告警引擎（7 日滚动均值：黄线 9.9 档人均成本>4 元、红线>5.5 元、回落&lt;4 元才解除；分档分模型独立阈值）+ APMS Webhook 接收<br><br>规则全部在 config.json；当前先用 Tab2 曲线人工研判</div></div>
+</div>
+
+<script>
+// ================= 通用 =================
+let EVENTS = [], COORDS = { events: {}, pages: [] };
+let curWin = 'all', curGran = 'day', curPage = 0, curEvent = '';
+let curSpGran = 'day';
+let SP = null, META = null;
+const chart = echarts.init(document.getElementById('chart'));
+const spTrendChart = echarts.init(document.getElementById('spTrend'));
+const spModelChart = echarts.init(document.getElementById('spModel'));
+const spUidChart = echarts.init(document.getElementById('spUid'));
+const spBalChart = echarts.init(document.getElementById('spBal'));
+const spHitChart = echarts.init(document.getElementById('spHit'));
+const spSrcChart = echarts.init(document.getElementById('spSrc'));
+const AXIS = { axisLabel: { color: '#8a7fa8', fontSize: 10 }, axisLine: { lineStyle: { color: '#342a52' } } };
+const SPLIT = { splitLine: { lineStyle: { color: '#342a52' } } };
+
+function switchTab(id) {
+  document.querySelectorAll('.tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.p === id));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('show', p.id === id));
+  [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart].forEach(c => c && c.resize());
+}
+
+async function loadAll() {
+  const [dj, cj, mj, sj] = await Promise.all([
+    fetch('/api/data').then(r => r.json()),
+    fetch('/coords.json').then(r => r.json()),
+    fetch('/api/meta').then(r => r.json()),
+    fetch('/api/sp').then(r => r.json())
+  ]);
+  if (!dj.ok) { document.getElementById('meta').textContent = '数据加载失败：' + dj.error; return; }
+  EVENTS = dj.events || []; COORDS = cj || { events: {}, pages: [] }; META = mj; SP = sj;
+  const syncAt = META.lastSyncAt ? new Date(META.lastSyncAt).toLocaleTimeString() : '从未';
+  document.getElementById('meta').textContent = '共 ' + dj.count + ' 条 · 同步于 ' + syncAt + '（10 分钟增量）';
+  const sel = document.getElementById('eventSel');
+  sel.innerHTML = Object.keys(cj.events).map(e => '<option value="' + e + '">' + cj.events[e] + '（' + e + '）</option>').join('');
+  if (curEvent) sel.value = curEvent; else curEvent = sel.value;
+  renderTabs(); renderShot(); renderChart(); renderSp(); renderQuota(); renderReports();
+}
+
+async function syncNow() {
+  document.getElementById('meta').textContent = '同步中…';
+  await fetch('/api/sync');
+  loadAll();
+}
+
+// ================= Tab1（平移） =================
+function ts(n) { const d = new Date(n); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function winStart() {
+  if (curWin === 'all') return 0;
+  const days = curWin === 'day' ? 1 : (curWin === 'week' ? 7 : 30);
+  const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - (days - 1)); return d.getTime();
+}
+function count(ev, paramKey, paramVal) {
+  const ws = winStart();
+  return EVENTS.filter(x => x.e === ev && x.t >= ws && (!paramKey || (x.p || '').indexOf('"'+paramKey+'":"'+paramVal+'"') >= 0)).length;
+}
+function pad2(n) { return String(n).padStart(2, '0'); }
+function bucket(t) {
+  const d = new Date(t);
+  if (curGran === 'hour') return ts(t) + ' ' + pad2(d.getHours()) + ':00';
+  if (curGran === 'day' || curGran === 'month' || curGran === 'year') {
+    if (curGran === 'month') return d.getFullYear() + '-' + pad2(d.getMonth()+1);
+    if (curGran === 'year') return String(d.getFullYear());
+    return ts(t);
+  }
+  const w = new Date(d); const day = (w.getDay() === 0 ? 7 : w.getDay()); w.setDate(w.getDate() - day + 1);
+  return '周:' + w.getFullYear() + '-' + pad2(w.getMonth()+1) + '-' + pad2(w.getDate());
+}
+function parseP(p) { try { return JSON.parse(p || '{}'); } catch (e) { return {}; } }
+
+function renderTabs() {
+  document.getElementById('pageTabs').innerHTML = (COORDS.pages || []).map((p, i) =>
+    '<button class="btn' + (i === curPage ? ' active' : '') + '" onclick="curPage=' + i + ';renderTabs();renderShot()">' + p.title + '</button>').join('');
+}
+
+function renderShot() {
+  const area = document.getElementById('shotArea');
+  const page = (COORDS.pages || [])[curPage];
+  if (!page || !page.marks || page.marks.length === 0) {
+    area.innerHTML = '<img src="/screenshots/' + (page ? page.img : '') + '" style="max-height:520px"><div class="empty" style="position:absolute;top:8px;left:8px">本页坐标标注待填（coords.json marks）</div>';
+    return;
+  }
+  let html = '<img src="/screenshots/' + page.img + '" style="max-height:520px">';
+  page.marks.forEach(m => {
+    const c = count(m.event, m.pkey, m.pval);
+    html += '<div class="mark' + (c === 0 ? ' zero' : '') + '" style="left:' + (m.x * 100) + '%;top:' + (m.y * 100) + '%" title="' + (COORDS.events[m.event] || m.event) + '" onclick="jumpTo(\'' + m.event + '\')">' + (m.label || '') + ' ' + c + '</div>';
+  });
+  area.innerHTML = html;
+}
+
+function jumpTo(ev) { curEvent = ev; document.getElementById('eventSel').value = ev; renderChart(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
+
+function renderChart() {
+  curEvent = document.getElementById('eventSel').value;
+  const evs = EVENTS.filter(x => x.e === curEvent);
+  const today = ts(Date.now());
+  const st = (label, n) => '<span class="stat">' + label + '<b>' + n + '</b></span>';
+  document.getElementById('stats').innerHTML =
+    st('总计', evs.length) + st('今天', evs.filter(x => ts(x.t) === today).length) +
+    st('近7天', evs.filter(x => x.t >= Date.now() - 7*864e5).length) +
+    st('近30天', evs.filter(x => x.t >= Date.now() - 30*864e5).length);
+  const pkeys = {}; evs.forEach(x => { const p = parseP(x.p); const k = Object.keys(p)[0]; if (k) pkeys[k] = 1; });
+  let pkey = null, pvals = [];
+  const k0 = Object.keys(pkeys)[0];
+  if (k0) {
+    const set = new Set(evs.map(x => parseP(x.p)[k0]).filter(v => v !== undefined));
+    if (set.size > 1 && set.size <= 6) { pkey = k0; pvals = [...set]; }
+  }
+  const buckets = {};
+  evs.forEach(x => { const b = bucket(x.t); (buckets[b] = buckets[b] || []).push(x); });
+  const bkeys = Object.keys(buckets).sort();
+  const series = [];
+  if (!pkey) {
+    series.push({ name: (COORDS.events[curEvent] || curEvent), type: 'bar', barMaxWidth: 40,
+      data: bkeys.map(b => buckets[b].length), itemStyle: { color: '#6c4fe0', borderRadius: [4,4,0,0] } });
+  } else {
+    const colors = ['#6c4fe0', '#3fa7a0', '#c78a3d', '#b0567a', '#5a8a3d', '#7a7ad0'];
+    pvals.forEach((v, i) => series.push({ name: v, type: 'bar', stack: 'x', barMaxWidth: 40,
+      data: bkeys.map(b => buckets[b].filter(x => parseP(x.p)[pkey] === v).length),
+      itemStyle: { color: colors[i % colors.length] } }));
+  }
+  chart.setOption({
+    tooltip: { trigger: 'axis' }, legend: pkey ? { textStyle: { color: '#cfc2f5' } } : undefined,
+    grid: { left: 40, right: 16, top: pkey ? 40 : 24, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: bkeys, axisLabel: Object.assign({ rotate: bkeys.length > 8 ? 38 : 0 }, AXIS.axisLabel) }, { axisLine: AXIS.axisLine }),
+    yAxis: Object.assign({ type: 'value', minInterval: 1, axisLabel: AXIS.axisLabel }, SPLIT),
+    series: series
+  }, true);
+}
+
+function setWin(w) { curWin = w; document.querySelectorAll('[data-win]').forEach(b => b.classList.toggle('active', b.dataset.win === w)); renderShot(); }
+function setGran(g) { curGran = g; document.querySelectorAll('[data-g]').forEach(b => b.classList.toggle('active', b.dataset.g === g)); renderChart(); }
+
+// ================= Tab2 SP =================
+function fmtSp(n) { return n >= 10000 ? (n / 10000).toFixed(1) + ' 万' : String(Math.round(n)); }
+
+function renderSp() {
+  if (!SP || !SP.ok) { document.getElementById('spStats').innerHTML = '<div class="empty">暂无 SP 数据</div>'; return; }
+  const s = SP.summary;
+  const st = (label, n, sub) => '<span class="stat">' + label + '<b>' + n + '</b>' + (sub ? ' <span class="hint">' + sub + '</span>' : '') + '</span>';
+  document.getElementById('spStats').innerHTML =
+    st('累计消耗', fmtSp(s.consumeTotal) + ' SP') +
+    st('累计成本', '¥' + s.cny, '系数 ' + s.spCostPer10kCny + '/万SP') +
+    st('今日消耗', fmtSp(s.consumeToday) + ' SP', '¥' + s.cnyToday) +
+    st('今日发放', fmtSp(s.grantToday) + ' SP') +
+    st('消耗行数', s.consumeCnt) +
+    st('P50 人均日耗', fmtSp(SP.p50) + ' SP') +
+    st('P90 人均日耗', fmtSp(SP.p90) + ' SP');
+
+  // 日/周/月聚合曲线
+  let series = SP.series;
+  if (curSpGran === 'week') {
+    const m = new Map();
+    series.forEach(d => { const dt = new Date(d.day + 'T00:00:00'); const day = (dt.getDay() === 0 ? 7 : dt.getDay()); dt.setDate(dt.getDate() - day + 1);
+      const k = dt.getFullYear() + '-' + pad2(dt.getMonth()+1) + '-' + pad2(dt.getDate());
+      const v = m.get(k) || { consume: 0, grant: 0 }; v.consume += d.consume; v.grant += d.grant; m.set(k, v); });
+    series = [...m.entries()].map(x => ({ day: '周:' + x[0], consume: x[1].consume, grant: x[1].grant }));
+  } else if (curSpGran === 'month') {
+    const m = new Map();
+    series.forEach(d => { const k = d.day.slice(0, 7); const v = m.get(k) || { consume: 0, grant: 0 }; v.consume += d.consume; v.grant += d.grant; m.set(k, v); });
+    series = [...m.entries()].map(x => ({ day: x[0], consume: x[1].consume, grant: x[1].grant }));
+  }
+  spTrendChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['日消耗', '日发放', '发放/消耗比'], textStyle: { color: '#cfc2f5' } },
+    grid: { left: 70, right: 70, top: 40, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: series.map(d => d.day) }, AXIS),
+    yAxis: [
+      Object.assign({ type: 'value', axisLabel: Object.assign({ formatter: v => v >= 10000 ? (v/10000) + '万' : v }, AXIS.axisLabel) }, SPLIT),
+      Object.assign({ type: 'value', axisLabel: AXIS.axisLabel }, SPLIT)
+    ],
+    series: [
+      { name: '日消耗', type: 'bar', barMaxWidth: 32, data: series.map(d => d.consume), itemStyle: { color: '#6c4fe0', borderRadius: [4,4,0,0] } },
+      { name: '日发放', type: 'bar', barMaxWidth: 32, data: series.map(d => d.grant), itemStyle: { color: '#3fa7a0', borderRadius: [4,4,0,0] } },
+      { name: '发放/消耗比', type: 'line', yAxisIndex: 1, data: series.map(d => d.consume > 0 ? +(d.grant / d.consume).toFixed(2) : null),
+        markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c7a23d', type: 'dashed' },
+          data: [{ yAxis: 0.6, label: { formatter: '0.6 活跃不足线', color: '#c7a23d' } }, { yAxis: 1.2, label: { formatter: '1.2 奖励过度线', color: '#c7a23d' } }] } }
+    ]
+  }, true);
+
+  const pieOpt = (data, nameKey, valKey) => ({
+    tooltip: { trigger: 'item' },
+    series: [{ type: 'pie', radius: ['38%', '68%'], center: ['50%', '50%'],
+      label: { color: '#8a7fa8', fontSize: 11 },
+      data: data.map(x => ({ name: x[nameKey], value: x[valKey] })) }]
+  });
+  spModelChart.setOption(pieOpt(SP.models, 'model', 'sp'), true);
+  spSrcChart.setOption(pieOpt(SP.grantSrc, 'src', 'sp'), true);
+
+  spUidChart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 90, right: 20, top: 16, bottom: 28 },
+    xAxis: Object.assign({ type: 'value' }, AXIS, SPLIT),
+    yAxis: Object.assign({ type: 'category', data: SP.uidTop.map(x => x.uid).reverse() }, AXIS),
+    series: [{ type: 'bar', barMaxWidth: 18, data: SP.uidTop.map(x => x.sp).reverse(), itemStyle: { color: '#7a7ad0', borderRadius: [0,4,4,0] } }]
+  }, true);
+
+  const balLabels = ['0（耗尽）', '1~10万', '10~50万', '50万+'];
+  spBalChart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 20, top: 16, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: balLabels }, AXIS),
+    yAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS, SPLIT),
+    series: [{ type: 'bar', barMaxWidth: 48, data: SP.balBuckets,
+      itemStyle: { color: p => ['#7a6da0', '#3fa7a0', '#6c4fe0', '#c7a23d'][p.dataIndex], borderRadius: [4,4,0,0] } }]
+  }, true);
+
+  const hitLabels = ['0%', '1~20%', '21~50%', '51~80%', '81~100%'];
+  spHitChart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 20, top: 16, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: hitLabels }, AXIS),
+    yAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS, SPLIT),
+    series: [{ type: 'bar', barMaxWidth: 48, data: SP.hitBuckets, itemStyle: { color: '#3fa7a0', borderRadius: [4,4,0,0] } }]
+  }, true);
+}
+function setSpGran(g) { curSpGran = g; document.querySelectorAll('[data-sg]').forEach(b => b.classList.toggle('active', b.dataset.sg === g)); renderSp(); }
+
+// ================= Tab4 配额 & Reports =================
+function renderQuota() {
+  const q = META && META.quota;
+  if (!q) return;
+  const cls = q.level === 'red' ? 'r' : q.level === 'yellow' ? 'y' : 'g';
+  const txt = q.level === 'red' ? '已超红线' : q.level === 'yellow' ? '黄线预警' : '健康';
+  document.getElementById('quotaBox').innerHTML =
+    '<div class="controls"><span class="stat">今日写入 <b>' + q.todayRows + '</b> / ' + q.quota + ' 次</span>' +
+    '<span class="tag ' + cls + '">' + txt + ' ' + q.pct + '%</span>' +
+    (q.pct >= q.yellowPct ? '<span class="hint">黄线 ' + q.yellowPct + '% · 红线 ' + q.redPct + '%——日活接近 500 时启动 B 案小时聚合（云函数内聚合，端侧口径不变）</span>' : '') +
+    '</div><div class="quota-bar ' + (q.level === 'green' ? '' : q.level) + '"><i style="width:' + Math.min(100, q.pct) + '%"></i></div>' +
+    '<div class="hint">' + q.note + '</div>';
+}
+
+function renderReports() {
+  const box = document.getElementById('reportsBox');
+  if (!META || !META.reports || !META.reports.enabled) {
+    box.innerHTML = '<div class="empty">未接入 —— Reports API 授权（client_id / access_token）拿到后在服务端 config.json reports 段填入并 enabled:true<br><br>' +
+      '接入后展示：DAU / 新增用户 / 留存 / 下载安装（IAPExport 收入在 Tab3）；平台侧数据留存 14 个月，本地 JSON 分卷即长期持久层</div>';
+    return;
+  }
+  box.innerHTML = '<div class="empty">已配置凭证——数据拉取渲染随授权细节落地（当前版本占位）</div>';
+}
+
+window.addEventListener('resize', () => [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart].forEach(c => c && c.resize()));
+loadAll();
+</script>
+</body>
+</html>

@@ -48,7 +48,7 @@ import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFro
 import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：阅读并同意弹窗（首启/边栏/云同步三入口共用）
 import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
 import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, AGREEMENT_CHECK_PREFIX } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案
-import { setTrackingEnabled } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入
+import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -377,6 +377,7 @@ struct Index {
     this.agreementBridge.improveVisible = false;
     connectAgreement().improvePromptShown = true;
     setTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext, true);
+    trackFirstAuto(); // ★ 0.260.0：开关已开，补报 app_first（同意时开关未开未报的场景；幂等恰 1 行）
   }
 
   // 体验改进计划——暂不加入（保持关闭；仅记账，此后不再弹）
@@ -648,7 +649,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.259.2') // ★ 0.259.2：云同步授权提示加长+直达权限面板;上一版 0.259.1：云同步复活型脏对自愈;更早历史见 MEMORY.md
+        Text('v0.260.0') // ★ 0.260.0：后台统计监控台一期（sp_consume/sp_grant/app_first 埋点+攒批50+uid可插拔）;上一版 0.259.2：云同步授权提示加长;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

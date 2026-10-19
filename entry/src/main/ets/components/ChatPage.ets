@@ -24,7 +24,7 @@
 
 import { AppStorageV2, PersistenceV2, curves } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）；★ 0.234.0：curves（onDone 收拢 springMotion 弹簧曲线——华为物理动效血统）
 import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext
-import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
+import { track, trackUidAuto } from '../utils/TrackUtil'; // 0.206.0 埋点；★ 0.260.0：trackUidAuto（sp_consume）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
@@ -1920,7 +1920,11 @@ export struct ChatPage {
         aiMsg.outputTokens = outputTokens;
         aiMsg.cacheHitTokens = cachedTokens;
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
+          const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额（consumeSiyiSp 不足 clamp 到 0）
           consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
+          this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'chat'); // ★ 0.260.0
+        } else {
+          this.trackSpConsume(aiMsg, true, 0, inputTokens, cachedTokens, 'chat'); // ★ 0.260.0：免扣照报 f:y（成本红线要真实 token/命中/余额）
         }
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
@@ -2060,7 +2064,11 @@ export struct ChatPage {
         msg.outputTokens = outputTokens;
         msg.cacheHitTokens = cachedTokens;
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
+          const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额
           consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
+          this.trackSpConsume(msg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'regen'); // ★ 0.260.0
+        } else {
+          this.trackSpConsume(msg, true, 0, inputTokens, cachedTokens, 'regen'); // ★ 0.260.0：免扣照报 f:y
         }
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
@@ -2719,6 +2727,19 @@ export struct ChatPage {
   //   云同步多端一致，只增不减、达成后免扣状态永不回退）；两处发送闸门+两处实扣+明细行统一走此封装
   spFree(): boolean {
     return isSiyiSpFree(getStatDays(this.statStore).length);
+  }
+
+  // ★ 0.260.0：sp_consume 埋点（与 consumeSiyiSp 实扣同点双写——0.259.0 本地统计外再加云端上报）：
+  //   免扣账号照报 f:y（sp=0，成本红线要真实 token/命中率/余额）；h=缓存命中率%（cached/input，输入 0 防除零）
+  trackSpConsume(msg: ChatMessage, free: boolean, actualSp: number, inputTokens: number, cachedTokens: number, scene: string): void {
+    const p: Record<string, string> = {};
+    p['sp'] = `${actualSp}`;
+    p['m'] = msg.model;
+    p['sc'] = scene; // chat=发送 / regen=重生成
+    p['f'] = free ? 'y' : 'n';
+    p['bal'] = `${siyiTotalSp(this.siyiStore)}`;
+    p['h'] = `${inputTokens > 0 ? Math.round(cachedTokens * 100 / inputTokens) : 0}`;
+    trackUidAuto('sp_consume', p);
   }
 
   // ★ 0.247.3：token 明细弹层 builder（感叹号弹出）——无参 @Builder 直读 tokenInfoText 快照；

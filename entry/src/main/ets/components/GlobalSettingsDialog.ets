@@ -47,7 +47,7 @@ import {
   getBackupSettings, setAutoBackupEnabled, setExternalUri, pickBackupFile, pickAndReadBackupFile,
   writeExternalBackup, maybeAutoBackup, BackupPayload
 } from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
-import { track, isTrackingEnabled, setTrackingEnabled } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关
+import { track, isTrackingEnabled, setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关；★ 0.260.0：迟加入补报 app_first
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.232.1：弹窗宽度断点制（PC/Pad 固定 560 不做屏宽自适应——用户拍板「配置类 UI 自适应宽度难看」）
 import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.259.2'; // ★ 0.259.2：云同步授权提示加长+直达权限面板;上一版 0.259.1：云同步复活型脏对自愈
+const APP_VERSION: string = 'v0.260.0'; // ★ 0.260.0：后台统计监控台一期（SP 三事件埋点+攒批50+uid可插拔）;上一版 0.259.2：云同步授权提示加长
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -3118,6 +3118,9 @@ export struct GlobalSettingsDialog {
             .onChange((on: boolean) => {
               this.trkEnabled = on;
               setTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext, on);
+              if (on) {
+                trackFirstAuto(); // ★ 0.260.0：迟加入用户补报 app_first（幂等恰 1 行）
+              }
             })
         }
         .width('100%')
