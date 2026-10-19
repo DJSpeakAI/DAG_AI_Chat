@@ -16,12 +16,13 @@ import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCE
 import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases } from '../utils/IapUtil'; // ★ 0.261.0：SP 充能 IAP（华为收银台）
 import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
-import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
+import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
-import { BG_CANVAS } from '../common/DesignTokens'; // ★ 0.230.0
 
 @ComponentV2
 export struct BillingPage {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   subscription: SubscriptionStore = connectSubscription();
   siyi: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.0：司忆点资产（三池余额+礼包标记）
@@ -185,7 +186,7 @@ export struct BillingPage {
       Button('←')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -194,7 +195,7 @@ export struct BillingPage {
       Text('账单')
         .fontSize(FONT_SIZE_SCREEN_TITLE)
         .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
       Blank()
         .layoutWeight(1)
     }
@@ -215,27 +216,27 @@ export struct BillingPage {
               Text('司忆点')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
               // ★ 0.259.0：Lv8 满级 SP 显示恒 999,999（「封神满格」纯显示层——真实余额/云同步不动）
               Text(siyiBalanceDisplay(this.siyi, this.learnDays()))
                 .fontSize(28)
                 .fontWeight(700)
-                .fontColor(BRAND_SECONDARY)
+                .fontColor(this.theme.brandSecondary)
                 .margin({ top: 4 })
               Text(this.levelTitle())
                 .fontSize(FONT_SIZE_BODY)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .margin({ top: 2 })
               Text(this.spPoolText())
                 .fontSize(FONT_SIZE_CAPTION)
                 .lineHeight(20)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 6 })
               // ★ 0.259.0：补签券持有量（升级奖励制——与 SP 余额同屏，让「升级了」有获得感）
               if (this.signIn.makeupVouchers > 0) {
                 Text(`补签券 ×${this.signIn.makeupVouchers}（等级升级奖励 · 断签时可续接连击）`)
                   .fontSize(FONT_SIZE_CAPTION)
-                  .fontColor(BRAND_SECONDARY)
+                  .fontColor(this.theme.brandSecondary)
                   .margin({ top: 4 })
               }
               // 未登录 → 登录入口（兑换前置+新用户礼包随登录发放）
@@ -243,8 +244,8 @@ export struct BillingPage {
                 Button(this.isLoggingIn ? '登录中…' : '登录华为账号')
                   .fontSize(FONT_SIZE_BODY)
                   .height(40)
-                  .backgroundColor(BRAND_PRIMARY)
-                  .fontColor(TEXT_PRIMARY)
+                  .backgroundColor(this.theme.brandPrimary)
+                  .fontColor(this.theme.textPrimary)
                   .borderRadius(RADIUS_CONTROL)
                   .margin({ top: 10 })
                   .onClick(() => {
@@ -256,8 +257,8 @@ export struct BillingPage {
             .alignItems(HorizontalAlign.Start)
             .padding(16)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_SOFT)
-            .border({ width: 1, color: STROKE_CARD })
+            .backgroundColor(this.theme.surfaceSoft)
+            .border({ width: 1, color: this.theme.strokeCard })
             .margin({ bottom: 12 })
 
             // ── 充能 SP（★ 0.248.0：两档定稿 ¥9.9→200万 / ¥19→400万；★ 0.261.0：接入华为 IAP 真实购买）──
@@ -266,24 +267,24 @@ export struct BillingPage {
               Text('充能 SP')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 10 })
               Row({ space: 10 }) {
                 Column() {
                   Text('200 万 SP')
                     .fontSize(FONT_SIZE_BODY)
-                    .fontColor(TEXT_PRIMARY)
+                    .fontColor(this.theme.textPrimary)
                   Text(this.purchasing === IAP_PRODUCT_SP_200W ? '支付中…' : this.price200w)
                     .fontSize(18)
                     .fontWeight(600)
-                    .fontColor(BRAND_PRIMARY)
+                    .fontColor(this.theme.brandPrimary)
                     .margin({ top: 4 })
                 }
                 .layoutWeight(1)
                 .padding({ top: 12, bottom: 12 })
                 .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(SURFACE_SOFT)
-                .border({ width: 1, color: STROKE_CARD })
+                .backgroundColor(this.theme.surfaceSoft)
+                .border({ width: 1, color: this.theme.strokeCard })
                 .onClick(() => {
                   this.doPurchase(IAP_PRODUCT_SP_200W);
                 })
@@ -291,23 +292,23 @@ export struct BillingPage {
                 Column() {
                   Text('400 万 SP')
                     .fontSize(FONT_SIZE_BODY)
-                    .fontColor(TEXT_PRIMARY)
+                    .fontColor(this.theme.textPrimary)
                   Row({ space: 4 }) {
                     Text(this.purchasing === IAP_PRODUCT_SP_400W ? '支付中…' : this.price400w)
                       .fontSize(18)
                       .fontWeight(600)
-                      .fontColor(BRAND_PRIMARY)
+                      .fontColor(this.theme.brandPrimary)
                     Text('更划算')
                       .fontSize(FONT_SIZE_CAPTION)
-                      .fontColor(BRAND_SECONDARY)
+                      .fontColor(this.theme.brandSecondary)
                   }
                   .margin({ top: 4 })
                 }
                 .layoutWeight(1)
                 .padding({ top: 12, bottom: 12 })
                 .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(SURFACE_SOFT)
-                .border({ width: 1, color: BRAND_SECONDARY })
+                .backgroundColor(this.theme.surfaceSoft)
+                .border({ width: 1, color: this.theme.brandSecondary })
                 .onClick(() => {
                   this.doPurchase(IAP_PRODUCT_SP_400W);
                 })
@@ -318,14 +319,14 @@ export struct BillingPage {
               Text('💡 全部 SP 永久有效；支付由华为应用内支付收银台完成，可在「华为应用市场 → 我的 → 订单」中查看')
                 .fontSize(FONT_SIZE_CAPTION)
                 .lineHeight(18)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 8 })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
+            .backgroundColor(this.theme.surfaceNode)
             .margin({ bottom: 12 })
 
             // ── SP 扣点规则（★ 0.248.5 新增：用户拍板——先扣嘉奖再扣充能+按包退款；退款按钮待后台开通绑定）──
@@ -333,18 +334,18 @@ export struct BillingPage {
               Text('SP 扣点规则')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 6 })
               Text('• 消耗顺序：先扣嘉奖 SP，嘉奖用尽后自动扣充能 SP\n• 退款规则：按充能包退款——某包未消耗过任何 SP 可整包退款；该包一旦产生消耗（哪怕 1 点）即不可退款')
                 .fontSize(FONT_SIZE_BODY)
                 .lineHeight(22)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
+            .backgroundColor(this.theme.surfaceNode)
             .margin({ bottom: 12 })
 
             // ── 获取途径（★ 0.248.5：下移至扣点规则之后）──
@@ -352,18 +353,18 @@ export struct BillingPage {
               Text('获取途径')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 6 })
               Text('• 每日签到：连签奖励递增，第 7 天起 8,000 司忆点/天\n• 司忆学习：复习与学习行为产出 19,000 司忆点/天\n• 新用户礼包：注册即赠司忆点（永久有效）\n• 兑换码：输入兑换码入账（嘉奖 SP，永久）\n• 充能：上方充值档位，充能 SP 永久有效')
                 .fontSize(FONT_SIZE_BODY)
                 .lineHeight(22)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
+            .backgroundColor(this.theme.surfaceNode)
             .margin({ bottom: 12 })
 
             // ── 兑换码 ──
@@ -371,19 +372,19 @@ export struct BillingPage {
               Text('兑换码')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 8 })
               // ★ 0.194.0：兑换前置登录——未登录不显示输入框，先引导登录
               if (!this.account.isLoggedIn) {
                 Column() {
                   Text('兑换前请先登录华为账号')
                     .fontSize(FONT_SIZE_CAPTION)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                   Button(this.isLoggingIn ? '登录中…' : '登录华为账号')
                     .fontSize(FONT_SIZE_BODY)
                     .height(40)
-                    .backgroundColor(BRAND_PRIMARY)
-                    .fontColor(TEXT_PRIMARY)
+                    .backgroundColor(this.theme.brandPrimary)
+                    .fontColor(this.theme.textPrimary)
                     .borderRadius(RADIUS_CONTROL)
                     .margin({ top: 8 })
                     .onClick(() => {
@@ -398,10 +399,10 @@ export struct BillingPage {
                     .layoutWeight(1)
                     .height(42)
                     .fontSize(FONT_SIZE_BODY)
-                    .fontColor(TEXT_PRIMARY)
-                    .placeholderColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textPrimary)
+                    .placeholderColor(this.theme.textTertiary)
                     .borderRadius(RADIUS_CONTROL)
-                    .backgroundColor(SURFACE_SOFT)
+                    .backgroundColor(this.theme.surfaceSoft)
                     .onChange((v: string) => {
                       this.redeemInput = v;
                       this.redeemResult = '';
@@ -409,8 +410,8 @@ export struct BillingPage {
                   Button('兑换')
                     .fontSize(FONT_SIZE_BODY)
                     .height(42)
-                    .backgroundColor(BRAND_PRIMARY)
-                    .fontColor(TEXT_PRIMARY)
+                    .backgroundColor(this.theme.brandPrimary)
+                    .fontColor(this.theme.textPrimary)
                     .borderRadius(RADIUS_CONTROL)
                     .onClick(() => {
                       this.doRedeem();
@@ -421,23 +422,23 @@ export struct BillingPage {
                 if (this.redeemResult === 'ok') {
                   Text(`✓ 兑换成功，+${SIYI_REDEEM_SP / 10000} 万司忆点`)
                     .fontSize(FONT_SIZE_CAPTION)
-                    .fontColor(BRAND_SECONDARY)
+                    .fontColor(this.theme.brandSecondary)
                     .margin({ top: 6 })
                 } else if (this.redeemResult === 'used') {
                   Text('该兑换码已被使用')
                     .fontSize(FONT_SIZE_CAPTION)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                     .margin({ top: 6 })
                 } else if (this.redeemResult === 'invalid') {
                   Text('兑换码无效，请检查输入')
                     .fontSize(FONT_SIZE_CAPTION)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                     .margin({ top: 6 })
                 }
                 // ★ 0.248.0：小字脱敏（用户拍板——删「连续兑换天数顺延」句不泄露兑换码权益；冒号改逗号）
                 Text('兑换码可叠加，每码仅可使用一次')
                   .fontSize(FONT_SIZE_CAPTION)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(this.theme.textTertiary)
                   .margin({ top: 6 })
               }
             }
@@ -445,7 +446,7 @@ export struct BillingPage {
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
+            .backgroundColor(this.theme.surfaceNode)
             .margin({ bottom: 12 })
 
             // ── 历史记录 ──
@@ -454,12 +455,12 @@ export struct BillingPage {
                 Text('记录')
                   .fontSize(FONT_SIZE_CARD_TITLE_SM)
                   .fontWeight(600)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .margin({ bottom: 6 })
                 ForEach(this.historyList(), (item: string, idx: number) => {
                   Text(item)
                     .fontSize(FONT_SIZE_BODY)
-                    .fontColor(TEXT_SECONDARY)
+                    .fontColor(this.theme.textSecondary)
                     .padding({ top: 4, bottom: 4 })
                 }, (item: string, idx: number) => `${idx}_${item}`)
               }
@@ -467,7 +468,7 @@ export struct BillingPage {
               .alignItems(HorizontalAlign.Start)
               .padding(14)
               .borderRadius(RADIUS_NAV)
-              .backgroundColor(SURFACE_NODE)
+              .backgroundColor(this.theme.surfaceNode)
               .margin({ bottom: 12 })
             }
 
@@ -475,7 +476,7 @@ export struct BillingPage {
             Text('💡 发票说明：本应用内支付由华为收取并开具发票——请在「华为应用市场 → 我的 → 订单」中自助申请电子发票，开票方为华为。')
               .fontSize(FONT_SIZE_CAPTION)
               .lineHeight(18)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
               .padding({ left: 4, right: 4 })
           }
           .width('100%')
@@ -487,7 +488,7 @@ export struct BillingPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
       .expandSafeArea([SafeAreaType.SYSTEM])
 
       }
@@ -502,6 +503,6 @@ export struct BillingPage {
       }
       return false;
     })
-    .backgroundColor(BG_CANVAS) // ★ 0.230.0：页面根底色对齐四主页面（0.196.5 补全——0.229.26 审计 A1 覆盖度缺口）
+    .backgroundColor(this.theme.bgCanvas) // ★ 0.230.0：页面根底色对齐四主页面（0.196.5 补全——0.229.26 审计 A1 覆盖度缺口）
   }
 }

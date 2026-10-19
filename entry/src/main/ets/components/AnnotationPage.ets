@@ -31,9 +31,8 @@ import { AppStorageV2 } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit'; // 截图 base64 解码 → PixelMap（Canvas drawImage 底图）
 import { buffer } from '@kit.ArkTS';   // base64 ↔ ArrayBuffer
 import { AnnotationDraftStore, AnnotationResultStore, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：截图草稿 + 结果回传
-import { BG_APP, BRAND_PRIMARY, SURFACE_HOVER, SURFACE_NODE, SURFACE_SOFT,
-  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, DANGER, OVERLAY,
-  RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM } from '../common/DesignTokens'; // ★ 0.184.0：UI 收敛 DesignTokens（锁暗紫，isDark 三元全清）
+import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 
 // 一笔涂鸦中的一个采样点（Canvas 本地坐标，单位 vp）
 class StrokePoint {
@@ -52,6 +51,7 @@ const PEN_WIDTH = 4;
 
 @ComponentV2
 export struct AnnotationPage {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   draft: AnnotationDraftStore = connectAnnotationDraft();     // ChatPage 写入的截图
   result: AnnotationResultStore = connectAnnotationResult();  // 标注结果回传
@@ -255,7 +255,7 @@ export struct AnnotationPage {
           Button('←')
             .fontSize(18)
             .backgroundColor(Color.Transparent)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .padding({ left: 4, right: 4 })
             .margin({ right: 4 })
             .onClick(() => {
@@ -264,7 +264,7 @@ export struct AnnotationPage {
           Text('屏幕标注')
             .fontSize(FONT_SIZE_SCREEN_TITLE)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
           Blank()
             .layoutWeight(1)
           // 撤销（无笔画时禁用；★ 0.195.0：↩ 字符换 undo.svg 单色图标——禁用态 opacity 0.4 区分）
@@ -301,12 +301,12 @@ export struct AnnotationPage {
           Column() {
             Text(this.loadError)
               .fontSize(FONT_SIZE_BODY)
-              .fontColor(DANGER)
+              .fontColor(this.theme.danger)
               .textAlign(TextAlign.Center)
             Button('返回')
               .fontSize(FONT_SIZE_BODY)
-              .backgroundColor(SURFACE_HOVER)
-              .fontColor(TEXT_PRIMARY)
+              .backgroundColor(this.theme.surfaceHover)
+              .fontColor(this.theme.textPrimary)
               .margin({ top: 16 })
               .onClick(() => {
                 this.pathStack.pop();
@@ -322,7 +322,7 @@ export struct AnnotationPage {
                 .width(this.canvasW)
                 .height(this.canvasH)
                 .borderRadius(RADIUS_CONTROL)
-                .border({ width: 1, color: STROKE_CARD })
+                .border({ width: 1, color: this.theme.strokeCard })
                 .onReady(() => {
                   this.drawBaseImage(); // 画布就绪：绘制截图底图
                 })
@@ -334,7 +334,7 @@ export struct AnnotationPage {
               Column() {
                 Text('截图处理中...')
                   .fontSize(FONT_SIZE_BODY)
-                  .fontColor(TEXT_SECONDARY)
+                  .fontColor(this.theme.textSecondary)
               }
               .justifyContent(FlexAlign.Center)
             }
@@ -352,10 +352,10 @@ export struct AnnotationPage {
         //    圈注后写定向说明（标题写什么/内容围绕什么展开），随操作一起回传 ──
         TextArea({ text: this.note, placeholder: '补充要求（可选）：如标题写什么、内容围绕什么展开' })
           .fontSize(FONT_SIZE_BODY)
-          .fontColor(TEXT_PRIMARY)
-          .placeholderColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textPrimary)
+          .placeholderColor(this.theme.textTertiary)
           .placeholderFont({ size: FONT_SIZE_BODY })
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .borderRadius(RADIUS_CONTROL)
           .constraintSize({ maxHeight: 100 }) // 限高防长文撑爆画布区（超出内部滚动）
           .width('100%')
@@ -369,8 +369,8 @@ export struct AnnotationPage {
           Button('当前对话导入')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
+            .fontColor(this.theme.textPrimary)
             .enabled(this.canvasW > 0)
             .onClick(() => {
               this.exportAndReturn('import');
@@ -378,8 +378,8 @@ export struct AnnotationPage {
           Button('创建子气泡')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY) // ★ 0.195.0：三按钮统一主紫（原 SURFACE_HOVER，用户拍板「3 个底色太乱」）
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary) // ★ 0.195.0：三按钮统一主紫（原 this.theme.surfaceHover，用户拍板「3 个底色太乱」）
+            .fontColor(this.theme.textPrimary)
             .margin({ left: 8 })
             .enabled(this.canvasW > 0)
             .onClick(() => {
@@ -388,8 +388,8 @@ export struct AnnotationPage {
           Button('存入知识库')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY) // ★ 0.195.0：三按钮统一主紫（原 SURFACE_NODE+紫字，用户拍板「3 个底色太乱」）
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary) // ★ 0.195.0：三按钮统一主紫（原 this.theme.surfaceNode+紫字，用户拍板「3 个底色太乱」）
+            .fontColor(this.theme.textPrimary)
             .margin({ left: 8 })
             .enabled(this.canvasW > 0)
             .onClick(() => {
@@ -401,7 +401,7 @@ export struct AnnotationPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
       // ★ 0.195.0：点空白/画布收起键盘（补充要求输入后点空白处输入法下降——ChatPage 0.182.0 同款兜底；
       //   ArkUI 点击不冒泡：有自身 onClick 的按钮各自消费不触发此处）
       .onClick(() => {
@@ -417,24 +417,24 @@ export struct AnnotationPage {
           }
           .width('100%')
           .height('100%')
-          .backgroundColor(OVERLAY)
+          .backgroundColor(this.theme.overlay)
 
           Column() {
             Text('丢弃标注内容？')
               .fontSize(16)
               .fontWeight(600)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .margin({ bottom: 8 })
             Text('标注尚未导入使用，退出将丢弃当前涂鸦与补充要求')
               .fontSize(FONT_SIZE_BODY)
-              .fontColor(TEXT_SECONDARY)
+              .fontColor(this.theme.textSecondary)
               .margin({ bottom: 16 })
             Row() {
               Button('继续标注')
                 .fontSize(14)
                 .layoutWeight(1)
-                .backgroundColor(SURFACE_HOVER)
-                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(this.theme.surfaceHover)
+                .fontColor(this.theme.textPrimary)
                 .margin({ right: 8 })
                 .onClick(() => {
                   this.exitConfirmVisible = false;
@@ -442,8 +442,8 @@ export struct AnnotationPage {
               Button('丢弃并退出')
                 .fontSize(14)
                 .layoutWeight(1)
-                .backgroundColor(DANGER)
-                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(this.theme.danger)
+                .fontColor(this.theme.textPrimary)
                 .onClick(() => {
                   this.exitConfirmVisible = false;
                   this.pathStack.pop();
@@ -454,7 +454,7 @@ export struct AnnotationPage {
           .width('85%')
           .padding(20)
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(SURFACE_NODE)
+          .backgroundColor(this.theme.surfaceNode)
         }
         .width('100%')
         .height('100%')

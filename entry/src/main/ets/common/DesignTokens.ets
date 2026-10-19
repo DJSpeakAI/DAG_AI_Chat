@@ -1,50 +1,12 @@
 // ============================================================
-// DesignTokens.ets — UI 设计 Token 单一来源（★ 0.167）
+// DesignTokens.ets — UI 设计 Token（字号/圆角/字体/尺寸）
 // ============================================================
 // 真相源：根目录 UI_GUIDELINES.md（Pixso 三份导出工程提取合并）
 // 规则（MEMORY.md 全局硬性约束第 4 条）：所有页面 UI 一律引用
-// 本文件常量，禁止在页面代码散落写色值/字号/圆角。
-// 主题：锁暗紫（v0.166.3 起 COLOR_MODE_DARK，无浅色分支）。
+// 本文件常量，禁止在页面代码散落写字号/圆角/尺寸。
+// ★ 0.262.0：色值职责整体移交 common/AppTheme.ets（三态主题运行时
+// 真相源——深浅两套 @Trace 切换；本文件仅保留非色值 token）。
 // ============================================================
-
-// ── 色值 Token（14）──
-export const BG_APP: string = '#120B1F';             // 应用底色
-export const BG_NAV: string = '#1A1030';             // 左侧导航层
-export const BG_CANVAS: string = '#160D26';          // 画布容器
-export const SURFACE_NODE: string = '#241640';       // 节点卡片底色
-export const SURFACE_HOVER: string = '#2C1B4D';      // 悬停/按压态底色
-export const SURFACE_SOFT: string = 'rgba(255,255,255,0.04)';   // 柔面（账号区等）
-export const BRAND_PRIMARY: string = '#7C4DFF';      // 主紫：品牌/选中/连线
-export const BRAND_SECONDARY: string = '#A78BFA';    // 辅助紫：悬停强调/提示文字
-export const TEXT_PRIMARY: string = '#FFFFFF';       // 主文字（白 100%）
-export const TEXT_SECONDARY: string = 'rgba(255,255,255,0.65)'; // 次级文字
-export const TEXT_TERTIARY: string = 'rgba(255,255,255,0.40)';  // 弱化文字
-export const STROKE_CARD: string = 'rgba(255,255,255,0.08)';    // 卡片描边（白 8%）
-export const STROKE_BRAND: string = 'rgba(124,77,255,0.40)';    // 悬停描边（主紫 40%）
-export const SEGMENTED_TRACK: string = 'rgba(255,255,255,0.06)';// 分段控件轨道（白 6%）
-
-// ── 连线专用色（UI_GUIDELINES 六-7：主紫 85%，高亮分支辅助紫）──
-export const EDGE_COLOR: string = 'rgba(124,77,255,0.85)';
-export const EDGE_COLOR_HIGHLIGHT: string = '#A78BFA';
-
-// ── 语义色（★ 0.181.0 ChatPage 收敛：UI_GUIDELINES 14 token 未覆盖的内容语义色，
-//    按总则「未覆盖场景按同组件规格类推」收敛为常量，禁止页面散落写值）──
-export const DANGER: string = '#F44336';            // 删除/破坏性操作警示红
-export const SUCCESS: string = '#3BB273';           // ★ 0.238.0：成功态（测试连接通过；与熟知绿同值族）
-// ★ 0.230.0：复习评分三档色（ReviewPage 评分按钮——0.229.26 审计 A11 实锤散落色值，token 化收敛）
-export const REVIEW_HARD: string = '#E5484D';       // 生疏（红）
-export const REVIEW_GOOD: string = '#F5A623';       // 尚可（橙）
-export const REVIEW_EASY: string = '#3BB273';       // 熟知（绿）
-export const REVIEW_HARD_BG: string = 'rgba(229,72,77,0.15)';   // 生疏按钮底（15% 透明）
-export const REVIEW_GOOD_BG: string = 'rgba(245,166,35,0.15)';  // 尚可按钮底
-export const REVIEW_EASY_BG: string = 'rgba(59,178,115,0.15)';  // 熟知按钮底
-export const CODE_KEYWORD: string = '#569CD6';      // 代码高亮：关键字
-export const CODE_STRING: string = '#98C379';       // 代码高亮：字符串
-export const CODE_COMMENT: string = '#8A8A8A';      // 代码高亮：注释
-export const CODE_NUMBER: string = '#D19A66';       // 代码高亮：数字
-export const CODE_TEXT: string = '#D4D4D4';         // 代码高亮：普通文本
-export const OVERLAY: string = 'rgba(0,0,0,0.5)';   // 弹窗遮罩（对齐 GlobalSettingsDialog）
-export const OVERLAY_LIGHT: string = 'rgba(0,0,0,0.25)'; // 轻量浮窗遮罩（翻译浮窗/删除确认——底层对话保持可读）
 
 // ── 圆角 Token（5 档）──
 export const RADIUS_NAV: number = 12;      // 导航项/图标按钮

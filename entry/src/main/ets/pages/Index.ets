@@ -37,7 +37,7 @@ import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsS
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
-import { BG_APP, SURFACE_HOVER, SURFACE_SOFT, SURFACE_NODE, STROKE_CARD, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_BRAND, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.174.1：UI Token 单一来源；★ 0.219.0：加 SURFACE_NODE/STROKE_CARD（边栏把手）
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启动构建桌面卡片快照
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204.0：同上
@@ -49,11 +49,14 @@ import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0�
 import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
 import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, AGREEMENT_CHECK_PREFIX } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案
 import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
+import { ThemeChooseDialog } from '../components/ThemeChooseDialog'; // ★ 0.262.0：新用户首启主题选择弹窗（协议同意后弹）
+import { AppTheme, connectAppTheme, connectThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员
 
 // 首页入口 — V2 全量迁移
 @Entry
 @ComponentV2
 struct Index {
+  theme: AppTheme = connectAppTheme();
   pathStack: NavPathStack = new NavPathStack();
 
   // ★ 0.164：登录/退出请求进行中标记（防连点，官方 1001500002 重复请求错误码要求点击控制）
@@ -102,6 +105,7 @@ struct Index {
   agreementBridge: AgreementBridge = connectAgreementBridge();
   @Local homeAgreed: boolean = false; // 首页（仅 PC/Pad）常驻勾选框本地态（勾选后点登录=同意）
   @Local homeShakeX: number = 0;      // 未勾选点登录的抖动偏移（负反馈）
+  @Local themeChooseVisible: boolean = false; // ★ 0.262.0：新用户主题选择弹窗（协议同意后、theme-mode-v1 未落盘时弹）
 
   // ★ 0.164：点击华为账号登录
   // ★ 0.196.11：fromSyncEntry 参数——登录来源分流（用户实测反馈：从设置页「开启云同步」
@@ -360,9 +364,18 @@ struct Index {
     } else if (action === 'sync') {
       this.doLogin(true);
     }
+    this.maybeShowThemeChoose(); // ★ 0.262.0：协议同意后弹主题选择（新用户哨兵：theme-mode-v1 未落盘）
     // 同意协议后**首次**引导体验改进计划（单独、非捆绑、默认关——合规红线）
     if (!connectAgreement().improvePromptShown) {
       this.agreementBridge.improveVisible = true;
+    }
+  }
+
+  // ★ 0.262.0：新用户主题选择弹窗判定——mode 空串=从未落盘（新用户首启待选择；
+  //   老用户已静默落盘 dark 不弹；用户选择后落盘、此后永不弹）
+  maybeShowThemeChoose(): void {
+    if (connectThemeMode().mode === '') {
+      this.themeChooseVisible = true;
     }
   }
 
@@ -406,6 +419,7 @@ struct Index {
         if (this.homeAgreed) {
           markAgreed();
           this.doLogin(false);
+          this.maybeShowThemeChoose(); // ★ 0.262.0：PC/Pad 勾选路径同意后弹主题选择（与弹窗路径同收口）
         } else {
           this.loginTip = '请先阅读并勾选同意下方协议';
           this.shakeHome();
@@ -477,7 +491,7 @@ struct Index {
           .alignItems(HorizontalAlign.Start)
         }
     Navigation(this.pathStack) {
-      // 首页内容（★ 0.174.1：按 UI_GUIDELINES 重做——BG_APP 暗紫底 + expandSafeArea 满屏 +
+      // 首页内容（★ 0.174.1：按 UI_GUIDELINES 重做——this.theme.bgApp 暗紫底 + expandSafeArea 满屏 +
       // Logo 区/主按钮/账号区对齐组件规格；删「图结构对话 · 多分支推理」（用户拍板））
       Column() {
         // ★ 0.179.0：布局改「上标题 + 下按钮组」双区结构——顶部/中部/底部弹性占位 2.5:2.5:1
@@ -490,12 +504,12 @@ struct Index {
         Text('DAG AI Chat')
           .fontSize(32) // ★ 0.179.0：标题放大 24→32（用户拍板）
           .fontWeight(FontWeight.Bold)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .fontFamily(FONT_INTER_SEMIBOLD)
 
         Text('你的AI学习伴侣')
           .fontSize(14) // ★ 0.179.0：副标题放大 11→14（用户拍板）
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .margin({ top: 8 })
 
         Blank().layoutWeight(2.5) // ★ 0.181.1：中部弹性 3→2.5（与顶部增量对冲，按钮组位置不动）；★ 0.179.0：中部弹性——把按钮组推至下部拇指区
@@ -505,15 +519,15 @@ struct Index {
           .padding({ left: 24, right: 24 })
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontWeight(FontWeight.Medium)
-          .backgroundColor(BRAND_PRIMARY)
-          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(this.theme.brandPrimary)
+          .fontColor(this.theme.textPrimary)
           .borderRadius(RADIUS_CONTROL)
           .onClick(() => {
             this.pathStack.pushPath({ name: 'BBTreeCanvas' });
           })
 
         // ★ 0.164：华为账号登录区（★ 0.174.1：对齐 UI_GUIDELINES 六-3/4 账号区规格——
-        // 容器 SURFACE_SOFT 柔面 + RADIUS_NAV 圆角；未登录=user 图标容器（描边 STROKE_BRAND）+
+        // 容器 this.theme.surfaceSoft 柔面 + RADIUS_NAV 圆角；未登录=user 图标容器（描边 this.theme.strokeBrand）+
         // 双行文案；已登录=头像 36 圆形 + 昵称 + 退出按钮）
         if (this.getHuaweiAccount().isLoggedIn) {
           // 已登录：头像 + 显示名 + 退出账号按钮
@@ -533,7 +547,7 @@ struct Index {
               .width(36)
               .height(36)
               .borderRadius(18)
-              .backgroundColor(SURFACE_HOVER)
+              .backgroundColor(this.theme.surfaceHover)
               .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
             }
@@ -541,13 +555,13 @@ struct Index {
               Text(this.getDisplayName())
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .constraintSize({ maxWidth: 160 })
               Text('华为账号已登录')
                 .fontSize(FONT_SIZE_CAPTION)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 2 })
             }
             .alignItems(HorizontalAlign.Start)
@@ -557,8 +571,8 @@ struct Index {
               .height(30)
               .padding({ left: 12, right: 12 })
               .margin({ left: 12 })
-              .backgroundColor(SURFACE_HOVER)
-              .fontColor(TEXT_SECONDARY)
+              .backgroundColor(this.theme.surfaceHover)
+              .fontColor(this.theme.textSecondary)
               .borderRadius(RADIUS_CONTROL)
               .enabled(!this.isProcessing)
               .onClick(() => {
@@ -568,10 +582,10 @@ struct Index {
           .margin({ top: 24 })
           .padding(10)
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .alignItems(VerticalAlign.Center)
         } else {
-          // 未登录：图标容器 + 双行文案（组件规格 4：描边 STROKE_BRAND +「同步知识画布到云端」）
+          // 未登录：图标容器 + 双行文案（组件规格 4：描边 this.theme.strokeBrand +「同步知识画布到云端」）
           Row() {
             Row() {
               Image($r('app.media.user'))
@@ -581,18 +595,18 @@ struct Index {
             .width(36)
             .height(36)
             .borderRadius(18)
-            .border({ width: 1, color: STROKE_BRAND })
-            .backgroundColor(SURFACE_HOVER)
+            .border({ width: 1, color: this.theme.strokeBrand })
+            .backgroundColor(this.theme.surfaceHover)
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
             Column() {
               Text(this.isProcessing ? '登录中…' : '登录华为账号')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
               Text('同步到云端') // ★ 0.191.0：文案精简（用户指示：删「知识画布」）
                 .fontSize(FONT_SIZE_CAPTION)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 2 })
             }
             .alignItems(HorizontalAlign.Start)
@@ -601,7 +615,7 @@ struct Index {
           .margin({ top: 24 })
           .padding(10)
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .alignItems(VerticalAlign.Center)
           .enabled(!this.isProcessing)
           .translate({ x: this.homeShakeX }) // ★ 0.226.0：未勾选点登录时的抖动负反馈
@@ -630,7 +644,7 @@ struct Index {
             Text(AGREEMENT_CHECK_PREFIX + '《用户协议》《隐私政策》《华为账号用户认证协议》')
               .fontSize(FONT_SIZE_CAPTION)
               .lineHeight(18)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
               .layoutWeight(1)
           }
           .width('100%')
@@ -649,9 +663,9 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.261.0') // ★ 0.261.0：IAP 支付接入 SP 充能（华为收银台+幂等到账+补单链路）;上一版 0.260.0：后台统计监控台一期;更早历史见 MEMORY.md
+        Text('v0.262.0') // ★ 0.262.0：深浅色主题跟随系统（三态 AppTheme+新用户首启弹窗+外观卡）;上一版 0.261.0：IAP 支付接入 SP 充能;更早历史见 MEMORY.md
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
+          .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
 
         Blank().layoutWeight(1) // ★ 0.179.0：底部弹性——版本号与底部留白
@@ -660,7 +674,7 @@ struct Index {
       .height('100%')
       // ★ 0.179.0：删 justifyContent(Center)——垂直布局改由 Blank 弹性占位（2.5:2.5:1，★ 0.181.1 原 2:3:1）接管
       .alignItems(HorizontalAlign.Center)
-      .backgroundColor(BG_APP) // ★ 0.174.1：应用底色暗紫（UI_GUIDELINES Token，替换旧深灰 #1A1A1A）
+      .backgroundColor(this.theme.bgApp) // ★ 0.174.1：应用底色暗紫（UI_GUIDELINES Token，替换旧深灰 #1A1A1A）
       .expandSafeArea([SafeAreaType.SYSTEM]) // ★ 0.174.1：背景延伸进状态栏/导航条安全区——首页满屏高度（用户报「高度是短的」；省略 edges 参数=默认全部边，第二参数类型是 SafeAreaEdge 非 SafeAreaType）
     }
     .navDestination(this.pageMap)
@@ -670,7 +684,7 @@ struct Index {
     .layoutWeight(1) // ★ 0.195.0：边栏常驻布局——Navigation 占边栏右侧剩余区域（页面在此平移不遮边栏）
       }
       // ★ 0.219.1 用户拍板（0.219.0 大块头"太难看"）：把手重设计=**极细竖胶囊**——宽 8/高 56/
-      //   圆角 4，无外框无阴影无三角字符（细条本身即表意），底色 STROKE_CARD 与边栏描边同色系克制；
+      //   圆角 4，无外框无阴影无三角字符（细条本身即表意），底色 this.theme.strokeCard 与边栏描边同色系克制；
       //   展开时骑缝边栏右缘（x=206），收起时浮左缘（x=2）；交互零变化（点击 220ms 滑入滑出）
       // ★ 0.222.14 用户拍板再精化：更细更长——宽 8→7（缩小 1vp）、高 56→112（加一倍）
       if (this.isTablet) {
@@ -678,7 +692,7 @@ struct Index {
           .width(7)
           .height(112)
           .borderRadius(4)
-          .backgroundColor(STROKE_CARD)
+          .backgroundColor(this.theme.strokeCard)
           .position({ x: this.indexSidebarState.collapsed ? 2 : 206, y: '50%' })
           .onClick(() => {
             this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
@@ -834,6 +848,13 @@ struct Index {
         this.onImproveSkip();
       }
     })
+    // ★ 0.262.0：新用户主题选择弹窗（协议同意后弹；选择即确认即落盘，后于体验改进引导渲染=顶层）
+    ThemeChooseDialog({
+      visible: this.themeChooseVisible,
+      onChoose: (_mode) => {
+        this.themeChooseVisible = false;
+      }
+    })
     // ★ 0.256.0：签到弹窗（边栏签到入口/首登引导判定触发——SignInDialogBridge 驱动）
     SignInDialog()
     // ★ 0.256.0：称号升级弹窗（学习天数落盘/云下行吸收触发——LevelUpBridge 驱动）
@@ -841,7 +862,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(BG_APP) // ★ 0.174.1：全局兜底底色（各页背景未铺到的安全区露暗紫不露黑）
+    .backgroundColor(this.theme.bgApp) // ★ 0.174.1：全局兜底底色（各页背景未铺到的安全区露暗紫不露黑）
     .expandSafeArea([SafeAreaType.SYSTEM]) // ★ 0.174.1：背景延伸进状态栏/导航条安全区——满屏
     // ★ 0.196.4：窗口实宽写入共享模式——根 Stack 满窗，onAreaChange 在分屏/悬浮窗 resize 时
     //   实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）

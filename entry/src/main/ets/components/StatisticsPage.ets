@@ -13,11 +13,11 @@ import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { streamChat } from '../utils/ApiClient';
 import { PersistenceV2 } from '@kit.ArkUI'; // ★ 0.202.3：测试数据 seed marker
-import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, SEGMENTED_TRACK, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY } from '../common/DesignTokens';
+import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默置空）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：鼓励卡未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
-import { BG_CANVAS } from '../common/DesignTokens'; // ★ 0.230.0
 
 // 柱状图桶（一个周期一根柱）
 class StatBucket {
@@ -46,6 +46,7 @@ class StatsTestSeedMarker {
 
 @ComponentV2
 export struct StatisticsPage {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   statStore: StatisticsStore = connectStatistics();
   aiPreference: AiPreference = connectAiPreference();
@@ -369,7 +370,7 @@ export struct StatisticsPage {
       Button('←')
         .fontSize(18)
         .backgroundColor(Color.Transparent)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .padding({ left: 4, right: 4 })
         .margin({ right: 4 })
         .onClick(() => {
@@ -378,7 +379,7 @@ export struct StatisticsPage {
       Text('统计')
         .fontSize(FONT_SIZE_SCREEN_TITLE)
         .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
       Blank()
         .layoutWeight(1)
     }
@@ -403,7 +404,7 @@ export struct StatisticsPage {
                   Text('AI 学习鼓励')
                     .fontSize(FONT_SIZE_CARD_TITLE_SM)
                     .fontWeight(600)
-                    .fontColor(BRAND_SECONDARY)
+                    .fontColor(this.theme.brandSecondary)
                 }
                 .width('100%')
                 .alignItems(VerticalAlign.Center)
@@ -411,24 +412,24 @@ export struct StatisticsPage {
                 if (this.aiLoading && this.aiText.length === 0) {
                   Text('等待服务器返回')
                     .fontSize(FONT_SIZE_BODY)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                     .margin({ top: 8 })
                 } else if (this.aiText.length === 0 && !connectHuaweiAccount().isLoggedIn) {
                   // ★ 0.249.1：未登录 → 登录入口（AI 鼓励限实名华为账号用户——合规口径同 0.248.2/0.248.3；
                   //   点击弹全局登录引导，登录成功后重进本页即走 AI 生成）
                   Text('登录华为账号后可生成 AI 鼓励')
                     .fontSize(FONT_SIZE_BODY)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                     .margin({ top: 8 })
                   Button('去登录')
                     .fontSize(13)
                     .fontWeight(600)
-                    .fontColor(BRAND_SECONDARY)
+                    .fontColor(this.theme.brandSecondary)
                     .height(32)
                     .padding({ left: 14, right: 14 })
                     .backgroundColor(Color.Transparent)
                     .borderRadius(RADIUS_CONTROL)
-                    .border({ width: 1, color: BRAND_SECONDARY })
+                    .border({ width: 1, color: this.theme.brandSecondary })
                     .margin({ top: 8 })
                     .onClick(() => {
                       connectConfirmDialog().aiLoginPromptVisible = true;
@@ -437,13 +438,13 @@ export struct StatisticsPage {
                   Text(this.aiText.length > 0 ? this.aiText : '（进入本页自动生成）')
                     .fontSize(FONT_SIZE_BODY)
                     .lineHeight(22)
-                    .fontColor(TEXT_SECONDARY)
+                    .fontColor(this.theme.textSecondary)
                     .margin({ top: 8 })
                   // ★ 0.249.1：AI 生成标识（仅 AI 成功生成时显示；失败降级文案不标——口径不骗人）
                   if (this.aiTextFromAi) {
                     Text('内容由 AI 生成 · 仅供参考')
                       .fontSize(11)
-                      .fontColor(TEXT_TERTIARY)
+                      .fontColor(this.theme.textTertiary)
                       .margin({ top: 6 })
                   }
                 }
@@ -452,8 +453,8 @@ export struct StatisticsPage {
               .alignItems(HorizontalAlign.Start)
               .padding(14)
               .borderRadius(RADIUS_NAV)
-              .backgroundColor(SURFACE_SOFT)
-              .border({ width: 1, color: BRAND_SECONDARY })
+              .backgroundColor(this.theme.surfaceSoft)
+              .border({ width: 1, color: this.theme.brandSecondary })
               .margin({ bottom: 16 })
             }
 
@@ -465,8 +466,8 @@ export struct StatisticsPage {
                 .layoutWeight(1)
                 .padding({ top: 7, bottom: 7 })
                 .borderRadius(RADIUS_CONTROL - 2)
-                .fontColor(this.rangeMode === 0 ? TEXT_PRIMARY : TEXT_SECONDARY)
-                .backgroundColor(this.rangeMode === 0 ? BRAND_PRIMARY : Color.Transparent)
+                .fontColor(this.rangeMode === 0 ? this.theme.textPrimary : this.theme.textSecondary)
+                .backgroundColor(this.rangeMode === 0 ? this.theme.brandPrimary : Color.Transparent)
                 .onClick(() => { this.rangeMode = 0; })
               Text('周')
                 .fontSize(13)
@@ -474,8 +475,8 @@ export struct StatisticsPage {
                 .layoutWeight(1)
                 .padding({ top: 7, bottom: 7 })
                 .borderRadius(RADIUS_CONTROL - 2)
-                .fontColor(this.rangeMode === 1 ? TEXT_PRIMARY : TEXT_SECONDARY)
-                .backgroundColor(this.rangeMode === 1 ? BRAND_PRIMARY : Color.Transparent)
+                .fontColor(this.rangeMode === 1 ? this.theme.textPrimary : this.theme.textSecondary)
+                .backgroundColor(this.rangeMode === 1 ? this.theme.brandPrimary : Color.Transparent)
                 .onClick(() => { this.rangeMode = 1; })
               Text('月')
                 .fontSize(13)
@@ -483,8 +484,8 @@ export struct StatisticsPage {
                 .layoutWeight(1)
                 .padding({ top: 7, bottom: 7 })
                 .borderRadius(RADIUS_CONTROL - 2)
-                .fontColor(this.rangeMode === 2 ? TEXT_PRIMARY : TEXT_SECONDARY)
-                .backgroundColor(this.rangeMode === 2 ? BRAND_PRIMARY : Color.Transparent)
+                .fontColor(this.rangeMode === 2 ? this.theme.textPrimary : this.theme.textSecondary)
+                .backgroundColor(this.rangeMode === 2 ? this.theme.brandPrimary : Color.Transparent)
                 .onClick(() => { this.rangeMode = 2; })
               Text('年')
                 .fontSize(13)
@@ -492,21 +493,21 @@ export struct StatisticsPage {
                 .layoutWeight(1)
                 .padding({ top: 7, bottom: 7 })
                 .borderRadius(RADIUS_CONTROL - 2)
-                .fontColor(this.rangeMode === 3 ? TEXT_PRIMARY : TEXT_SECONDARY)
-                .backgroundColor(this.rangeMode === 3 ? BRAND_PRIMARY : Color.Transparent)
+                .fontColor(this.rangeMode === 3 ? this.theme.textPrimary : this.theme.textSecondary)
+                .backgroundColor(this.rangeMode === 3 ? this.theme.brandPrimary : Color.Transparent)
                 .onClick(() => { this.rangeMode = 3; })
             }
             .width('100%')
             .padding(4)
             .borderRadius(RADIUS_CONTROL)
-            .backgroundColor(SEGMENTED_TRACK)
+            .backgroundColor(this.theme.segmentedTrack)
             .margin({ bottom: 12 })
 
             // ── 柱状图（★ 0.202.3：跟随四大卡选中指标切换）──
             Column() {
               Text(this.metricName())
                 .fontSize(12)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .alignSelf(ItemAlign.Start)
                 .margin({ bottom: 8 })
               Row({ space: 5 }) {
@@ -516,10 +517,10 @@ export struct StatisticsPage {
                       .width('100%')
                       .height(b.value > 0 ? Math.max(6, Math.round(b.value / this.chartMax * 110)) : 2)
                       .borderRadius(3)
-                      .backgroundColor(b.value > 0 ? BRAND_PRIMARY : STROKE_CARD)
+                      .backgroundColor(b.value > 0 ? this.theme.brandPrimary : this.theme.strokeCard)
                     Text(b.label)
                       .fontSize(9)
-                      .fontColor(TEXT_TERTIARY)
+                      .fontColor(this.theme.textTertiary)
                       .maxLines(1)
                   }
                   .layoutWeight(1)
@@ -533,7 +534,7 @@ export struct StatisticsPage {
             .width('100%')
             .padding(12)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
+            .backgroundColor(this.theme.surfaceNode)
             .margin({ bottom: 16 })
 
             // ── 块①：对话统计（★ 0.202.3 点击切换图表指标；选中态主��描边）──
@@ -541,7 +542,7 @@ export struct StatisticsPage {
               Text('对话')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 8 })
               this.StatRow('累计对话', `${this.sumAll().msgs} 条`)
               this.StatRow('累计气泡', `${this.sumAll().bubbles} 个`)
@@ -552,8 +553,8 @@ export struct StatisticsPage {
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: this.selectedMetric === 'msg' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .backgroundColor(this.theme.surfaceNode)
+            .border({ width: this.selectedMetric === 'msg' ? 1.5 : 0, color: this.theme.brandPrimary })
             .margin({ bottom: 12 })
             .onClick(() => {
               this.selectedMetric = 'msg';
@@ -564,7 +565,7 @@ export struct StatisticsPage {
               Text('学习资产')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 8 })
               this.StatRow('单词库', `共 ${this.wordBank.words.length} 词 · 已学 ${this.countLearned(this.wordBank.words)} · 7 天内待复习 ${this.countDueIn7Days(this.wordBank.words)}`)
               this.StatRow('知识库', `共 ${this.knowledgeBank.cards.length} 卡 · 已学 ${this.countLearned(this.knowledgeBank.cards)} · 7 天内待复习 ${this.countDueIn7Days(this.knowledgeBank.cards)}`)
@@ -574,8 +575,8 @@ export struct StatisticsPage {
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: this.selectedMetric === 'bubble' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .backgroundColor(this.theme.surfaceNode)
+            .border({ width: this.selectedMetric === 'bubble' ? 1.5 : 0, color: this.theme.brandPrimary })
             .margin({ bottom: 12 })
             .onClick(() => {
               this.selectedMetric = 'bubble';
@@ -586,7 +587,7 @@ export struct StatisticsPage {
               Text('Token')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 8 })
               this.StatRow('累计消耗', this.fmtMetric(this.sumAll().tokens))
               this.StatRow('本周 / 上周', `${this.fmtMetric(this.sumRange(this.weekStart(0), this.weekStart(1)).tokens)} / ${this.fmtMetric(this.sumRange(this.weekStart(-1), this.weekStart(0)).tokens)}`)
@@ -595,8 +596,8 @@ export struct StatisticsPage {
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: this.selectedMetric === 'token' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .backgroundColor(this.theme.surfaceNode)
+            .border({ width: this.selectedMetric === 'token' ? 1.5 : 0, color: this.theme.brandPrimary })
             .margin({ bottom: 12 })
             .onClick(() => {
               this.selectedMetric = 'token';
@@ -607,21 +608,21 @@ export struct StatisticsPage {
               Text('司忆量')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 8 })
               this.StatRow('累计司忆', `${this.sumAll().siyi} 次`)
               this.StatRow('本周 / 上周', `${this.sumRange(this.weekStart(0), this.weekStart(1)).siyi} / ${this.sumRange(this.weekStart(-1), this.weekStart(0)).siyi} 次`)
               Text('单词与知识卡被司忆区展示出来的每一次，都在悄悄加固你的记忆')
                 .fontSize(11)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 6 })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: this.selectedMetric === 'siyi' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .backgroundColor(this.theme.surfaceNode)
+            .border({ width: this.selectedMetric === 'siyi' ? 1.5 : 0, color: this.theme.brandPrimary })
             .margin({ bottom: 12 })
             .onClick(() => {
               this.selectedMetric = 'siyi';
@@ -632,22 +633,22 @@ export struct StatisticsPage {
               Text('SP 消耗')
                 .fontSize(FONT_SIZE_CARD_TITLE_SM)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .margin({ bottom: 8 })
               this.StatRow('累计消耗', this.fmtMetric(this.sumAll().spUsed))
               this.StatRow('今日 / 昨日', `${this.fmtMetric(this.sumRange(this.todayStart(), this.todayStart() + 86400000).spUsed)} / ${this.fmtMetric(this.sumRange(this.todayStart() - 86400000, this.todayStart()).spUsed)}`)
               this.StatRow('本周 / 上周', `${this.fmtMetric(this.sumRange(this.weekStart(0), this.weekStart(1)).spUsed)} / ${this.fmtMetric(this.sumRange(this.weekStart(-1), this.weekStart(0)).spUsed)}`)
               Text('AI 对话消耗的司忆点流量（充能与嘉奖合并统计）——存量余额见账单页')
                 .fontSize(11)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 6 })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
             .padding(14)
             .borderRadius(RADIUS_NAV)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: this.selectedMetric === 'sp' ? 1.5 : 0, color: BRAND_PRIMARY })
+            .backgroundColor(this.theme.surfaceNode)
+            .border({ width: this.selectedMetric === 'sp' ? 1.5 : 0, color: this.theme.brandPrimary })
             .margin({ bottom: 12 })
             .onClick(() => {
               this.selectedMetric = 'sp';
@@ -662,7 +663,7 @@ export struct StatisticsPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
       .expandSafeArea([SafeAreaType.SYSTEM])
     }
     .hideTitleBar(true)
@@ -675,7 +676,7 @@ export struct StatisticsPage {
       }
       return false;
     })
-    .backgroundColor(BG_CANVAS) // ★ 0.230.0：页面根底色对齐四主页面（0.196.5 补全——0.229.26 审计 A1 覆盖度缺口）
+    .backgroundColor(this.theme.bgCanvas) // ★ 0.230.0：页面根底色对齐四主页面（0.196.5 补全——0.229.26 审计 A1 覆盖度缺口）
   }
 
   // 统计行（label + 值）
@@ -684,12 +685,12 @@ export struct StatisticsPage {
     Row() {
       Text(label)
         .fontSize(FONT_SIZE_BODY)
-        .fontColor(TEXT_SECONDARY)
+        .fontColor(this.theme.textSecondary)
       Blank()
         .layoutWeight(1)
       Text(value)
         .fontSize(FONT_SIZE_BODY)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .textAlign(TextAlign.End)
     }
     .width('100%')

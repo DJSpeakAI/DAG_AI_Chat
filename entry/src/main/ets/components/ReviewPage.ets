@@ -24,7 +24,8 @@ import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分�
 import { common } from '@kit.AbilityKit'; // ★ 0.203.0：getHostContext 取 context 写卡片快照
 import { PersistenceV2 } from '@kit.ArkUI';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { REVIEW_HARD, REVIEW_GOOD, REVIEW_EASY, REVIEW_HARD_BG, REVIEW_GOOD_BG, REVIEW_EASY_BG, BG_APP, BG_CANVAS, SURFACE_NODE, SURFACE_SOFT, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, OVERLAY } from '../common/DesignTokens';
+import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（原居本文件——外提防 WidgetHostBridge 反向成环）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默走 fallback）
@@ -72,6 +73,7 @@ function todayKey(): string {
 
 @ComponentV2
 export struct ReviewPage {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
 
   // ── ★ 0.200.0 入口 C：复习页「问 AI」（复习遇到不懂的概念立刻问——100% 场景）──
@@ -342,42 +344,42 @@ export struct ReviewPage {
       Text('卡片复习')
         .fontSize(FONT_SIZE_SCREEN_TITLE)
         .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
       // ★ 0.196.1：2 标签切换（单词库|知识库）——分段控件样式同画布（track 3 + 选中主紫）
       Row({ space: 0 }) {
         Text('单词库')
           .fontSize(12)
           .fontWeight(this.mode === 'word' ? 600 : 400)
-          .fontColor(this.mode === 'word' ? Color.White : TEXT_SECONDARY)
+          .fontColor(this.mode === 'word' ? Color.White : this.theme.textSecondary)
           .height(30)
           .padding({ left: 16, right: 16 })
           .borderRadius(8)
-          .backgroundColor(this.mode === 'word' ? BRAND_PRIMARY : Color.Transparent)
+          .backgroundColor(this.mode === 'word' ? this.theme.brandPrimary : Color.Transparent)
           .onClick(() => {
             this.switchMode('word');
           })
         Text('知识库')
           .fontSize(12)
           .fontWeight(this.mode === 'knowledge' ? 600 : 400)
-          .fontColor(this.mode === 'knowledge' ? Color.White : TEXT_SECONDARY)
+          .fontColor(this.mode === 'knowledge' ? Color.White : this.theme.textSecondary)
           .height(30)
           .padding({ left: 16, right: 16 })
           .borderRadius(8)
-          .backgroundColor(this.mode === 'knowledge' ? BRAND_PRIMARY : Color.Transparent)
+          .backgroundColor(this.mode === 'knowledge' ? this.theme.brandPrimary : Color.Transparent)
           .onClick(() => {
             this.switchMode('knowledge');
           })
       }
       .padding(3)
       .borderRadius(RADIUS_CONTROL)
-      .backgroundColor(SURFACE_SOFT)
+      .backgroundColor(this.theme.surfaceSoft)
       .margin({ left: 16 })
       Blank()
         .layoutWeight(1)
       if (!this.finished && this.queue.length > 0) {
         Text(`${this.idx + 1} / ${this.queue.length}`) // ★ 0.196.2：1 基进度（第几张/共几张）
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
       }
       // ★ 0.202.0：右上角 ⚙ 每日复习量设置（与全局设置「复习区」语义分开——此处管每日队列条目数）
       Image($r('app.media.settings'))
@@ -406,7 +408,7 @@ export struct ReviewPage {
         Text((this.currentItem() as WordItem).word)
           .fontSize(30)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           // ★ 0.197.0 用户拍板：英文展示词截断绝对不允许——maxLines+minFontSize/maxFontSize
           //   触发自适应缩字号（放不下自动缩字体而非省略号；3 行 × 16px 下限，长英文短语必 100% 完整展示）
           .maxLines(3)
@@ -420,7 +422,7 @@ export struct ReviewPage {
           Text((this.currentItem() as WordItem).fullName)
             .fontSize(18)
             .fontWeight(500)
-            .fontColor(BRAND_SECONDARY)
+            .fontColor(this.theme.brandSecondary)
             .maxLines(2)
             .minFontSize(12)
             .maxFontSize(18)
@@ -431,7 +433,7 @@ export struct ReviewPage {
           Row({ space: 6 }) {
             Text((this.currentItem() as WordItem).usPhonetic)
               .fontSize(14)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
             Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
               .width(14)
               .height(14)
@@ -456,7 +458,7 @@ export struct ReviewPage {
         if (!this.isDoubleFace || this.cardFlipped) {
           Text((this.currentItem() as WordItem).explain)
             .fontSize(15)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .textAlign(TextAlign.Center)
             .lineHeight(22)
             .maxLines(5)
@@ -504,7 +506,7 @@ export struct ReviewPage {
         Text((this.currentItem() as KnowledgeCard).title)
           .fontSize(24)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           // ★ 0.197.0：同单词卡——自适应缩字号防截断（用户拍板：展示词必须 100% 完整展示）
           .maxLines(3)
           .minFontSize(14)
@@ -515,7 +517,7 @@ export struct ReviewPage {
         if (!this.isDoubleFace || this.cardFlipped) {
           Text((this.currentItem() as KnowledgeCard).definition)
             .fontSize(15)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .textAlign(TextAlign.Center)
             .lineHeight(22)
             .maxLines(8)
@@ -526,20 +528,20 @@ export struct ReviewPage {
       if (this.isDoubleFace && !this.cardFlipped) {
         Text('点击卡片查看答案')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 4 })
       }
       // ★ 0.249.1：AI 内容标识（卡片内容可能由 AI 提炼生成——文案样式复刻对话区 0.247.3，单词/知识卡两 tab 共用本容器恒显）
       Text('内容由 AI 生成 · 仅供参考')
         .fontSize(11)
-        .fontColor(TEXT_TERTIARY)
+        .fontColor(this.theme.textTertiary)
         .margin({ top: 8 })
       }
       .width('100%')
       .padding(32)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
       .alignItems(HorizontalAlign.Center)
       // ★ 0.209.0：双面模式点击卡片翻面；★ 0.209.3 用户拍板：翻面后点反面无动作（反面=终态，
       // 「标题+内容组合」已完整展示，没有任何理由翻回——评分三按钮是唯一跳卡出口）
@@ -560,7 +562,7 @@ export struct ReviewPage {
         .width(30)
         .height(30)
         .borderRadius(9)
-        .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+        .linearGradient({ angle: 225, colors: [[this.theme.brandPrimary, 0], [this.theme.brandSecondary, 1]] })
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .margin(10)
@@ -582,42 +584,42 @@ export struct ReviewPage {
     Row({ space: 10 }) {
       Button() {
         Column({ space: 2 }) {
-          Text('生疏').fontSize(14).fontWeight(600).fontColor(REVIEW_HARD)
-          Text('几乎想不起来').fontSize(10).fontColor(TEXT_TERTIARY)
-          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'hard'))}后`).fontSize(11).fontColor(REVIEW_HARD)
+          Text('生疏').fontSize(14).fontWeight(600).fontColor(this.theme.reviewHard)
+          Text('几乎想不起来').fontSize(10).fontColor(this.theme.textTertiary)
+          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'hard'))}后`).fontSize(11).fontColor(this.theme.reviewHard)
         }
       }
       .width(this.isTablet ? 130 : 104)
       .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：文字离框边留白
-      .backgroundColor(REVIEW_HARD_BG)
+      .backgroundColor(this.theme.reviewHardBg)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onRate('hard');
       })
       Button() {
         Column({ space: 2 }) {
-          Text('尚可').fontSize(14).fontWeight(600).fontColor(REVIEW_GOOD)
-          Text('回忆有点费劲').fontSize(10).fontColor(TEXT_TERTIARY)
-          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'good'))}后`).fontSize(11).fontColor(REVIEW_GOOD)
+          Text('尚可').fontSize(14).fontWeight(600).fontColor(this.theme.reviewGood)
+          Text('回忆有点费劲').fontSize(10).fontColor(this.theme.textTertiary)
+          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'good'))}后`).fontSize(11).fontColor(this.theme.reviewGood)
         }
       }
       .width(this.isTablet ? 130 : 104)
       .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：同上
-      .backgroundColor(REVIEW_GOOD_BG)
+      .backgroundColor(this.theme.reviewGoodBg)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onRate('good');
       })
       Button() {
         Column({ space: 2 }) {
-          Text('熟知').fontSize(14).fontWeight(600).fontColor(REVIEW_EASY)
-          Text('一眼就能反应').fontSize(10).fontColor(TEXT_TERTIARY)
-          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'easy'))}后`).fontSize(11).fontColor(REVIEW_EASY)
+          Text('熟知').fontSize(14).fontWeight(600).fontColor(this.theme.reviewEasy)
+          Text('一眼就能反应').fontSize(10).fontColor(this.theme.textTertiary)
+          Text(`${formatIntervalDays(previewIntervalDays(this.currentItem()!, 'easy'))}后`).fontSize(11).fontColor(this.theme.reviewEasy)
         }
       }
       .width(this.isTablet ? 130 : 104)
       .padding({ top: 12, bottom: 12 }) // ★ 0.197.1：同上
-      .backgroundColor(REVIEW_EASY_BG)
+      .backgroundColor(this.theme.reviewEasyBg)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onRate('easy');
@@ -637,29 +639,29 @@ export struct ReviewPage {
       Text('恭喜你！')
         .fontSize(26)
         .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .margin({ left: 26 })
-      // ★ 0.196.2 排版优化（用户实测反馈）：总结独立成卡（SURFACE_SOFT 底）视觉分层；
+      // ★ 0.196.2 排版优化（用户实测反馈）：总结独立成卡（this.theme.surfaceSoft 底）视觉分层；
       //   加载态文案用户拍板改「总结正在生成」+ 三点跳动动画（WaitingDots 复用）
       Column() {
         if (this.aiLoading) {
           Row({ space: 8 }) {
             Text('总结正在生成')
               .fontSize(13)
-              .fontColor(TEXT_SECONDARY)
+              .fontColor(this.theme.textSecondary)
             WaitingDots()
           }
         } else {
           Text(this.aiText)
             .fontSize(14)
-            .fontColor(BRAND_SECONDARY)
+            .fontColor(this.theme.brandSecondary)
             .textAlign(TextAlign.Center)
             .lineHeight(21)
           // ★ 0.249.1：AI 生成标识（仅 AI 成功生成时显示；未登录/失败降级=本地文案不标——口径不骗人）
           if (this.aiTextFromAi) {
             Text('内容由 AI 生成 · 仅供参考')
               .fontSize(11)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
               .margin({ top: 6 })
           }
         }
@@ -668,7 +670,7 @@ export struct ReviewPage {
       .constraintSize({ maxWidth: 460, minHeight: 64 })
       .padding(16)
       .borderRadius(RADIUS_CONTROL)
-      .backgroundColor(SURFACE_SOFT)
+      .backgroundColor(this.theme.surfaceSoft)
       .margin({ top: 20 })
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
@@ -678,12 +680,12 @@ export struct ReviewPage {
         Button('登录后体验 AI 鼓励')
           .fontSize(13)
           .fontWeight(600)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .height(36)
           .padding({ left: 16, right: 16 })
           .backgroundColor(Color.Transparent)
           .borderRadius(RADIUS_CONTROL)
-          .border({ width: 1, color: BRAND_SECONDARY })
+          .border({ width: 1, color: this.theme.brandSecondary })
           .margin({ top: 12 })
           .onClick(() => {
             connectConfirmDialog().aiLoginPromptVisible = true;
@@ -695,10 +697,10 @@ export struct ReviewPage {
           Button('继续复习')
             .fontSize(15)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .height(44)
             .padding({ left: 24, right: 24 })
-            .backgroundColor(SURFACE_HOVER)
+            .backgroundColor(this.theme.surfaceHover)
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
               this.continueReview();
@@ -710,7 +712,7 @@ export struct ReviewPage {
           .fontColor(Color.White)
           .height(44)
           .padding({ left: 24, right: 24 })
-          .backgroundColor(BRAND_PRIMARY)
+          .backgroundColor(this.theme.brandPrimary)
           .borderRadius(RADIUS_CONTROL)
           .onClick(() => {
             this.pathStack.pop();
@@ -729,23 +731,23 @@ export struct ReviewPage {
       if (this.hasFutureContent()) {
         Text('今天没有到期的复习内容')
           .fontSize(16)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
         Text('新词加入后会自动进入当天的复习队列')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 8 })
       } else {
         Text(this.mode === 'word' ? '单词库还是空的' : '知识库还是空的')
           .fontSize(16)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
         Text('先添加内容，复习从这里开始')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 8 })
         Button(this.mode === 'word' ? '去单词库添加' : '去知识库建卡')
           .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(this.theme.textPrimary)
+          .backgroundColor(this.theme.brandPrimary)
           .borderRadius(RADIUS_CONTROL)
           .padding({ left: 28, right: 28, top: 10, bottom: 10 })
           .margin({ top: 20 })
@@ -770,8 +772,8 @@ export struct ReviewPage {
         // ★ 0.201.4（用户拍板）：删标题与卡片名——从「问AI?」进来意图已明确（同知识库入口）
         Button('导入气泡对话')
           .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(this.theme.textPrimary)
+          .backgroundColor(this.theme.brandPrimary)
           .borderRadius(RADIUS_CONTROL)
           .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：平板固定 280 居中（手机 100% 不变），同知识库入口
           .margin({ top: 16 })
@@ -780,14 +782,14 @@ export struct ReviewPage {
           })
         Text('选一个气泡 → 卡片填入它的输入框，补充问题后发送')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         Button('创建子气泡')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .backgroundColor(Color.Transparent)
           .borderRadius(RADIUS_CONTROL)
-          .border({ width: 1, color: BRAND_SECONDARY })
+          .border({ width: 1, color: this.theme.brandSecondary })
           .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
           .onClick(() => {
@@ -795,11 +797,11 @@ export struct ReviewPage {
           })
         Text('选一个父气泡 → 新建子气泡并填入卡片')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         Button('取消')
           .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .backgroundColor(Color.Transparent)
           .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
@@ -809,14 +811,14 @@ export struct ReviewPage {
       }
       .width(this.isTablet ? 460 : '100%') // ★ 0.201.2：平板固定 460 居中（手机 100% 贴底不变），同知识库入口
       .borderRadius(RADIUS_NAV) // ★ 0.201.2：四角圆角（宽屏居中浮岛感；手机贴底时下圆角贴屏不可见）
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
       .padding({ left: 20, right: 20, top: 20, bottom: 28 })
       .onClick(() => {}) // 消费面板点击防冒泡到遮罩
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .onClick(() => {
       this.askSheetVisible = false;
     })
@@ -880,40 +882,40 @@ export struct ReviewPage {
       Text('10')
         .fontSize(12)
         .fontWeight(!this.csWordCustom && this.dailyCount.wordCount === 10 ? 600 : 400)
-        .fontColor(!this.csWordCustom && this.dailyCount.wordCount === 10 ? Color.White : TEXT_SECONDARY)
+        .fontColor(!this.csWordCustom && this.dailyCount.wordCount === 10 ? Color.White : this.theme.textSecondary)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!this.csWordCustom && this.dailyCount.wordCount === 10 ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(!this.csWordCustom && this.dailyCount.wordCount === 10 ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.applyWordCount('10');
         })
       Text('20')
         .fontSize(12)
         .fontWeight(!this.csWordCustom && this.dailyCount.wordCount === 20 ? 600 : 400)
-        .fontColor(!this.csWordCustom && this.dailyCount.wordCount === 20 ? Color.White : TEXT_SECONDARY)
+        .fontColor(!this.csWordCustom && this.dailyCount.wordCount === 20 ? Color.White : this.theme.textSecondary)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!this.csWordCustom && this.dailyCount.wordCount === 20 ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(!this.csWordCustom && this.dailyCount.wordCount === 20 ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.applyWordCount('20');
         })
       Text('自定义')
         .fontSize(12)
         .fontWeight(this.csWordCustom ? 600 : 400)
-        .fontColor(this.csWordCustom ? Color.White : TEXT_SECONDARY)
+        .fontColor(this.csWordCustom ? Color.White : this.theme.textSecondary)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(this.csWordCustom ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.csWordCustom ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.applyWordCount('custom');
         })
     }
     .padding(3)
     .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(SURFACE_SOFT)
+    .backgroundColor(this.theme.surfaceSoft)
   }
 
   @Builder
@@ -922,40 +924,40 @@ export struct ReviewPage {
       Text('10')
         .fontSize(12)
         .fontWeight(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? 600 : 400)
-        .fontColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? Color.White : TEXT_SECONDARY)
+        .fontColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? Color.White : this.theme.textSecondary)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 10 ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.applyKnowledgeCount('10');
         })
       Text('20')
         .fontSize(12)
         .fontWeight(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? 600 : 400)
-        .fontColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? Color.White : TEXT_SECONDARY)
+        .fontColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? Color.White : this.theme.textSecondary)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(!this.csKnowledgeCustom && this.dailyCount.knowledgeCount === 20 ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.applyKnowledgeCount('20');
         })
       Text('自定义')
         .fontSize(12)
         .fontWeight(this.csKnowledgeCustom ? 600 : 400)
-        .fontColor(this.csKnowledgeCustom ? Color.White : TEXT_SECONDARY)
+        .fontColor(this.csKnowledgeCustom ? Color.White : this.theme.textSecondary)
         .height(30)
         .padding({ left: 14, right: 14 })
         .borderRadius(8)
-        .backgroundColor(this.csKnowledgeCustom ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.csKnowledgeCustom ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.applyKnowledgeCount('custom');
         })
     }
     .padding(3)
     .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(SURFACE_SOFT)
+    .backgroundColor(this.theme.surfaceSoft)
   }
 
   // ★ 0.252.0：unifiedFaceSegment / applyFace 已删（切换单面入口移除——全局固定双面，
@@ -969,18 +971,18 @@ export struct ReviewPage {
         Text('每日复习量')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .margin({ top: 4 })
         Text('进入复习页时，当日队列最多取多少条（到期+新卡）')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 4 })
         // ── 单词库卡片区 ──
         Column() {
           Text('单词库')
             .fontSize(14)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .alignSelf(ItemAlign.Start)
           this.wordCountSegment()
           if (this.csWordCustom) {
@@ -991,7 +993,7 @@ export struct ReviewPage {
                 .height(36)
                 .padding({ left: 12, right: 12 })
                 .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(SURFACE_SOFT)
+                .backgroundColor(this.theme.surfaceSoft)
                 .type(InputType.Number)
                 .onChange((value: string) => {
                   this.csWordInput = value;
@@ -999,8 +1001,8 @@ export struct ReviewPage {
               Button('确定')
                 .fontSize(13)
                 .height(36)
-                .fontColor(TEXT_PRIMARY)
-                .backgroundColor(BRAND_PRIMARY)
+                .fontColor(this.theme.textPrimary)
+                .backgroundColor(this.theme.brandPrimary)
                 .borderRadius(RADIUS_CONTROL)
                 .padding({ left: 14, right: 14 })
                 .onClick(() => {
@@ -1014,14 +1016,14 @@ export struct ReviewPage {
         .width('100%')
         .padding(12)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
+        .backgroundColor(this.theme.surfaceSoft)
         .margin({ top: 16 })
         // ── 知识库卡片区 ──
         Column() {
           Text('知识库')
             .fontSize(14)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .alignSelf(ItemAlign.Start)
           this.knowledgeCountSegment()
           if (this.csKnowledgeCustom) {
@@ -1032,7 +1034,7 @@ export struct ReviewPage {
                 .height(36)
                 .padding({ left: 12, right: 12 })
                 .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(SURFACE_SOFT)
+                .backgroundColor(this.theme.surfaceSoft)
                 .type(InputType.Number)
                 .onChange((value: string) => {
                   this.csKnowledgeInput = value;
@@ -1040,8 +1042,8 @@ export struct ReviewPage {
               Button('确定')
                 .fontSize(13)
                 .height(36)
-                .fontColor(TEXT_PRIMARY)
-                .backgroundColor(BRAND_PRIMARY)
+                .fontColor(this.theme.textPrimary)
+                .backgroundColor(this.theme.brandPrimary)
                 .borderRadius(RADIUS_CONTROL)
                 .padding({ left: 14, right: 14 })
                 .onClick(() => {
@@ -1055,12 +1057,12 @@ export struct ReviewPage {
         .width('100%')
         .padding(12)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
+        .backgroundColor(this.theme.surfaceSoft)
         .margin({ top: 12 })
         Button('完成')
           .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(this.theme.textPrimary)
+          .backgroundColor(this.theme.brandPrimary)
           .borderRadius(RADIUS_CONTROL)
           .width('100%')
           .margin({ top: 16 })
@@ -1072,15 +1074,15 @@ export struct ReviewPage {
       }
       .width(this.isTablet ? 460 : '86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
       .padding(20)
       .onClick(() => {}) // 消费面板点击防冒泡到遮罩
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .onClick(() => {
       this.countSettingsVisible = false;
     })
@@ -1145,7 +1147,7 @@ export struct ReviewPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(BG_CANVAS)
+      .backgroundColor(this.theme.bgCanvas)
       // ★ 0.200.0：问 AI 二选一面板（Stack 顶层）
       if (this.askSheetVisible) {
         this.askAiSheet()

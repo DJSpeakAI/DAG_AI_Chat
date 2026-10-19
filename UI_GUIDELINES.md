@@ -4,32 +4,38 @@
 > **⚠️ 所有 UI 开发必须遵守本大纲**：新页面、页面改版、UI bug 修复，一律以本文档参数为准；本文档未覆盖的场景按同组件规格类推，落地后回填本文档。
 > **真相源优先级**：Pixso 导出代码参数 > 代码内图例标注 > 截图标注页。
 > **来源**：`PixsoUI/` 三份导出工程（状态与规格 / 平板二稿 / 手机二稿），2026-10-04 提取合并。
-> **主题**：锁暗紫（v0.166.3 起 EntryAbility 强制 `COLOR_MODE_DARK`，无浅色模式，不做浅色分支）。
+> **主题**：三态主题（★ 0.262.0 起）——`system`（跟随系统深浅色）/ `dark`（暗紫经典）/ `light`（清新明亮）。**色值唯一真相源 = `common/AppTheme.ets`**（运行时 @Trace 切换即时生效；持久化 `theme-mode-v1`）；老用户默认深色、新用户协议同意后弹窗选择、设置「关于」Tab「外观」卡随时可改。深色=0.166.3 暗紫原样；浅色=0.262.0 新设计（WCAG AA 达标）。**桌面卡片（FormKit 独立进程）一期不跟主题、保持暗紫**，二期评估。
 
 ---
 
 ## 一、色值 Token（14 个）
 
-落地常量收敛到 `DesignTokens.ets`（唯一来源，**禁止在页面代码里散落写色值 / isDark 三元**）。
+落地收敛到 `common/AppTheme.ets`（★ 0.262.0 色值职责自 DesignTokens.ets 移交——**运行时主题字段，深浅两套值见文件内 DARK/LIGHT 终值表；禁止在页面代码散落写色值 / isDark 三元**）。DesignTokens.ets 仅保留字号/圆角/字体/尺寸 token。
 
-| 常量名 | Pixso 变量 | 值 | 用途 |
+| 字段名（AppTheme） | 暗色值 | 浅色值 | 用途 |
 |------|------|------|------|
-| BG_APP | color/bg-app | `#120B1F` | 应用底色 |
-| BG_NAV | color/bg-nav | `#1A1030` | 左侧导航层 |
-| BG_CANVAS | color/bg-canvas | `#160D26` | 画布容器 |
-| SURFACE_NODE | color/surface-node | `#241640` | 气泡节点卡片底色 |
-| SURFACE_HOVER | color/surface-hover | `#2C1B4D` | 悬停态底色 |
-| SURFACE_SOFT | color/surface-soft | `#FFFFFF` 4% | 账号区等柔面 |
-| BRAND_PRIMARY | color/brand-primary | `#7C4DFF` | 主紫：品牌 / 选中 / 连线 |
-| BRAND_SECONDARY | color/brand-secondary | `#A78BFA` | 辅助紫：悬停强调 / 提示文字 |
-| TEXT_PRIMARY | color/text-primary | `#FFFFFF` 100% | 主文字 |
-| TEXT_SECONDARY | color/text-secondary | `#FFFFFF` 65% | 次级文字（导航默认 / 节点信息） |
-| TEXT_TERTIARY | color/text-tertiary | `#FFFFFF` 40% | 弱化文字（时间戳 / 说明） |
-| STROKE_CARD | color/stroke-card | `#FFFFFF` 8% | 卡片描边 |
-| STROKE_BRAND | color/stroke-brand | `#7C4DFF` 40% | 悬停描边 / 未登录图标容器描边 |
-| SEGMENTED_TRACK | color/segmented-track | `#FFFFFF` 6% | 分段控件轨道底色（平板二稿新增） |
-| DANGER | `#F44336` | 删除/破坏性操作警示红（补录：0.190.5 起在用，0.230.0 补档） |
-| REVIEW_HARD / GOOD / EASY | `#E5484D` / `#F5A623` / `#3BB273` | 复习评分三档色（生疏红/尚可橙/熟知绿；配 15% 透明底 _BG 变体——★ 0.230.0 token 化入档，原 ReviewPage 散落色值收敛） |
+| bgApp | `#120B1F` | `#F7F5FA` | 应用底色 |
+| bgNav | `#1A1030` | `#FBFAFE` | 左侧导航层 |
+| bgCanvas | `#160D26` | `#F2EEF8` | 画布容器 |
+| surfaceNode | `#241640` | `#FFFFFF` | 气泡节点卡片底色 |
+| surfaceHover | `#2C1B4D` | `#EFE9FA` | 悬停态底色 |
+| surfaceSoft | 白 4% | `rgba(29,18,48,0.04)` | 账号区等柔面 |
+| brandPrimary | `#7C4DFF` | `#6C3EE8`（4.7:1 达标） | 主紫：品牌 / 选中 / 连线 |
+| brandSecondary | `#A78BFA` | `#5D3FD3` | 辅助紫：悬停强调 / 提示文字 |
+| textPrimary | `#FFFFFF` | `#1D1230` | 主文字 |
+| textSecondary | 白 65% | `rgba(29,18,48,0.65)` | 次级文字（导航默认 / 节点信息） |
+| textTertiary | 白 40% | `rgba(29,18,48,0.40)` | 弱化文字（时间戳 / 说明） |
+| strokeCard | 白 8% | `rgba(29,18,48,0.08)` | 卡片描边 |
+| strokeBrand | 紫 40% | `rgba(108,62,232,0.35)` | 悬停描边 / 未登录图标容器描边 |
+| segmentedTrack | 白 6% | `rgba(29,18,48,0.06)` | 分段控件轨道底色 |
+| danger | `#F44336` | `#D93025` | 删除/破坏性操作警示红 |
+| success | `#3BB273` | `#2E9660` | 成功态绿 |
+| reviewHard / reviewGood / reviewEasy | `#E5484D` / `#F5A623` / `#3BB273` | `#D63A3F` / `#D98E12` / `#2E9660` | 复习评分三档色（配 15% 透明底 _Bg 变体） |
+| code 五色（keyword/string/comment/number/text） | One Dark 系 | VS Code Light+ 系 | 代码块语法高亮 |
+| overlay / overlayLight | 黑 50% / 25% | 黑 30% / 18% | 弹窗遮罩 / 轻量浮窗遮罩 |
+| shadowColor / shadowColorSoft | 黑 40% / 25% | `rgba(29,18,48,0.08)` | 卡片/菜单阴影基色（★ 0.262.0 新增——写死阴影一律挂此 token） |
+
+**用法**：组件内成员 `theme: AppTheme = connectAppTheme()`，引用 `this.theme.bgApp`（@Trace 全局同实例，主题切换即时生效）。**带参 @Builder 禁止以参数传色值**——体内直读 `this.theme.xxx`（0.190.1 丢响应式老雷）。
 
 ## 二、圆角 Token（5 档）
 

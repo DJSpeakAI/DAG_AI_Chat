@@ -3,12 +3,13 @@
 //   （灰白底），用户实测反馈与应用暗紫风格不符（同 0.195.0 ReminderDialog 先例——
 //   用户拍板系统灰弹窗必须换自定义；本组件 = 该设计语言的通用双按钮版）
 // 样式模板：0.190.8 隐私弹窗 / 0.195.0 ReminderDialog 同款
-//   （遮罩 rgba(0,0,0,0.5) + SURFACE_NODE 面板 + RADIUS_NAV + STROKE_CARD 描边 + 主紫确认钮）
+//   （遮罩 rgba(0,0,0,0.5) + this.theme.surfaceNode 面板 + RADIUS_NAV + this.theme.strokeCard 描边 + 主紫确认钮）
 // 触发方式：ConfirmDialogStore（AppStorageV2 应用级共享、不落盘——弹窗状态重启即清不残留）；
 //   挂载点唯一：Index 根 Stack 顶层（盖住 Navigation 全部子页——AppSideBar 常驻/抽屉两形态全兜住）
 
 import { AppStorageV2 } from '@kit.ArkUI';
-import { SURFACE_NODE, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, STROKE_CARD, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.225.2：宽屏断点（弹窗宽度收敛，UI_GUIDELINES 暂停-12）
 
 // ★ 0.196.9：确认弹窗触发桥——AppStorageV2（应用生命周期共享、非持久化）
@@ -30,6 +31,7 @@ export function connectConfirmDialog(): ConfirmDialogStore {
 
 @ComponentV2
 export struct AppConfirmDialog {
+  theme: AppTheme = connectAppTheme();
   @Param visible: boolean = false;
   @Param title: string = '';
   @Param message: string = '';
@@ -47,7 +49,7 @@ export struct AppConfirmDialog {
     return this.windowMode.isTablet;
   }
 
-  // 取消钮（弱化：SURFACE_NODE 底 + STROKE_CARD 描边）
+  // 取消钮（弱化：this.theme.surfaceNode 底 + this.theme.strokeCard 描边）
   @Builder
   cancelButtonBuilder() {
     Button(this.cancelText)
@@ -55,9 +57,9 @@ export struct AppConfirmDialog {
       .height(48)
       .fontSize(FONT_SIZE_CARD_TITLE_SM)
       .fontWeight(FontWeight.Medium)
-      .backgroundColor(SURFACE_NODE)
-      .fontColor(TEXT_SECONDARY)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .fontColor(this.theme.textSecondary)
+      .border({ width: 1, color: this.theme.strokeCard })
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onCancel();
@@ -72,8 +74,8 @@ export struct AppConfirmDialog {
       .height(48)
       .fontSize(FONT_SIZE_CARD_TITLE_SM)
       .fontWeight(FontWeight.Medium)
-      .backgroundColor(BRAND_PRIMARY)
-      .fontColor(TEXT_PRIMARY)
+      .backgroundColor(this.theme.brandPrimary)
+      .fontColor(this.theme.textPrimary)
       .borderRadius(RADIUS_CONTROL)
       .onClick(() => {
         this.onConfirm();
@@ -88,24 +90,24 @@ export struct AppConfirmDialog {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.5)')
+      .backgroundColor(this.theme.overlay)
       .onClick(() => {
         this.onCancel();
       })
 
-      // 面板（ReminderDialog 同款：88% 宽 + padding 20 + RADIUS_NAV + SURFACE_NODE + STROKE_CARD）
+      // 面板（ReminderDialog 同款：88% 宽 + padding 20 + RADIUS_NAV + this.theme.surfaceNode + this.theme.strokeCard）
       Column() {
         Text(this.title)
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .fontFamily(FONT_INTER_SEMIBOLD)
           .margin({ bottom: 12 })
 
         Text(this.message)
           .fontSize(FONT_SIZE_BODY)
           .lineHeight(22)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
 
         // 双按钮：默认取消左/确认右；confirmOnLeft 时确认左/取消右（0.196.10 登录引导）
         Row({ space: 10 }) {
@@ -124,8 +126,8 @@ export struct AppConfirmDialog {
       .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
     }
   }
 }

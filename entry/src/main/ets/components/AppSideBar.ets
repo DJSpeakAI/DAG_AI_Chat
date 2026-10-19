@@ -18,7 +18,8 @@ import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHos
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
 import { needsAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.226.0：登录前同意拦截（弹窗 Index 根挂载）
-import { BG_NAV, RADIUS_LOGO, RADIUS_NAV, BRAND_PRIMARY, BRAND_SECONDARY, SURFACE_SOFT, SURFACE_HOVER, SURFACE_NODE, STROKE_CARD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.222.12: SURFACE_NODE 增补（长按菜单浮层用）
+import { RADIUS_LOGO, RADIUS_NAV, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 
 import { connectKnowledgeBank, deleteFolder } from '../utils/KnowledgeStoreUtil'; // ★ 0.220.0：文件夹树数据（新建功能 0.220.2 挪页内右键菜单）
 import { KnowledgeBankStore, KFolder, KbFolderNavStore, connectKbFolderNav, SidebarSectionState, connectSidebarSection } from '../common/KnowledgeModel'; // ★ 0.220.0：折叠态+文件夹导航共享 store
@@ -40,6 +41,7 @@ interface SideFolderTreeItem {
 }
 @ComponentV2
 export struct AppSideBar {
+  theme: AppTheme = connectAppTheme();
   @Event onNavClick: (kind: string) => void = (kind: string) => {};
   // ★ 0.220.0：文件夹树点击回调（宿主消费：确保路由在知识库页+视图切换已在共享 store 生效）
   @Event onFolderClick: (folderId: string) => void = (folderId: string) => {};
@@ -312,7 +314,7 @@ export struct AppSideBar {
       Row() {
         Text(this.newEntryLabel())
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -327,7 +329,7 @@ export struct AppSideBar {
       Row() {
         Text('新建文件夹')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -342,7 +344,7 @@ export struct AppSideBar {
       Row() {
         Text('移动')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -357,7 +359,7 @@ export struct AppSideBar {
       Row() {
         Text('复制')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -372,7 +374,7 @@ export struct AppSideBar {
       Row() {
         Text('重命名')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -387,7 +389,7 @@ export struct AppSideBar {
       Row() {
         Text('删除')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -402,7 +404,7 @@ export struct AppSideBar {
     }
     .width(160)
     .padding({ top: 6, bottom: 6 })
-    .backgroundColor(SURFACE_NODE)
+    .backgroundColor(this.theme.surfaceNode)
     .borderRadius(RADIUS_NAV)
   }
 
@@ -414,7 +416,7 @@ export struct AppSideBar {
       Row() {
         Text(this.newEntryLabel())
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -429,7 +431,7 @@ export struct AppSideBar {
       Row() {
         Text('新建文件夹')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -444,7 +446,7 @@ export struct AppSideBar {
       Row() {
         Text('复制')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -459,7 +461,7 @@ export struct AppSideBar {
       Row() {
         Text('删除')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
       }
       .width('100%')
       .height(36)
@@ -474,7 +476,7 @@ export struct AppSideBar {
     }
     .width(160)
     .padding({ top: 6, bottom: 6 })
-    .backgroundColor(SURFACE_NODE)
+    .backgroundColor(this.theme.surfaceNode)
     .borderRadius(RADIUS_NAV)
   }
 
@@ -587,7 +589,7 @@ export struct AppSideBar {
     .width(size)
     .height(size)
     .borderRadius(RADIUS_LOGO)
-    .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+    .linearGradient({ angle: 225, colors: [[this.theme.brandPrimary, 0], [this.theme.brandSecondary, 1]] })
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
   }
@@ -612,8 +614,8 @@ export struct AppSideBar {
       .width(size)
       .height(size)
       .borderRadius(size / 2)
-      .backgroundColor(SURFACE_SOFT)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceSoft)
+      .border({ width: 1, color: this.theme.strokeCard })
       .justifyContent(FlexAlign.Center)
     }
   }
@@ -637,13 +639,13 @@ export struct AppSideBar {
       Text(this.navLabel(kind))
         .fontSize(FONT_SIZE_NAV_LABEL)
         .fontFamily(this.isItemActive(kind) ? FONT_INTER_SEMIBOLD : FONT_INTER) // ★ 0.195.0 bugfix：硬编码 canvas 永久高亮 → 动态跟踪
-        .fontColor(this.isItemActive(kind) ? TEXT_PRIMARY : TEXT_SECONDARY)
+        .fontColor(this.isItemActive(kind) ? this.theme.textPrimary : this.theme.textSecondary)
     }
     .width('100%')
     .height(44)
     .padding({ left: 12, right: 12 })
     .borderRadius(RADIUS_NAV)
-    .backgroundColor(this.isItemActive(kind) ? SURFACE_HOVER : Color.Transparent)
+    .backgroundColor(this.isItemActive(kind) ? this.theme.surfaceHover : Color.Transparent)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
  const _tp1: Record<string, string> = {}; _tp1['item'] = kind;
@@ -664,12 +666,12 @@ export struct AppSideBar {
             .fontSize(FONT_SIZE_CARD_TITLE)
             .fontWeight(600)
             .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .maxLines(1)
           Text('你的AI学习伴侣')
             .fontSize(FONT_SIZE_CAPTION)
             .fontFamily(FONT_INTER)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .maxLines(1)
         }
         .alignItems(HorizontalAlign.Start)
@@ -689,7 +691,7 @@ export struct AppSideBar {
           Text('导航')
             .fontSize(FONT_SIZE_NAV_LABEL)
             .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
           Blank()
           // ★ 0.237.0 军令：导航条折叠三角字符 ▾/▸ → FoldChevron SVG
           FoldChevron({ expanded: this.activeNavExpanded() })
@@ -698,7 +700,7 @@ export struct AppSideBar {
         .height(36)
         .padding({ left: 12, right: 12 })
         .borderRadius(RADIUS_NAV)
-        .backgroundColor(SURFACE_SOFT)
+        .backgroundColor(this.theme.surfaceSoft)
         .alignItems(VerticalAlign.Center)
         .margin({ bottom: 6 })
         .onClick(() => {
@@ -721,16 +723,16 @@ export struct AppSideBar {
         Row({ space: 8 }) {
           Text(this.activeRootLabel())
             .fontSize(13)
-            .fontColor(this.treeRowActive('') ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .fontColor(this.treeRowActive('') ? this.theme.textPrimary : this.theme.textSecondary)
             .layoutWeight(1)
           Text(`${this.activeRootCount()}`)
             .fontSize(10)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
         }
         .height(32)
         .padding({ left: 8, right: 8 })
         .borderRadius(RADIUS_NAV)
-        .backgroundColor(this.treeRowActive('') ? SURFACE_HOVER : Color.Transparent)
+        .backgroundColor(this.treeRowActive('') ? this.theme.surfaceHover : Color.Transparent)
         .onHover((isHover: boolean) => {
           this.hoverTreeId = isHover ? '' : 'none';
         })
@@ -757,9 +759,9 @@ export struct AppSideBar {
           .bindPopup(this.rootTreeMenuVisible, {
             builder: this.rootTreeMenuBuilder(),
             placement: Placement.Bottom,
-            popupColor: SURFACE_NODE,
+            popupColor: this.theme.surfaceNode,
             radius: 12,
-            mask: { color: 'rgba(0,0,0,0.3)' },
+            mask: { color: this.theme.overlayLight },
             onStateChange: (e: PopupStateChangeParam) => {
               this.rootTreeMenuVisible = e.isVisible;
               if (!e.isVisible) { this.focusTreeId = 'none'; }
@@ -776,7 +778,7 @@ export struct AppSideBar {
         // 文件夹树（DFS 层级缩进+卡片数徽标；点击=切换视图+高亮；★ 0.222.17 经典树形连接线）
         ForEach(this.activeTreeItems(), (item: SideFolderTreeItem) => {
           Row({ space: 6 }) {
-            // ★ 0.222.17：经典树形连接线（A）——按深度绘制祖先竖线 + L 型拐角（├/└），色走 STROKE_CARD
+            // ★ 0.222.17：经典树形连接线（A）——按深度绘制祖先竖线 + L 型拐角（├/└），色走 this.theme.strokeCard
             Row() {
               ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
                 Stack({ alignContent: Alignment.Top }) {
@@ -784,7 +786,7 @@ export struct AppSideBar {
                     Column()
                       .width(1)
                       .height('100%')
-                      .backgroundColor(this.treeGuideActive(item, k) ? BRAND_SECONDARY : STROKE_CARD)
+                      .backgroundColor(this.treeGuideActive(item, k) ? this.theme.brandSecondary : this.theme.strokeCard)
                   }
                 }
                 .width(TREE_CELL)
@@ -795,7 +797,7 @@ export struct AppSideBar {
                   Column()
                     .width(1)
                     .height(item.isLast ? '50%' : '100%')
-                    .backgroundColor(this.treeGuideActive(item, item.depth) ? BRAND_SECONDARY : STROKE_CARD)
+                    .backgroundColor(this.treeGuideActive(item, item.depth) ? this.theme.brandSecondary : this.theme.strokeCard)
                 }
                 .width('50%')
                 .height('100%')
@@ -803,7 +805,7 @@ export struct AppSideBar {
                   Row()
                     .width('100%')
                     .height(1)
-                    .backgroundColor(this.treeGuideActive(item, item.depth) ? BRAND_SECONDARY : STROKE_CARD)
+                    .backgroundColor(this.treeGuideActive(item, item.depth) ? this.theme.brandSecondary : this.theme.strokeCard)
                 }
                 .width('50%')
                 .height('100%')
@@ -823,19 +825,19 @@ export struct AppSideBar {
             }
             Text(item.name)
               .fontSize(13)
-              .fontColor(this.treeRowActive(item.id) ? TEXT_PRIMARY : TEXT_SECONDARY)
+              .fontColor(this.treeRowActive(item.id) ? this.theme.textPrimary : this.theme.textSecondary)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
             Text(`${this.activeCount(item.id)}`)
               .fontSize(10)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
           }
           .width('100%')
           .height(32)
           .padding({ left: 8, right: 8 })
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(this.treeRowActive(item.id) ? SURFACE_HOVER : Color.Transparent)
+          .backgroundColor(this.treeRowActive(item.id) ? this.theme.surfaceHover : Color.Transparent)
           .onHover((isHover: boolean) => {
             this.hoverTreeId = isHover ? item.id : 'none';
           })
@@ -864,9 +866,9 @@ export struct AppSideBar {
           .bindPopup(this.treeMenuVisible && this.treeMenuFolderId === item.id, {
             builder: this.folderTreeMenuBuilder(),
             placement: Placement.Bottom,
-            popupColor: SURFACE_NODE,
+            popupColor: this.theme.surfaceNode,
             radius: 12,
-            mask: { color: 'rgba(0,0,0,0.3)' },
+            mask: { color: this.theme.overlayLight },
             onStateChange: (e: PopupStateChangeParam) => {
               if (this.treeMenuFolderId === item.id) {
                 this.treeMenuVisible = e.isVisible;
@@ -890,7 +892,7 @@ export struct AppSideBar {
       // ── 底部：设置 + 账号 ──
       this.SideBarNavItem('settings')
       Divider()
-        .color(STROKE_CARD)
+        .color(this.theme.strokeCard)
         .width('100%')
         .margin({ top: 6, bottom: 6 })
       Row({ space: 10 }) {
@@ -898,7 +900,7 @@ export struct AppSideBar {
         Text(this.getAccountDisplayName())
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontFamily(FONT_INTER)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
@@ -909,9 +911,9 @@ export struct AppSideBar {
           Text('桌面卡片')
             .fontSize(10)
             .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(BRAND_PRIMARY)
+            .fontColor(this.theme.brandPrimary)
             .padding({ left: 6, right: 6, top: 3, bottom: 3 })
-            .border({ width: 0.5, color: BRAND_SECONDARY })
+            .border({ width: 0.5, color: this.theme.brandSecondary })
             .borderRadius(8)
             .onClick(() => {
               requestPublishReviewWidget();
@@ -956,7 +958,7 @@ export struct AppSideBar {
         Row({ space: 6 }) {
           Text(siyiLevelTitle(this.siyiLearnDays()))
             .fontSize(FONT_SIZE_CAPTION)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
           Blank()
           // ★ 0.256.0：签到入口 pill（未签亮红点；子组件 onClick 消费不冒泡——0.203.0 桌面卡片小字先例）
           Stack({ alignContent: Alignment.TopEnd }) {
@@ -967,11 +969,11 @@ export struct AppSideBar {
                 .objectFit(ImageFit.Contain)
               Text(isSignedToday(this.signIn) ? '已签' : '签到')
                 .fontSize(10)
-                .fontColor(isSignedToday(this.signIn) ? TEXT_TERTIARY : BRAND_SECONDARY)
+                .fontColor(isSignedToday(this.signIn) ? this.theme.textTertiary : this.theme.brandSecondary)
             }
             .padding({ left: 7, right: 7, top: 3, bottom: 3 })
             .borderRadius(9)
-            .backgroundColor(SURFACE_HOVER)
+            .backgroundColor(this.theme.surfaceHover)
             .onClick(() => {
               connectSignInDialog().visible = true;
             })
@@ -986,7 +988,7 @@ export struct AppSideBar {
           Text(`${siyiBalanceDisplay(this.siyi, this.siyiLearnDays())} SP`) // ★ 0.259.0：Lv8 满级恒显 999,999（显示层收口，真实余额不动）
             .fontSize(FONT_SIZE_CAPTION)
             .fontWeight(FontWeight.Medium)
-            .fontColor(BRAND_SECONDARY)
+            .fontColor(this.theme.brandSecondary)
         }
         .width('100%')
         .margin({ top: 4 })
@@ -998,7 +1000,7 @@ export struct AppSideBar {
     .width(208)
     .height('100%')
     .padding({ left: 12, right: 12, bottom: 16 })
-    .backgroundColor(BG_NAV)
+    .backgroundColor(this.theme.bgNav)
     .alignItems(HorizontalAlign.Start)
     .onClick(() => {
       this.onNavClick(''); // 点边栏空白（手机抽屉收起；按钮 onClick 已消费不冒泡至此）

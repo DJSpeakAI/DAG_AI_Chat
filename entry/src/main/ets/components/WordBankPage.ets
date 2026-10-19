@@ -41,7 +41,8 @@ import intl from '@ohos.intl'; // ★ 0.195.0：字母排序 Collator（zh：英
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档（PC 窄窗保持网格的 deviceType 判定，复刻 ChatPage isPcDevice 先例）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
-  import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER（排序按钮激活态底色）
+import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { AppSideBar } from './AppSideBar'; // ★ 0.222.19：手机单词库页边栏抽屉（复用共享边栏，长按文件夹=6 项菜单）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
@@ -61,6 +62,7 @@ export function connectWordViewMode(): WordViewModeStore {
 
 @ComponentV2
 export struct WordBankPage {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   wordBank: WordBankStore = connectWordBank(); // isolated PersistenceV2 instance
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.149：TTS config for pronunciation
@@ -288,9 +290,9 @@ export struct WordBankPage {
   // ★ 0.187.0：下次复习着色——已到期红 / 其余灰
   nextReviewColor(w: WordItem): string {
     if (w.reviewCount > 0 && w.nextReviewAt <= Date.now()) {
-      return DANGER;
+      return this.theme.danger;
     }
-    return TEXT_TERTIARY;
+    return this.theme.textTertiary;
   }
 
   // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
@@ -513,14 +515,14 @@ export struct WordBankPage {
         Text('导入 DagPack · 选择要接收的内容')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text(`${this.wpFileName} · ${this.wpPack.folders.length} 个文件夹 · ${(this.wpPack.words ?? []).length} 个词 · 新子树挂当前文件夹`)
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         Text('导入内容可能包含 AI 生成的内容，请注意甄别')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 2 })
         Scroll() {
           Column() {
@@ -536,18 +538,18 @@ export struct WordBankPage {
                     })
                   Text('📁 ' + this.wpFolderPathName(f.refId))
                     .fontSize(13)
-                    .fontColor(TEXT_PRIMARY)
+                    .fontColor(this.theme.textPrimary)
                     .layoutWeight(1)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(`${this.wpSubtreeWordCount(f.refId)} 词`)
                     .fontSize(12)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                 }
                 .width('100%')
                 .padding(10)
                 .borderRadius(8)
-                .backgroundColor(SURFACE_SOFT)
+                .backgroundColor(this.theme.surfaceSoft)
                 .margin({ top: 6 })
                 .onClick(() => {
                   this.toggleWpSel(f.refId);
@@ -565,16 +567,16 @@ export struct WordBankPage {
                   })
                 Text('📄 根级散词（不属于任何文件夹）')
                   .fontSize(13)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .layoutWeight(1)
                 Text(`${this.wpRootWordCount()} 词`)
                   .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(this.theme.textTertiary)
               }
               .width('100%')
               .padding(10)
               .borderRadius(8)
-              .backgroundColor(SURFACE_SOFT)
+              .backgroundColor(this.theme.surfaceSoft)
               .margin({ top: 6 })
               .onClick(() => {
                 this.wpRootSel = !this.wpRootSel;
@@ -589,14 +591,14 @@ export struct WordBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.wpPreviewVisible = false;
             })
           Button('导入所选')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmWpImport();
@@ -608,11 +610,11 @@ export struct WordBankPage {
       .constraintSize({ maxHeight: '80%' })
       .padding(18)
       .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.wpPreviewVisible = false;
@@ -924,7 +926,7 @@ export struct WordBankPage {
   //   点击只改 sortMode **不收起**（用户拍板：连续切换不退弹层，点遮罩才收）
 
   // ★ 0.239.0：+ 菜单（bindPopup 双库统一规格）——系统 bindMenu 换自定义弹层：字体/行距对齐系统
-  //   菜单"舒服"观感（14fp/上下10左右14），配色改主题（SURFACE_NODE 底+紫字+STROKE_CARD 分隔线），
+  //   菜单"舒服"观感（14fp/上下10左右14），配色改主题（this.theme.surfaceNode 底+紫字+this.theme.strokeCard 分隔线），
   //   宽度按最长项自适应收窄（系统菜单右侧大片留白就此根治）；placement BottomRight=按钮左下方；
   //   三项文字与 action 原样保留（新建/导入 DagPack/导出 DagPack）
   @Builder
@@ -932,25 +934,25 @@ export struct WordBankPage {
     Column() {
       Text('新建单词')
         .fontSize(14)
-        .fontColor(BRAND_SECONDARY)
+        .fontColor(this.theme.brandSecondary)
         .padding({ top: 10, bottom: 10, left: 14, right: 14 })
         .onClick(() => {
           this.plusMenuVisible = false;
           this.openAddEditor();
         })
-      Divider().color(STROKE_CARD)
+      Divider().color(this.theme.strokeCard)
       Text('导入 DagPack（单词包）')
         .fontSize(14)
-        .fontColor(BRAND_SECONDARY)
+        .fontColor(this.theme.brandSecondary)
         .padding({ top: 10, bottom: 10, left: 14, right: 14 })
         .onClick(() => {
           this.plusMenuVisible = false;
           this.pickWordPackFile();
         })
-      Divider().color(STROKE_CARD)
+      Divider().color(this.theme.strokeCard)
       Text('导出 DagPack（整库单词）')
         .fontSize(14)
-        .fontColor(BRAND_SECONDARY)
+        .fontColor(this.theme.brandSecondary)
         .padding({ top: 10, bottom: 10, left: 14, right: 14 })
         .onClick(() => {
           this.plusMenuVisible = false;
@@ -962,14 +964,14 @@ export struct WordBankPage {
   }
 
   // ★ 0.218.3：排序选项菜单（bindPopup 自定义 builder）——无参 @Builder 内部直读 sortMode；
-  //   ★ 0.240.0：激活项补紫底（SURFACE_HOVER+radius 8）——UI_GUIDELINES 铁律「排序/筛选选中态统一品牌紫背景」，按钮图标化后弹层成为排序状态唯一可视位
+  //   ★ 0.240.0：激活项补紫底（this.theme.surfaceHover+radius 8）——UI_GUIDELINES 铁律「排序/筛选选中态统一品牌紫背景」，按钮图标化后弹层成为排序状态唯一可视位
   @Builder
   sortMenuBuilder() {
     Column() {
       Text(this.sortMode === 1 ? '最新 ↑' : '最新 ↓')
         .fontSize(14)
-        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_PRIMARY)
-        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? this.theme.brandSecondary : this.theme.textPrimary)
+        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? this.theme.surfaceHover : Color.Transparent)
         .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
@@ -977,11 +979,11 @@ export struct WordBankPage {
         .onClick(() => {
           this.sortMode = this.sortMode === 0 ? 1 : 0;
         })
-      Divider().color(STROKE_CARD)
+      Divider().color(this.theme.strokeCard)
       Text(this.sortMode === 3 ? '需复习 ↓' : '需复习 ↑')
         .fontSize(14)
-        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_PRIMARY)
-        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? this.theme.brandSecondary : this.theme.textPrimary)
+        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? this.theme.surfaceHover : Color.Transparent)
         .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
@@ -989,11 +991,11 @@ export struct WordBankPage {
         .onClick(() => {
           this.sortMode = this.sortMode === 2 ? 3 : 2;
         })
-      Divider().color(STROKE_CARD)
+      Divider().color(this.theme.strokeCard)
       Text(this.sortMode === 5 ? '字母 ↓' : '字母 ↑')
         .fontSize(14)
-        .fontColor(this.sortMode === 4 || this.sortMode === 5 ? BRAND_SECONDARY : TEXT_PRIMARY)
-        .backgroundColor(this.sortMode === 4 || this.sortMode === 5 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode === 4 || this.sortMode === 5 ? this.theme.brandSecondary : this.theme.textPrimary)
+        .backgroundColor(this.sortMode === 4 || this.sortMode === 5 ? this.theme.surfaceHover : Color.Transparent)
         .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
@@ -1022,7 +1024,7 @@ export struct WordBankPage {
       .width(44)
       .height(44)
       .borderRadius(22)
-      .backgroundColor(BRAND_PRIMARY)
+      .backgroundColor(this.theme.brandPrimary)
       .onClick(() => {
         if (!this.multiSelectMode) {
           this.requestDeleteWord(w);
@@ -1138,7 +1140,7 @@ export struct WordBankPage {
       if (this.windowMode.isTablet) {
         Text('⇄')
           .fontSize(16)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .padding({ left: 4, right: 4 })
           .margin({ right: 4 })
           .onClick(() => {
@@ -1158,7 +1160,7 @@ export struct WordBankPage {
       Text('单词库')
         .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
         .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .onClick(() => {
           if (this.windowMode.isTablet) {
             this.pathStack.replacePath({ name: 'KnowledgeBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
@@ -1188,9 +1190,9 @@ export struct WordBankPage {
       .bindPopup(this.sortMenuVisible, {
           builder: this.sortMenuBuilder(),
           placement: Placement.Bottom,
-          popupColor: SURFACE_NODE,
+          popupColor: this.theme.surfaceNode,
           radius: 12,
-          mask: { color: 'rgba(0,0,0,0.3)' }, // 点遮罩自动收起
+          mask: { color: this.theme.overlayLight }, // 点遮罩自动收起
           onStateChange: (e: PopupStateChangeParam) => {
             this.sortMenuVisible = e.isVisible; // 遮罩关闭时同步状态，保证按钮可再次唤起
           }
@@ -1214,7 +1216,7 @@ export struct WordBankPage {
         .height(28)
         .width(28)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.viewMode.grid ? SURFACE_HOVER : Color.Transparent)
+        .backgroundColor(this.viewMode.grid ? this.theme.surfaceHover : Color.Transparent)
         .margin({ right: 4 })
         .onClick(() => {
           this.viewMode.grid = !this.viewMode.grid;
@@ -1245,14 +1247,14 @@ export struct WordBankPage {
           .fontSize(20)
           .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .padding({ left: 8, right: 8 })
           .bindPopup(this.plusMenuVisible, {
             builder: this.wbPlusMenuBuilder(),
             placement: Placement.BottomRight,
-            popupColor: SURFACE_NODE,
+            popupColor: this.theme.surfaceNode,
             radius: 12,
-            mask: { color: 'rgba(0,0,0,0.3)' },
+            mask: { color: this.theme.overlayLight },
             onStateChange: (e: PopupStateChangeParam) => {
               this.plusMenuVisible = e.isVisible;
             }
@@ -1264,7 +1266,7 @@ export struct WordBankPage {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
           .fontSize(14)
-          .fontColor(DANGER)
+          .fontColor(this.theme.danger)
           .backgroundColor(Color.Transparent)
           .padding({ left: 8, right: 8 })
           .onClick(() => {
@@ -1289,7 +1291,7 @@ export struct WordBankPage {
         Text(this.editorIsAdd ? '新增单词' : '编辑单词')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         TextInput({ text: this.editorWord, placeholder: '单词（必填）' })
           .fontSize(14)
           .width('100%')
@@ -1297,7 +1299,7 @@ export struct WordBankPage {
           .margin({ top: 16 })
           .padding({ left: 12, right: 12 })
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorWord = value;
           })
@@ -1308,7 +1310,7 @@ export struct WordBankPage {
           .margin({ top: 8 })
           .padding({ left: 12, right: 12 })
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorFullName = value;
           })
@@ -1319,7 +1321,7 @@ export struct WordBankPage {
           .margin({ top: 8 })
           .padding({ left: 12, right: 12 })
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorPhonetic = value;
           })
@@ -1330,14 +1332,14 @@ export struct WordBankPage {
           .margin({ top: 8 })
           .padding({ left: 12, right: 12 })
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorExplain = value;
           })
         Row({ space: 12 }) { // ★ 0.230.0：等宽铁律姿势（0.197.3——margin 参与 layoutWeight 分配会把保存挤窄 12vp，审计实锤差 29px；间隙一律 Row space）
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1345,8 +1347,8 @@ export struct WordBankPage {
             })
           Button('保存')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.brandPrimary)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .onClick(() => {
@@ -1358,7 +1360,7 @@ export struct WordBankPage {
       }
       .width(this.isTablet ? 520 : '86%') // ★ 0.230.0：断点制对齐（原裸 86%——0.201.2 改造漏网，0.229.26 审计实锤 784vp 超宽）
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
       }
       .constraintSize({ maxHeight: '96%' })
@@ -1366,7 +1368,7 @@ export struct WordBankPage {
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ★ 0.161: learn-count settings dialog — 1 / 2 (default) / free input (1~20);
@@ -1378,19 +1380,19 @@ export struct WordBankPage {
         Text('设置')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .margin({ bottom: 12 })
-        // ★ 0.189.2：排版重构——三区卡片化（SURFACE_SOFT 底 + RADIUS_CONTROL 圆角，对齐
+        // ★ 0.189.2：排版重构——三区卡片化（this.theme.surfaceSoft 底 + RADIUS_CONTROL 圆角，对齐
         //   云同步状态卡规格；区块标题 14 主色半粗 + 描述 11 弱化），替代原先平铺堆叠的灰字
         // ── 卡片 1：复习显示数量 ──
         Column() {
           Text('复习显示数量')
             .fontSize(14)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
           Text('AI 回复底部复习区、提炼等待页每次展示的词条数')
             .fontSize(11)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .margin({ top: 2 })
                     // ★ 0.195.0：布局统一（用户定稿「012+输入框」一行——与全局设置复习 Tab 完全同款）
           Row() {
@@ -1398,8 +1400,8 @@ export struct WordBankPage {
               .fontSize(14)
               .width(44)
               .height(40)
-              .fontColor(this.learnCountStore.learnCount === 0 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.learnCountStore.learnCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.learnCountStore.learnCount === 0 ? this.theme.textPrimary : (this.theme.textSecondary))
+              .backgroundColor(this.learnCountStore.learnCount === 0 ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .onClick(() => {
                 this.learnCountStore.learnCount = 0;
@@ -1409,8 +1411,8 @@ export struct WordBankPage {
               .fontSize(14)
               .width(44)
               .height(40)
-              .fontColor(this.learnCountStore.learnCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.learnCountStore.learnCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.learnCountStore.learnCount === 1 ? this.theme.textPrimary : (this.theme.textSecondary))
+              .backgroundColor(this.learnCountStore.learnCount === 1 ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .margin({ left: 8 })
               .onClick(() => {
@@ -1421,8 +1423,8 @@ export struct WordBankPage {
               .fontSize(14)
               .width(44)
               .height(40)
-              .fontColor(this.learnCountStore.learnCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.learnCountStore.learnCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.learnCountStore.learnCount === 2 ? this.theme.textPrimary : (this.theme.textSecondary))
+              .backgroundColor(this.learnCountStore.learnCount === 2 ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .margin({ left: 8 })
               .onClick(() => {
@@ -1435,7 +1437,7 @@ export struct WordBankPage {
               .height(40)
               .padding({ left: 12, right: 12 })
               .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_NODE)
+              .backgroundColor(this.theme.surfaceNode)
               .type(InputType.Number)
               .margin({ left: 8 })
               .onChange((value: string) => {
@@ -1445,8 +1447,8 @@ export struct WordBankPage {
             Button('确定')
               .fontSize(14)
               .height(40)
-              .fontColor(TEXT_PRIMARY)
-              .backgroundColor(BRAND_PRIMARY)
+              .fontColor(this.theme.textPrimary)
+              .backgroundColor(this.theme.brandPrimary)
               .borderRadius(RADIUS_CONTROL)
               .margin({ left: 8 })
               .padding({ left: 14, right: 14 })
@@ -1467,30 +1469,30 @@ export struct WordBankPage {
           if (this.learnInputError.length > 0) {
             Text(this.learnInputError)
               .fontSize(12)
-              .fontColor(DANGER)
+              .fontColor(this.theme.danger)
               .margin({ top: 6 })
           }
         }
         .width('100%')
         .padding(12)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
+        .backgroundColor(this.theme.surfaceSoft)
         .alignItems(HorizontalAlign.Start)
         // ── 卡片 2：音标口音（★ 0.185.0；切换需确认——清空现有音标，确认弹窗叠加于本弹窗之上）──
         Column() {
           Text('音标口音')
             .fontSize(14)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
           Text('划词查词生成音标的口音，切换将清空现有音标')
             .fontSize(11)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .margin({ top: 2 })
           Row() {
             Button('美式（默认）')
               .fontSize(14)
-              .fontColor(!this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
-              .backgroundColor(!this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(!this.phoneticAccentStore.british ? this.theme.textPrimary : this.theme.textSecondary)
+              .backgroundColor(!this.phoneticAccentStore.british ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .layoutWeight(1)
               .onClick(() => {
@@ -1502,8 +1504,8 @@ export struct WordBankPage {
               })
             Button('英式')
               .fontSize(14)
-              .fontColor(this.phoneticAccentStore.british ? TEXT_PRIMARY : TEXT_SECONDARY)
-              .backgroundColor(this.phoneticAccentStore.british ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.phoneticAccentStore.british ? this.theme.textPrimary : this.theme.textSecondary)
+              .backgroundColor(this.phoneticAccentStore.british ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .layoutWeight(1)
               .margin({ left: 8 })
@@ -1521,7 +1523,7 @@ export struct WordBankPage {
         .width('100%')
         .padding(12)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
+        .backgroundColor(this.theme.surfaceSoft)
         .alignItems(HorizontalAlign.Start)
         .margin({ top: 12 })
         // ── 卡片 3：发音语音包（★ 0.189.1：en-US Laura 状态 + 应用内下载）──
@@ -1529,21 +1531,21 @@ export struct WordBankPage {
           Text('发音语音包')
             .fontSize(14)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
           Text('美式发音包 Laura：单词发音用真美式音色（系统语音包，免费离线）')
             .fontSize(11)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .margin({ top: 2 })
           Row() {
             Text(this.voicePackLabel())
               .fontSize(13)
-              .fontColor(this.voicePackStatus === 'installed' && !this.voicePackDownloading ? '#4CAF50' : TEXT_SECONDARY)
+              .fontColor(this.voicePackStatus === 'installed' && !this.voicePackDownloading ? '#4CAF50' : this.theme.textSecondary)
               .layoutWeight(1)
             if (this.voicePackStatus === 'downloadable' && !this.voicePackDownloading) {
               Button('下载')
                 .fontSize(13)
-                .fontColor(TEXT_PRIMARY)
-                .backgroundColor(BRAND_PRIMARY)
+                .fontColor(this.theme.textPrimary)
+                .backgroundColor(this.theme.brandPrimary)
                 .borderRadius(RADIUS_CONTROL)
                 .padding({ left: 14, right: 14 })
                 .onClick(() => {
@@ -1557,12 +1559,12 @@ export struct WordBankPage {
         .width('100%')
         .padding(12)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(SURFACE_SOFT)
+        .backgroundColor(this.theme.surfaceSoft)
         .alignItems(HorizontalAlign.Start)
         .margin({ top: 12 })
         Button('关闭')
           .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .backgroundColor(Color.Transparent)
           .width('100%')
           .margin({ top: 16 })
@@ -1572,14 +1574,14 @@ export struct WordBankPage {
       }
       .width('86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
       .onClick(() => {}) // ★ 0.196.2：消费面板点击防冒泡到遮罩（ClickEvent 无 stopPropagation，空 handler 挡住）
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .onClick(() => {
       this.learnSettingsVisible = false; // ★ 0.196.2 用户拍板：点空白关闭（同「关闭」按钮=不保存退出）
     })
@@ -1594,15 +1596,15 @@ export struct WordBankPage {
         Text('切换音标口音？')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text('切换音标后，原先的音标将会被删除')
           .fontSize(13)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .margin({ top: 12 })
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1610,8 +1612,8 @@ export struct WordBankPage {
             })
           Button('确认切换')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(DANGER)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.danger)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
@@ -1624,13 +1626,13 @@ export struct WordBankPage {
       }
       .width('86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ★ 0.185.0: apply confirmed accent switch — persist, wipe existing
@@ -1652,7 +1654,7 @@ export struct WordBankPage {
         Text('确认删除该条目？')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Row() {
           Image(this.deleteConfirmNoRemind ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.218.6：☑/☐ 换 svg（0.212.0 漏网统一）
             .width(20)
@@ -1662,7 +1664,7 @@ export struct WordBankPage {
             })
           Text('本次会话内不再提示')
             .fontSize(13)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .margin({ left: 6 })
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
@@ -1673,7 +1675,7 @@ export struct WordBankPage {
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1681,8 +1683,8 @@ export struct WordBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(DANGER)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.danger)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
@@ -1696,13 +1698,13 @@ export struct WordBankPage {
       // ★ 0.218.4 用户拍板：删除确认弹窗对齐知识库（PC 上 86% 太宽）——确认类对话框 400 定式
       .width(this.isTablet ? 400 : '86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ★ 0.148: batch-delete confirm dialog — ALWAYS shown, no no-remind
@@ -1714,11 +1716,11 @@ export struct WordBankPage {
         Text(`确认删除选中的 ${this.selectedIds.length} 项？`)
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1726,8 +1728,8 @@ export struct WordBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(DANGER)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.danger)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
@@ -1741,13 +1743,13 @@ export struct WordBankPage {
       // ★ 0.218.4：批量删除确认同属确认类对话框——400 定式（对齐 UI_GUIDELINES 六-12）
       .width(this.isTablet ? 400 : '86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ★ 0.222.19：PC 右键/Pad 长按创建菜单（两项：新单词/新文件夹）——无参 @Builder 直读状态
@@ -1757,7 +1759,7 @@ export struct WordBankPage {
       Column() {
         Text('创建新单词')
           .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .width('100%')
           .textAlign(TextAlign.Start)
           .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -1765,10 +1767,10 @@ export struct WordBankPage {
             this.createMenuVisible = false;
             this.openAddEditor();
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('创建新文件夹')
           .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .width('100%')
           .textAlign(TextAlign.Start)
           .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -1789,13 +1791,13 @@ export struct WordBankPage {
         Text(this.folderDialogIsRename ? '重命名文件夹' : '新建文件夹')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         TextInput({ text: this.folderDialogName, placeholder: '文件夹名称' })
           .fontSize(14)
           .height(40)
           .margin({ top: 12 })
           .padding({ left: 10, right: 10 })
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .borderRadius(8)
           .onChange((v: string) => {
             this.folderDialogName = v;
@@ -1803,15 +1805,15 @@ export struct WordBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.folderDialogVisible = false;
               this.cancelFolderAction();
             })
           Button('确定')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmFolderDialog();
@@ -1822,11 +1824,11 @@ export struct WordBankPage {
       .width(this.isTablet ? 520 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.folderDialogVisible = false;
@@ -1842,22 +1844,22 @@ export struct WordBankPage {
         Text(this.wbFolderNav.folderActionId === '' ? '清空根目录「全部单词」' : `删除「${this.folderNameById(this.wbFolderNav.folderActionId)}」`)
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text(this.wbFolderNav.folderActionId === '' ? '将清空根目录下所有单词和文件夹，根目录入口将保留。不可恢复。' : '将删除该文件夹及其中所有单词和子文件夹，不可恢复。')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 10 })
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.cancelFolderAction();
             })
           Button('删除')
             .layoutWeight(1)
-            .backgroundColor(DANGER)
+            .backgroundColor(this.theme.danger)
             .fontColor(Color.White)
             .onClick(() => {
               this.wbFolderNav.folderActionId === '' ? this.confirmRootDelete() : this.confirmFolderDelete();
@@ -1868,11 +1870,11 @@ export struct WordBankPage {
       .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.cancelFolderAction();
@@ -1887,13 +1889,13 @@ export struct WordBankPage {
         Text('重命名文件夹')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         TextInput({ text: this.wbFolderNav.folderActionName, placeholder: '文件夹名称' })
           .fontSize(14)
           .height(40)
           .margin({ top: 12 })
           .padding({ left: 10, right: 10 })
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .borderRadius(8)
           .onChange((v: string) => {
             this.wbFolderNav.folderActionName = v;
@@ -1901,14 +1903,14 @@ export struct WordBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.cancelFolderAction();
             })
           Button('确定')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmFolderRename();
@@ -1919,11 +1921,11 @@ export struct WordBankPage {
       .width(this.isTablet ? 520 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.cancelFolderAction();
@@ -1937,17 +1939,17 @@ export struct WordBankPage {
         Text(this.folderPickerTitle())
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Scroll() {
           Column() {
             Row() {
               Text('根目录')
                 .fontSize(13)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .layoutWeight(1)
               Text(`${this.wordBank.words.length}`)
                 .fontSize(10)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
             }
             .width('100%')
             .height(32)
@@ -1966,7 +1968,7 @@ export struct WordBankPage {
                         Column()
                           .width(1)
                           .height('100%')
-                          .backgroundColor(STROKE_CARD)
+                          .backgroundColor(this.theme.strokeCard)
                       }
                     }
                     .width(TREE_CELL)
@@ -1977,7 +1979,7 @@ export struct WordBankPage {
                       Column()
                         .width(1)
                         .height(item.isLast ? '50%' : '100%')
-                        .backgroundColor(STROKE_CARD)
+                        .backgroundColor(this.theme.strokeCard)
                     }
                     .width('50%')
                     .height('100%')
@@ -1985,7 +1987,7 @@ export struct WordBankPage {
                       Row()
                         .width('100%')
                         .height(1)
-                        .backgroundColor(STROKE_CARD)
+                        .backgroundColor(this.theme.strokeCard)
                     }
                     .width('50%')
                     .height('100%')
@@ -2005,7 +2007,7 @@ export struct WordBankPage {
                 }
                 Text(item.folder.name)
                   .fontSize(13)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .layoutWeight(1)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2026,7 +2028,7 @@ export struct WordBankPage {
         .constraintSize({ maxHeight: 320 })
         Text('取消')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 10 })
           .onClick(() => {
             this.folderPickerVisible = false;
@@ -2037,11 +2039,11 @@ export struct WordBankPage {
       .constraintSize({ maxHeight: '80%' })
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.folderPickerVisible = false;
@@ -2057,7 +2059,7 @@ export struct WordBankPage {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor('rgba(0,0,0,0.45)')
+          .backgroundColor(this.theme.overlay)
           .onClick(() => {
             this.closeSidebar();
           })
@@ -2100,12 +2102,12 @@ export struct WordBankPage {
           Column()
             .width(1)
             .height(16)
-            .backgroundColor(STROKE_CARD)
+            .backgroundColor(this.theme.strokeCard)
           Scroll() {
             Row({ space: 4 }) {
               Text('全部单词')
                 .fontSize(12)
-                .fontColor(this.wbFolderNav.folderId.length === 0 ? BRAND_SECONDARY : TEXT_SECONDARY)
+                .fontColor(this.wbFolderNav.folderId.length === 0 ? this.theme.brandSecondary : this.theme.textSecondary)
                 .onClick(() => {
                   this.wbFolderNav.folderId = ''; // 与边栏树点击同源——直接赋值即切主内容区
                 })
@@ -2117,7 +2119,7 @@ export struct WordBankPage {
                     .objectFit(ImageFit.Contain)
                   Text(f.name)
                     .fontSize(12)
-                    .fontColor(idx === this.currentChain.length - 1 ? BRAND_SECONDARY : TEXT_SECONDARY)
+                    .fontColor(idx === this.currentChain.length - 1 ? this.theme.brandSecondary : this.theme.textSecondary)
                     .onClick(() => {
                       this.wbFolderNav.folderId = f.id;
                     })
@@ -2135,8 +2137,8 @@ export struct WordBankPage {
         .height(40)
         .padding({ left: 12, right: 12 })
         .borderRadius(20)
-        .backgroundColor(SURFACE_NODE)
-        .border({ width: 1, color: STROKE_CARD })
+        .backgroundColor(this.theme.surfaceNode)
+        .border({ width: 1, color: this.theme.strokeCard })
         .margin({ left: 14, bottom: 14 }) // 贴屏幕左下角
         .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 8 })).animation({ duration: 200 })) // 出场向下（与搜索栏 y:-8 镜像，同向联动）
       }
@@ -2163,7 +2165,7 @@ export struct WordBankPage {
                   .height(40)
                   .padding({ left: 12, right: 12 })
                   .borderRadius(20)
-                  .backgroundColor(SURFACE_SOFT)
+                  .backgroundColor(this.theme.surfaceSoft)
                   .onChange((value: string) => {
                     this.searchKeyword = value;
                   })
@@ -2171,7 +2173,7 @@ export struct WordBankPage {
                   // Clear button — clearing restores the full list (spec 2.1.4)
                   Text('×')
                     .fontSize(16)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                     .margin({ left: 6 })
                     .onClick(() => {
                       this.searchKeyword = '';
@@ -2187,7 +2189,7 @@ export struct WordBankPage {
             Row() {
               Button(this.isAllSelected() ? '取消全选' : '全选')
                 .fontSize(13)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .onClick(() => {
@@ -2197,11 +2199,11 @@ export struct WordBankPage {
                 .layoutWeight(1)
               Text(`已选 ${this.selectedIds.length} 项`)
                 .fontSize(13)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
               // ★ 0.222.19：批量移动/复制到文件夹（对齐知识库，单张=多选 1 张，交互统一）
               Button('移动')
                 .fontSize(13)
-                .fontColor(BRAND_SECONDARY)
+                .fontColor(this.theme.brandSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 4 })
@@ -2215,7 +2217,7 @@ export struct WordBankPage {
                 })
               Button('复制')
                 .fontSize(13)
-                .fontColor(BRAND_SECONDARY)
+                .fontColor(this.theme.brandSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .onClick(() => {
@@ -2228,7 +2230,7 @@ export struct WordBankPage {
                 })
               Button('取消')
                 .fontSize(13)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 8 })
@@ -2245,10 +2247,10 @@ export struct WordBankPage {
             Column() {
               Text('单词库为空')
                 .fontSize(16)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
               Text('点右上角 + 手动添加，或长按对话气泡选词翻译后加入')
                 .fontSize(12)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -2259,10 +2261,10 @@ export struct WordBankPage {
             Column() {
               Text(this.searchKeyword.length > 0 ? '无匹配结果' : '此文件夹为空')
                 .fontSize(16)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
               Text(this.searchKeyword.length > 0 ? '换个关键词试试' : '点右上角 + 导入或新建')
                 .fontSize(12)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -2286,7 +2288,7 @@ export struct WordBankPage {
                       Text(w.word)
                         .fontSize(15)
                         .fontWeight(600)
-                        .fontColor(TEXT_PRIMARY)
+                        .fontColor(this.theme.textPrimary)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .layoutWeight(1)
@@ -2300,7 +2302,7 @@ export struct WordBankPage {
                     if (w.fullName.length > 0) {
                       Text(w.fullName)
                         .fontSize(11)
-                        .fontColor(BRAND_SECONDARY)
+                        .fontColor(this.theme.brandSecondary)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .margin({ top: 2 })
@@ -2308,12 +2310,12 @@ export struct WordBankPage {
                     if (w.usPhonetic.length > 0) {
                       Text(w.usPhonetic)
                         .fontSize(11)
-                        .fontColor(TEXT_TERTIARY)
+                        .fontColor(this.theme.textTertiary)
                         .margin({ top: 2 })
                     }
                     Text(w.explain)
                       .fontSize(12)
-                      .fontColor(TEXT_SECONDARY)
+                      .fontColor(this.theme.textSecondary)
                       .maxLines(2)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .margin({ top: 2 })
@@ -2327,8 +2329,8 @@ export struct WordBankPage {
                   .height(150) // ★ 0.218.9：固定格高——等高网格（瀑布流内容自适应高度=行高参差+重叠根因）
                   .padding(12)
                   .borderRadius(RADIUS_CONTROL)
-                  .backgroundColor(SURFACE_NODE)
-                  .borderColor(STROKE_CARD)
+                  .backgroundColor(this.theme.surfaceNode)
+                  .borderColor(this.theme.strokeCard)
                   .borderWidth(1)
                   .onClick(() => {
                     this.onItemTap(w);
@@ -2384,19 +2386,19 @@ export struct WordBankPage {
                       Text(w.word)
                         .fontSize(16)
                         .fontWeight(600)
-                        .fontColor(TEXT_PRIMARY)
+                        .fontColor(this.theme.textPrimary)
                       if (w.fullName.length > 0) {
                         // Abbreviation full term — row not rendered when empty
                         Text(w.fullName)
                           .fontSize(13)
-                          .fontColor(BRAND_SECONDARY)
+                          .fontColor(this.theme.brandSecondary)
                           .margin({ top: 2 })
                       }
                       if (w.usPhonetic.length > 0) {
                         Row() {
                           Text(w.usPhonetic)
                             .fontSize(13)
-                            .fontColor(TEXT_TERTIARY)
+                            .fontColor(this.theme.textTertiary)
                           // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
                           // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行（用户指出单词本行距变大），Text 无默认高度、行距还原
                           // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
@@ -2414,7 +2416,7 @@ export struct WordBankPage {
                       }
                       Text(w.explain)
                         .fontSize(13)
-                        .fontColor(TEXT_SECONDARY)
+                        .fontColor(this.theme.textSecondary)
                         .margin({ top: 2 })
                       // ★ 0.187.0：下次复习时间（未学习灰 / 已到期红 / 常规灰）
                       Text(this.nextReviewLabel(w))
@@ -2433,8 +2435,8 @@ export struct WordBankPage {
                   .width('100%')
                   .padding(12)
                   .borderRadius(RADIUS_CONTROL)
-                  .backgroundColor(SURFACE_NODE) // ★ 0.183.0：卡片底对齐节点卡片规格（SURFACE_NODE + STROKE_CARD 描边）
-                  .borderColor(STROKE_CARD)
+                  .backgroundColor(this.theme.surfaceNode) // ★ 0.183.0：卡片底对齐节点卡片规格（this.theme.surfaceNode + this.theme.strokeCard 描边）
+                  .borderColor(this.theme.strokeCard)
                   .borderWidth(1)
                   .alignItems(VerticalAlign.Center)
                   .gesture(
@@ -2534,16 +2536,16 @@ export struct WordBankPage {
         // ★ 0.222.19：抽屉移入主 Column children 末尾（与正常工作的弹窗块同层）
         this.wbMobileDrawerLayer()
       }
-      .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
+      .backgroundColor(this.theme.bgCanvas) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 this.theme.bgApp/画布 this.theme.bgCanvas 暗紫底不一致，统一应用底色
       // ★ 0.222.19：PC 右键 / Pad 长按空白 → 弹「创建新单词 / 创建新文件夹」菜单
       //   （bindContextMenu 跟随鼠标右键；bindPopup 供长按唤起；触屏设备 RightClick 响应=长按，双通道等效冗余）
       .bindContextMenu(this.wbCreateMenuBuilder, ResponseType.RightClick)
       .bindPopup(this.createMenuVisible, {
         builder: this.wbCreateMenuBuilder(),
         placement: Placement.Bottom,
-        popupColor: SURFACE_NODE,
+        popupColor: this.theme.surfaceNode,
         radius: 12,
-        mask: { color: 'rgba(0,0,0,0.3)' },
+        mask: { color: this.theme.overlayLight },
         onStateChange: (e: PopupStateChangeParam) => {
           this.createMenuVisible = e.isVisible;
         }

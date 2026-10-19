@@ -3,8 +3,8 @@
 //   学习天数落盘检测 触发，此处消费；AppConfirmDialog 同款解耦模式）
 // 口径（用户 2026-10-19 拍板）：连签奖励递增封顶——第 1 天 2,000 每天 +1,000，第 7 天起 8,000/天；
 //   里程碑 7/30/100 天额外 +10,000/+50,000/+200,000（发放入 bonusSp 嘉奖池）
-// 样式：AppConfirmDialog/ReminderDialog 同款暗紫定式（遮罩 0.5 + SURFACE_NODE + RADIUS_NAV +
-//   STROKE_CARD 描边 + 宽度断点制 isTablet?400:'86%'——UI_GUIDELINES 六-12a）
+// 样式：AppConfirmDialog/ReminderDialog 同款暗紫定式（遮罩 0.5 + this.theme.surfaceNode + RADIUS_NAV +
+//   this.theme.strokeCard 描边 + 宽度断点制 isTablet?400:'86%'——UI_GUIDELINES 六-12a）
 // 调试：底部日期小字长按/右键 bindContextMenu → 日期偏移菜单（+1/+7/+30/+365/清零，默认 0 零影响）
 
 import {
@@ -14,11 +14,13 @@ import {
   todayStrWithOffset, nextStreak, signInRewardSp, milestoneBonusSp, isSignedToday, doSignIn,
   canMakeupYesterday, useMakeupVoucher
 } from '../common/ChatModel';
-import { SURFACE_NODE, SURFACE_HOVER, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // 宽屏断点（弹窗宽度收敛）
 
 @ComponentV2
 export struct SignInDialog {
+  theme: AppTheme = connectAppTheme();
   dialogBridge: SignInDialogBridge = connectSignInDialog();
   signIn: SignInStore = connectSignIn();
   siyi: SiyiPointStore = connectSiyiPoints();
@@ -82,10 +84,10 @@ export struct SignInDialog {
       Circle()
         .width(index === 7 ? 12 : 10)
         .height(index === 7 ? 12 : 10)
-        .fill(reached ? BRAND_PRIMARY : SURFACE_HOVER)
+        .fill(reached ? this.theme.brandPrimary : this.theme.surfaceHover)
       Text(index === 7 ? '8,000' : `${index}`)
         .fontSize(9)
-        .fontColor(reached ? BRAND_SECONDARY : TEXT_TERTIARY)
+        .fontColor(reached ? this.theme.brandSecondary : this.theme.textTertiary)
     }
   }
 
@@ -123,7 +125,7 @@ export struct SignInDialog {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.5)')
+      .backgroundColor(this.theme.overlay)
       .onClick(() => {
         this.onClose();
       })
@@ -136,21 +138,21 @@ export struct SignInDialog {
             .fontSize(FONT_SIZE_SCREEN_TITLE)
             .fontWeight(600)
             .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .margin({ bottom: 10 })
           Text(`+${this.signedAmount.toLocaleString()} SP 已入嘉奖池`)
             .fontSize(FONT_SIZE_BODY)
             .lineHeight(22)
-            .fontColor(BRAND_SECONDARY)
+            .fontColor(this.theme.brandSecondary)
             .margin({ bottom: 6 })
           if (milestoneBonusSp(this.signIn.streak) > 0) {
             Text(`连签 ${this.signIn.streak} 天里程碑 +${milestoneBonusSp(this.signIn.streak).toLocaleString()} SP`)
               .fontSize(FONT_SIZE_CAPTION)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
           }
           Text(`当前连签 ${this.signIn.streak} 天 · 明日可领 ${signInRewardSp(this.signIn.streak + 1).toLocaleString()} SP`)
             .fontSize(FONT_SIZE_CAPTION)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .margin({ top: 8 })
         } else if (this.todaySigned()) {
           // ── 今日已签态 ──
@@ -158,24 +160,24 @@ export struct SignInDialog {
             .fontSize(FONT_SIZE_SCREEN_TITLE)
             .fontWeight(600)
             .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .margin({ bottom: 10 })
           Text(`当前连签 ${this.signIn.streak} 天（历史最高 ${this.signIn.maxStreak} 天）`)
             .fontSize(FONT_SIZE_BODY)
             .lineHeight(22)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .margin({ bottom: 6 })
           Text(`连签第 7 天起每日稳定 8,000 SP；明日可领 ${signInRewardSp(this.signIn.streak + 1).toLocaleString()} SP`)
             .fontSize(FONT_SIZE_CAPTION)
             .lineHeight(18)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
         } else {
           // ── 未签态（首登引导与日常共用）──
           Text(`第 ${this.pendingStreak()} 天签到`)
             .fontSize(FONT_SIZE_SCREEN_TITLE)
             .fontWeight(600)
             .fontFamily(FONT_INTER_SEMIBOLD)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .margin({ bottom: 12 })
 
           // ── ★ 0.259.0：断签补签块（昨天漏签 && 持有补签券——「后悔药」续接连击）──
@@ -183,13 +185,13 @@ export struct SignInDialog {
             Text(`连击已续接（当前 ${this.signIn.streak} 天）——今日签到后变 ${this.signIn.streak + 1} 天`)
               .fontSize(FONT_SIZE_CAPTION)
               .lineHeight(18)
-              .fontColor(BRAND_SECONDARY)
+              .fontColor(this.theme.brandSecondary)
               .margin({ bottom: 10 })
           } else if (this.canMakeup()) {
             Text(`昨日漏签，连击已断（此前 ${this.signIn.streak} 天）`)
               .fontSize(FONT_SIZE_CAPTION)
               .lineHeight(18)
-              .fontColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textTertiary)
               .margin({ bottom: 6 })
             Button(`使用补签券 ×1 续接连击（剩余 ${this.signIn.makeupVouchers} 张）`)
               .width('100%')
@@ -197,9 +199,9 @@ export struct SignInDialog {
               .fontSize(FONT_SIZE_BODY)
               .fontWeight(FontWeight.Medium)
               .backgroundColor(Color.Transparent)
-              .fontColor(BRAND_SECONDARY)
+              .fontColor(this.theme.brandSecondary)
               .borderRadius(RADIUS_CONTROL)
-              .border({ width: 1, color: BRAND_SECONDARY })
+              .border({ width: 1, color: this.theme.brandSecondary })
               .margin({ bottom: 10 })
               .onClick(() => {
                 this.onMakeupClick();
@@ -209,7 +211,7 @@ export struct SignInDialog {
           Text(`今日可领 ${this.todayGainText()}`)
             .fontSize(FONT_SIZE_BODY)
             .lineHeight(22)
-            .fontColor(BRAND_SECONDARY)
+            .fontColor(this.theme.brandSecondary)
             .margin({ bottom: 14 })
 
           // 连签 7 天进度点条（第 7 天满额 8,000/天）
@@ -223,7 +225,7 @@ export struct SignInDialog {
           Text('连签 7 / 30 / 100 天，额外 +10,000 / +50,000 / +200,000 SP')
             .fontSize(FONT_SIZE_CAPTION)
             .lineHeight(18)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .margin({ bottom: 16 })
 
           Button('立即签到')
@@ -231,8 +233,8 @@ export struct SignInDialog {
             .height(48)
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
+            .fontColor(this.theme.textPrimary)
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
               this.onSignClick();
@@ -243,14 +245,14 @@ export struct SignInDialog {
         if (this.signIn.makeupVouchers > 0) {
           Text(`补签券 ×${this.signIn.makeupVouchers}（等级升级奖励 · 断签时可续接连击）`)
             .fontSize(10)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .margin({ top: 10 })
         }
 
         // 日期小字（长按/右键=调试日期偏移菜单；偏移≠0 时醒目提示）
         Text(this.debugOffset.offset === 0 ? this.today() : `${this.today()}（调试偏移 ${this.debugOffset.offset >= 0 ? '+' : ''}${this.debugOffset.offset} 天）`)
           .fontSize(10)
-          .fontColor(this.debugOffset.offset === 0 ? TEXT_TERTIARY : BRAND_SECONDARY)
+          .fontColor(this.debugOffset.offset === 0 ? this.theme.textTertiary : this.theme.brandSecondary)
           .margin({ top: 14 })
           .bindContextMenu((): void => {
             this.debugMenuBuilder()
@@ -259,8 +261,8 @@ export struct SignInDialog {
       .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
     }
   }
 }
@@ -268,6 +270,7 @@ export struct SignInDialog {
 // ★ 0.256.0：称号升级弹窗——头衔升级瞬间弹「恭喜升级」+新头衔+权益（此前静默变化无提醒）
 @ComponentV2
 export struct LevelUpDialog {
+  theme: AppTheme = connectAppTheme();
   bridge: LevelUpBridge = connectLevelUpBridge();
   @Local windowMode: WindowMode = connectWindowMode();
   @Computed get isTablet(): boolean {
@@ -282,7 +285,7 @@ export struct LevelUpDialog {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.5)')
+      .backgroundColor(this.theme.overlay)
       .onClick(() => {
         this.bridge.pendingLevel = 0;
       })
@@ -292,20 +295,20 @@ export struct LevelUpDialog {
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
           .fontFamily(FONT_INTER_SEMIBOLD)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .margin({ bottom: 12 })
 
         Text(SIYI_LEVEL_TITLES[this.bridge.pendingLevel - 1])
           .fontSize(24)
           .fontWeight(700)
           .fontFamily(FONT_INTER_SEMIBOLD)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .margin({ bottom: 12 })
 
         Text(`新头衔权益：${SIYI_LEVEL_PERKS[this.bridge.pendingLevel - 1]}`)
           .fontSize(FONT_SIZE_BODY)
           .lineHeight(22)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .margin({ bottom: 6 })
 
         // ★ 0.259.0：升级发补签券（奖励的仪式感放在升级这一刻——因努力而奖励；Lv8 满级改 SP 恒显 999,999 不送券）
@@ -313,21 +316,21 @@ export struct LevelUpDialog {
           Text(`🎉 获得补签券 ×${this.bridge.pendingMakeupGrant}（断签时可续接连击）`)
             .fontSize(FONT_SIZE_BODY)
             .lineHeight(22)
-            .fontColor(BRAND_SECONDARY)
+            .fontColor(this.theme.brandSecondary)
             .margin({ bottom: 6 })
         }
 
         Text('坚持每日学习，下一级头衔正在等你')
           .fontSize(FONT_SIZE_CAPTION)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
 
         Button('继续学习')
           .width('100%')
           .height(48)
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontWeight(FontWeight.Medium)
-          .backgroundColor(BRAND_PRIMARY)
-          .fontColor(TEXT_PRIMARY)
+          .backgroundColor(this.theme.brandPrimary)
+          .fontColor(this.theme.textPrimary)
           .borderRadius(RADIUS_CONTROL)
           .margin({ top: 16 })
           .onClick(() => {
@@ -337,8 +340,8 @@ export struct LevelUpDialog {
       .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
     }
   }
 }

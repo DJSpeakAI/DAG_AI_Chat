@@ -3,15 +3,17 @@
 // ============================================================
 // 合规红线：体验改进计划必须「单独、非捆绑、默认关」——不得塞进必选同意框。
 // 故在用户完成协议同意后，单独弹此卡一次询问；选择即记忆（AgreementStore.improvePromptShown）。
-// 样式模板：ReminderDialog 同款（遮罩 + SURFACE_NODE 面板 + RADIUS_NAV + STROKE_CARD + 主紫按钮）
+// 样式模板：ReminderDialog 同款（遮罩 + this.theme.surfaceNode 面板 + RADIUS_NAV + this.theme.strokeCard + 主紫按钮）
 // 宿主：Index 根唯一挂载（bridge.improveVisible 驱动）
 // ============================================================
 
-import { SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode';
 
 @ComponentV2
 export struct ImproveDataDialog {
+  theme: AppTheme = connectAppTheme();
   @Param visible: boolean = false;
   @Event onJoin: () => void = () => {};
   @Event onSkip: () => void = () => {};
@@ -28,7 +30,7 @@ export struct ImproveDataDialog {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.5)')
+      .backgroundColor(this.theme.overlay)
       .onClick(() => {
         this.onSkip();
       })
@@ -38,20 +40,20 @@ export struct ImproveDataDialog {
         Text('加入体验改进计划？')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .fontFamily(FONT_INTER_SEMIBOLD)
           .margin({ bottom: 10 })
 
         Text('在您单独同意后，我们会收集匿名的功能使用频次（仅功能点击次数），不含任何对话内容、学习内容或个人信息，仅用于了解哪些功能被使用、优化产品优先级。可随时在「设置 → 关于」关闭。')
           .fontSize(FONT_SIZE_BODY)
           .lineHeight(20)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .margin({ bottom: 16 })
 
         Text('默认关闭，需您明确选择才会开启。')
           .fontSize(FONT_SIZE_BODY)
           .lineHeight(20)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ bottom: 16 })
 
         Row({ space: 10 }) {
@@ -59,9 +61,9 @@ export struct ImproveDataDialog {
             .layoutWeight(1)
             .height(46)
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
-            .border({ width: 1, color: STROKE_CARD })
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
+            .border({ width: 1, color: this.theme.strokeCard })
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
               this.onSkip();
@@ -71,8 +73,8 @@ export struct ImproveDataDialog {
             .height(46)
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
+            .fontColor(this.theme.textPrimary)
             .borderRadius(RADIUS_CONTROL)
             .onClick(() => {
               this.onJoin();
@@ -83,8 +85,8 @@ export struct ImproveDataDialog {
       .width(this.isTablet ? 400 : '88%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
     }
   }
 }

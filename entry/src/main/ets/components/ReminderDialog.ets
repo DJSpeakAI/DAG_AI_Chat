@@ -1,15 +1,17 @@
 // ReminderDialog.ets — ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言）
 // 替代系统 AlertDialog 灰弹窗（用户实测反馈：30 天试用弹窗 UI 与应用风格不符，UI 必须同步）
-// 样式模板：0.190.8 隐私弹窗同款（遮罩 rgba(0,0,0,0.5) + SURFACE_NODE 面板 + RADIUS_NAV + STROKE_CARD 描边 + 主紫按钮）
+// 样式模板：0.190.8 隐私弹窗同款（遮罩 rgba(0,0,0,0.5) + this.theme.surfaceNode 面板 + RADIUS_NAV + this.theme.strokeCard 描边 + 主紫按钮）
 // 模式：mode=0 首登欢迎（🎉 30 天试用，仅 1 次）；mode=1~7 倒计时（还剩 N 天，带「去账单」CTA）
 // 宿主：Index（onPageShow 倒计时 + doLogin 欢迎）/ BillingPage（本页登录欢迎）——Stack 顶层渲染
 
 import { SubscriptionStore, connectSubscription, vipExpireTime } from '../common/ChatModel';
-import { SURFACE_NODE, BRAND_PRIMARY, TEXT_PRIMARY, TEXT_SECONDARY, STROKE_CARD, RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_BODY, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.225.2：宽屏断点（弹窗宽度收敛，UI_GUIDELINES 暂停-12）
 
 @ComponentV2
 export struct ReminderDialog {
+  theme: AppTheme = connectAppTheme();
   @Param visible: boolean = false;
   @Param mode: number = 0; // 0=首登欢迎；1~7=剩余天数（倒计时）
   @Event onClose: () => void = () => {};
@@ -52,7 +54,7 @@ export struct ReminderDialog {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.5)')
+      .backgroundColor(this.theme.overlay)
       .onClick(() => {
         this.onClose();
       })
@@ -62,14 +64,14 @@ export struct ReminderDialog {
         Text(this.titleStr())
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .fontFamily(FONT_INTER_SEMIBOLD)
           .margin({ bottom: 12 })
 
         Text(this.bodyStr())
           .fontSize(FONT_SIZE_BODY)
           .lineHeight(22)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
 
         if (this.mode === 0) {
           Button('知道了')
@@ -77,8 +79,8 @@ export struct ReminderDialog {
             .height(48)
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
             .fontWeight(FontWeight.Medium)
-            .backgroundColor(BRAND_PRIMARY)
-            .fontColor(TEXT_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
+            .fontColor(this.theme.textPrimary)
             .borderRadius(RADIUS_CONTROL)
             .margin({ top: 16 })
             .onClick(() => {
@@ -91,9 +93,9 @@ export struct ReminderDialog {
               .height(48)
               .fontSize(FONT_SIZE_CARD_TITLE_SM)
               .fontWeight(FontWeight.Medium)
-              .backgroundColor(SURFACE_NODE)
-              .fontColor(TEXT_SECONDARY)
-              .border({ width: 1, color: STROKE_CARD })
+              .backgroundColor(this.theme.surfaceNode)
+              .fontColor(this.theme.textSecondary)
+              .border({ width: 1, color: this.theme.strokeCard })
               .borderRadius(RADIUS_CONTROL)
               .onClick(() => {
                 this.onClose();
@@ -103,8 +105,8 @@ export struct ReminderDialog {
               .height(48)
               .fontSize(FONT_SIZE_CARD_TITLE_SM)
               .fontWeight(FontWeight.Medium)
-              .backgroundColor(BRAND_PRIMARY)
-              .fontColor(TEXT_PRIMARY)
+              .backgroundColor(this.theme.brandPrimary)
+              .fontColor(this.theme.textPrimary)
               .borderRadius(RADIUS_CONTROL)
               .onClick(() => {
                 this.onGoBilling();
@@ -118,8 +120,8 @@ export struct ReminderDialog {
       .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
     }
   }
 }

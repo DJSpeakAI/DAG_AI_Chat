@@ -3,14 +3,13 @@
 // ============================================================
 // 本文件是应用的 UI Ability（生命周期入口），负责：
 //   - 加载主页面（pages/Index）
-//   - 全局主题状态管理（ThemeStore）
-// ★ 0.166.3：主题固定暗紫（方案 A）——不再跟随系统深浅色，所有用户统一暗色配色
-//
-// ThemeStore 是全局 UI 运行时状态（非持久化），
-// 通过 AppStorageV2 在所有页面间共享。
+//   - 全局主题初始化与系统深浅色跟随（★ 0.262.0 三态主题：system/dark/light）
+// ★ 0.262.0：主题改三态模型（AppTheme.ets 唯一色值真相源）——老用户静默深色、
+//   新用户协议同意后弹窗选择、设置「外观」卡随时可改；系统深浅变化经
+//   onConfigurationUpdate 无缝跟随（module.json5 已配 configChanges 不重建）。
 // ============================================================
 
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 机制（真机日志实证：进程存活时 call 走 Callee onRemoteMessageRequest 而非 onNewWant）
 import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.255.0：'WGT' 切库诊断日志（临时——验收后删）
 import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
@@ -25,6 +24,8 @@ import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核心（云函数通道前置）
 import { flushTrackQueue, initTrackContext } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报；★ 0.260.0：模块级 context 注入（ChatModel 发放/消耗收口埋点用）
 import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
+import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
+import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -34,12 +35,6 @@ class EmptyParcelable implements rpc.Parcelable {
   unmarshalling(_dataIn: rpc.MessageSequence): boolean {
     return true;
   }
-}
-
-// ★ 全局主题状态（UI 运行时状态，非持久化数据模型）
-@ObservedV2
-export class ThemeStore {
-  @Trace isDark: boolean = false;
 }
 
 // ★ 0.153：全局前后台状态（UI 运行时状态，非持久化）——NavDestination 组件没有
@@ -220,26 +215,78 @@ export default class EntryAbility extends UIAbility {
       uiFont.registerFont({ familyName: 'Inter-SemiBold', familySrc: $rawfile('font/Inter-SemiBold_1.otf') });
     });
 
-    // ★ 0.166.3：主题固定暗紫（方案 A）——应用锁定暗色模式，不跟随系统深浅色：
-    // 亮色系统用户也统一看到暗紫配色（Pixso 设计稿为单一暗紫色系）；
-    // 系统状态栏/系统弹窗随 COLOR_MODE_DARK 走暗色风格，视觉全局统一
+    // ★ 0.262.0：三态主题初始化（取代 0.166.3 固定暗紫）——loadContent 回调内执行：
+    //   PersistenceV2 首连必须在 loadContent 之后（0.240.2 FAQ-1084 铁律，先连=盘值被无视恒 factory）；
+    //   三分支：已落盘→按盘值 / 新用户（未同意协议）→暂深色不落盘待弹窗 / 老用户→静默落盘深色（Q4 终裁）
     try {
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      setChromeSyncHook((isDark: boolean): void => {
+        this.syncSystemChrome(windowStage, isDark);
+      });
+      this.initAppTheme();
     } catch (err) {
-      // 设置失败静默忽略（isDark 仍固定 true，页面配色不受影响）
-    }
-
-    // ★ 0.166.3：isDark 固定 true（不再读系统 colorMode）——全项目 isDark 三元恒走
-    // 暗色分支；亮色分支代码保留（未来若做双套色可直接复用）
-    try {
-      const themeStore = AppStorageV2.connect(ThemeStore, 'theme-store', () => new ThemeStore()) as ThemeStore;
-      themeStore.isDark = true;
-    } catch (err) {
-      // 主题初始化失败静默忽略
+      // 主题初始化失败静默降级（AppTheme factory 默认深色兜底）
     }
   }
 
-  // ★ 0.166.3：删除 onConfigurationUpdate——主题固定暗紫后不再响应系统深浅色切换
+  // ★ 0.262.0：主题初始化——读 theme-mode-v1 三分支落位（降级兜底=深色，禁白闪）
+  private initAppTheme(): void {
+    const sysDark = this.readSystemDark();
+    const theme = connectAppTheme();
+    try {
+      const saved = connectThemeMode().mode;
+      if (saved === 'system' || saved === 'dark' || saved === 'light') {
+        theme.applyMode(toThemeMode(saved), sysDark);
+      } else if (needsAgreement()) {
+        // 新用户：暂深色渲染**不落盘**——协议同意后 ThemeChooseDialog 选择才落盘（空串=待选择哨兵）
+        theme.applyMode('dark', sysDark, false);
+      } else {
+        // 老用户覆盖升级：静默落盘深色不弹窗（防系统浅色用户升级突变浅色）；「外观」卡「新」角标引导
+        theme.applyMode('dark', sysDark);
+      }
+    } catch (_e) {
+      // 读取失败降级深色（不落盘）
+      theme.applyMode('dark', sysDark, false);
+    }
+  }
+
+  // 系统当前深浅（非浅即深兜底——符合「降级深色」总则）
+  private readSystemDark(): boolean {
+    try {
+      return this.context.config?.colorMode !== ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
+    } catch (_e) {
+      return true;
+    }
+  }
+
+  // ★ 0.262.0：系统级联动（chromeSync 钩子回调）——setColorMode 让系统组件（权限弹窗/
+  //   输入法候选栏/系统 Toast）与 app 主题同色系；状态栏文字色跟随（浅色下白字看不清）
+  private syncSystemChrome(windowStage: window.WindowStage, isDark: boolean): void {
+    try {
+      this.context.getApplicationContext().setColorMode(isDark
+        ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+        : ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+    } catch (_e) {
+      // 设置失败静默（页面 token 色不受影响）
+    }
+    try {
+      windowStage.getMainWindowSync().setWindowSystemBarProperties({
+        statusBarContentColor: isDark ? '#FFFFFF' : '#000000'
+      });
+    } catch (_e) {
+      // 状态栏设置失败静默
+    }
+  }
+
+  // ★ 0.262.0：系统深浅色变化——mode='system' 时实时跟随（module.json5 configChanges
+  //   已配 colorMode，系统切换不销毁重建、走本回调无缝切换）
+  onConfigurationUpdate(newConfig: Configuration): void {
+    try {
+      const sysDark = newConfig.colorMode !== ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
+      connectAppTheme().refreshFromSystem(sysDark);
+    } catch (_e) {
+      // 静默（下次回调/重启兜底）
+    }
+  }
 
   onWindowStageDestroy(): void {
   }

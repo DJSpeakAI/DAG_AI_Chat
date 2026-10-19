@@ -35,7 +35,8 @@ import { image } from '@kit.ImageKit'; // ★ 0.211.1：选图压缩（9 张原�
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
-  import { BG_APP, BG_CANVAS, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, DANGER, OVERLAY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens'; // ★ 0.191.0：加 SURFACE_HOVER/BRAND_SECONDARY（排序按钮激活态）
+import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 // ★ 0.207.0 anything 导入体系：文件夹 + CSV/TXT 批量导入 + 导出
 import { KFolder, KFolderTreeItem } from '../common/KnowledgeModel';
 import { addFolder, renameFolder, deleteFolder, moveCards, copyCards, folderChain, moveFolder, copyFolder, deleteFolderCascade, copyRootFolder, clearRootFolder } from '../utils/KnowledgeStoreUtil';
@@ -68,6 +69,7 @@ export function connectKnowledgeViewMode(): KnowledgeViewModeStore {
 
 @ComponentV2
 export struct KnowledgeBankPage {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   @Local sidebarVisible: boolean = false; // ★ 0.222.0 手机知识库页边栏抽屉开关
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // isolated PersistenceV2 instance
@@ -356,14 +358,14 @@ export struct KnowledgeBankPage {
 
   // ★ 0.222.16：排序选项菜单（bindPopup 自定义 builder）——无参 @Builder 内部直读 sortMode（0.190.1 铁律）；
   //   两项=最新/需复习，各带当前方向箭头，激活项品牌紫高亮；点击只改 sortMode 不收起，点遮罩才收；
-  //   ★ 0.240.0：激活项补紫底（SURFACE_HOVER+radius 8）——UI_GUIDELINES 铁律「排序/筛选选中态统一品牌紫背景」，按钮图标化后弹层成为排序状态唯一可视位
+  //   ★ 0.240.0：激活项补紫底（this.theme.surfaceHover+radius 8）——UI_GUIDELINES 铁律「排序/筛选选中态统一品牌紫背景」，按钮图标化后弹层成为排序状态唯一可视位
   @Builder
   sortMenuBuilder() {
     Column() {
       Text(this.sortMode === 1 ? '最新 ↑' : '最新 ↓')
         .fontSize(14)
-        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? BRAND_SECONDARY : TEXT_PRIMARY)
-        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode === 0 || this.sortMode === 1 ? this.theme.brandSecondary : this.theme.textPrimary)
+        .backgroundColor(this.sortMode === 0 || this.sortMode === 1 ? this.theme.surfaceHover : Color.Transparent)
         .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
@@ -371,11 +373,11 @@ export struct KnowledgeBankPage {
         .onClick(() => {
           this.sortMode = this.sortMode === 0 ? 1 : 0;
         })
-      Divider().color(STROKE_CARD)
+      Divider().color(this.theme.strokeCard)
       Text(this.sortMode === 3 ? '需复习 ↓' : '需复习 ↑')
         .fontSize(14)
-        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? BRAND_SECONDARY : TEXT_PRIMARY)
-        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? SURFACE_HOVER : Color.Transparent)
+        .fontColor(this.sortMode === 2 || this.sortMode === 3 ? this.theme.brandSecondary : this.theme.textPrimary)
+        .backgroundColor(this.sortMode === 2 || this.sortMode === 3 ? this.theme.surfaceHover : Color.Transparent)
         .borderRadius(8)
         .width('100%')
         .textAlign(TextAlign.Start)
@@ -402,9 +404,9 @@ export struct KnowledgeBankPage {
   // ★ 0.188.0：下次复习着色——已到期红 / 其余灰
   nextReviewColor(c: KnowledgeCard): string {
     if (c.reviewCount > 0 && c.nextReviewAt <= Date.now()) {
-      return DANGER;
+      return this.theme.danger;
     }
-    return TEXT_TERTIARY;
+    return this.theme.textTertiary;
   }
 
   // toast 轻提示（showToast 可能抛异常，统一包裹消除编译告警，失败不影响主流程）
@@ -555,7 +557,7 @@ export struct KnowledgeBankPage {
       .width(44)
       .height(44)
       .borderRadius(22)
-      .backgroundColor(BRAND_PRIMARY)
+      .backgroundColor(this.theme.brandPrimary)
       .onClick(() => {
         if (!this.multiSelectMode) {
           this.askSheetTitle = c.title;
@@ -574,7 +576,7 @@ export struct KnowledgeBankPage {
       .width(44)
       .height(44)
       .borderRadius(22)
-      .backgroundColor(BRAND_PRIMARY)
+      .backgroundColor(this.theme.brandPrimary)
       .onClick(() => {
         if (!this.multiSelectMode) {
           this.requestDeleteCard(c); // 多选模式下滑动面板点击无动作（避免与整行点选/批量删除打架）
@@ -779,7 +781,7 @@ export struct KnowledgeBankPage {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor('rgba(0,0,0,0.45)')
+          .backgroundColor(this.theme.overlay)
           .onClick(() => {
             this.closeSidebar();
           })
@@ -821,12 +823,12 @@ export struct KnowledgeBankPage {
           Column()
             .width(1)
             .height(16)
-            .backgroundColor(STROKE_CARD)
+            .backgroundColor(this.theme.strokeCard)
           Scroll() {
             Row({ space: 4 }) {
               Text('全部卡片')
                 .fontSize(12)
-                .fontColor(this.folderNav.folderId.length === 0 ? BRAND_SECONDARY : TEXT_SECONDARY)
+                .fontColor(this.folderNav.folderId.length === 0 ? this.theme.brandSecondary : this.theme.textSecondary)
                 .onClick(() => {
                   this.folderNav.folderId = ''; // 与边栏树点击同源——直接赋值即切主内容区
                 })
@@ -838,7 +840,7 @@ export struct KnowledgeBankPage {
                     .objectFit(ImageFit.Contain)
                   Text(f.name)
                     .fontSize(12)
-                    .fontColor(idx === this.currentChain.length - 1 ? BRAND_SECONDARY : TEXT_SECONDARY)
+                    .fontColor(idx === this.currentChain.length - 1 ? this.theme.brandSecondary : this.theme.textSecondary)
                     .onClick(() => {
                       this.folderNav.folderId = f.id;
                     })
@@ -856,8 +858,8 @@ export struct KnowledgeBankPage {
         .height(40)
         .padding({ left: 12, right: 12 })
         .borderRadius(20)
-        .backgroundColor(SURFACE_NODE)
-        .border({ width: 1, color: STROKE_CARD })
+        .backgroundColor(this.theme.surfaceNode)
+        .border({ width: 1, color: this.theme.strokeCard })
         .margin({ left: 14, bottom: 14 }) // 贴屏幕左下角
         .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 8 })).animation({ duration: 200 })) // 出场向下（与搜索栏 y:-8 镜像，同向联动）
       }
@@ -874,7 +876,7 @@ export struct KnowledgeBankPage {
       if (this.windowMode.isTablet) {
         Text('⇄')
           .fontSize(16)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .padding({ left: 4, right: 4 })
           .margin({ right: 4 })
           .onClick(() => {
@@ -894,7 +896,7 @@ export struct KnowledgeBankPage {
       Text('知识库')
         .fontSize(FONT_SIZE_SCREEN_TITLE) // ★ 0.183.0：18→16 对齐 ScreenTitle 规范
         .fontWeight(600)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .onClick(() => {
           if (this.windowMode.isTablet) {
             this.pathStack.replacePath({ name: 'WordBankPage' }); // ★ 0.195.0：标题也可点击切换（用户需求，与 ⇄ 同款）
@@ -924,9 +926,9 @@ export struct KnowledgeBankPage {
       .bindPopup(this.sortMenuVisible, {
           builder: this.sortMenuBuilder(),
           placement: Placement.Bottom,
-          popupColor: SURFACE_NODE,
+          popupColor: this.theme.surfaceNode,
           radius: 12,
-          mask: { color: 'rgba(0,0,0,0.3)' },
+          mask: { color: this.theme.overlayLight },
           onStateChange: (e: PopupStateChangeParam) => {
             this.sortMenuVisible = e.isVisible;
           }
@@ -948,7 +950,7 @@ export struct KnowledgeBankPage {
         .height(28)
         .width(28)
         .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.viewMode.grid ? SURFACE_HOVER : Color.Transparent)
+        .backgroundColor(this.viewMode.grid ? this.theme.surfaceHover : Color.Transparent)
         .margin({ right: 4 })
         .onClick(() => {
           this.viewMode.grid = !this.viewMode.grid;
@@ -978,14 +980,14 @@ export struct KnowledgeBankPage {
           .fontSize(20)
           .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准）
           .backgroundColor(Color.Transparent)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .padding({ left: 8, right: 8 })
           .bindPopup(this.plusMenuVisible, {
             builder: this.kbPlusMenuBuilder(),
             placement: Placement.BottomRight, // ★ 0.239.0：Bottom→BottomRight——弹层右缘对齐按钮右缘、整体在按钮左下方（用户拍板"放到左边去"）
-            popupColor: SURFACE_NODE,
+            popupColor: this.theme.surfaceNode,
             radius: 12,
-            mask: { color: 'rgba(0,0,0,0.3)' },
+            mask: { color: this.theme.overlayLight },
             onStateChange: (e: PopupStateChangeParam) => {
               this.plusMenuVisible = e.isVisible;
               if (!e.isVisible) {
@@ -1001,7 +1003,7 @@ export struct KnowledgeBankPage {
         // ★ 0.148: multi-select replaces the add button with batch delete
         Button(`删除(${this.selectedIds.length})`)
           .fontSize(14)
-          .fontColor(DANGER)
+          .fontColor(this.theme.danger)
           .backgroundColor(Color.Transparent)
           .padding({ left: 8, right: 8 })
           .onClick(() => {
@@ -1023,10 +1025,10 @@ export struct KnowledgeBankPage {
         Text('知识卡片数量设置')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text('每次复习展示的卡片数，生效于：AI 回复底部复习区、知识卡片提炼等待页')
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
                   // ★ 0.195.0：布局统一（用户定稿「012+输入框」一行——与全局设置复习 Tab 完全同款）
           Row() {
@@ -1034,8 +1036,8 @@ export struct KnowledgeBankPage {
               .fontSize(14)
               .width(44)
               .height(40)
-              .fontColor(this.knowledgeCountStore.knowledgeCount === 0 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 0 ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.knowledgeCountStore.knowledgeCount === 0 ? this.theme.textPrimary : (this.theme.textSecondary))
+              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 0 ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .onClick(() => {
                 this.knowledgeCountStore.knowledgeCount = 0;
@@ -1045,8 +1047,8 @@ export struct KnowledgeBankPage {
               .fontSize(14)
               .width(44)
               .height(40)
-              .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.knowledgeCountStore.knowledgeCount === 1 ? this.theme.textPrimary : (this.theme.textSecondary))
+              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 1 ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .margin({ left: 8 })
               .onClick(() => {
@@ -1057,8 +1059,8 @@ export struct KnowledgeBankPage {
               .fontSize(14)
               .width(44)
               .height(40)
-              .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? TEXT_PRIMARY : (TEXT_SECONDARY))
-              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? BRAND_PRIMARY : Color.Transparent)
+              .fontColor(this.knowledgeCountStore.knowledgeCount === 2 ? this.theme.textPrimary : (this.theme.textSecondary))
+              .backgroundColor(this.knowledgeCountStore.knowledgeCount === 2 ? this.theme.brandPrimary : Color.Transparent)
               .borderRadius(RADIUS_CONTROL)
               .margin({ left: 8 })
               .onClick(() => {
@@ -1071,7 +1073,7 @@ export struct KnowledgeBankPage {
               .height(40)
               .padding({ left: 12, right: 12 })
               .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_SOFT)
+              .backgroundColor(this.theme.surfaceSoft)
               .type(InputType.Number)
               .margin({ left: 8 })
               .onChange((value: string) => {
@@ -1081,8 +1083,8 @@ export struct KnowledgeBankPage {
             Button('确定')
               .fontSize(14)
               .height(40)
-              .fontColor(TEXT_PRIMARY)
-              .backgroundColor(BRAND_PRIMARY)
+              .fontColor(this.theme.textPrimary)
+              .backgroundColor(this.theme.brandPrimary)
               .borderRadius(RADIUS_CONTROL)
               .margin({ left: 8 })
               .padding({ left: 14, right: 14 })
@@ -1103,12 +1105,12 @@ export struct KnowledgeBankPage {
         if (this.cardInputError.length > 0) {
           Text(this.cardInputError)
             .fontSize(12)
-            .fontColor(DANGER)
+            .fontColor(this.theme.danger)
             .margin({ top: 6 })
         }
         Button('关闭')
           .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .backgroundColor(Color.Transparent)
           .width('100%')
           .margin({ top: 12 })
@@ -1118,14 +1120,14 @@ export struct KnowledgeBankPage {
       }
       .width('86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
       .onClick(() => {}) // ★ 0.196.2：消费面板点击防冒泡到遮罩（ClickEvent 无 stopPropagation，空 handler 挡住）
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .onClick(() => {
       this.cardSettingsVisible = false; // ★ 0.196.2 用户拍板：点空白关闭（同「关闭」按钮）
     })
@@ -1141,8 +1143,8 @@ export struct KnowledgeBankPage {
         //   已明确，两句是废话；直接三按钮开路
         Button('导入气泡对话')
           .fontSize(14)
-          .fontColor(TEXT_PRIMARY)
-          .backgroundColor(BRAND_PRIMARY)
+          .fontColor(this.theme.textPrimary)
+          .backgroundColor(this.theme.brandPrimary)
           .borderRadius(RADIUS_CONTROL)
           .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：平板固定 280 居中（手机 100% 不变）
           .margin({ top: 16 })
@@ -1151,14 +1153,14 @@ export struct KnowledgeBankPage {
           })
         Text('选一个气泡 → 卡片填入它的输入框，补充问题后发送')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         Button('创建子气泡')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .backgroundColor(Color.Transparent)
           .borderRadius(RADIUS_CONTROL)
-          .border({ width: 1, color: BRAND_SECONDARY })
+          .border({ width: 1, color: this.theme.brandSecondary })
           .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
           .onClick(() => {
@@ -1166,11 +1168,11 @@ export struct KnowledgeBankPage {
           })
         Text('选一个父气泡 → 新建子气泡并填入卡片')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         Button('取消')
           .fontSize(14)
-          .fontColor(TEXT_SECONDARY)
+          .fontColor(this.theme.textSecondary)
           .backgroundColor(Color.Transparent)
           .width(this.isTablet ? 280 : '100%') // ★ 0.201.2：同上
           .margin({ top: 12 })
@@ -1180,14 +1182,14 @@ export struct KnowledgeBankPage {
       }
       .width(this.isTablet ? 460 : '100%') // ★ 0.201.2：平板固定 460 居中（手机 100% 贴底不变）——用户实测宽屏按钮拉满太长；规范入 UI_GUIDELINES「模态弹窗与操作按钮」
       .borderRadius(RADIUS_NAV) // ★ 0.201.2：四角圆角（宽屏居中浮岛感；手机贴底时下圆角贴屏不可见无副作用）
-      .backgroundColor(SURFACE_NODE)
-      .border({ width: 1, color: STROKE_CARD })
+      .backgroundColor(this.theme.surfaceNode)
+      .border({ width: 1, color: this.theme.strokeCard })
       .padding({ left: 20, right: 20, top: 20, bottom: 28 })
       .onClick(() => {}) // 消费面板点击防冒泡到遮罩
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .onClick(() => {
       this.askSheetVisible = false;
     })
@@ -1204,7 +1206,7 @@ export struct KnowledgeBankPage {
         Text(this.editorIsAdd ? '新增知识卡' : '编辑知识卡')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         TextInput({ text: this.editorTitle, placeholder: '标题（必填）' })
           .fontSize(14)
           .width('100%')
@@ -1212,7 +1214,7 @@ export struct KnowledgeBankPage {
           .margin({ top: 16 })
           .padding({ left: 12, right: 12 })
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorTitle = value;
           })
@@ -1235,8 +1237,8 @@ export struct KnowledgeBankPage {
                     Text('×')
                       .fontSize(13)
                       .fontWeight(600)
-                      .fontColor(TEXT_PRIMARY)
-                      .backgroundColor(DANGER)
+                      .fontColor(this.theme.textPrimary)
+                      .backgroundColor(this.theme.danger)
                       .width(18)
                       .height(18)
                       .borderRadius(9)
@@ -1266,7 +1268,7 @@ export struct KnowledgeBankPage {
                 .objectFit(ImageFit.Contain)
               Text('标题图片' + (this.editorTitleImages.length > 0 ? `（${this.editorTitleImages.length}/9）` : ''))
                 .fontSize(13) // ★ 0.211.0 用户拍板：与「添加图片」颜色字号全对齐（原紫 12 不一致）
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
             }
             .alignSelf(ItemAlign.Start)
             .onClick(() => {
@@ -1283,7 +1285,7 @@ export struct KnowledgeBankPage {
           .margin({ top: 8 })
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
           .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorDefinition = value;
           })
@@ -1291,7 +1293,7 @@ export struct KnowledgeBankPage {
         Column() {
           Text(parseTags(this.editorTags).length > 0 ? '标签（点 × 删除 · 长按修改）' : '标签')
             .fontSize(11)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .alignSelf(ItemAlign.Start)
             .margin({ bottom: 6 })
           Flex({ wrap: FlexWrap.Wrap }) {
@@ -1299,10 +1301,10 @@ export struct KnowledgeBankPage {
               Row({ space: 4 }) {
                 Text(t)
                   .fontSize(11)
-                  .fontColor(BRAND_SECONDARY)
+                  .fontColor(this.theme.brandSecondary)
                 Text('×')
                   .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(this.theme.textTertiary)
                   .onClick(() => {
                     this.removeEditorTag(t);
                   })
@@ -1310,7 +1312,7 @@ export struct KnowledgeBankPage {
               .height(24)
               .padding({ left: 10, right: 8 })
               .borderRadius(6)
-              .border({ width: 1, color: BRAND_SECONDARY })
+              .border({ width: 1, color: this.theme.brandSecondary })
               .margin({ right: 6, bottom: 6 })
               .gesture(
                 LongPressGesture({ duration: 500 })
@@ -1324,8 +1326,8 @@ export struct KnowledgeBankPage {
               .height(24)
               .padding({ left: 10, right: 10 })
               .borderRadius(6)
-              .fontColor(TEXT_SECONDARY)
-              .border({ width: 1, color: STROKE_CARD, style: BorderStyle.Dashed })
+              .fontColor(this.theme.textSecondary)
+              .border({ width: 1, color: this.theme.strokeCard, style: BorderStyle.Dashed })
               .margin({ right: 6, bottom: 6 })
               .onClick(() => {
                 this.openEditorTagEdit('');
@@ -1354,8 +1356,8 @@ export struct KnowledgeBankPage {
                     Text('×')
                       .fontSize(13)
                       .fontWeight(600)
-                      .fontColor(TEXT_PRIMARY)
-                      .backgroundColor(DANGER)
+                      .fontColor(this.theme.textPrimary)
+                      .backgroundColor(this.theme.danger)
                       .width(18)
                       .height(18)
                       .borderRadius(9)
@@ -1385,7 +1387,7 @@ export struct KnowledgeBankPage {
                 .objectFit(ImageFit.Contain)
               Text('添加图片' + (this.editorImages.length > 0 ? `（${this.editorImages.length}/9）` : ''))
                 .fontSize(13)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
             }
             .alignSelf(ItemAlign.Start)
             .onClick(() => {
@@ -1398,7 +1400,7 @@ export struct KnowledgeBankPage {
         Row({ space: 12 }) { // ★ 0.230.0：等宽铁律姿势（0.197.3——margin 参与 layoutWeight 分配挤窄保存 12vp，审计实锤差 30px）
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1406,8 +1408,8 @@ export struct KnowledgeBankPage {
             })
           Button('保存')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(BRAND_PRIMARY)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.brandPrimary)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .onClick(() => {
@@ -1419,7 +1421,7 @@ export struct KnowledgeBankPage {
       }
       .width(this.isTablet ? 520 : '86%') // ★ 0.201.2：平板固定 520（86% 在宽屏超宽、双按钮被拉长——用户实测）；规范入 UI_GUIDELINES「模态弹窗与操作按钮」
        .borderRadius(RADIUS_NAV)
-       .backgroundColor(SURFACE_NODE)
+       .backgroundColor(this.theme.surfaceNode)
        .padding(20)
        }
        .constraintSize({ maxHeight: '96%' }) // ★ 0.230.0 B11：Scroll 高度约束（键盘 RESIZE 压矮窗口时收缩可滚）
@@ -1434,7 +1436,7 @@ export struct KnowledgeBankPage {
             Text(this.tagEditOld.length === 0 ? '添加标签' : '修改标签')
               .fontSize(14)
               .fontWeight(600)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .margin({ bottom: 10 })
             TextInput({ text: this.tagEditNew, placeholder: '标签名（2~6 字最佳）' })
               .fontSize(14)
@@ -1442,22 +1444,22 @@ export struct KnowledgeBankPage {
               .height(40)
               .padding({ left: 12, right: 12 })
               .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_SOFT)
+              .backgroundColor(this.theme.surfaceSoft)
               .onChange((v: string) => {
                 this.tagEditNew = v;
               })
             Row({ space: 12 }) {
               Button('取消')
                 .layoutWeight(1)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .backgroundColor(Color.Transparent)
                 .onClick(() => {
                   this.tagEditVisible = false;
                 })
               Button('确定')
                 .layoutWeight(1)
-                .backgroundColor(BRAND_PRIMARY)
-                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(this.theme.brandPrimary)
+                .fontColor(this.theme.textPrimary)
                 .onClick(() => {
                   this.commitEditorTagEdit();
                 })
@@ -1468,13 +1470,13 @@ export struct KnowledgeBankPage {
           .width('86%')
           .padding(18)
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(SURFACE_NODE)
-          .border({ width: 1, color: STROKE_CARD })
+          .backgroundColor(this.theme.surfaceNode)
+          .border({ width: 1, color: this.theme.strokeCard })
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
-        .backgroundColor('rgba(0,0,0,0.45)')
+        .backgroundColor(this.theme.overlay)
         .onClick(() => {
           this.tagEditVisible = false;
         })
@@ -1483,7 +1485,7 @@ export struct KnowledgeBankPage {
     .width('100%')
     .height('100%')
 
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ★ 0.211.0：列表图片全屏查看器——★ 0.211.2 四场景统一载体（列表标题图/内容图+编辑弹窗标题图/内容图
@@ -1529,7 +1531,7 @@ export struct KnowledgeBankPage {
 
         Button('×')
           .fontSize(24)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
           .backgroundColor(Color.Transparent)
           .position({ x: 20, y: 20 })
           .onClick(() => {
@@ -1554,7 +1556,7 @@ export struct KnowledgeBankPage {
         Text('确认删除该条目？')
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Row() {
           Image(this.deleteConfirmNoRemind ? $r('app.media.checkbox_on') : $r('app.media.checkbox_off')) // ★ 0.212.0：☑/☐ 换 svg
             .width(20)
@@ -1565,7 +1567,7 @@ export struct KnowledgeBankPage {
             })
           Text('本次会话内不再提示')
             .fontSize(13)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .margin({ left: 6 })
             .onClick(() => {
               this.deleteConfirmNoRemind = !this.deleteConfirmNoRemind;
@@ -1576,7 +1578,7 @@ export struct KnowledgeBankPage {
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1584,8 +1586,8 @@ export struct KnowledgeBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(DANGER)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.danger)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
@@ -1600,13 +1602,13 @@ export struct KnowledgeBankPage {
       //   平板/PC 固定 400（比编辑弹窗 520 窄一档，对话框惯例），手机维持 86%；规格入 UI_GUIDELINES
       .width(this.isTablet ? 400 : '86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ★ 0.148: batch-delete confirm dialog — ALWAYS shown, no no-remind
@@ -1618,11 +1620,11 @@ export struct KnowledgeBankPage {
         Text(`确认删除选中的 ${this.selectedIds.length} 项？`)
           .fontSize(FONT_SIZE_SCREEN_TITLE)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Row() {
           Button('取消')
             .fontSize(14)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .layoutWeight(1)
             .onClick(() => {
@@ -1630,8 +1632,8 @@ export struct KnowledgeBankPage {
             })
           Button('删除')
             .fontSize(14)
-            .fontColor(TEXT_PRIMARY)
-            .backgroundColor(DANGER)
+            .fontColor(this.theme.textPrimary)
+            .backgroundColor(this.theme.danger)
             .borderRadius(RADIUS_CONTROL)
             .layoutWeight(1)
             .margin({ left: 12 })
@@ -1644,13 +1646,13 @@ export struct KnowledgeBankPage {
       }
       .width('86%')
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
       .padding(20)
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
   }
 
   // ============================================================
@@ -2126,7 +2128,7 @@ export struct KnowledgeBankPage {
   // ============================================================
   // ★ 0.225.0：+ 菜单 builder（无参直读状态 0.190.1 铁律）——三主项 drill-down：
   //   main=新建卡片/导入›/导出›；import=DAG/APKG/TXT/CSV/XLSX；export=DAG/TXT/CSV/XLSX。
-  //   选项紫字 BRAND_SECONDARY（用户拍板「变紫色」）；返回行 TEXT_TERTIARY；样式复刻 sortMenu 规格
+  //   选项紫字 this.theme.brandSecondary（用户拍板「变紫色」）；返回行 this.theme.textTertiary；样式复刻 sortMenu 规格
   // ★ 0.239.0 双库统一规格（用户拍板）：全部菜单项删 .width('100%')（弹层宽度按最长项文字自适应收窄，
   //   不再铺满可用宽）；padding 上下 12→10/左右 16→14（对齐单词库系统菜单观感）；Column 左对齐
   @Builder
@@ -2135,24 +2137,24 @@ export struct KnowledgeBankPage {
       if (this.plusMenuMode === 'main') {
         Text('新建卡片')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.openAddEditor();
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('导入 ›')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'import';
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('导出 ›')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'export';
@@ -2160,51 +2162,51 @@ export struct KnowledgeBankPage {
       } else if (this.plusMenuMode === 'import') {
         Text('‹ 返回')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'main';
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('DAG（知识库包）')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickPackFile();
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('APKG（Anki 包）')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickApkgFile();
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('TXT')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickImportFile('txt');
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('CSV')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.pickImportFile('csv');
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('XLSX')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
@@ -2213,24 +2215,24 @@ export struct KnowledgeBankPage {
       } else {
         Text('‹ 返回')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuMode = 'main';
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('DAG（知识库包）')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
             this.exportDagPack(this.folderNav.folderId);
           })
-        Divider().color(STROKE_CARD)
+        Divider().color(this.theme.strokeCard)
         Text('TXT')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
@@ -2238,7 +2240,7 @@ export struct KnowledgeBankPage {
           })
         Text('XLSX')
           .fontSize(14)
-          .fontColor(BRAND_SECONDARY)
+          .fontColor(this.theme.brandSecondary)
           .padding({ top: 10, bottom: 10, left: 14, right: 14 })
           .onClick(() => {
             this.plusMenuVisible = false;
@@ -2258,7 +2260,7 @@ export struct KnowledgeBankPage {
     Column() {
       Text('创建新卡片')
         .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .width('100%')
         .textAlign(TextAlign.Start)
         .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -2266,10 +2268,10 @@ export struct KnowledgeBankPage {
           this.createMenuVisible = false;
           this.openAddEditor();
         })
-      Divider().color(STROKE_CARD)
+      Divider().color(this.theme.strokeCard)
       Text('创建新文件夹')
         .fontSize(14)
-        .fontColor(TEXT_PRIMARY)
+        .fontColor(this.theme.textPrimary)
         .width('100%')
         .textAlign(TextAlign.Start)
         .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -2290,13 +2292,13 @@ export struct KnowledgeBankPage {
         Text(this.folderDialogIsRename ? '重命名文件夹' : '新建文件夹')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         TextInput({ text: this.folderDialogName, placeholder: '文件夹名称' })
           .fontSize(14)
           .height(40)
           .margin({ top: 12 })
           .padding({ left: 10, right: 10 })
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .borderRadius(8)
           .onChange((v: string) => {
             this.folderDialogName = v;
@@ -2304,15 +2306,15 @@ export struct KnowledgeBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.folderDialogVisible = false;
               this.cancelFolderAction();
             })
           Button('确定')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmFolderDialog();
@@ -2323,11 +2325,11 @@ export struct KnowledgeBankPage {
       .width(this.isTablet ? 520 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.folderDialogVisible = false;
@@ -2344,22 +2346,22 @@ export struct KnowledgeBankPage {
         Text(this.folderNav.folderActionId === '' ? '清空根目录「全部卡片」' : `删除「${this.folderNameById(this.folderNav.folderActionId)}」`)
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text(this.folderNav.folderActionId === '' ? '将清空根目录下所有卡片和文件夹，根目录入口将保留。不可恢复。' : '将删除该文件夹及其中所有卡片和子文件夹，不可恢复。')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 10 })
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.cancelFolderAction();
             })
           Button('删除')
             .layoutWeight(1)
-            .backgroundColor(DANGER)
+            .backgroundColor(this.theme.danger)
             .fontColor(Color.White)
             .onClick(() => {
               this.folderNav.folderActionId === '' ? this.confirmRootDelete() : this.confirmFolderDelete();
@@ -2370,11 +2372,11 @@ export struct KnowledgeBankPage {
       .width(this.isTablet ? 400 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.cancelFolderAction();
@@ -2389,13 +2391,13 @@ export struct KnowledgeBankPage {
         Text('重命名文件夹')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         TextInput({ text: this.folderNav.folderActionName, placeholder: '文件夹名称' })
           .fontSize(14)
           .height(40)
           .margin({ top: 12 })
           .padding({ left: 10, right: 10 })
-          .backgroundColor(SURFACE_SOFT)
+          .backgroundColor(this.theme.surfaceSoft)
           .borderRadius(8)
           .onChange((v: string) => {
             this.folderNav.folderActionName = v;
@@ -2403,14 +2405,14 @@ export struct KnowledgeBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.cancelFolderAction();
             })
           Button('确定')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmFolderRename();
@@ -2421,11 +2423,11 @@ export struct KnowledgeBankPage {
       .width(this.isTablet ? 520 : '86%')
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.cancelFolderAction();
@@ -2437,17 +2439,17 @@ export struct KnowledgeBankPage {
         Text(this.folderPickerTitle())
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Scroll() {
           Column() {
             Row() {
               Text('根目录')
                 .fontSize(13)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .layoutWeight(1)
               Text(`${this.knowledgeBank.cards.length}`)
                 .fontSize(10)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
             }
             .width('100%')
             .height(32)
@@ -2466,7 +2468,7 @@ export struct KnowledgeBankPage {
                         Column()
                           .width(1)
                           .height('100%')
-                          .backgroundColor(STROKE_CARD)
+                          .backgroundColor(this.theme.strokeCard)
                       }
                     }
                     .width(TREE_CELL)
@@ -2477,7 +2479,7 @@ export struct KnowledgeBankPage {
                       Column()
                         .width(1)
                         .height(item.isLast ? '50%' : '100%')
-                        .backgroundColor(STROKE_CARD)
+                        .backgroundColor(this.theme.strokeCard)
                     }
                     .width('50%')
                     .height('100%')
@@ -2485,7 +2487,7 @@ export struct KnowledgeBankPage {
                       Row()
                         .width('100%')
                         .height(1)
-                        .backgroundColor(STROKE_CARD)
+                        .backgroundColor(this.theme.strokeCard)
                     }
                     .width('50%')
                     .height('100%')
@@ -2505,7 +2507,7 @@ export struct KnowledgeBankPage {
                 }
                 Text(item.folder.name)
                   .fontSize(13)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .layoutWeight(1)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2526,7 +2528,7 @@ export struct KnowledgeBankPage {
         .constraintSize({ maxHeight: 320 })
         Text('取消')
           .fontSize(13)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 10 })
           .onClick(() => {
             this.folderPickerVisible = false;
@@ -2537,11 +2539,11 @@ export struct KnowledgeBankPage {
       .constraintSize({ maxHeight: '80%' })
       .padding(20)
       .borderRadius(RADIUS_NAV)
-      .backgroundColor(SURFACE_NODE)
+      .backgroundColor(this.theme.surfaceNode)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.folderPickerVisible = false;
@@ -2556,15 +2558,15 @@ export struct KnowledgeBankPage {
         Text('批量导入预览')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text(`${this.importFileName} · 解析到 ${this.importRows.length} 张 · ${this.importFormat.toUpperCase()} 格式`)
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         // ★ 0.249.1：AI 内容显式提醒（导入内容可能含 AI 生成，口径与 DagPack/apkg 弹窗一致）
         Text('导入内容可能包含 AI 生成的内容，请注意甄别')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 2 })
         Scroll() {
           Column() {
@@ -2572,11 +2574,11 @@ export struct KnowledgeBankPage {
               Column() {
                 Text(`${i + 1}. ${r.title}`)
                   .fontSize(13)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .maxLines(1)
                 Text(r.definition)
                   .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(this.theme.textTertiary)
                   .maxLines(1)
                   .margin({ top: 2 })
               }
@@ -2584,7 +2586,7 @@ export struct KnowledgeBankPage {
               .alignItems(HorizontalAlign.Start)
               .padding(8)
               .borderRadius(8)
-              .backgroundColor(SURFACE_SOFT)
+              .backgroundColor(this.theme.surfaceSoft)
               .margin({ top: 6 })
             }, (r: ImportRow, i: number) => `${i}-${r.title}`)
           }
@@ -2596,20 +2598,20 @@ export struct KnowledgeBankPage {
         if (this.importRows.length > 10) {
           Text(`… 其余 ${this.importRows.length - 10} 张省略`)
             .fontSize(12)
-            .fontColor(TEXT_TERTIARY)
+            .fontColor(this.theme.textTertiary)
             .margin({ top: 4 })
         }
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.importPreviewVisible = false;
             })
           Button(`导入 ${this.importRows.length} 张`)
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmImport();
@@ -2621,11 +2623,11 @@ export struct KnowledgeBankPage {
       .constraintSize({ maxHeight: '80%' })
       .padding(18)
       .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.importPreviewVisible = false;
@@ -2708,15 +2710,15 @@ export struct KnowledgeBankPage {
         Text('导入 DagPack · 选择要接收的内容')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text(`${this.packFileName} · ${this.packData.folders.length} 个文件夹 · ${this.packData.cards.length} 张卡 · 新子树挂当前文件夹`)
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         // ★ 0.249.1：AI 内容显式提醒（合规：《人工智能生成合成内容标识办法》——包内卡片可能含 AI 提炼内容）
         Text('导入内容可能包含 AI 生成的内容，请注意甄别')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 2 })
         Scroll() {
           Column() {
@@ -2732,18 +2734,18 @@ export struct KnowledgeBankPage {
                     })
                   Text('📁 ' + this.packFolderPathName(f.refId))
                     .fontSize(13)
-                    .fontColor(TEXT_PRIMARY)
+                    .fontColor(this.theme.textPrimary)
                     .layoutWeight(1)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(`${this.packSubtreeCardCount(f.refId)} 张`)
                     .fontSize(12)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                 }
                 .width('100%')
                 .padding(10)
                 .borderRadius(8)
-                .backgroundColor(SURFACE_SOFT)
+                .backgroundColor(this.theme.surfaceSoft)
                 .margin({ top: 6 })
                 .onClick(() => {
                   this.togglePackSel(f.refId);
@@ -2761,16 +2763,16 @@ export struct KnowledgeBankPage {
                   })
                 Text('📄 根级散卡（不属于任何文件夹）')
                   .fontSize(13)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .layoutWeight(1)
                 Text(`${this.packRootCardCount()} 张`)
                   .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(this.theme.textTertiary)
               }
               .width('100%')
               .padding(10)
               .borderRadius(8)
-              .backgroundColor(SURFACE_SOFT)
+              .backgroundColor(this.theme.surfaceSoft)
               .margin({ top: 6 })
               .onClick(() => {
                 this.packRootCardsSel = !this.packRootCardsSel;
@@ -2785,14 +2787,14 @@ export struct KnowledgeBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.packPreviewVisible = false;
             })
           Button('导入所选')
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmPackImport();
@@ -2804,11 +2806,11 @@ export struct KnowledgeBankPage {
       .constraintSize({ maxHeight: '80%' })
       .padding(18)
       .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.packPreviewVisible = false;
@@ -2823,19 +2825,19 @@ export struct KnowledgeBankPage {
         Text('Anki 包导入预览')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor(TEXT_PRIMARY)
+          .fontColor(this.theme.textPrimary)
         Text(`${this.apkgFileName} · ${this.apkgCards.length} 张卡 · ${this.apkgMediaCount} 张图片 · 牌组自动映射为文件夹链`)
           .fontSize(12)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
         Text('Anki 复习进度不迁移（DAGAI 从新卡开始，用自己的算法）；音频不迁移（App 自带语音）')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 2 })
         // ★ 0.249.1：AI 内容显式提醒（合规：《人工智能生成合成内容标识办法》——包内卡片可能含 AI 提炼内容）
         Text('导入内容可能包含 AI 生成的内容，请注意甄别')
           .fontSize(11)
-          .fontColor(TEXT_TERTIARY)
+          .fontColor(this.theme.textTertiary)
           .margin({ top: 2 })
         Scroll() {
           Column() {
@@ -2843,18 +2845,18 @@ export struct KnowledgeBankPage {
               Row() {
                 Text('🗂 ' + deck)
                   .fontSize(13)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .layoutWeight(1)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                 Text(`${this.apkgDeckCounts[deck]} 张`)
                   .fontSize(12)
-                  .fontColor(TEXT_TERTIARY)
+                  .fontColor(this.theme.textTertiary)
               }
               .width('100%')
               .padding(10)
               .borderRadius(8)
-              .backgroundColor(SURFACE_SOFT)
+              .backgroundColor(this.theme.surfaceSoft)
               .margin({ top: 6 })
             }, (deck: string) => deck)
           }
@@ -2866,14 +2868,14 @@ export struct KnowledgeBankPage {
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
-            .backgroundColor(SURFACE_SOFT)
-            .fontColor(TEXT_SECONDARY)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
             .onClick(() => {
               this.apkgPreviewVisible = false;
             })
           Button(`导入 ${this.apkgCards.length} 张`)
             .layoutWeight(1)
-            .backgroundColor(BRAND_PRIMARY)
+            .backgroundColor(this.theme.brandPrimary)
             .fontColor(Color.White)
             .onClick(() => {
               this.confirmApkgImport();
@@ -2885,11 +2887,11 @@ export struct KnowledgeBankPage {
       .constraintSize({ maxHeight: '80%' })
       .padding(18)
       .borderRadius(14)
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(OVERLAY)
+    .backgroundColor(this.theme.overlay)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.apkgPreviewVisible = false;
@@ -2913,7 +2915,7 @@ export struct KnowledgeBankPage {
                   .height(40)
                   .padding({ left: 12, right: 12 })
                   .borderRadius(20)
-                  .backgroundColor(SURFACE_SOFT)
+                  .backgroundColor(this.theme.surfaceSoft)
                   .onChange((value: string) => {
                     this.searchKeyword = value;
                   })
@@ -2921,7 +2923,7 @@ export struct KnowledgeBankPage {
                   // Clear button — clearing restores the full list (spec 2.1.4)
                   Text('×')
                     .fontSize(16)
-                    .fontColor(TEXT_TERTIARY)
+                    .fontColor(this.theme.textTertiary)
                     .margin({ left: 6 })
                     .onClick(() => {
                       this.searchKeyword = '';
@@ -2937,7 +2939,7 @@ export struct KnowledgeBankPage {
             Row() {
               Button(this.isAllSelected() ? '取消全选' : '全选')
                 .fontSize(13)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .onClick(() => {
@@ -2947,11 +2949,11 @@ export struct KnowledgeBankPage {
                 .layoutWeight(1)
               Text(`已选 ${this.selectedIds.length} 项`)
                 .fontSize(13)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
               // ★ 0.207.0：批量移动/复制到文件夹（单张=多选 1 张，交互统一）
               Button('移动')
                 .fontSize(13)
-                .fontColor(BRAND_SECONDARY)
+                .fontColor(this.theme.brandSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 4 })
@@ -2965,7 +2967,7 @@ export struct KnowledgeBankPage {
                 })
               Button('复制')
                 .fontSize(13)
-                .fontColor(BRAND_SECONDARY)
+                .fontColor(this.theme.brandSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .onClick(() => {
@@ -2978,7 +2980,7 @@ export struct KnowledgeBankPage {
                 })
               Button('取消')
                 .fontSize(13)
-                .fontColor(TEXT_SECONDARY)
+                .fontColor(this.theme.textSecondary)
                 .backgroundColor(Color.Transparent)
                 .padding({ left: 6, right: 6 })
                 .margin({ left: 8 })
@@ -2995,10 +2997,10 @@ export struct KnowledgeBankPage {
             Column() {
               Text('知识库为空')
                 .fontSize(16)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
               Text('点右上角 + 手动添加，或长按对话气泡选中文本入知识库')
                 .fontSize(12)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -3009,10 +3011,10 @@ export struct KnowledgeBankPage {
             Column() {
               Text(this.searchKeyword.length > 0 ? '无匹配结果' : '此文件夹为空')
                 .fontSize(16)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
               Text(this.searchKeyword.length > 0 ? '换个关键词试试' : '点右上角 + 导入或新建')
                 .fontSize(12)
-                .fontColor(TEXT_TERTIARY)
+                .fontColor(this.theme.textTertiary)
                 .margin({ top: 8 })
             }
             .width('100%')
@@ -3046,7 +3048,7 @@ export struct KnowledgeBankPage {
                           Text(c.title.length > 0 ? c.title.charAt(0) : '知')
                             .fontSize(34)
                             .fontWeight(700)
-                            .fontColor(TEXT_PRIMARY)
+                            .fontColor(this.theme.textPrimary)
                         }
                         .width('100%')
                         .height('100%')
@@ -3054,7 +3056,7 @@ export struct KnowledgeBankPage {
                         .borderRadius(RADIUS_CONTROL)
                         .linearGradient({
                           angle: 135,
-                          colors: [[BRAND_PRIMARY, 0], [SURFACE_HOVER, 1]]
+                          colors: [[this.theme.brandPrimary, 0], [this.theme.surfaceHover, 1]]
                         })
                       }
                     }
@@ -3064,7 +3066,7 @@ export struct KnowledgeBankPage {
                       Text(c.title)
                         .fontSize(14)
                         .fontWeight(600)
-                        .fontColor(TEXT_PRIMARY)
+                        .fontColor(this.theme.textPrimary)
                         .maxLines(2)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .layoutWeight(1)
@@ -3083,13 +3085,13 @@ export struct KnowledgeBankPage {
                         ForEach(parseTags(c.tags).slice(0, 2), (t: string) => {
                           Text(t)
                             .fontSize(10)
-                            .fontColor(BRAND_SECONDARY)
+                            .fontColor(this.theme.brandSecondary)
                             .maxLines(1)
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                             .height(18)
                             .padding({ left: 6, right: 6 })
                             .borderRadius(4)
-                            .border({ width: 1, color: BRAND_SECONDARY })
+                            .border({ width: 1, color: this.theme.brandSecondary })
                         }, (t: string) => t)
                       }
                       .width('100%')
@@ -3105,8 +3107,8 @@ export struct KnowledgeBankPage {
                   .height(190) // ★ 0.239.0：封面卡固定格高（规格 180~200 取中）
                   .padding(12)
                   .borderRadius(RADIUS_CONTROL)
-                  .backgroundColor(SURFACE_NODE)
-                  .borderColor(STROKE_CARD)
+                  .backgroundColor(this.theme.surfaceNode)
+                  .borderColor(this.theme.strokeCard)
                   .borderWidth(1)
                   .onClick(() => {
                     this.onItemTap(c);
@@ -3175,7 +3177,7 @@ export struct KnowledgeBankPage {
                     // Entry content block: title -> definition -> image thumbnail
                     Column() {
                       // ★ 0.202.0：问AI 入口改版（用户拍板：原紫渐变钮设计「像坨屎」）——移至标题行右端，
-                      //   灰色小字「问AI?」与标题平行，颜色同「未学习」标签（TEXT_TERTIARY 弱化灰）：
+                      //   灰色小字「问AI?」与标题平行，颜色同「未学习」标签（this.theme.textTertiary 弱化灰）：
                       //   不显眼但路口找得到；ArkUI 点击不冒泡：本 Text 自身消费，不触发卡片 onClick 进编辑
                       Row() {
                       // ★ 0.202.1：标签 chips（用户拍板：放标题旁空区，高度 20 ≤ 问AI 32，圆角偏方 4，多标签横向滑动）
@@ -3209,11 +3211,11 @@ export struct KnowledgeBankPage {
                                       ForEach(parseTags(c.tags), (t: string) => {
                                         Text(t)
                                           .fontSize(10)
-                                          .fontColor(BRAND_SECONDARY)
+                                          .fontColor(this.theme.brandSecondary)
                                           .height(20)
                                           .padding({ left: 8, right: 8 })
                                           .borderRadius(4)
-                                          .border({ width: 1, color: BRAND_SECONDARY })
+                                          .border({ width: 1, color: this.theme.brandSecondary })
                                       }, (t: string) => t)
                                     }
                                   }
@@ -3229,7 +3231,7 @@ export struct KnowledgeBankPage {
                             Text(c.title)
                               .fontSize(16)
                               .fontWeight(600)
-                              .fontColor(TEXT_PRIMARY)
+                              .fontColor(this.theme.textPrimary)
                               .maxLines(2) // ★ 0.227.1：宽屏长标题两行（导入卡标题多行文本，单行只显首段不够看；Stack 居中不受影响）
                               .textOverflow({ overflow: TextOverflow.Ellipsis })
                               .textAlign(TextAlign.Center)
@@ -3241,7 +3243,7 @@ export struct KnowledgeBankPage {
                             Text(c.title)
                               .fontSize(16)
                               .fontWeight(600)
-                              .fontColor(TEXT_PRIMARY)
+                              .fontColor(this.theme.textPrimary)
                               .maxLines(1)
                               .textOverflow({ overflow: TextOverflow.Ellipsis })
                               .constraintSize({ maxWidth: '62%' })
@@ -3251,11 +3253,11 @@ export struct KnowledgeBankPage {
                                   ForEach(parseTags(c.tags), (t: string) => {
                                     Text(t)
                                       .fontSize(10)
-                                      .fontColor(BRAND_SECONDARY)
+                                      .fontColor(this.theme.brandSecondary)
                                       .height(20)
                                       .padding({ left: 8, right: 8 })
                                       .borderRadius(4)
-                                      .border({ width: 1, color: BRAND_SECONDARY })
+                                      .border({ width: 1, color: this.theme.brandSecondary })
                                   }, (t: string) => t)
                                 }
                               }
@@ -3302,7 +3304,7 @@ export struct KnowledgeBankPage {
                       }
                       Text(c.definition)
                         .fontSize(13)
-                        .fontColor(TEXT_SECONDARY)
+                        .fontColor(this.theme.textSecondary)
                         .margin({ top: 4 }) // ★ 0.213.2 用户拍板：标题与内容太挤——行距 2→4（"大一两个像素"）
                       // ★ 0.188.0：下次复习时间（未学习灰 / 已到期红 / 常规灰，复刻单���库）
                       Text(this.nextReviewLabel(c))
@@ -3342,8 +3344,8 @@ export struct KnowledgeBankPage {
                   .width('100%')
                   .padding(12)
                   .borderRadius(RADIUS_CONTROL)
-                  .backgroundColor(SURFACE_NODE) // ★ 0.183.0：卡片底对齐节点卡片规格（SURFACE_NODE + STROKE_CARD 描边）
-                  .borderColor(STROKE_CARD)
+                  .backgroundColor(this.theme.surfaceNode) // ★ 0.183.0：卡片底对齐节点卡片规格（this.theme.surfaceNode + this.theme.strokeCard 描边）
+                  .borderColor(this.theme.strokeCard)
                   .borderWidth(1)
                   .alignItems(VerticalAlign.Center)
                   .gesture(
@@ -3462,7 +3464,7 @@ export struct KnowledgeBankPage {
         // ★ 0.222.7：抽屉移入主 Column children 末尾（与正常工作的弹窗块同层）——「属性链后兄弟」位置弃用
         this.kbMobileDrawerLayer()
       }
-      .backgroundColor(BG_CANVAS) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 BG_APP/画布 BG_CANVAS 暗紫底不一致，统一应用底色
+      .backgroundColor(this.theme.bgCanvas) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 this.theme.bgApp/画布 this.theme.bgCanvas 暗紫底不一致，统一应用底色
       // ★ 0.220.2 用户拍板：PC 右键 / Pad 长按空白 → 弹「创建新卡片 / 创建新文件夹」菜单
       //   （bindContextMenu 跟随鼠标右键；bindPopup 供长按唤起——点选项执行、点遮罩收起；
       //    触屏设备 RightClick 响应=长按，与 LongPressGesture 双通道等效冗余）
@@ -3470,9 +3472,9 @@ export struct KnowledgeBankPage {
       .bindPopup(this.createMenuVisible, {
         builder: this.kbCreateMenuBuilder(),
         placement: Placement.Bottom,
-        popupColor: SURFACE_NODE,
+        popupColor: this.theme.surfaceNode,
         radius: 12,
-        mask: { color: 'rgba(0,0,0,0.3)' },
+        mask: { color: this.theme.overlayLight },
         onStateChange: (e: PopupStateChangeParam) => {
           this.createMenuVisible = e.isVisible;
         }

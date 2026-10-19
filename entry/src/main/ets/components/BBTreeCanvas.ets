@@ -17,7 +17,8 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.196.4：display 移除（isTablet 改读 WindowMode）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局） ★ 0.168：display 屏宽断点（平板/手机边栏形态）
 import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat, recordNodeTomb, recordTabTomb } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.230.1：recordNodeTomb/recordTabTomb（节点/Tab 显式墓碑——自动差集墓碑已废）
-import { BG_APP, BG_NAV, BG_CANVAS, SURFACE_NODE, SURFACE_HOVER, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, STROKE_BRAND, SEGMENTED_TRACK, EDGE_COLOR, EDGE_COLOR_HIGHLIGHT, RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON } from '../common/DesignTokens'; // ★ 0.167：UI token 单一来源（UI_GUIDELINES.md，禁止散落写色值）；★ 0.168 增补边栏 token；★ 0.173.1：删「工作区」标签后 FONT_SIZE_LABEL 无使用处，移出 import
+import { RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON, FONT_SIZE_LABEL } from '../common/DesignTokens';
+import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件（手机抽屉用；平板常驻边栏已升 Index 级）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
@@ -27,6 +28,7 @@ import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; /
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
 export struct BBTreeCanvas {
+  theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   // ★ 0.223.0：store 挂 @Local（@ObservedV2 实例作 @ComponentV2 成员须挂 @Local 才可靠响应
   //   @Trace——0.222.2 铁律；needsCloudRedraw 的 @Monitor 路径监听依赖此声明）
@@ -306,7 +308,7 @@ export struct BBTreeCanvas {
       const sy = this.c2sY(parent.y) + NODE_H * s;
       const ex = this.c2sX(bubble.x) + NODE_W / 2 * s;
       const ey = this.c2sY(bubble.y);
-      const color = this.isHighlightedLine(bubble) ? EDGE_COLOR_HIGHLIGHT : EDGE_COLOR;
+      const color = this.isHighlightedLine(bubble) ? this.theme.edgeHighlight : this.theme.edgeColor;
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       ctx.lineWidth = 2 * s; // ★ 0.167.4：线宽等比（传统思维导图模式）
@@ -922,7 +924,7 @@ export struct BBTreeCanvas {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor('rgba(0,0,0,0.45)')
+          .backgroundColor(this.theme.overlay)
           .onClick(() => {
             this.closeSidebar();
           })
@@ -959,12 +961,12 @@ export struct BBTreeCanvas {
             .fontSize(FONT_SIZE_BODY)
             .fontWeight(this.canvasModeStore.mode === 'flat' ? 600 : 500)
             .fontFamily(this.canvasModeStore.mode === 'flat' ? FONT_INTER_SEMIBOLD : FONT_INTER)
-            .fontColor(this.canvasModeStore.mode === 'flat' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .fontColor(this.canvasModeStore.mode === 'flat' ? this.theme.textPrimary : this.theme.textSecondary)
         }
         .padding({ left: 12, right: 12 })
         .height(30) // ★ 0.167.8：固定高 30（track padding 3 总高 36），与 ⚙/➕ 等高对齐（用户实测报高度不齐）
         .borderRadius(8)
-        .backgroundColor(this.canvasModeStore.mode === 'flat' ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.canvasModeStore.mode === 'flat' ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.switchCanvasMode('flat');
         })
@@ -977,12 +979,12 @@ export struct BBTreeCanvas {
             .fontSize(FONT_SIZE_BODY)
             .fontWeight(this.canvasModeStore.mode === 'tabs' ? 600 : 500)
             .fontFamily(this.canvasModeStore.mode === 'tabs' ? FONT_INTER_SEMIBOLD : FONT_INTER)
-            .fontColor(this.canvasModeStore.mode === 'tabs' ? TEXT_PRIMARY : TEXT_SECONDARY)
+            .fontColor(this.canvasModeStore.mode === 'tabs' ? this.theme.textPrimary : this.theme.textSecondary)
         }
         .padding({ left: 12, right: 12 })
         .height(30) // ★ 0.167.8：固定高 30（track padding 3 总高 36），与 ⚙/➕ 等高对齐（用户实测报高度不齐）
         .borderRadius(8)
-        .backgroundColor(this.canvasModeStore.mode === 'tabs' ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.canvasModeStore.mode === 'tabs' ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.switchCanvasMode('tabs');
         })
@@ -998,7 +1000,7 @@ export struct BBTreeCanvas {
         .height(30)
         .justifyContent(FlexAlign.Center)
         .borderRadius(8)
-        .backgroundColor(this.canvasModeStore.mode === 'flat' ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.canvasModeStore.mode === 'flat' ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.switchCanvasMode('flat');
         })
@@ -1012,7 +1014,7 @@ export struct BBTreeCanvas {
         .height(30)
         .justifyContent(FlexAlign.Center)
         .borderRadius(8)
-        .backgroundColor(this.canvasModeStore.mode === 'tabs' ? BRAND_PRIMARY : Color.Transparent)
+        .backgroundColor(this.canvasModeStore.mode === 'tabs' ? this.theme.brandPrimary : Color.Transparent)
         .onClick(() => {
           this.switchCanvasMode('tabs');
         })
@@ -1020,7 +1022,7 @@ export struct BBTreeCanvas {
     }
     .padding(3)
     .borderRadius(RADIUS_CONTROL)
-    .backgroundColor(SEGMENTED_TRACK)
+    .backgroundColor(this.theme.segmentedTrack)
   }
 
   build() {
@@ -1033,7 +1035,7 @@ export struct BBTreeCanvas {
       //   热区 drag 穿透到画布平移手势；热区已于 0.168.4 删除），Stack 子节点命中是标准行为
       //   （同画布内四弹窗结构），结构保留供遮罩/边栏命中优先于画布
       Stack({ alignContent: Alignment.TopStart }) {
-      // ★ 0.167：全屏 BG_APP 底 + 画布容器（margin 24 / 圆角 24 / BG_CANVAS，UI_GUIDELINES 五-平板）
+      // ★ 0.167：全屏 this.theme.bgApp 底 + 画布容器（margin 24 / 圆角 24 / this.theme.bgCanvas，UI_GUIDELINES 五-平板）
       Column() {
         // ★ 0.215.3 滚轮第十轮（父 Scroll 方案判死：内容 100%/100.1% 等高均零触发 frameBegin——
         //   ArkUI 对"内容≈视口"的 Scroll 直接无视滚轮；0.214.9~0.215.2 三轮实证）：
@@ -1067,17 +1069,17 @@ export struct BBTreeCanvas {
               .width(NODE_ICON)
               .height(NODE_ICON)
               .borderRadius(RADIUS_LOGO)
-              .linearGradient({ angle: 225, colors: [[BRAND_PRIMARY, 0], [BRAND_SECONDARY, 1]] })
+              .linearGradient({ angle: 225, colors: [[this.theme.brandPrimary, 0], [this.theme.brandSecondary, 1]] })
               .justifyContent(FlexAlign.Center)
               .alignItems(HorizontalAlign.Center)
             } else {
-              // 竖线：与连线同色（EDGE_COLOR）——视觉语言「连线的化身」；宽 3 高 40 圆角 1.5，
+              // 竖线：与连线同色（this.theme.edgeColor）——视觉语言「连线的化身」；宽 3 高 40 圆角 1.5，
               // 比图标容器省 37vp 宽度给文字区（layoutWeight(1) 自动扩展）
               Column()
                 .width(3)
                 .height(NODE_ICON)
                 .borderRadius(1.5)
-                .backgroundColor(EDGE_COLOR)
+                .backgroundColor(this.theme.edgeColor)
             }
             // 标题 + 信息行（选中态信息行换「双击进入对话」辅助紫，UI_GUIDELINES 六-6）
             Column({ space: 3 }) {
@@ -1085,20 +1087,20 @@ export struct BBTreeCanvas {
                 .fontSize(FONT_SIZE_CARD_TITLE)
                 .fontWeight(600)
                 .fontFamily(FONT_INTER_SEMIBOLD)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (this.isBubbleSelected(bubble)) {
                 Text(this.importSelecting ? '导入目标' : '双击进入') // ★ 0.200.0：选择模式锁定态文案（避免「双击进入」误导）
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
-                  .fontColor(BRAND_SECONDARY)
+                  .fontColor(this.theme.brandSecondary)
               } else {
                 // ★ 0.172.3：元信息行加最近消息时间（参考图「N 条对话 · X小时前」）；maxLines(1) 防长文本撑破 68 高卡片
                 Text(this.getBubbleMeta(bubble))
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
-                  .fontColor(TEXT_SECONDARY)
+                  .fontColor(this.theme.textSecondary)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
@@ -1116,18 +1118,18 @@ export struct BBTreeCanvas {
           .height(NODE_H)
           .padding({ top: 12, bottom: 12, left: 14, right: 14 })
           .borderRadius(RADIUS_NODE)
-          // 选中态 = 悬停态规格：SURFACE_HOVER 底 + STROKE_BRAND 描边 + 阴影（UI_GUIDELINES 六-6；★ 0.173.1：单击选中同款）
+          // 选中态 = 悬停态规格：this.theme.surfaceHover 底 + this.theme.strokeBrand 描边 + 阴影（UI_GUIDELINES 六-6；★ 0.173.1：单击选中同款）
           // ★ 0.200.1：导入到达发光=连续渐变（border 宽 1+glow / shadow radius 12+glow×22 数值插值——替代瞬切）
-          .backgroundColor(this.isImportGlow(bubble) ? SURFACE_HOVER : (this.isBubbleSelected(bubble) ? SURFACE_HOVER : SURFACE_NODE))
+          .backgroundColor(this.isImportGlow(bubble) ? this.theme.surfaceHover : (this.isBubbleSelected(bubble) ? this.theme.surfaceHover : this.theme.surfaceNode))
           .border({
             width: this.isImportGlow(bubble) ? 1 + this.importGlow : 1,
-            color: this.isImportGlow(bubble) ? BRAND_SECONDARY
-              : (this.isBubbleSelected(bubble) ? STROKE_BRAND : STROKE_CARD)
+            color: this.isImportGlow(bubble) ? this.theme.brandSecondary
+              : (this.isBubbleSelected(bubble) ? this.theme.strokeBrand : this.theme.strokeCard)
           })
           .shadow(this.isImportGlow(bubble)
             ? { radius: 12 + this.importGlow * 60, color: 'rgba(124,77,255,0.65)', offsetX: 0, offsetY: 0 } // ★ 0.200.2：×22→×60 光晕随夸张弹跳同步放大
             : (this.isBubbleSelected(bubble)
-              ? { radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 }
+              ? { radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 }
               : { radius: 0, color: 'rgba(0,0,0,0)', offsetX: 0, offsetY: 0 }))
           .position({
             x: this.c2sX(bubble.x),
@@ -1213,7 +1215,7 @@ export struct BBTreeCanvas {
           Column()
             .width('100%')
             .height('100%')
-            .backgroundColor(BG_APP)
+            .backgroundColor(this.theme.bgApp)
             .opacity(this.importDim)
             .hitTestBehavior(HitTestMode.None)
           // 飞行卡片：标题迷你卡（横幅位 → 目标气泡中心，飞行中收至 0.5）
@@ -1225,7 +1227,7 @@ export struct BBTreeCanvas {
               Text(this.cardImport.title)
                 .fontSize(15)
                 .fontWeight(600)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .constraintSize({ maxWidth: 140 })
@@ -1234,9 +1236,9 @@ export struct BBTreeCanvas {
             .height(84)
             .padding({ left: 16, right: 16 })
             .borderRadius(RADIUS_CONTROL)
-            .backgroundColor(SURFACE_NODE)
-            .border({ width: 2, color: BRAND_SECONDARY })
-            .shadow({ radius: 16, color: 'rgba(124,77,255,0.45)', offsetX: 0, offsetY: 6 })
+            .backgroundColor(this.theme.surfaceNode)
+            .border({ width: 2, color: this.theme.brandSecondary })
+            .shadow({ radius: 16, color: this.theme.strokeBrand, offsetX: 0, offsetY: 6 })
             .position({ x: this.importFlyX, y: this.importFlyY })
             .scale({
               x: this.importFlyScale,
@@ -1387,12 +1389,12 @@ export struct BBTreeCanvas {
                   .fontSize(FONT_SIZE_SCREEN_TITLE)
                   .fontWeight(600)
                   .fontFamily(FONT_INTER_SEMIBOLD)
-                  .fontColor(TEXT_PRIMARY)
+                  .fontColor(this.theme.textPrimary)
                   .maxLines(1)
                 Text(`${this.store.nodeList.length} 个气泡 · ${this.getTotalMsgCount()} 条对话`)
                   .fontSize(FONT_SIZE_META)
                   .fontFamily(FONT_INTER)
-                  .fontColor(TEXT_SECONDARY)
+                  .fontColor(this.theme.textSecondary)
                   .maxLines(1)
               }
               .alignItems(HorizontalAlign.Start)
@@ -1411,7 +1413,7 @@ export struct BBTreeCanvas {
                 .height(40) // ★ 0.196.6：显式 40vp——导航栏统一规格（UI_GUIDELINES 10.2：以气泡页顶栏为基准，
                 //   所有页面顶栏 Row 固定 40vp；原 Button 默认高有歧义（内容自适应），显式钉死）
                 .backgroundColor(Color.Transparent)
-                .fontColor(TEXT_PRIMARY)
+                .fontColor(this.theme.textPrimary)
                 .padding({ left: 8, right: 8 })
                 .onClick(() => {
                   if (this.canvasModeStore.mode === 'tabs') {
@@ -1437,13 +1439,13 @@ export struct BBTreeCanvas {
                           .fontSize(FONT_SIZE_BODY)
                           .fontWeight(tab.id === this.tabForest.activeTabId ? 600 : 400)
                           .fontFamily(tab.id === this.tabForest.activeTabId ? FONT_INTER_SEMIBOLD : FONT_INTER)
-                          .fontColor(tab.id === this.tabForest.activeTabId ? TEXT_PRIMARY : TEXT_SECONDARY)
+                          .fontColor(tab.id === this.tabForest.activeTabId ? this.theme.textPrimary : this.theme.textSecondary)
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .constraintSize({ maxWidth: 72 })
                         Text('✕')
                           .fontSize(11)
-                          .fontColor(tab.id === this.tabForest.activeTabId ? 'rgba(255,255,255,0.75)' : TEXT_TERTIARY)
+                          .fontColor(tab.id === this.tabForest.activeTabId ? 'rgba(255,255,255,0.75)' : this.theme.textTertiary)
                           .margin({ left: 4 })
                           .onClick(() => {
                             this.deleteTab(tab.id);
@@ -1451,8 +1453,8 @@ export struct BBTreeCanvas {
                       }
                       .padding({ left: 10, right: 6, top: 8, bottom: 8 })
                       .borderRadius(8)
-                      .backgroundColor(tab.id === this.tabForest.activeTabId ? BRAND_PRIMARY : SURFACE_HOVER)
-                      .border({ width: 1, color: tab.id === this.tabForest.activeTabId ? BRAND_PRIMARY : STROKE_CARD })
+                      .backgroundColor(tab.id === this.tabForest.activeTabId ? this.theme.brandPrimary : this.theme.surfaceHover)
+                      .border({ width: 1, color: tab.id === this.tabForest.activeTabId ? this.theme.brandPrimary : this.theme.strokeCard })
                       .onClick(() => {
                         this.switchTab(tab.id);
                       })
@@ -1474,7 +1476,7 @@ export struct BBTreeCanvas {
               .width('100%')
             }
           }
-          // ★ 0.167.5 用户拍板：信息条加不透明底板（BG_CANVAS 与画布同色=视觉隐形）——
+          // ★ 0.167.5 用户拍板：信息条加不透明底板（this.theme.bgCanvas 与画布同色=视觉隐形）——
           //   气泡树平移/缩放时永远被压在底板下面，不再穿透重叠（用户要的「隐形的线」）；
           //   底板从画布 (0,0) 全宽铺开（原 position(28,24) 改 padding 内缩，内容视觉位置不变）
           .width('100%')
@@ -1482,7 +1484,7 @@ export struct BBTreeCanvas {
           // ★ 0.167.8：小屏 left 28→14——返回箭头左移，左留白与右边 ➕（14）一致（用户拍板）
           // ★ 0.176.0：返回箭头已删（全设备），padding 保持不变——标题成为行首元素
           .padding({ left: this.viewW >= 520 ? 28 : 14, right: 14, top: 8, bottom: 8 })
-          .backgroundColor(BG_CANVAS)
+          .backgroundColor(this.theme.bgCanvas)
           .position({ x: 0, y: 0 })
 
           // ★ 0.167：缩放控件（UI_GUIDELINES 六-10；右下角悬浮：放大/缩小/适应全图）
@@ -1530,15 +1532,15 @@ export struct BBTreeCanvas {
           }
           .padding(4)
           .borderRadius(14)
-          .border({ width: 1, color: STROKE_CARD })
-          .backgroundColor(SURFACE_NODE)
-          .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
+          .border({ width: 1, color: this.theme.strokeCard })
+          .backgroundColor(this.theme.surfaceNode)
+          .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
           .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
           .position({ x: this.viewW - 14 - 48, y: this.viewH - 56 - 132 }) // ★ 0.247.5：底部余量 24→56——手机系统导航条/PC dock 遮挡致「适应全图」按钮被裁半（用户截图红圈），实高 136 余量仅 20 太贴底；右缘贴边 14 不变（0.170.1）
 
           // ★ 0.168.4：左下角固定 ☰ 唤出按钮（手机抽屉唯一入口；用户拍板取消边缘右滑——
           //   系统手势区占用左缘约 0~65px，快滑=系统返回/慢拖被吞，右滑唤出真机体验受限）；
-          //   样式对齐右下角缩放控件（40×40 圆角按钮 + padding 4 容器 + SURFACE_NODE 底/描边/阴影），
+          //   样式对齐右下角缩放控件（40×40 圆角按钮 + padding 4 容器 + this.theme.surfaceNode 底/描边/阴影），
           //   同坐标系：x 14 与缩放控件右缘 14 镜像（★ 0.170.1 双双贴边 24→14，用户要求靠边一点）；
           //   y=viewH-24-44（高 48 → 底缘 viewH-20，
           //   与缩放控件底缘 viewH-24-132+136 严格对齐）；抽屉开时被遮罩盖住变暗（同缩放控件行为）
@@ -1561,9 +1563,9 @@ export struct BBTreeCanvas {
             }
             .padding(4)
             .borderRadius(14)
-            .border({ width: 1, color: STROKE_CARD })
-            .backgroundColor(SURFACE_NODE)
-            .shadow({ radius: 20, color: 'rgba(0,0,0,0.35)', offsetX: 0, offsetY: 8 })
+            .border({ width: 1, color: this.theme.strokeCard })
+            .backgroundColor(this.theme.surfaceNode)
+            .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
             .visibility(this.viewW > 0 ? Visibility.Visible : Visibility.None)
             .position({ x: 14, y: this.viewH - 56 - 44 }) // ★ 0.247.5：底部余量 24→56（同右下角缩放控件——系统导航条/dock 遮挡统一上抬）；左缘贴边 14 不变（0.170.1）
           }
@@ -1578,13 +1580,13 @@ export struct BBTreeCanvas {
           Text(this.cardImport.action === 'branch' ? `选一个父气泡（「${this.cardImport.title}」→ 新建子气泡）` : `选一个气泡导入（「${this.cardImport.title}」）`)
             .fontSize(13)
             .fontWeight(600)
-            .fontColor(TEXT_PRIMARY)
+            .fontColor(this.theme.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
           Button('取消')
             .fontSize(13)
-            .fontColor(TEXT_SECONDARY)
+            .fontColor(this.theme.textSecondary)
             .backgroundColor(Color.Transparent)
             .padding({ left: 8, right: 8 })
             .onClick(() => {
@@ -1594,9 +1596,9 @@ export struct BBTreeCanvas {
         .width('86%')
         .padding({ left: 16, right: 6, top: 10, bottom: 10 })
         .borderRadius(RADIUS_NAV)
-        .backgroundColor(SURFACE_NODE)
-        .border({ width: 1, color: BRAND_SECONDARY })
-        .shadow({ radius: 20, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 8 })
+        .backgroundColor(this.theme.surfaceNode)
+        .border({ width: 1, color: this.theme.brandSecondary })
+        .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
         .position({ x: '7%', y: 72 }) // 信息条（56vp）下方悬浮
         .transition(TransitionEffect.OPACITY.animation({ duration: 250, curve: Curve.EaseOut })
           .combine(TransitionEffect.translate({ y: -50 }).animation({ duration: 250, curve: Curve.EaseOut }))) // ★ 0.200.1：横幅顶部滑入
@@ -1607,13 +1609,13 @@ export struct BBTreeCanvas {
             Text(`${this.cardImport.action === 'branch' ? '新建子气泡于' : '导入到'}「${this.importTargetTitle()}」`)
               .fontSize(13)
               .fontWeight(600)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
             Button('重选')
               .fontSize(13)
-              .fontColor(TEXT_SECONDARY)
+              .fontColor(this.theme.textSecondary)
               .backgroundColor(Color.Transparent)
               .padding({ left: 8, right: 8 })
               .onClick(() => {
@@ -1621,8 +1623,8 @@ export struct BBTreeCanvas {
               })
             Button('导入 ✓')
               .fontSize(13)
-              .fontColor(TEXT_PRIMARY)
-              .backgroundColor(BRAND_PRIMARY)
+              .fontColor(this.theme.textPrimary)
+              .backgroundColor(this.theme.brandPrimary)
               .borderRadius(RADIUS_CONTROL)
               .padding({ left: 14, right: 14, top: 6, bottom: 6 })
               .onClick(() => {
@@ -1632,9 +1634,9 @@ export struct BBTreeCanvas {
           .width('86%')
           .padding({ left: 16, right: 8, top: 10, bottom: 10 })
           .borderRadius(RADIUS_NAV)
-          .backgroundColor(SURFACE_NODE)
-          .border({ width: 1, color: BRAND_PRIMARY })
-          .shadow({ radius: 20, color: 'rgba(0,0,0,0.5)', offsetX: 0, offsetY: 8 })
+          .backgroundColor(this.theme.surfaceNode)
+          .border({ width: 1, color: this.theme.brandPrimary })
+          .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
           .position({ x: '7%', y: '74%' }) // 底部悬浮（缩放控件上方）
           .transition(TransitionEffect.OPACITY.animation({ duration: 250, curve: Curve.EaseOut })
             .combine(TransitionEffect.translate({ y: 50 }).animation({ duration: 250, curve: Curve.EaseOut }))) // ★ 0.200.1：确认条底部滑入
@@ -1664,7 +1666,7 @@ export struct BBTreeCanvas {
           Column()
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.45)') // ★ 0.167：遮罩加深（原 0.25）
+            .backgroundColor(this.theme.overlay) // ★ 0.167：遮罩加深（原 0.25）
             .onClick(() => {
               this.menuVisible = false;
             })
@@ -1672,7 +1674,7 @@ export struct BBTreeCanvas {
             Text('修改气泡标题')
               .fontSize(FONT_SIZE_CARD_TITLE)
               .fontFamily(FONT_INTER)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .width('100%')
               .textAlign(TextAlign.Center)
               .padding({ top: 14, bottom: 14 })
@@ -1686,11 +1688,11 @@ export struct BBTreeCanvas {
                 }
               })
             Divider()
-              .color(STROKE_CARD)
+              .color(this.theme.strokeCard)
             Text('增加子气泡')
               .fontSize(FONT_SIZE_CARD_TITLE)
               .fontFamily(FONT_INTER)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .width('100%')
               .textAlign(TextAlign.Center)
               .padding({ top: 14, bottom: 14 })
@@ -1702,7 +1704,7 @@ export struct BBTreeCanvas {
                 }
               })
             Divider()
-              .color(STROKE_CARD)
+              .color(this.theme.strokeCard)
             Text('删除气泡')
               .fontSize(FONT_SIZE_CARD_TITLE)
               .fontFamily(FONT_INTER)
@@ -1720,9 +1722,9 @@ export struct BBTreeCanvas {
           }
           .width(this.isTablet ? 280 : '62%') // ★ 0.214.3 用户拍板：菜单 PC 上 62% 太宽——宽屏固定 280（对齐确认弹窗 400 定式的窄档），手机 62% 不动
           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
-          .backgroundColor(SURFACE_NODE)
-          .border({ width: 1, color: STROKE_CARD })
-          .shadow({ radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 })
+          .backgroundColor(this.theme.surfaceNode)
+          .border({ width: 1, color: this.theme.strokeCard })
+          .shadow({ radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 })
         }
       }
 
@@ -1732,7 +1734,7 @@ export struct BBTreeCanvas {
           Column()
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.45)') // ★ 0.167：遮罩加深（原 0.25）
+            .backgroundColor(this.theme.overlay) // ★ 0.167：遮罩加深（原 0.25）
             .onClick(() => {
               this.titleEditVisible = false;
             })
@@ -1741,13 +1743,13 @@ export struct BBTreeCanvas {
               .fontSize(FONT_SIZE_SCREEN_TITLE)
               .fontWeight(600)
               .fontFamily(FONT_INTER_SEMIBOLD)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .margin({ bottom: 12 })
             TextInput({ text: this.titleEditText, placeholder: '输入标题（最多15字，清空恢复自动）' })
               .fontSize(FONT_SIZE_BODY)
               .fontFamily(FONT_INTER)
-              .fontColor(TEXT_PRIMARY)
-              .placeholderColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textPrimary)
+              .placeholderColor(this.theme.textTertiary)
               .maxLength(15)
               .onChange((value: string) => {
                 this.titleEditText = value;
@@ -1755,7 +1757,7 @@ export struct BBTreeCanvas {
               .width('100%')
               .height(44)
               .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_HOVER)
+              .backgroundColor(this.theme.surfaceHover)
               .margin({ bottom: 16 })
             Row({ space: 12 }) {
               Button('取消')
@@ -1763,8 +1765,8 @@ export struct BBTreeCanvas {
                 .fontFamily(FONT_INTER)
                 .height(38)
                 .layoutWeight(1)
-                .backgroundColor(SURFACE_HOVER)
-                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(this.theme.surfaceHover)
+                .fontColor(this.theme.textPrimary)
                 .onClick(() => {
                   this.titleEditVisible = false;
                 })
@@ -1773,7 +1775,7 @@ export struct BBTreeCanvas {
                 .fontFamily(FONT_INTER)
                 .height(38)
                 .layoutWeight(1)
-                .backgroundColor(BRAND_PRIMARY)
+                .backgroundColor(this.theme.brandPrimary)
                 .fontColor('#FFFFFF')
                 .onClick(() => {
                   this.saveNodeTitle();
@@ -1784,9 +1786,9 @@ export struct BBTreeCanvas {
           .width('70%')
           .padding(20)
           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
-          .backgroundColor(SURFACE_NODE)
-          .border({ width: 1, color: STROKE_CARD })
-          .shadow({ radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 })
+          .backgroundColor(this.theme.surfaceNode)
+          .border({ width: 1, color: this.theme.strokeCard })
+          .shadow({ radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 })
         }
       }
 
@@ -1796,7 +1798,7 @@ export struct BBTreeCanvas {
           Column()
             .width('100%')
             .height('100%')
-            .backgroundColor('rgba(0,0,0,0.45)') // ★ 0.167：遮罩加深（原 0.25）
+            .backgroundColor(this.theme.overlay) // ★ 0.167：遮罩加深（原 0.25）
             .onClick(() => {
               this.tabRenameVisible = false;
             })
@@ -1805,13 +1807,13 @@ export struct BBTreeCanvas {
               .fontSize(FONT_SIZE_SCREEN_TITLE)
               .fontWeight(600)
               .fontFamily(FONT_INTER_SEMIBOLD)
-              .fontColor(TEXT_PRIMARY)
+              .fontColor(this.theme.textPrimary)
               .margin({ bottom: 12 })
             TextInput({ text: this.tabRenameText, placeholder: '输入名称（最多12字）' })
               .fontSize(FONT_SIZE_BODY)
               .fontFamily(FONT_INTER)
-              .fontColor(TEXT_PRIMARY)
-              .placeholderColor(TEXT_TERTIARY)
+              .fontColor(this.theme.textPrimary)
+              .placeholderColor(this.theme.textTertiary)
               .maxLength(12)
               .onChange((value: string) => {
                 this.tabRenameText = value;
@@ -1819,7 +1821,7 @@ export struct BBTreeCanvas {
               .width('100%')
               .height(44)
               .borderRadius(RADIUS_CONTROL)
-              .backgroundColor(SURFACE_HOVER)
+              .backgroundColor(this.theme.surfaceHover)
               .margin({ bottom: 16 })
             Row({ space: 12 }) {
               Button('取消')
@@ -1827,8 +1829,8 @@ export struct BBTreeCanvas {
                 .fontFamily(FONT_INTER)
                 .height(38)
                 .layoutWeight(1)
-                .backgroundColor(SURFACE_HOVER)
-                .fontColor(TEXT_PRIMARY)
+                .backgroundColor(this.theme.surfaceHover)
+                .fontColor(this.theme.textPrimary)
                 .onClick(() => {
                   this.tabRenameVisible = false;
                 })
@@ -1837,7 +1839,7 @@ export struct BBTreeCanvas {
                 .fontFamily(FONT_INTER)
                 .height(38)
                 .layoutWeight(1)
-                .backgroundColor(BRAND_PRIMARY)
+                .backgroundColor(this.theme.brandPrimary)
                 .fontColor('#FFFFFF')
                 .onClick(() => {
                   this.saveTabRename();
@@ -1848,29 +1850,29 @@ export struct BBTreeCanvas {
           .width('70%')
           .padding(20)
           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
-          .backgroundColor(SURFACE_NODE)
-          .border({ width: 1, color: STROKE_CARD })
-          .shadow({ radius: 24, color: 'rgba(0,0,0,0.45)', offsetX: 0, offsetY: 10 })
+          .backgroundColor(this.theme.surfaceNode)
+          .border({ width: 1, color: this.theme.strokeCard })
+          .shadow({ radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 })
         }
       }
         }
-        // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / BG_CANVAS）
+        // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / this.theme.bgCanvas）
         .width('100%')
         .layoutWeight(1) // ★ 0.215.3：父 Scroll 已拆（等高内容滚轮零触发三轮判死）——恢复 0.213 原结构
-        // ★ 0.215.7：底边距归零贴底——用户多轮报「底部空隙/下面一条边」，深色 BG_APP 露底即此边距
+        // ★ 0.215.7：底边距归零贴底——用户多轮报「底部空隙/下面一条边」，深色 this.theme.bgApp 露底即此边距
         //   （0.195.0 时代顶格只归了顶边，底边 24 保留至今；现紫底直铺屏幕底，深色边带消失）
         .margin({ left: 24, right: 24, top: 0, bottom: 0 })
         // ★ 0.215.7：底部圆角随贴底归零（贴底平铺无角缺口，同 0.195.0 顶格逻辑）
         .borderRadius({ topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 })
-        .backgroundColor(BG_CANVAS)
+        .backgroundColor(this.theme.bgCanvas)
 
       }
-      // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 BG_APP）
+      // ★ 0.167：全屏底色（UI_GUIDELINES 五-平板：应用底 this.theme.bgApp）
       // ★ 0.168.3：Column 改 width/height 100%——layoutWeight 仅 Row/Column/Flex 子节点有效，
       //   随 Column 外包 Stack 移交外层 Stack；Stack 内 Column 100% 撑满即原全宽效果
       .width('100%')
       .height('100%')
-      .backgroundColor(BG_APP)
+      .backgroundColor(this.theme.bgApp)
       // ★ 0.168.3：手机抽屉层（点遮罩或边栏空白收起；平板不渲染；唤出=左下角 ☰ 按钮 ★ 0.168.4）——
       //   从 overlay 迁至 Stack 顶层子节点，命中优先于画布
       this.MobileDrawerLayer()
