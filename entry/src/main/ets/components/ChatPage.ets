@@ -1789,6 +1789,11 @@ export struct ChatPage {
   ctrlAxisAt: number = 0; // ★ 0.215.10：最近 Ctrl+滚轮时刻（300ms 窗内 List 滚动被吞=只缩放不滚动）
   shiftEnterAt: number = 0; // ★ 0.215.11：最近 Shift+回车时刻（300ms 窗内 onSubmit 跳过发送=只换行）
   shiftHeld: boolean = false; // ★ 0.215.15：Shift 键按住状态（onKeyPreIme 追踪 Down/Up，判定兜底）
+  // ★ 0.270.0 输入区聚焦扩展（千问式）：聚焦态驱动输入框 minHeight 40→76 展开两行高 + 卡片内下方
+  //   工具栏浮现；blur 走 150ms 宽限收起——PC 发送后 50ms 重聚焦（0.216.2）落在窗内 → 工具栏不闪，
+  //   点工具栏按钮的焦点转移同样受保护（宽限内重新聚焦则不收）
+  @Local isInputFocused: boolean = false;
+  inputBlurTimer: number = -1; // blur 宽限定时器句柄（aboutToDisappear 必清，防泄漏）
 
   /** ★ 0.215.14 设备三档判定（方案二落地）：deviceType 按系统 API（d.ts 实锤 phone/tablet/2in1/default），
    * 防御写法=明确移动设备（phone/tablet/tv/car/wearable）之外全算 PC 档——Matebook 无论返 2in1 还是
@@ -2596,6 +2601,10 @@ export struct ChatPage {
     this.saveDraft(); // ★ 0.214.2：草稿写回当前气泡内存
     this.saveTree(); // ★ 0.214.2：草稿随树落盘（一次）
     this.recordReadingPosition(); // ★ 0.191.0：离开前记录阅读高度（方案 A）
+    if (this.inputBlurTimer >= 0) { // ★ 0.270.0：清 blur 宽限定时器，防泄漏
+      clearTimeout(this.inputBlurTimer);
+      this.inputBlurTimer = -1;
+    }
     // ★ 0.265.0 记忆引擎：会话结束触发画像更新（本段有新增用户消息才做）+ 失活节点入摘要头 pending 队列
     if (this.profileTick > 0) {
       this.triggerProfileUpdate();
@@ -5940,6 +5949,10 @@ export struct ChatPage {
           .border({ width: 0.5, color: this.theme.strokeBrand })
         }
 
+        // ★ 0.270.0 千问式聚焦扩展容器（用户拍板）：输入行 + 聚焦工具栏同包一张圆角卡片——
+        //   默认态=现状单行（加子气泡/铅笔/发送▾ 功能位次零变化）；聚焦后卡片内输入框展开两行高 +
+        //   下方 icon 工具栏浮现（未来功能膨胀预留位）；聚焦描边高亮（strokeBrand）
+        Column() {
         // 输入区域 — ＋添加子气泡 + 输入框 + ✏️画画Icon + 发送▾（★ 0.152 需求重排：
         // 图片添加/对话模式/回复长度收进发送右侧 ▾ 下拉菜单，底栏只留核心三键）
         Row() {
@@ -5966,7 +5979,7 @@ export struct ChatPage {
             this.addBubble();
           })
 
-          TextArea({ text: $$this.inputText, placeholder: '输入问题...' }) // ★ 0.131：去掉 controller 参数（TextAreaController 已移除）
+          TextArea({ text: $$this.inputText, placeholder: '试一试小艺输入法的语音转文本功能？' }) // ★ 0.270.1：占位文案改引导语音输入（用户拍板）；★ 0.131：去掉 controller 参数（TextAreaController 已移除）
             .key('chatInputField') // ★ 0.216.2：PC 发送后 requestFocus('chatInputField') 重聚焦（连续打字免鼠标回点）
             .onChange((value: string) => {
               this.inputText = value;
@@ -5977,7 +5990,28 @@ export struct ChatPage {
             //   TextArea 随内容自撑、一行一行长高，136vp（5 行）封顶后内部滚动；
             //   原 0.118 手动行数计算 + 0.195.0 measureTextSize 软换行版在真机密度单位翻车
             //   （1 字跳 3 行，用户实测截图实锤）——整条手动计算链废弃（getter/字段/onAreaChange/measure 全删）
-            .constraintSize({ minHeight: 40, maxHeight: 136 })
+            // ★ 0.270.0 聚焦扩展：聚焦/失焦驱动展开与工具栏——blur 走 150ms 宽限（见 isInputFocused 注释），
+            //   宽限内重新聚焦取消收起（PC 发送后 50ms 重聚焦不闪；点工具栏按钮不失焦瞬收）
+            .onFocus(() => {
+              if (this.inputBlurTimer >= 0) {
+                clearTimeout(this.inputBlurTimer);
+                this.inputBlurTimer = -1;
+              }
+              this.isInputFocused = true;
+            })
+            .onBlur(() => {
+              if (this.inputBlurTimer >= 0) {
+                clearTimeout(this.inputBlurTimer);
+              }
+              this.inputBlurTimer = setTimeout(() => {
+                this.isInputFocused = false;
+                this.inputBlurTimer = -1;
+              }, 150);
+            })
+            // ★ 0.270.0 高度档位（用户拍板「聚焦即展开」）：默认 40 单行紧凑态不变；聚焦展开 76（约两行高）
+            //   ——TextArea 随内容自撑语义不变（minHeight 只抬下限不截内容），失焦收回 40（有草稿时随内容自然高）
+            .constraintSize({ minHeight: this.isInputFocused ? 76 : 40, maxHeight: 136 })
+            .animation({ duration: 200, curve: Curve.EaseInOut }) // 高度档位过渡（对齐项目 200ms 动效档）
             // ★ 0.246.0：对称上下 padding——空态单行时占位符「输入问题...」垂直居中（用户截图指认偏上）；
             //   9/9 首轮仍偏上（TextArea 空态渲染高度大于 minHeight 40、内容顶部对齐致下空隙偏大），
             //   12/12 补偿顶对齐偏移；多行增高时对称 padding 不干扰布局
@@ -6070,6 +6104,44 @@ export struct ChatPage {
         .width('100%')
         .padding({ left: 6, right: 6, top: 8, bottom: 8 }) // ★ 0.143：输入区顶部留白——消息列表/图片预览与输入框原本贴边，加 top 12 与列表顶部 padding 呼应
         .opacity(this.importArrived) // ★ 0.200.0：导入落地渐显（L3 末拍 0→1 300ms；常态恒 1 不影响日常输入/截图）
+
+          // ★ 0.270.0 聚焦工具栏（用户裁决）：横向滚动 icon 行，仅聚焦态浮现——一期只放「屏幕圈住」
+          //   快捷入口（画板未做好不入栏、钩子模式为后台能力不入栏）；未来功能在此追加；
+          //   按钮规格与输入行加子气泡同款（32×32 圆角 10 surfaceHover 底+描边）视觉语言统一
+          if (this.isInputFocused) {
+            Scroll() {
+              Row({ space: 10 }) {
+                Row() {
+                  Image($r('app.media.edit'))
+                    .width(16)
+                    .height(16)
+                    .objectFit(ImageFit.Contain)
+                }
+                .width(32)
+                .height(32)
+                .justifyContent(FlexAlign.Center)
+                .borderRadius(RADIUS_CONTROL)
+                .backgroundColor(this.theme.surfaceHover)
+                .border({ width: 1, color: this.theme.strokeCard })
+                .onClick(() => {
+                  this.startAnnotation(); // 屏幕圈住（与输入行铅笔同功能；切圈选页自然收键盘收工具栏）
+                })
+              }
+              .padding({ left: 10, right: 10, top: 2, bottom: 8 })
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .width('100%')
+            .transition(TransitionEffect.OPACITY // 对齐项目浮现范式：淡入+上移 8vp 200ms（UI_GUIDELINES）
+              .combine(TransitionEffect.translate({ y: 8 }))
+              .animation({ duration: 200, curve: Curve.EaseOut }))
+          }
+        }
+        .width('100%')
+        .margin({ left: 10, right: 10 }) // 卡片水平外边距（+内部输入行 padding 6 ≈ 引用条 16 缩进对齐）
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.theme.surfaceSoft)
+        .border({ width: 0.5, color: this.isInputFocused ? this.theme.strokeBrand : this.theme.strokeCard }) // 聚焦描边高亮
         }
         .width('100%')
         .height('100%')
