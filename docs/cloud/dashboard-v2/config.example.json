@@ -7,5 +7,6 @@
   "quotaRedPct": 80,
   "syncIntervalMs": 600000,
   "detailRetainDays": 90,
+  "agcCredentialPath": "../agc-credential.json",
   "reports": { "enabled": false, "clientId": "", "clientSecret": "", "appId": "" }
 }

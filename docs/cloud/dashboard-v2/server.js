@@ -136,9 +136,27 @@ function cookieToken(req) {
 }
 function authed(req) { return cookieToken(req) === TOKEN; }
 
-// ---------- Cloud DB ----------
-const inst = cloud.createInstance(path.join(ROOT, '..', 'agc-credential.json'), 'dash', Region.REGION_CN);
-const db = inst.database({ zoneName: 'default' });
+// ---------- Cloud DB（★ 阿里云部署适配：凭证路径可配 + 缺凭证降级不崩服务——Reports 不受影响） ----------
+let dbInst = null;
+let dbFailed = false;
+
+function getDb() {
+  if (dbFailed) {
+    return null;
+  }
+  if (dbInst) {
+    return dbInst;
+  }
+  try {
+    const credPath = CFG.agcCredentialPath ? path.resolve(ROOT, CFG.agcCredentialPath) : path.join(ROOT, '..', 'agc-credential.json');
+    dbInst = cloud.createInstance(credPath, 'dash', Region.REGION_CN).database({ zoneName: 'default' });
+  } catch (e) {
+    dbFailed = true;
+    console.log('[dash] AGC 凭证缺失/不可读（' + (e && e.message ? e.message : String(e)) + '）——events 同步停用，Reports 拉取不受影响');
+    return null;
+  }
+  return dbInst;
+}
 
 // ---------- 内存缓存 + 分卷 ----------
 // key=`e|t`（与云函数复合主键同构——重拉幂等去重）
@@ -181,6 +199,10 @@ function persistDay(day) {
 }
 
 async function syncFromCloud() {
+  const db = getDb();
+  if (!db) {
+    return;
+  }
   try {
     let rounds = 0;
     let added = 0;
