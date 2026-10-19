@@ -48,7 +48,7 @@ try {
 const REPORT_API = 'https://connect-api.cloud.huawei.com';
 let rptToken = '', rptTokenExp = 0;
 
-function rptCfgOk() { return CFG.reports && CFG.reports.enabled && CFG.reports.clientId && CFG.reports.clientSecret && CFG.reports.appId; }
+function rptCfgOk() { return !!(CFG.reports && CFG.reports.enabled && CFG.reports.clientId && CFG.reports.clientSecret && CFG.reports.appId); }
 
 async function getRptToken() {
   if (rptToken && Date.now() < rptTokenExp) return rptToken;
