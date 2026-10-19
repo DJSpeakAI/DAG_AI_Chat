@@ -188,7 +188,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.260.0'; // ★ 0.260.0：后台统计监控台一期（SP 三事件埋点+攒批50+uid可插拔）;上一版 0.259.2：云同步授权提示加长
+const APP_VERSION: string = 'v0.261.0'; // ★ 0.261.0：IAP 支付接入 SP 充能（华为收银台+幂等到账+补单链路）;上一版 0.260.0：后台统计监控台一期
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

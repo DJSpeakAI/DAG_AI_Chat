@@ -4,6 +4,7 @@
 
 | 文档 | 一句话描述 | 大小 |
 |------|-----------|------|
+| 0.261.0 IAP支付接入SP充能.md | **0.261.0（已实施 2026-10-19，versionCode 1000325；沙盒验收待装机）**：BillingPage 两档 SP 充能接华为 IAP Kit 真实购买（createPurchase/finishPurchase/queryProducts/queryEnvironmentStatus 全以 SDK d.ts 实测）+幂等到账（token 集合到账即记）+补单链路（queryPurchases UNFINISHED）+展示价动态拉取+错误码中文分类；外部配置（商户号/商品/沙盒账号）已就绪 | ~8KB |
 | 0.259.2 云同步授权提示加长与直达权限面板.md | **0.259.2（已实施 2026-10-19，versionCode 1000323）**：授权被拒 toast 1.5s→10s 顶格 + requestPermissionOnSetting 直达权限面板（三端形态系统统一处理零分端代码）+ 面板开权限当场激活云同步刷新状态卡 + 切云同步 Tab 重查权限兜底 + CloudSyncUtil 仅加 export activateCloudSync（红线最小例外） | ~3KB |
 | 0.237.0 锚点二期钩子树重构与折叠三角统一.md | **0.237.0（已实施收官 2026-10-15）**：锚点二期=钩子树重构（砍 link「联想一下」+砍「歇口气」空洞安慰，留 quiz 难度升级/hook 激进，加 rephrase「换个说法」/predict「先猜再看」/recap「一句话锁住」，本地保底重定位「到这里了」进度实感）+折叠三角 SVG 统一（★军令：全项目 3 套字符三角▸▾/▼▲/▼▶→同一 chevron 旋转）+去「共N节」+小标题品牌色+术语12%荧光底+密度两档（疏默认/去掉中） | ~12KB |
 | 0.235.0 划词高亮清除修复与划词引用.md | **0.235.0 交接文档（待实施方落码）**：手机划词高亮点空白不消失/两段同高亮根因四条（取消回调被吞+根onClick手势竞争不派发+selKey失配+全选残留）+ 划词「引用」功能需求（入知识库右侧按钮→本聊天/新子气泡二选一→引用栏前5字...→发送prompt注入→点击不跳转）+ 测试台 SEL-CLEAR/CHAT-QUOTE 用例 + Pad 测试流程 | ~10KB |

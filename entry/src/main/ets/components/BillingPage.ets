@@ -1,6 +1,6 @@
 // BillingPage.ets — 账单页（★ 0.248.0 改版=司忆点中心，用户拍板；★ 0.248.5 有效期取消+布局重排）
 // 入口：边栏「统计」下方「账单」
-// 终态：司忆点资产卡（余额+等级头衔+嘉奖/充能两池明细）→ 充能 SP 两档（¥9.9→200万 / ¥19→400万，IAP 占位）
+// 终态：司忆点资产卡（余额+等级头衔+嘉奖/充能两池明细）→ 充能 SP 两档（¥9.9→200万 / ¥19→400万，★ 0.261.0 接入华为 IAP 真实购买）
 //   → SP 扣点规则（先扣嘉奖→充能+按包退款）→ 获取途径 → 兑换码（+100 万嘉奖SP）→ 记录 → 发票指路
 // ★ 0.248.5：SP 有效期全取消（永久）；口径统一「嘉奖」（禁「赠送」字样）；嘉奖 SP=嘉奖池+原赠送池合计
 // ★ 0.248.0：会员/免费试用/云同步叙事全部退场（用户拍板「只有一种充值路径，其他会员什么的都没有，
@@ -9,9 +9,11 @@
 import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLogin,
   SiyiPointStore, connectSiyiPoints, siyiLevelTitle, SIYI_REDEEM_SP,
   SignInStore, connectSignIn, siyiBalanceDisplay,
+  IAP_PRODUCT_SP_200W, IAP_PRODUCT_SP_400W,
 
   StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
+import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases } from '../utils/IapUtil'; // ★ 0.261.0：SP 充能 IAP（华为收银台）
 import { ReminderDialog } from './ReminderDialog'; // ★ 0.195.0：首登欢迎自定义弹窗（与首页同款）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
 import { BG_APP, SURFACE_NODE, SURFACE_SOFT, BRAND_PRIMARY, BRAND_SECONDARY, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, STROKE_CARD, RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
@@ -29,6 +31,57 @@ export struct BillingPage {
   @Local redeemInput: string = '';
   @Local redeemResult: string = ''; // ''=无提示 / 'ok' / 'invalid' / 'used'
   @Local isLoggingIn: boolean = false; // ★ 0.194.0：登录中防重复点击
+  @Local price200w: string = '¥9.9';  // ★ 0.261.0：展示价（queryProducts 拉取，保底 ¥9.9）
+  @Local price400w: string = '¥19';   // ★ 0.261.0：展示价（queryProducts 拉取，保底 ¥19）
+  @Local purchasing: string = '';     // ★ 0.261.0：购买中商品 ID（''=空闲；防重复点击节流）
+
+  // ★ 0.261.0：进场静默拉商品展示价 + 补单（登录态才有未完成单；均不阻塞 UI）
+  aboutToAppear(): void {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    queryIapSpPrices(ctx).then((prices: Record<string, string>) => {
+      const p1 = prices[IAP_PRODUCT_SP_200W];
+      if (p1 !== undefined && p1.length > 0) {
+        this.price200w = p1;
+      }
+      const p2 = prices[IAP_PRODUCT_SP_400W];
+      if (p2 !== undefined && p2.length > 0) {
+        this.price400w = p2;
+      }
+    });
+    if (this.account.isLoggedIn) {
+      recoverPendingPurchases(ctx); // 未完成单恢复（支付成功但消耗确认中断的场景）
+    }
+  }
+
+  // ★ 0.261.0：SP 充能购买流——登录前置 → 拉收银台 → 到账 toast（取消/失败按分类提示）
+  doPurchase(productId: string): void {
+    if (this.purchasing !== '') {
+      return; // 购买进行中防重复点击
+    }
+    if (!this.account.isLoggedIn) {
+      this.showToastSafe('请先登录华为账号');
+      return;
+    }
+    this.purchasing = productId;
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    purchaseSp(ctx, productId).then((outcome: IapOutcome) => {
+      this.purchasing = '';
+      if (outcome.state === 'ok') {
+        if (outcome.spAmount > 0) {
+          this.showToastSafe(`已到账 ${outcome.spAmount / 10000} 万 SP`);
+        } else {
+          this.showToastSafe(outcome.message); // 重复单等零额成功态
+        }
+      } else if (outcome.state === 'cancelled') {
+        this.showToastSafe('已取消');
+      } else {
+        this.showToastSafe(outcome.message); // 友好中文提示（禁原始英文报错）
+      }
+    }).catch(() => {
+      this.purchasing = '';
+      this.showToastSafe('支付流程异常，请重试');
+    });
+  }
 
 
   // ★ 0.248.0：资产卡数据
@@ -207,7 +260,7 @@ export struct BillingPage {
             .border({ width: 1, color: STROKE_CARD })
             .margin({ bottom: 12 })
 
-            // ── 充能 SP（★ 0.248.0：两档定稿 ¥9.9→200万 / ¥19→400万，IAP 占位——用户拍板唯一充值路径）──
+            // ── 充能 SP（★ 0.248.0：两档定稿 ¥9.9→200万 / ¥19→400万；★ 0.261.0：接入华为 IAP 真实购买）──
             // ★ 0.248.5：充能卡上移至资产卡正下方（购买入口前置，用户拍板）
             Column() {
               Text('充能 SP')
@@ -220,7 +273,7 @@ export struct BillingPage {
                   Text('200 万 SP')
                     .fontSize(FONT_SIZE_BODY)
                     .fontColor(TEXT_PRIMARY)
-                  Text('¥9.9')
+                  Text(this.purchasing === IAP_PRODUCT_SP_200W ? '支付中…' : this.price200w)
                     .fontSize(18)
                     .fontWeight(600)
                     .fontColor(BRAND_PRIMARY)
@@ -232,7 +285,7 @@ export struct BillingPage {
                 .backgroundColor(SURFACE_SOFT)
                 .border({ width: 1, color: STROKE_CARD })
                 .onClick(() => {
-                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit ¥9.9 档
+                  this.doPurchase(IAP_PRODUCT_SP_200W);
                 })
 
                 Column() {
@@ -240,7 +293,7 @@ export struct BillingPage {
                     .fontSize(FONT_SIZE_BODY)
                     .fontColor(TEXT_PRIMARY)
                   Row({ space: 4 }) {
-                    Text('¥19')
+                    Text(this.purchasing === IAP_PRODUCT_SP_400W ? '支付中…' : this.price400w)
                       .fontSize(18)
                       .fontWeight(600)
                       .fontColor(BRAND_PRIMARY)
@@ -256,13 +309,13 @@ export struct BillingPage {
                 .backgroundColor(SURFACE_SOFT)
                 .border({ width: 1, color: BRAND_SECONDARY })
                 .onClick(() => {
-                  this.showToastSafe('支付服务开通中，敬请期待'); // TODO-IAP：接入华为 IAP Kit ¥19 档
+                  this.doPurchase(IAP_PRODUCT_SP_400W);
                 })
               }
               .width('100%')
               .alignItems(VerticalAlign.Top)
 
-              Text('💡 全部 SP 永久有效；支付服务开通中——华为应用内支付资格申请审核中，开通后此处可直接充能')
+              Text('💡 全部 SP 永久有效；支付由华为应用内支付收银台完成，可在「华为应用市场 → 我的 → 订单」中查看')
                 .fontSize(FONT_SIZE_CAPTION)
                 .lineHeight(18)
                 .fontColor(TEXT_TERTIARY)

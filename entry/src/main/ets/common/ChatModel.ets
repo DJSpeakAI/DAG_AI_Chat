@@ -782,6 +782,9 @@ export class SubscriptionStore {
   @Trace redeemedCodes: string = '[]';    // 已兑换码 JSON 数组（防同码重复兑换）
   @Trace purchaseHistory: string = '[]';  // 本地购买/兑换记录 JSON 数组（账单页展示）
   @Trace reminderState: string = '{}';    // ★ 0.195.0：到期提醒状态 JSON {welcome,last}（旧快照缺字段→parse 兜底）
+  // ★ 0.261.0：IAP 已入账 purchaseToken JSON 数组（幂等防双入账；纯本地记录与 redeemedCodes 同类——
+  //   不随 cfg 行上行：LWW 整行覆盖反而会丢别端 token，本地集合+permanentSp 云端 max 合并双保险已闭环）
+  @Trace iapConsumedTokens: string = '[]';
 }
 
 // ★ 0.194.0：连接订阅持久化实例
@@ -1362,6 +1365,63 @@ export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPoi
   _rd['sp'] = `${SIYI_REDEEM_SP}`;
   _rd['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', _rd);
+  return true;
+}
+
+// ============================================================
+// ★ 0.261.0：IAP 支付到账（华为应用内购买 SP 充能；API 封装在 utils/IapUtil.ets）
+//   充能池=permanentSp（发放累计语义 0.248.7，单调只增——与云同步 max 合并天然一致，禁止减法）
+// ============================================================
+
+// IAP 商品 ID（AGC 后台配置，2026-10-19 就绪：两档均为消耗型）
+export const IAP_PRODUCT_SP_200W: string = 'dagai_sp200w'; // 200 万 SP / ¥9.9
+export const IAP_PRODUCT_SP_400W: string = 'dagai_sp400w'; // 400 万 SP / ¥19
+
+// IAP 商品 → SP 额度映射（未知商品返回 0=拒到账）
+export function iapSpAmountOf(productId: string): number {
+  if (productId === IAP_PRODUCT_SP_200W) {
+    return 2000000;
+  }
+  if (productId === IAP_PRODUCT_SP_400W) {
+    return 4000000;
+  }
+  return 0;
+}
+
+// IAP 到账（幂等）：purchaseToken 已入集合拒到账；到账+记 token 同帧原子完成——
+//   finishPurchase 失败不丢防线（补单链路再入时 token 已记，grant 幂等挡双入账）
+export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPointStore,
+  productId: string, purchaseToken: string): boolean {
+  const amount = iapSpAmountOf(productId);
+  if (amount <= 0 || purchaseToken.length === 0) {
+    return false; // 未知商品/脏凭据拒到账
+  }
+  let tokens: string[] = [];
+  try {
+    tokens = JSON.parse(subscription.iapConsumedTokens) as string[];
+  } catch (_e) {
+    tokens = [];
+  }
+  if (tokens.indexOf(purchaseToken) >= 0) {
+    return false; // 幂等——已入账 token 拒双发
+  }
+  tokens.push(purchaseToken);
+  subscription.iapConsumedTokens = JSON.stringify(tokens);
+  siyi.permanentSp += amount; // 充能池发放累计，只增不减（数据安全军令）
+  let history: string[] = [];
+  try {
+    history = JSON.parse(subscription.purchaseHistory) as string[];
+  } catch (_e) {
+    history = [];
+  }
+  history.push(`充能 +${amount / 10000} 万司忆点｜华为应用内支付 ${purchaseToken.substring(0, 8)}…｜${new Date().toLocaleDateString()}`);
+  subscription.purchaseHistory = JSON.stringify(history);
+  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
+  const _ip: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（IAP 发放）
+  _ip['src'] = 'iap';
+  _ip['sp'] = `${amount}`;
+  _ip['bal'] = `${siyiTotalSp(siyi)}`;
+  trackUidAuto('sp_grant', _ip);
   return true;
 }
 

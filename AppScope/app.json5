@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000324, // ★ 0.260.0：后台统计监控台一期（sp_consume/sp_grant/app_first 埋点+攒批50+uid可插拔+协议文案补充）
+     "versionCode": 1000325, // ★ 0.261.0：IAP 支付接入 SP 充能（华为收银台+幂等到账+补单）；上一版 0.260.0：后台统计监控台一期
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

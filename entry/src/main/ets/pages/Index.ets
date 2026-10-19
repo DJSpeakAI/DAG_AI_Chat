@@ -649,7 +649,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.260.0') // ★ 0.260.0：后台统计监控台一期（sp_consume/sp_grant/app_first 埋点+攒批50+uid可插拔）;上一版 0.259.2：云同步授权提示加长;更早历史见 MEMORY.md
+        Text('v0.261.0') // ★ 0.261.0：IAP 支付接入 SP 充能（华为收银台+幂等到账+补单链路）;上一版 0.260.0：后台统计监控台一期;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(TEXT_TERTIARY) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
