@@ -24,6 +24,7 @@ import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核心（云函数通道前置）
 import { flushTrackQueue, initTrackContext } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报；★ 0.260.0：模块级 context 注入（ChatModel 发放/消耗收口埋点用）
 import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
+import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：退后台短时任务续跑摘要头 flush
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
@@ -330,6 +331,13 @@ export default class EntryAbility extends UIAbility {
       writeInternalBackup(this.context, buildBackupPayload(wb, kb));
     } catch (_e) {
       // 备份失败静默（下次启动会再备）
+    }
+    // ★ 0.265.0 记忆引擎 WP2.2/Q9：退后台瞬间申请 Background Tasks Kit 短时任务续跑本轮摘要头
+    //   flush（防切后台被挂起导致下次无摘要头；结束即取消）
+    try {
+      flushHeadsOnBackground();
+    } catch (_e) {
+      // 静默（flush 内部已全降级；下次失活再入队）
     }
     // ★ 0.206.0 埋点：退后台尝试上报（★ 0.206.2 实证：多被鸿蒙后台网络限制掐掉，失败回滚队列——
     // 真正可靠的补发点是 onForeground 回前台；此处保留碰运气，万一发了就赚）

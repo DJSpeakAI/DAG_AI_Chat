@@ -62,6 +62,10 @@ import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_I
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）；★ 0.248.3：圈注/划词守卫
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.248.2：AI 登录引导弹窗桥（Index 根 Stack 消费）
+import { ProfileStore, connectProfileObservations, buildCardView, updateProfileFromConversation,
+  noteInactiveNode, buildSiblingHeadsContext, bindMemoryEngine, memoryTokenEstimate,
+  MemoryInjectStatsStore, connectMemoryInjectStats, recordMemoryInjectStats,
+  connectMemoryPref, isMemoryOn } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎一期（画像观察行+分支摘要头+注入埋点）
 
 // ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
 const glowHighlight: boolean = true;
@@ -814,6 +818,22 @@ export struct ChatPage {
     return this.currentBubbleStore.nodeID;
   }
 
+  // ★ 0.265.0 记忆引擎一期：画像观察行 store + 注入埋点 store + 用户消息轮次计数
+  //   （每 8 轮用户消息触发一次画像更新——fire-and-forget 隐式调用，静默降级不阻断对话）
+  profileStore: ProfileStore = connectProfileObservations();
+  memStats: MemoryInjectStatsStore = connectMemoryInjectStats();
+  profileTick: number = 0;
+  memoryPrefStore = connectMemoryPref(); // WP5 深度记忆总开关（关闭=不注入不触发，数据保留）
+
+  // ★ 0.265.0：画像更新触发（每 8 轮/会话结束；深度记忆关或降频时内部静默跳过）
+  triggerProfileUpdate(): void {
+    const b = this.currentBubble;
+    if (b === undefined) {
+      return;
+    }
+    updateProfileFromConversation(this.profileStore, this.apiConfig, b.nodeID, b.messages);
+  }
+
   // V2 @Computed：自动响应式，不需要手动同步
   @Computed
   get currentBubble(): BubbleNode | undefined {
@@ -1542,10 +1562,14 @@ export struct ChatPage {
   // ★ 新增：调用 LLM 生成摘要（0.117）
   // ★ 0.193.0 A 项：摘要 prompt 结构化升级（SUMMARY_PROMPT 五部分清单——用户问题逐条枚举/核心概念/已推导结论/关键约定/当前进度），
   //   学习 Claude Code 9 部分压缩清单；摘要质量=分支继承的记忆质量
-  async generateSummaryWithLLM(messages: ChatMessage[]): Promise<string> {
+  // ★ 0.265.0 WP3：摘要问题感知升级——SUMMARY_PROMPT 增第六部分（与本问题相关的信息优先保留），
+  //   摘要调用入参带上当前 pending 问题（空串=无问题上下文，行为同旧版）
+  async generateSummaryWithLLM(messages: ChatMessage[], pendingQuestion: string = ''): Promise<string> {
     return new Promise((resolve, reject) => {
+      const q = pendingQuestion.trim();
+      const sysText = q.length > 0 ? `${SUMMARY_PROMPT}\n\n本轮用户问题：${q}` : SUMMARY_PROMPT;
       const summaryMessages: ChatMessage[] = [
-        new ChatMessage(generateMessageId(), 'system', SUMMARY_PROMPT),
+        new ChatMessage(generateMessageId(), 'system', sysText),
         ...messages
       ];
       let summary = '';
@@ -1557,6 +1581,45 @@ export struct ChatPage {
         (error: string) => { reject(error); }
       );
     });
+  }
+
+  // ★ 0.265.0 WP1/WP2/WP4：记忆上下文统一注入出口——buildBranchMessageList 两出口（未超线全量/超线摘要+保留窗）
+  //   返回前统一过此函数；深度记忆关闭时原样返回（回到纯父链模式，数据保留）。
+  //   注入顺序（任务书定案）：[画像卡(最前部), 历史摘要(超线时), 相关分支背景(树距离衰减), ...路径消息]；
+  //   WP4 分段埋点：画像段/路径段/摘要头段/历史摘要段各自估算 token 落 memory-inject-stats-v1（14 天滚动）。
+  injectMemoryContext(base: ChatMessage[], node: BubbleNode, summaryTok: number): ChatMessage[] {
+    if (!isMemoryOn()) {
+      return base; // WP5 总开关关：零注入零埋点，行为与旧版完全一致
+    }
+    const result: ChatMessage[] = [...base];
+    const profileCard = buildCardView(this.profileStore);
+    let profileTok = 0;
+    if (profileCard.length > 0) {
+      profileTok = memoryTokenEstimate(profileCard);
+      result.unshift(new ChatMessage(generateMessageId(), 'system', profileCard)); // 画像卡插最前部
+    }
+    const headsText = buildSiblingHeadsContext(this.store, node);
+    let headsTok = 0;
+    if (headsText.length > 0) {
+      headsTok = memoryTokenEstimate(headsText);
+      // 摘要头插在历史摘要消息之后、当前路径消息之前（无历史摘要则紧随画像卡）
+      let insertAt = 0;
+      if (profileCard.length > 0) {
+        insertAt = 1;
+      }
+      if (insertAt < result.length && result[insertAt].role === 'system' &&
+        result[insertAt].content.startsWith('【历史摘要】')) {
+        insertAt += 1; // 历史摘要之后
+      }
+      result.splice(insertAt, 0, new ChatMessage(generateMessageId(), 'system', headsText));
+    }
+    // WP4 路径段 token（注入前 base 的合计——路径消息全量口径）
+    let pathTok = 0;
+    for (let i = 0; i < base.length; i++) {
+      pathTok += memoryTokenEstimate(base[i].content);
+    }
+    recordMemoryInjectStats(this.memStats, profileTok, pathTok, headsTok, summaryTok);
+    return result;
   }
 
   // ★ 新增：链路回溯 + 摘要滑动窗口压缩（0.117）
@@ -1609,7 +1672,7 @@ export struct ChatPage {
 
     // 3. 未超 token 触发线，直接全量返回（原条数制：25 条短消息也被压——token 制修复此浪费）
     if (totalTokens <= TOKEN_TRIGGER) {
-      return allMessages;
+      return this.injectMemoryContext(allMessages, currentNode, 0); // ★ 0.265.0：统一注入出口（无历史摘要段）
     }
 
     // 4. 超线，从尾部按预算保留最近消息（至少保底最后 1 条）
@@ -1636,7 +1699,15 @@ export struct ChatPage {
       try {
         this.streamPhase = 3; // ★ 0.199.0：阶段 3——整理历史记忆中（摘要生成是一次完整 LLM 调用 5~15s，
         // 此前该期间误显示"已提交请求"而请求实际未发出；等待态透明化，用户知道 AI 在整理而非卡死）
-        const summary = await this.generateSummaryWithLLM(toSummarize);
+        // ★ 0.265.0 WP3：摘要调用带上当前 pending 问题（当前节点尾部最后一条用户消息——问题感知优先保留）
+        let pendingQ = '';
+        for (let i = currentNode.messages.length - 1; i >= 0; i--) {
+          if (currentNode.messages[i].role === 'user' && currentNode.messages[i].content.trim().length > 0) {
+            pendingQ = currentNode.messages[i].content;
+            break;
+          }
+        }
+        const summary = await this.generateSummaryWithLLM(toSummarize, pendingQ);
         currentNode.historySummary = summary;
         currentNode.historySummaryCount = totalCount;
         this.saveTree(); // ★ 0.151：按模式分池保存
@@ -1651,8 +1722,9 @@ export struct ChatPage {
     const summaryMsg = new ChatMessage(generateMessageId(), 'system',
       `【历史摘要】${currentNode.historySummary}`);
     const recentMessages = allMessages.slice(splitIndex);
-    const result: ChatMessage[] = [summaryMsg, ...recentMessages];
-    return result;
+    // ★ 0.265.0：统一注入出口（画像卡最前部 + 相关分支背景插历史摘要之后；WP4 分段埋点）
+    return this.injectMemoryContext([summaryMsg, ...recentMessages], currentNode,
+      memoryTokenEstimate(summaryMsg.content));
   }
 
   // ★ 0.191.0：流式请求阶段（等待态一行提示——用户核心诉求：干等难受，必须告知当前在哪一步）
@@ -1808,6 +1880,11 @@ export struct ChatPage {
     // ★ 0.202.0：注意力提取——消息命中卡标题/标签 → 标签热度+1（纯本地毫秒级；AI 还在流式回复时复习权重已算完）
     updateAttention(this.attention, this.knowledgeBank.cards, userMsg.content);
     recordStat(this.statStore, 'userMsg', 0, 0); // ★ 0.192.0：统计埋点——用户消息 +1（只增不减，删除不影响）
+    this.profileTick += 1; // ★ 0.265.0 WP1：画像更新轮次计数（每 8 轮触发一次隐式画像观察）
+    if (this.profileTick >= 8) {
+      this.profileTick = 0;
+      this.triggerProfileUpdate(); // fire-and-forget（静默降级，不阻塞发送链路）
+    }
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
     aiMsg.model = this.apiConfig.model; // ★ 0.224.3：请求发出时打标模型 ID（操作行显示——用户跨模型对比"这个漂亮回复是哪个模型的"）
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
@@ -2419,6 +2496,7 @@ export struct ChatPage {
   aboutToAppear() {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
     this.deleteSkipConfirm = false; // ★ 0.150：重进对话页重置「不再提示」——每次会话首次删除仍弹确认（防误触）
+    bindMemoryEngine(this.store, (): void => this.saveTree()); // ★ 0.265.0：记忆引擎绑定树引用+落盘通道（摘要头 flush 写回用）
     this.hasMouse = deviceInfo.deviceType === '2in1'; // ★ 0.247.2：PC 判定改设备形态（同步零误报，原 probeHasMouse 探测删除）
     this.bookmarkCache = this.getBookmarkEntry(); // ★ 0.191.0：首帧渲染前载入书签（标记线即时显示）
     this.foldStateView = new Map(chatFoldMemory); // ★ 0.234.0：恢复会话级折叠状态（切页面回来保留）
@@ -2449,6 +2527,12 @@ export struct ChatPage {
     this.saveDraft(); // ★ 0.214.2：草稿写回当前气泡内存
     this.saveTree(); // ★ 0.214.2：草稿随树落盘（一次）
     this.recordReadingPosition(); // ★ 0.191.0：离开前记录阅读高度（方案 A）
+    // ★ 0.265.0 记忆引擎：会话结束触发画像更新（本段有新增用户消息才做）+ 失活节点入摘要头 pending 队列
+    if (this.profileTick > 0) {
+      this.triggerProfileUpdate();
+      this.profileTick = 0;
+    }
+    noteInactiveNode(this.currentBubble);
     if (this.streamController) {
       this.streamController.cancel();
       this.streamController = null;
@@ -4068,6 +4152,7 @@ export struct ChatPage {
     this.store.needsRelayout = true; // ★ 0.126：通知 BBTreeCanvas 重新布局（返回画布时 onShown 消费）
     this.stopTTS(); // ★ 0.151-D：切气泡前补停 TTS（原依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此停）
     this.recordReadingPosition(); // ★ 0.191.0：切气泡前记录阅读高度（此路径不触发 aboutToDisappear，须手动记录）
+    noteInactiveNode(this.currentBubble); // ★ 0.265.0：切走=旧节点失活（满足条件入摘要头 pending 队列，闲时 flush）
     // ★ 0.162 第一段：消息区淡出 140ms（EaseIn 加速消失，模拟「页面关闭」）
     this.getUIContext().animateTo({
       duration: 140,

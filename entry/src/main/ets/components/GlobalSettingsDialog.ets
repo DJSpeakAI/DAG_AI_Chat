@@ -38,6 +38,8 @@ import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳�
  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
+import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
+import { MemoryPrefStore, connectMemoryPref, ProfileStore, connectProfileObservations, clearAllObservations, activeObservationCount } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关+清空画像入口（WP5）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
 import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
@@ -189,7 +191,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.264.0'; // ★ 0.264.0：协议合规修订定稿（门禁拆分两段征求+协议 v2.0）;上一版 0.263.0：退出华为账号可勾选「同时清空本机数据」
+const APP_VERSION: string = 'v0.265.0'; // ★ 0.265.0：记忆引擎一期（画像观察行+分支摘要头+token埋点+深度记忆开关）;上一版 0.264.0：协议合规修订定稿
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -328,6 +330,12 @@ export struct GlobalSettingsDialog {
   @Local editAnchorMode: string = 'on';       // off / on（默认开=钩子模式）
   @Local editAnchorDensity: string = 'standard'; // dense 密 / standard 中（默认）/ sparse 疏
   @Local editFoldMode: string = 'on';         // off / on（默认开=折叠模式）
+  // ★ 0.265.0 记忆引擎一期 WP5：深度记忆总开关编辑副本（默认开；关闭=不注入画像卡/摘要头、
+  //   不触发画像更新与失活摘要——记忆系统出 bug 时的用户自救开关，数据保留）+ 清空画像确认弹窗态
+  @Local editMemoryMode: string = 'on';       // off / on（默认开）
+  @Local clearProfileVisible: boolean = false; // 清空画像二次确认（AppConfirmDialog）
+  memoryPref: MemoryPrefStore = connectMemoryPref();
+  profileStore: ProfileStore = connectProfileObservations();
   // ★ 0.196.10：云同步状态改响应式——permGranted（系统权限，开弹窗时异步查一次）&&
   //   cloudSwitch.enabled（应用级开关 @Trace，登录弹窗开启/退出强制关时**实时刷新**状态卡，
   //   不用重开设置弹窗；原 @Local syncGranted 开弹窗快照一次，开启后状态卡滞留「未开启」）
@@ -453,6 +461,7 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
+    this.editMemoryMode = this.memoryPref.memoryMode; // ★ 0.265.0：深度记忆开关编辑副本
     // ★ 0.234.0：注意力锚点编辑副本回显；★ 0.237.0 两档制归一——遗留 'standard'（旧中档）归疏，
     //   不改写已落盘数据（保存时随选择落新值）
     this.editAnchorMode = this.anchorPref.anchorMode;
@@ -808,6 +817,8 @@ export struct GlobalSettingsDialog {
     this.anchorPref.anchorMode = this.editAnchorMode;
     this.anchorPref.anchorDensity = this.editAnchorDensity;
     this.anchorPref.foldMode = this.editFoldMode;
+    // ★ 0.265.0：深度记忆总开关写入（独立 key memory-pref-v1 即时落盘）
+    this.memoryPref.memoryMode = this.editMemoryMode;
     // ★ 0.197.2：Tab5 复习显示写入（编辑副本→store，PersistenceV2 即时落盘，两处复习区即时生效）
     this.learnCountStore.learnCount = this.editReviewLearn;
     this.knowledgeCountStore.knowledgeCount = this.editReviewKnowledge;
@@ -2166,7 +2177,52 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 24 })
 
-      
+      // ★ 0.265.0 记忆引擎一期 WP5：深度记忆总开关（画像卡+相关分支背景注入；关闭=回到纯父链模式，
+      //   记忆系统出 bug 时的用户自救开关，数据保留）+ 清空画像入口（隐私区——用户数据主权，二次确认）
+      Column() {
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('深度记忆')
+              .fontSize(14)
+              .fontColor(this.theme.textPrimary)
+            Text('AI 记住你的身份、目标与偏好，并在分支间关联相关背景')
+              .fontSize(11)
+              .lineHeight(18)
+              .fontColor(this.theme.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.editMemoryMode === 'on' })
+            .selectedColor(this.theme.brandPrimary)
+            .onChange((on: boolean) => {
+              this.editMemoryMode = on ? 'on' : 'off';
+            })
+        }
+        .width('100%')
+
+        Text('💡 开启后 AI 会从对话中静默提炼用户画像（身份/目标/偏好），并在提问时自动关联兄弟分支聊过的内容——聊得越久越懂你；关闭后立即回到纯净模式，画像数据保留可随时再开。画像观察为隐式调用，暂不消耗司忆点。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(this.theme.textTertiary)
+          .margin({ top: 4 })
+
+        // 清空画像入口（隐私区——推断性个人信息默认最小化；二次确认防误触）
+        Button(`清空画像数据（当前 ${activeObservationCount(this.profileStore)} 条观察）`)
+          .fontSize(13)
+          .fontColor(this.theme.textSecondary)
+          .backgroundColor(this.theme.surfaceSoft)
+          .borderRadius(RADIUS_CONTROL)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .margin({ top: 10 })
+          .onClick(() => {
+            this.clearProfileVisible = true;
+          })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
+
     }
     .width('100%')
   }
@@ -3662,6 +3718,23 @@ export struct GlobalSettingsDialog {
         .backgroundColor(this.theme.surfaceNode)
         .border({ width: 1, color: this.theme.strokeCard })
       }
+
+      // ★ 0.265.0：清空画像二次确认（AppConfirmDialog 自带遮罩，叠设置面板顶层；确认=清空观察行，已取代演变链一并清除）
+      AppConfirmDialog({
+        visible: this.clearProfileVisible,
+        title: '清空画像数据',
+        message: '将删除全部用户画像观察记录（含已被取代的历史观察），AI 将不再记得你的身份、目标与偏好。此操作不可恢复，确定清空吗？',
+        confirmText: '清空',
+        cancelText: '取消',
+        onConfirm: () => {
+          this.clearProfileVisible = false;
+          clearAllObservations(this.profileStore);
+          this.getUIContext().getPromptAction().showToast({ message: '画像数据已清空', duration: 1500 });
+        },
+        onCancel: () => {
+          this.clearProfileVisible = false;
+        }
+      })
     }
     .width('100%')
     .height('100%')

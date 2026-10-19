@@ -332,8 +332,12 @@ export function streamChat(
   onDone: (inputTokens: number, outputTokens: number, cachedTokens: number) => void, // ★ 0.247.4：尾部追加缓存命中（token 数）
   onError: (error: string) => void,
   onReasoning?: (text: string) => void, // ★ 0.132：深度思考内容回调（可选）
-  sceneLabel: string = 'AI 回复' // ★ 0.251.0：场景标签（后台完成通知文案用）
+  sceneLabel: string = 'AI 回复', // ★ 0.251.0：场景标签（后台完成通知文案用）
+  // ★ 0.265.0：Q1 终案 implicit 标记位——隐式 LLM 调用（画像观察/摘要头等用户无感知调用）
+  //   暂不扣 SP（预留未来计费开关）；显式调用（用户点发送/查词/提炼）保持缺省 false
+  implicit: boolean = false
 ): StreamController {
+  // implicit 本期仅作标记传递（计费开关接入前的占位；调用侧已按终案传值）
   let cancelled = false;
   // ★ 0.251.0：后台保活令牌——申请/释放全收口本函数（聊天/查词/提炼/圈注四链唯一咽喉，
   //   页面零侵入）；终结三出口（onDone/onError/cancel）+ 看门狗死流均走 guardFinish 幂等收口

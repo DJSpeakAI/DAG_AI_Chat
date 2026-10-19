@@ -72,10 +72,14 @@ export class BubbleNode {
   @Trace nodeTitle: string; // ★ 0.147：节点标题（空串=自动取第一条用户提问，非空=用户手动覆盖）
   @Trace draftText: string = ''; // ★ 0.214.2：输入框草稿（按气泡记忆——退出再回来继续编；Schema 铁律尾部追加）
   @Trace draftImages: string = ''; // ★ 0.214.2：待发图草稿（JSON string[]；随树持久化）
+  @Trace topicTags: string[] = []; // ★ 0.265.0：话题词 0~5 个（记忆引擎一期 WP2——随节点行持久化，云同步自然携带）
+  @Trace summaryHead: string = ''; // ★ 0.265.0：分支摘要头（一行：节点标题+一句话摘要；失活时生成）
+  @Trace summaryHeadCount: number = 0; // ★ 0.265.0：上次生成摘要头时节点消息总数（失活重生成判据基准，同 historySummaryCount 先例）
 
   constructor(nodeID: string, parentID: string | null, messages: ChatMessage[], x: number, y: number, parentX: number = 0, parentY: number = 0,
               historySummary: string = '', historySummaryCount: number = 0, nodeTitle: string = '',
-              draftText: string = '', draftImages: string = '') {
+              draftText: string = '', draftImages: string = '', topicTags: string[] = [],
+              summaryHead: string = '', summaryHeadCount: number = 0) {
     this.nodeID = nodeID;
     this.parentID = parentID;
     this.messages = messages;
@@ -88,6 +92,9 @@ export class BubbleNode {
     this.nodeTitle = nodeTitle;
     this.draftText = draftText;
     this.draftImages = draftImages;
+    this.topicTags = topicTags; // ★ 0.265.0
+    this.summaryHead = summaryHead; // ★ 0.265.0
+    this.summaryHeadCount = summaryHeadCount; // ★ 0.265.0
   }
 }
 
@@ -140,6 +147,9 @@ interface SerializedNode {
   nodeTitle?: string; // ★ 0.147（可选字段，旧数据无此字段，反序列化时 ?? '' 兜底）
   draftText?: string; // ★ 0.214.2（可选，旧数据无此字段兜底空串）
   draftImages?: string; // ★ 0.214.2（可选，同上）
+  topicTags?: string[]; // ★ 0.265.0（可选，旧数据无此字段兜底空数组）
+  summaryHead?: string; // ★ 0.265.0（可选，旧数据无此字段兜底空串）
+  summaryHeadCount?: number; // ★ 0.265.0（可选，旧数据无此字段兜底 0）
 }
 interface SerializedTree {
   nodeList: SerializedNode[];
@@ -174,7 +184,10 @@ export function serializeBubbleTree(tree: BubbleTree): string {
         historySummaryCount: node.historySummaryCount,
         nodeTitle: node.nodeTitle, // ★ 0.147
         draftText: node.draftText, // ★ 0.214.2：草稿随树序列化
-        draftImages: node.draftImages
+        draftImages: node.draftImages,
+        topicTags: node.topicTags, // ★ 0.265.0：摘要头字段随树序列化
+        summaryHead: node.summaryHead, // ★ 0.265.0
+        summaryHeadCount: node.summaryHeadCount // ★ 0.265.0
       };
     })
   };
@@ -195,7 +208,8 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
         node.historySummary ?? '', node.historySummaryCount ?? 0, node.nodeTitle ?? '', // ★ 0.147：旧数据无此字段自动补空串
-        node.draftText ?? '', node.draftImages ?? ''); // ★ 0.214.2：旧数据无草稿字段自动补空串
+        node.draftText ?? '', node.draftImages ?? '', node.topicTags ?? [], node.summaryHead ?? '',
+        node.summaryHeadCount ?? 0); // ★ 0.214.2：旧数据无草稿字段自动补空串；★ 0.265.0：旧数据无摘要头字段自动补默认（零迁移）
     });
     return new BubbleTree(nodeList);
   } catch (e) {
