@@ -557,3 +557,34 @@
 - AI 序晚于本地序渲染到达：内容替换时 **150ms 透明度渐变**（容器 opacity 0.4→1，`.animation({duration:150})`）——不做骨架屏（附属区不喧宾夺主）；
 - 用户已展开任一复习卡（`reviewExpandKey !== ''`）时挂起替换，收起后再切（防展开态条目被换走）；
 - 换一批在 AI 候选池内轮换，微标保持显示（AI 序仍生效）。
+
+## 二十四、深度思考卡与收起行（★ 0.271.0 深度思考模式定稿）
+
+### 24.1 视觉语言分族（与钩子卡明确区分）
+- **思考卡=浅紫 8% 底色块**（`theme.hookBg` 同色 token 复用）+ 秒表图标（timer.svg 双版资源，白/墨 65%）；
+- 钩子卡=左侧 2.5vp 品牌紫竖线（廿二规范）——两种辅助块视觉明确分族，**禁混用**（思考=过程性信息、钩子=结构性信息）。
+
+### 24.2 思考卡（phase2 思考中，气泡内占位区 waitingView 之后）
+- 结构：`Column{ Row{ 秒表 14×14 + 「深度思考中 Ns」(fontSize13 brandSecondary) + [取消] } + 摘要 Text }`；
+- 摘要=思维链前 120 字+省略号，fontSize 11、textTertiary、maxLines 3、行高 17；
+- 容器：width 100% + padding 10 + RADIUS_CONTROL 圆角 + `theme.hookBg` 底 + margin top 6；
+- **超 10s 追加「取消」**：fontSize 12 textTertiary——取消本条请求（技术上无法只停思考不停正文，与现有停止同款）。
+
+### 24.3 收起行（进入 phase3 后，气泡尾部）
+- 进入正文（打字机开始）思考卡冻结收起为单行：`Row{ 秒表 12×12 + 「已深度思考 Ns · 查看思维链」}`；
+- fontSize 11、brandSecondary 紫弱高亮、padding 左右 10、margin top 4 bottom 2（②段状态行同区域）；
+- 点击「查看思维链」→ 底部半屏弹窗（55% 高、topLeft/topRight RADIUS_NAV 圆角、surfaceNode 底）：
+  头部行「思维链」标题 16/600 + 「复制」（brandSecondary，pasteboard 直写）+「关闭」（textTertiary）；
+  正文 Scroll 滚动、fontSize 13 行高 21 textSecondary、copyOption LocalDevice；
+- **乱序防护**：phase3 之后到达的 reasoning 分片一律丢弃，不再更新思考卡（防网关乱序复活已收起的卡）。
+
+### 24.4 会话级数据纪律
+- 思维链 Map（msgId→文本）单条超 **5000 字截断**；**切分支、退出会话自动清空**；
+- 不进 ChatMessage、不持久化、不云同步（Schema 红线不碰；reasoningTokens 数值字段除外——仅计数展示用）；
+- thinkingDoneTick 驱动 Map 渲染重建（Map 非 @Trace，tick 递增触发收起行 if 分支重求值）。
+
+### 24.5 普通模式重试按钮（思考档失败专用）
+- 思考档启用期间超时/断流类失败 → 错误气泡尾部追加「普通模式重试」pill：
+  fontSize 12 brandSecondary + padding 10/4 + RADIUS_CONTROL + surfaceSoft 底 + margin left 10；
+- 点击=regenerate 链路+本条强制 disabled（超时场景二次思考概率高=双倍计费零收益，不自动重发把选择权给用户）；
+- 参数不兼容 400（窄门关键词）自动降级重发一次，不发此按钮（用户无感）。

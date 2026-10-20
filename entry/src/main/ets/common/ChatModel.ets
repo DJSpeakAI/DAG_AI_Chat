@@ -42,9 +42,10 @@ export class ChatMessage {
   @Trace isPodcastMode: boolean; // ★ 0.133：本次交互是否以播客模式发起（仅标记存储，MVP 不做视觉区分）
   @Trace model: string = ''; // ★ 0.224.3：生成本条回复的模型 ID（请求发出时打标——操作行显示供用户跨模型对比；旧消息空串不显示）
   @Trace cacheHitTokens: number = 0; // ★ 0.247.4：命中缓存的输入 token 数（腾讯云 usage.prompt_tokens_details.cached_tokens；0=无缓存数据/旧消息）
+  @Trace reasoningTokens: number = 0; // ★ 0.271.0：其中思考 token 数（usage.completion_tokens_details.reasoning_tokens——P0-1 实测 TokenHub 回传；已计入 outputTokens，本字段仅拆分展示用；0=未思考/旧消息）
 
   constructor(messageId: string, role: ChatRole, content: string, imageUrl: string[] = [], inputTokens: number = 0, outputTokens: number = 0,
-              isPodcastMode: boolean = false, model: string = '', cacheHitTokens: number = 0) { // ★ 0.247.4：尾部追加（可选参默认 0，现有调用点零破坏）
+              isPodcastMode: boolean = false, model: string = '', cacheHitTokens: number = 0, reasoningTokens: number = 0) { // ★ 0.247.4/★ 0.271.0：尾部追加（可选参默认 0，现有调用点零破坏）
     this.messageId = messageId;
     this.role = role;
     this.content = content;
@@ -54,6 +55,7 @@ export class ChatMessage {
     this.isPodcastMode = isPodcastMode;
     this.model = model;
     this.cacheHitTokens = cacheHitTokens;
+    this.reasoningTokens = reasoningTokens;
   }
 }
 
@@ -133,6 +135,7 @@ interface SerializedMessage {
   isPodcastMode?: boolean; // ★ 0.133 新增（可选字段，旧数据无此字段，反序列化时 ?? false 兜底）
   model?: string; // ★ 0.224.3 新增（可选字段，旧数据无此字段，反序列化时 ?? '' 兜底）
   cacheHitTokens?: number; // ★ 0.247.4 新增（可选字段，旧数据无此字段，反序列化时 ?? 0 兜底）
+  reasoningTokens?: number; // ★ 0.271.0 新增（可选字段，旧数据无此字段，反序列化时 ?? 0 兜底——思考 token 拆分展示）
 }
 interface SerializedNode {
   nodeID: string;
@@ -169,7 +172,8 @@ export function serializeBubbleTree(tree: BubbleTree): string {
           outputTokens: msg.outputTokens,
           isPodcastMode: msg.isPodcastMode, // ★ 0.133
           model: msg.model, // ★ 0.224.3
-          cacheHitTokens: msg.cacheHitTokens // ★ 0.247.4
+          cacheHitTokens: msg.cacheHitTokens, // ★ 0.247.4
+          reasoningTokens: msg.reasoningTokens // ★ 0.271.0
         };
       });
       return {
@@ -204,7 +208,7 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
     const nodeList: BubbleNode[] = data.nodeList.map((node: SerializedNode): BubbleNode => {
       const messages: ChatMessage[] = node.messages.map((msg: SerializedMessage): ChatMessage => {
         return new ChatMessage(msg.messageId, msg.role as ChatRole, msg.content, msg.imageUrl, msg.inputTokens ?? 0, msg.outputTokens ?? 0,
-          msg.isPodcastMode ?? false, msg.model ?? '', msg.cacheHitTokens ?? 0); // ★ 0.133：旧数据无此字段自动补 false；★ 0.224.3：旧消息无模型标记补空串；★ 0.247.4：缓存命中补 0
+          msg.isPodcastMode ?? false, msg.model ?? '', msg.cacheHitTokens ?? 0, msg.reasoningTokens ?? 0); // ★ 0.133：旧数据无此字段自动补 false；★ 0.224.3：旧消息无模型标记补空串；★ 0.247.4：缓存命中补 0；★ 0.271.0：思考 token 补 0
       });
       return new BubbleNode(node.nodeID, node.parentID, messages, node.x, node.y, node.parentX, node.parentY,
         node.historySummary ?? '', node.historySummaryCount ?? 0, node.nodeTitle ?? '', // ★ 0.147：旧数据无此字段自动补空串
@@ -678,6 +682,126 @@ export class AnchorPref {
   @Trace anchorMode: string = 'smart';
   @Trace anchorDensity: string = 'sparse';
   @Trace foldMode: string = 'on';
+  // ★ 0.271.0：深度思考三态（auto 跟随模式=短关/中计分/长 high / always 每次思考 / off 全关）——
+  //   Schema 尾部追加合规（任务书 §3.7：AnchorPref 同 store 追加，免新 key 免 redlineKeys 补录）
+  @Trace thinkingMode: string = 'auto';
+}
+
+// ★ 0.271.0：thinkingMode 归一（非法值/遗留值一律归 'auto'；一切比较侧统一走此函数，normalizeAnchorMode 同源纪律）
+export function normalizeThinkingMode(mode: string): string {
+  if (mode === 'always') {
+    return 'always';
+  }
+  if (mode === 'off') {
+    return 'off';
+  }
+  return 'auto';
+}
+
+// ============================================================
+// ★ 0.271.0：深度思考策略（任务书 §3.1/§3.2 终稿）——纯函数集，ohosTest 断言消费
+// ============================================================
+
+// 思考档位常量（effort 仅 low/high 两值合法——max 不暴露：平台仅两档+成本 2~3 倍，任务书 §3.3.4）
+export const THINK_EFFORT_LOW: string = 'low';
+export const THINK_EFFORT_HIGH: string = 'high';
+
+// ★ 0.271.0：思考档请求/解析结果统一类型（ApiClient.streamChat 尾参与 resolveThinkingFor 返回共用——
+//   arkts-no-structural-typing 铁律：同结构两个 interface 互相赋值=结构类型违规，必须单一具名类型；
+//   定义收口本文件，ApiClient 从此处 import，ChatModel↔ApiClient 零循环依赖）
+export interface ThinkingRequest {
+  enabled: boolean;
+  effort: string; // enabled 时仅 'low'|'high' 两值合法（max 不暴露——平台约束+成本取舍）
+}
+
+// S5 显式指令关键词（用户原话直通 high，不走计分）
+const THINK_EXPLICIT_KEYWORDS: string[] = ['深想', '认真想', '仔细分析', '好好想想', '深入分析'];
+// S2 复杂度关键词（仅当 S1/S3/S4 至少一项同时命中才计分——串联条款防「分析一下这个段子」式误判）
+const THINK_COMPLEX_KEYWORDS: string[] = ['为什么', '原理', '分析', '比较', '区别', '推导', '证明', '计算', '优缺点', '权衡'];
+// S4 硬核话题（气泡 topicTags 命中任一即 2 分）
+const THINK_HARD_TOPIC_KEYWORDS: string[] = ['数学', '物理', '化学', '编程', '算法', '法律', '医疗', '金融'];
+
+/** ★ 0.271.0 §3.2：中回复加权计分（纯函数可测）
+ * 返回 'high' | 'low' | 'disabled'
+ * S5 显式指令直通 high；否则 Σ(S1+S2+S3+S4)：≥4→high / 2~3→low / ≤1→disabled
+ */
+export function scoreThinkingEffort(userText: string, topicTags: string, aiMsgCount: number): string {
+  let s1 = 0; // 消息长度 ≥60 字
+  let s2 = 0; // 复杂度关键词（串联条款）
+  const s3 = aiMsgCount >= 3 ? 2 : 0; // 本气泡 AI 消息 ≥3 条
+  let s4 = 0; // 硬核话题命中 topicTags
+  for (let i = 0; i < THINK_EXPLICIT_KEYWORDS.length; i++) {
+    if (userText.includes(THINK_EXPLICIT_KEYWORDS[i])) {
+      return THINK_EFFORT_HIGH; // S5 直通，不走计分
+    }
+  }
+  if (userText.length >= 60) {
+    s1 = 1;
+  }
+  for (let i = 0; i < THINK_HARD_TOPIC_KEYWORDS.length; i++) {
+    if (topicTags.includes(THINK_HARD_TOPIC_KEYWORDS[i])) {
+      s4 = 2;
+      break;
+    }
+  }
+  // S2 串联条款：仅当 S1/S3/S4 至少一项同时命中才计分（S4 已先行计算）
+  if (s1 > 0 || s3 > 0 || s4 > 0) {
+    for (let i = 0; i < THINK_COMPLEX_KEYWORDS.length; i++) {
+      if (userText.includes(THINK_COMPLEX_KEYWORDS[i])) {
+        s2 = 1;
+        break;
+      }
+    }
+  }
+  const total = s1 + s2 + s3 + s4;
+  if (total >= 4) {
+    return THINK_EFFORT_HIGH;
+  }
+  if (total >= 2) {
+    return THINK_EFFORT_LOW;
+  }
+  return 'disabled';
+}
+
+/** ★ 0.271.0 §3.6.1：思考参数不兼容降级判定（窄门——仅 400 且匹配关键词才降；
+ *  P0-4 实锤网关对错误参数静默忽略，本判定为防御网关未来行为变化）
+ */
+export function isThinkingParamError(errMsg: string): boolean {
+  const lower = errMsg.toLowerCase();
+  if (!lower.includes('400')) {
+    return false;
+  }
+  return lower.includes('thinking') || lower.includes('reasoning') ||
+    errMsg.includes('模型不支持') || errMsg.includes('参数非法');
+}
+
+/** ★ 0.271.0 §3.1：策略矩阵解析（场景×思考档）——纯函数可测
+ * thinkingMode：GSD 三态（auto/always/off，调用侧先 normalizeThinkingMode）
+ * replyMode：short/medium/long；isPodcast：听播恒 disabled（强制覆盖条款，无视开关与 always）
+ */
+export function resolveThinkingFor(thinkingMode: string, replyMode: string, isPodcast: boolean,
+  userText: string, topicTags: string, aiMsgCount: number): ThinkingRequest {
+  if (isPodcast) {
+    return { enabled: false, effort: '' }; // 首字延迟高于一切
+  }
+  if (normalizeThinkingMode(thinkingMode) === 'off') {
+    return { enabled: false, effort: '' };
+  }
+  const always = normalizeThinkingMode(thinkingMode) === 'always';
+  if (replyMode === 'short') {
+    // 短回复秒回定位：auto=disabled；always 仅升 low
+    return always ? { enabled: true, effort: THINK_EFFORT_LOW } : { enabled: false, effort: '' };
+  }
+  if (replyMode === 'long') {
+    // 长回复①段质量优先：high
+    return { enabled: true, effort: THINK_EFFORT_HIGH };
+  }
+  // 中回复加权计分（always 直通 high）
+  if (always) {
+    return { enabled: true, effort: THINK_EFFORT_HIGH };
+  }
+  const effort = scoreThinkingEffort(userText, topicTags, aiMsgCount);
+  return effort === 'disabled' ? { enabled: false, effort: '' } : { enabled: true, effort: effort };
 }
 
 // ★ 0.269.0：anchorMode 归一（遗留 'on'→'smart'；一切比较侧统一走此函数，0.237.0 脏检查坑同源纪律）
@@ -2161,7 +2285,8 @@ function nodeToJson(node: BubbleNode): string {
     return {
       messageId: msg.messageId, role: msg.role, content: msg.content, imageUrl: msg.imageUrl,
       inputTokens: msg.inputTokens, outputTokens: msg.outputTokens,
-      isPodcastMode: msg.isPodcastMode, model: msg.model, cacheHitTokens: msg.cacheHitTokens // ★ 0.247.4
+      isPodcastMode: msg.isPodcastMode, model: msg.model, cacheHitTokens: msg.cacheHitTokens, // ★ 0.247.4
+      reasoningTokens: msg.reasoningTokens // ★ 0.271.0：思考 token 拆分随行序列化（云同步/行模式共用）
     };
   });
   const n: SerializedNode = {
@@ -2178,7 +2303,7 @@ function nodeFromJson(v: string): BubbleNode | null {
     const n = JSON.parse(v) as SerializedNode;
     const messages: ChatMessage[] = (n.messages ?? []).map((m: SerializedMessage): ChatMessage => {
       return new ChatMessage(m.messageId, m.role as ChatRole, m.content, m.imageUrl ?? [],
-        m.inputTokens ?? 0, m.outputTokens ?? 0, m.isPodcastMode ?? false, m.model ?? '', m.cacheHitTokens ?? 0); // ★ 0.247.4：缓存命中尾部追加
+        m.inputTokens ?? 0, m.outputTokens ?? 0, m.isPodcastMode ?? false, m.model ?? '', m.cacheHitTokens ?? 0, m.reasoningTokens ?? 0); // ★ 0.247.4：缓存命中尾部追加；★ 0.271.0：思考 token 补 0
     });
     return new BubbleNode(n.nodeID, n.parentID, messages, n.x ?? 0, n.y ?? 0, n.parentX ?? 0, n.parentY ?? 0,
       n.historySummary ?? '', n.historySummaryCount ?? 0, n.nodeTitle ?? '', n.draftText ?? '', n.draftImages ?? '');

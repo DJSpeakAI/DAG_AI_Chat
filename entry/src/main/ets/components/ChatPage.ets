@@ -32,12 +32,12 @@ import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（Doc
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
 
-  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, normalizeThinkingMode, resolveThinkingFor, isThinkingParamError, ThinkingRequest } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）
   import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT, HOOK_SYSTEM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）；★ 0.269.0：HOOK_SYSTEM_PROMPT（两段式②段伴读编排 prompt——任务书 §七终版）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
-import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）
+import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）；★ 0.271.0：ThinkingRequest 改从 ChatModel import（类型单一真相源）
 import { ContentFilter, FilterHit } from '../utils/ContentFilter'; // ★ 0.250.0：敏感词本地预过滤（上架合规应用侧兜底防线）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, orderedReviewWords, orderedReviewCards, rotateSlice, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）；★ 0.237.3：换一批（orderedReviewWords/Cards 全序视图 + rotateSlice 环绕轮换）
@@ -584,6 +584,20 @@ export struct ChatPage {
   @Local hookEstSp: number = 0;                  // 状态行预估 SP（按①段全文字数估算，扣点前给足预期）
   hookSpByMsg: Map<string, number> = new Map(); // ②段实扣 SP 暂存（明细弹层「伴读编排 Y SP」拆分行；会话级——Schema 红线不进 ChatMessage）
   hookController: StreamController | null = null; // ②段流控制器（取消/regenerate 防乱序）
+  // ============================================================
+  // ★ 0.271.0 深度思考模式：思考卡状态机（phase2 思考中→phase3 冻结收起；乱序防护=contentStarted
+  //   局部 flag；思维链会话级 Map 暂存 5000 字截断——不进 ChatMessage、不持久化、不云同步）
+  // ============================================================
+  @Local thinkingActiveMsgId: string = '';   // 思考中的消息 ID（思考卡浮现依据；空=无）
+  @Local thinkingElapsed: number = 0;        // 思考计时（秒——setInterval 1s 更新，超 10s 显示取消钮）
+  @Local thinkingHeadText: string = '';      // 思维链滚动摘要（前 120 字，随分片刷新）
+  @Local thinkingEnabledNow: boolean = false; // 本次流式请求思考档是否生效（waitingView「·深度思考」后缀依据）
+  thinkingTraceByMsg: Map<string, string> = new Map(); // 思维链全文暂存（msgId → 文本，单条 5000 字截断；切分支/退会话清空）
+  thinkingSecondsByMsg: Map<string, number> = new Map(); // 完成思考的秒数（收起行「已深度思考 Ns」）
+  @Local thinkingDoneTick: number = 0;       // 收起行渲染依赖驱动（Map 非 @Trace，用 tick 触发重建）
+  @Local reasoningViewerMsgId: string = '';  // 思维链查看弹窗开态（msgId；空=关）
+  @Local thinkingRetryMsgIds: string[] = []; // 思考档失败待手动降级重试的消息 ID（错误气泡「普通模式重试」按钮渲染依据）
+  thinkingTimer: number = -1;                // 思考计时器句柄（aboutToDisappear/流结束必清）
   // ★ 0.234.0：折叠展开状态视图（msgId → 展开节 index 集；整体替换触发 V2 刷新——0.222.2 铁律；
   //   持久真身在模块级 chatFoldMemory，切页面回来保留）
   @Local foldStateView: Map<string, Set<number>> = new Map();
@@ -666,6 +680,7 @@ export struct ChatPage {
   @Local tokenInfoText: string = '';
   @Local tokenInfoCacheLine: string = ''; // ★ 0.247.4：缓存命中行（空串=不渲染——无缓存数据/旧消息；★ 0.248.7 恒显示后仅输入 token 缺失时为空）
   @Local tokenInfoHookLine: string = ''; // ★ 0.269.0：伴读编排拆分行（空串=不渲染——非伴读消息/免扣/②段未成功；Q9 明细弹层拆分）
+  @Local tokenInfoReasoningLine: string = ''; // ★ 0.271.0：思考拆分行（空串=不渲染——未思考/旧消息；P0-1 实测回传 reasoning_tokens；对外禁 token 字样→SP 口径换算）
   @Local tokenInfoCacheHit: boolean = false; // ★ 0.248.7：缓存行命中态（true=品牌紫省钱行 / false=普通色未命中行）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.161：学习数量（单词库 ⚙ 设置，默认 2；驱动气泡复习区+提炼弹窗复习区词条数）
@@ -1826,8 +1841,8 @@ export struct ChatPage {
     Row() {
       WaitingDots()
       Text(this.streamPhase === 3 ? '整理历史记忆中' // ★ 0.199.0：阶段 3——上下文压缩摘要生成期间（无省略号，遵循 0.191.0 定稿：三点动画已表达进行中）
-        : this.streamPhase === 1 ? '已提交请求'
-        : this.streamPhase === 2 ? '等待服务器返回'
+        : this.streamPhase === 1 ? (this.thinkingEnabledNow ? '已提交请求 · 深度思考' : '已提交请求') // ★ 0.271.0：思考档生效加后缀（计费透明——SP 预估行任务书 §3.8）
+        : this.streamPhase === 2 ? (this.thinkingEnabledNow ? '深度思考中' : '等待服务器返回') // ★ 0.271.0：三阶段状态行「深度思考中→生成正文→编排阅读节奏」首段
         : 'AI 正在回复')
         .fontSize(14)
         .fontColor(this.theme.textSecondary)
@@ -1843,6 +1858,60 @@ export struct ChatPage {
       }
     }
     .width('100%')
+  }
+
+  // ★ 0.271.0：思考卡（任务书 §3.4——秒表图标+计时 Ns+思维链滚动摘要前 120 字；浅紫 8% 底 hookBg；
+  //   超 10s 追加「取消」=取消本条请求（技术上无法只停思考不停正文，与现有停止同款）；
+  //   视觉语言分族：思考卡=浅紫底 / 钩子卡=左侧竖线（0.269.0），两种辅助块禁混用）
+  @Builder
+  thinkingCard() {
+    Column({ space: 6 }) {
+      Row({ space: 8 }) {
+        Image($r('app.media.timer'))
+          .width(14)
+          .height(14)
+          .objectFit(ImageFit.Contain)
+        Text(`深度思考中 ${this.thinkingElapsed}s`)
+          .fontSize(13)
+          .fontColor(this.theme.brandSecondary)
+          .maxLines(1)
+          .layoutWeight(1)
+        if (this.thinkingElapsed >= 10) {
+          Text('取消')
+            .fontSize(12)
+            .fontColor(this.theme.textTertiary)
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            .onClick(() => {
+              if (this.streamController) {
+                this.streamController.cancel();
+                this.streamController = null;
+              }
+              this.isLoading = false;
+              this.streamPhase = 0;
+              this.streamingMsgId = '';
+              if (this.thinkingActiveMsgId.length > 0) {
+                this.finishThinkingTrace(this.thinkingActiveMsgId);
+              }
+            })
+        }
+      }
+      .width('100%')
+      if (this.thinkingHeadText.length > 0) {
+        Text(this.thinkingHeadText)
+          .fontSize(11)
+          .lineHeight(17)
+          .fontColor(this.theme.textTertiary)
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .textAlign(TextAlign.Start)
+      }
+    }
+    .width('100%')
+    .padding(10)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(this.theme.hookBg)
+    .margin({ top: 6 })
   }
 
   // ★ 0.190.2：纯文本模型发图确认弹窗（Promise 包装 AlertDialog，await 取用户选择）
@@ -1930,6 +1999,19 @@ export struct ChatPage {
       this.streamController.cancel();
     }
     const isPodcast = this.sendMode === 'podcast'; // ★ 0.133：本次发送模式
+    // ★ 0.271.0：深度思考策略解析（任务书 §3.1 矩阵——听播强制关 / GSD off 全关 / 短关 /
+    //   中回复加权计分 / 长回复 high；S3 计数=发送时刻本气泡已有 AI 消息数，不含本次新建）
+    const bubbleForThink = this.currentBubble;
+    const aiCountForThink = bubbleForThink !== null
+      ? bubbleForThink.messages.filter((m: ChatMessage): boolean => m.role === 'assistant').length : 0;
+    const topicForThink = bubbleForThink !== null && bubbleForThink.topicTags.length > 0
+      ? bubbleForThink.topicTags.join('、') : '';
+    const thinkingReq: ThinkingRequest = resolveThinkingFor(normalizeThinkingMode(this.anchorPref.thinkingMode),
+      this.replyLengthMode, isPodcast, this.inputText, topicForThink, aiCountForThink);
+    this.thinkingEnabledNow = thinkingReq.enabled;
+    // ★ 0.271.0：思维链独立输出扫描器（合规线——思维链摘要展示给用户=AI 生成内容露出面，
+    //   网关侧思维链不经内容安全审核；独立实例防与正文扫描器尾巴缓冲互污）
+    const reasonScanner = ContentFilter.makeOutputScanner();
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
     // ★ 0.202.0：注意力提取——消息命中卡标题/标签 → 标签热度+1（纯本地毫秒级；AI 还在流式回复时复习权重已算完）
     updateAttention(this.attention, this.knowledgeBank.cards, userMsg.content);
@@ -2024,13 +2106,23 @@ export struct ChatPage {
     // ★ 0.250.0：输出侧实时扫描器（仅政治+色情两表防科普误杀；尾巴缓冲防 chunk 边界切词漏检）
     const outScanner = ContentFilter.makeOutputScanner();
 
+    // ★ 0.271.0：流式调用包装为可降级重发的局部函数（§3.6——自动降级=400+关键词窄门，
+    //   同上下文同消息以 disabled 原样重发一次；单次发送尝试只降一次，手动重试=新尝试）
+    let downgraded = false; // 降级防循环锚（降级请求本身 disabled 不可能再触发参数型降级，天然无循环）
+    let contentStarted = false; // ★ 0.271.0：乱序防护——phase3（正文已开始）之后到达的 reasoning 分片一律丢弃
+    const startStream = (thinkReq: ThinkingRequest): void => {
     this.streamController = streamChat(
       messagesToSend,
       this.apiConfig,
       (chunk: string) => {
         // onChunk：首次收到数据时清除占位文字（兼容加载/思考两态），然后追加 AI content
+        contentStarted = true; // ★ 0.271.0：正文已开始（乱序防护置位）
         if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
           aiMsg.content = '';
+        }
+        // ★ 0.271.0：进入 phase3——思考卡冻结收起为单行「已深度思考 Ns · 查看思维链」（气泡尾部）
+        if (this.thinkingActiveMsgId === aiMsg.messageId) {
+          this.finishThinkingTrace(aiMsg.messageId);
         }
         aiMsg.content += chunk;
         // ★ 0.250.0：输出侧命中即中断流（平台侧漏网兜底；cancel 后 ApiClient 全回调静默，
@@ -2057,11 +2149,16 @@ export struct ChatPage {
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
         this.scroller.scrollEdge(Edge.Bottom);
       },
-      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
-        // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账——弹层展示节省 SP）
+      (inputTokens: number, outputTokens: number, cachedTokens: number, reasoningTokens: number) => {
+        // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账——弹层展示节省 SP；
+        //   ★ 0.271.0：思考 token 拆分落账——已计入 outputTokens，仅明细弹层拆分展示用）
         this.isLoading = false;
         this.streamController = null;
         this.streamPhase = 0; // ★ 0.191.0：阶段复位
+        // ★ 0.271.0：思考态收尾（零正文直接完成的兜底场景——正常路径在 onChunk 首片已收起）
+        if (this.thinkingActiveMsgId === aiMsg.messageId) {
+          this.finishThinkingTrace(aiMsg.messageId);
+        }
         // ★ 0.132 兜底：流结束但零内容时给出明确提示，杜绝任何场景永久卡占位
         if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
           aiMsg.content = '（AI 未返回文本内容，请重试或更换模型）';
@@ -2069,12 +2166,20 @@ export struct ChatPage {
         aiMsg.inputTokens = inputTokens;
         aiMsg.outputTokens = outputTokens;
         aiMsg.cacheHitTokens = cachedTokens;
+        aiMsg.reasoningTokens = reasoningTokens;
+        const thinkDur = this.thinkingSecondsByMsg.get(aiMsg.messageId) ?? 0;
+        const thinkChars = this.thinkingTraceByMsg.get(aiMsg.messageId)?.length ?? 0;
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
           const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额（consumeSiyiSp 不足 clamp 到 0）
           consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
           this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'chat'); // ★ 0.260.0
+          // ★ 0.271.0：thinking_use 埋点（sp=本条实扣；思考生效但零思考 token=网关静默忽略 degraded）
+          this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
+            this.replyLengthMode, thinkReq.effort, thinkDur, thinkChars, _bal0 - siyiTotalSp(this.siyiStore));
         } else {
           this.trackSpConsume(aiMsg, true, 0, inputTokens, cachedTokens, 'chat'); // ★ 0.260.0：免扣照报 f:y（成本红线要真实 token/命中/余额）
+          this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
+            this.replyLengthMode, thinkReq.effort, thinkDur, thinkChars, 0);
         }
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
@@ -2085,11 +2190,27 @@ export struct ChatPage {
         this.maybeStartHookArrangement(aiMsg, streamBubbleId); // ★ 0.269.0：①段完成→②段伴读编排（条件不满足静默跳过）
       },
       (errMsg: string) => {
+        // ★ 0.271.0：思考参数不兼容自动降级（窄门：仅 400 且匹配 thinking/reasoning/模型不支持/参数非法——
+        //   P0-4 实锤网关静默忽略为主路径，本判定防御网关未来行为变化；禁把所有 400 当参数错）
+        if (!downgraded && thinkReq.enabled && isThinkingParamError(errMsg)) {
+          downgraded = true;
+          this.showToastSafe('已切换普通模式');
+          startStream({ enabled: false, effort: '' });
+          return;
+        }
         // onError：解锁 + 日志 + 错误气泡
         this.isLoading = false;
         this.streamController = null;
         this.streamPhase = 0; // ★ 0.191.0：阶段复位
         this.streamingMsgId = ''; // ★ 0.234.0：错误态不折叠，恢复平铺显示
+        // ★ 0.271.0：思考档失败不自动重发（超时/断流类二次超时概率高=双倍计费零收益）——
+        //   登记手动「普通模式重试」按钮（把选择权给用户；regenerate=新尝试重新拥有降级机会）
+        if (thinkReq.enabled) {
+          this.thinkingRetryMsgIds = [...this.thinkingRetryMsgIds, aiMsg.messageId];
+        }
+        if (this.thinkingActiveMsgId === aiMsg.messageId) {
+          this.finishThinkingTrace(aiMsg.messageId);
+        }
         // ★ 0.190.6：错误场景分类（ApiClient 单一真相源）——中文场景+建议操作+保留原始错误；
         //   0.190.2 图片关键词检测已合并进 classifyStreamError
         aiMsg.content = classifyStreamError(errMsg);
@@ -2101,20 +2222,56 @@ export struct ChatPage {
       (reasoning: string) => {
         // ★ 0.132 onReasoning：深度思考内容到达，占位切换为思考态
         // 思考内容不追加进 content（不参与持久化、不进入后续上下文），仅用于 UI 状态反馈
+        // ★ 0.271.0：乱序防护——phase3 之后到达的 reasoning 分片一律丢弃，不再更新思考卡
+        if (contentStarted) {
+          return;
+        }
+        // ★ 0.271.0：合规线——思维链同样过输出扫描器（思维链摘要展示给用户=AI 生成内容露出面，
+        //   网关侧思维链不经内容安全审核，防违规内容经思维链绕过；命中走现有输出拦截链路）
+        const reasonHit: FilterHit | null = reasonScanner.scan(reasoning);
+        if (reasonHit !== null) {
+          const _fr: Record<string, string> = {}; _fr['cat'] = reasonHit.category;
+          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fr);
+          if (this.streamController) {
+            this.streamController.cancel();
+          }
+          if (this.thinkingActiveMsgId === aiMsg.messageId) {
+            this.finishThinkingTrace(aiMsg.messageId);
+          }
+          aiMsg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
+          this.isLoading = false;
+          this.streamController = null;
+          this.streamPhase = 0;
+          this.streamingMsgId = '';
+          this.mirrorStreamToLive(streamBubbleId, aiMsg);
+          this.saveTree();
+          this.showToastSafe('回复包含违规内容，已拦截');
+          return;
+        }
         if (aiMsg.content === PLACEHOLDER_LOADING) {
           aiMsg.content = PLACEHOLDER_THINKING;
         }
+        // ★ 0.271.0：思考卡驱动——首片浮现（秒表+计时+滚动摘要），后续分片持续追加
+        if (this.thinkingActiveMsgId !== aiMsg.messageId) {
+          this.beginThinkingTrace(aiMsg.messageId);
+        }
+        this.appendThinkingTrace(aiMsg.messageId, reasoning);
         this.streamPhase = 2; // ★ 0.191.0：阶段 2——等待服务器返回（思考模型思考阶段，锅甩给服务器）
         this.scroller.scrollEdge(Edge.Bottom);
-      }
+      },
+      'AI 回复',
+      false,
+      thinkReq // ★ 0.271.0：思考档注入
     );
+    };
+    startStream(thinkingReq);
     // 发送消息后自动滚到底部
     this.scroller.scrollEdge(Edge.Bottom);
   }
 
   // ★ 0.149：刷新按钮——原位重新生成指定 AI 回复（置加载占位后按链路上下文重新请求，
   // buildBranchMessageList 自动剔除占位使旧回复不进入新请求；消息不删、位置不变）
-  async regenerateMessage(msg: ChatMessage): Promise<void> {
+  async regenerateMessage(msg: ChatMessage, forceDisabled: boolean = false): Promise<void> { // ★ 0.271.0：forceDisabled——「普通模式重试」强制本条 disabled
     this.cancelHookArrangement('new'); // ★ 0.269.0：重生成先 abort 旧②段防乱序（§四.4 状态机并发）
     // ★ 0.190.4：卡死自愈（同 sendMessage，须在 guard 前）
     if (this.isLoading && this.streamController === null) {
@@ -2140,7 +2297,27 @@ export struct ChatPage {
     msg.content = PLACEHOLDER_LOADING;
     msg.inputTokens = 0;
     msg.outputTokens = 0;
+    msg.reasoningTokens = 0; // ★ 0.271.0：重生成重置思考 token（随新请求更新）
     msg.model = this.apiConfig.model; // ★ 0.224.3：刷新用当前配置重生成——模型标记随新请求更新
+    // ★ 0.271.0：思考档解析（forceDisabled=手动降级重试强制本条 disabled；策略矩阵同 sendMessage——
+    //   S3 计数不含本条自身：当前 assistant 消息里本条已是占位，发送时刻气泡 AI 数-1）
+    const regenAiCount = Math.max(0, this.currentBubble.messages
+      .filter((m: ChatMessage): boolean => m.role === 'assistant').length - 1);
+    const regenTopic = this.currentBubble.topicTags.length > 0 ? this.currentBubble.topicTags.join('、') : '';
+    const regenUserText = this.findLastUserTextBefore(msg);
+    const regenThinking: ThinkingRequest = forceDisabled ? { enabled: false, effort: '' } :
+      resolveThinkingFor(normalizeThinkingMode(this.anchorPref.thinkingMode), this.replyLengthMode,
+        msg.isPodcastMode, regenUserText, regenTopic, regenAiCount);
+    this.thinkingEnabledNow = regenThinking.enabled;
+    // ★ 0.271.0：思维链独立输出扫描器（同 sendMessage 合规线）
+    const regenReasonScanner = ContentFilter.makeOutputScanner();
+    // ★ 0.271.0：重生成清旧思考态（新尝试新思考卡）
+    if (this.thinkingActiveMsgId === msg.messageId) {
+      this.finishThinkingTrace(msg.messageId);
+    }
+    this.thinkingSecondsByMsg.delete(msg.messageId);
+    this.thinkingTraceByMsg.delete(msg.messageId);
+    this.thinkingDoneTick += 1;
     // ★ 0.234.0：重走一遍（直显→收拢，任务书 §2.1.3）——清旧折叠态/渲染计划缓存，置流式标记
     this.planCache.delete(msg.messageId);
     chatFoldMemory.delete(msg.messageId);
@@ -2173,13 +2350,22 @@ export struct ChatPage {
     // ★ 0.250.0：输出侧实时扫描器（同 sendMessage——重新生成同属 AI 输出，合规口径一致）
     const regenScanner = ContentFilter.makeOutputScanner();
 
+    // ★ 0.271.0：流式调用包装为可降级重发的局部函数（同 sendMessage §3.6 窄门降级）
+    let regenDowngraded = false;
+    let regenContentStarted = false; // 乱序防护
+    const startRegenStream = (thinkReq: ThinkingRequest): void => {
     this.streamController = streamChat(
       messagesToSend,
       this.apiConfig,
       (chunk: string) => {
         // onChunk：首次收到数据时清除占位文字（兼容加载/思考两态），然后追加 AI content
+        regenContentStarted = true; // ★ 0.271.0：正文已开始（乱序防护置位）
         if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
           msg.content = '';
+        }
+        // ★ 0.271.0：进入 phase3——思考卡冻结收起
+        if (this.thinkingActiveMsgId === msg.messageId) {
+          this.finishThinkingTrace(msg.messageId);
         }
         msg.content += chunk;
         // ★ 0.250.0：输出侧命中即中断流（同 sendMessage 口径）
@@ -2204,23 +2390,35 @@ export struct ChatPage {
         // ★ 0.191.0：接收态已删（同 sendMessage——死代码）
         this.scroller.scrollEdge(Edge.Bottom);
       },
-      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
-        // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账）
+      (inputTokens: number, outputTokens: number, cachedTokens: number, reasoningTokens: number) => {
+        // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账；★ 0.271.0：思考 token 拆分落账）
         this.isLoading = false;
         this.streamController = null;
         this.streamPhase = 0; // ★ 0.191.0：阶段复位
+        // ★ 0.271.0：思考态收尾兜底（零正文直接完成场景）
+        if (this.thinkingActiveMsgId === msg.messageId) {
+          this.finishThinkingTrace(msg.messageId);
+        }
         if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
           msg.content = '（AI 未返回文本内容，请重试或更换模型）';
         }
         msg.inputTokens = inputTokens;
         msg.outputTokens = outputTokens;
         msg.cacheHitTokens = cachedTokens;
+        msg.reasoningTokens = reasoningTokens; // ★ 0.271.0
+        const regenThinkDur = this.thinkingSecondsByMsg.get(msg.messageId) ?? 0;
+        const regenThinkChars = this.thinkingTraceByMsg.get(msg.messageId)?.length ?? 0;
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
           const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额
           consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
           this.trackSpConsume(msg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'regen'); // ★ 0.260.0
+          // ★ 0.271.0：thinking_use 埋点（regen 场景同款五态）
+          this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (regenDowngraded ? 'auto_downgrade' : 'use') : 'degrade'),
+            this.replyLengthMode, thinkReq.effort, regenThinkDur, regenThinkChars, _bal0 - siyiTotalSp(this.siyiStore));
         } else {
           this.trackSpConsume(msg, true, 0, inputTokens, cachedTokens, 'regen'); // ★ 0.260.0：免扣照报 f:y
+          this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (regenDowngraded ? 'auto_downgrade' : 'use') : 'degrade'),
+            this.replyLengthMode, thinkReq.effort, regenThinkDur, regenThinkChars, 0);
         }
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', inputTokens, outputTokens); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
@@ -2230,11 +2428,25 @@ export struct ChatPage {
         this.maybeStartHookArrangement(msg, regenBubbleId); // ★ 0.269.0：重生成同样走②段伴读编排
       },
       (errMsg: string) => {
+        // ★ 0.271.0：思考参数不兼容自动降级（同 sendMessage 窄门）
+        if (!regenDowngraded && thinkReq.enabled && isThinkingParamError(errMsg)) {
+          regenDowngraded = true;
+          this.showToastSafe('已切换普通模式');
+          startRegenStream({ enabled: false, effort: '' });
+          return;
+        }
         // onError：解锁 + 错误提示
         this.isLoading = false;
         this.streamController = null;
         this.streamPhase = 0; // ★ 0.191.0：阶段复位
         this.streamingMsgId = ''; // ★ 0.234.0：错误态不折叠，恢复平铺显示
+        // ★ 0.271.0：思考档失败登记手动「普通模式重试」
+        if (thinkReq.enabled) {
+          this.thinkingRetryMsgIds = [...this.thinkingRetryMsgIds, msg.messageId];
+        }
+        if (this.thinkingActiveMsgId === msg.messageId) {
+          this.finishThinkingTrace(msg.messageId);
+        }
         // ★ 0.190.6：错误场景分类（与 sendMessage onError 同机制）
         msg.content = classifyStreamError(errMsg);
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：错误文案同步写穿
@@ -2243,13 +2455,48 @@ export struct ChatPage {
       },
       (reasoning: string) => {
         // onReasoning：深度思考内容到达，占位切换为思考态（不持久化，仅 UI 反馈）
+        // ★ 0.271.0：乱序防护——phase3 之后到达的 reasoning 分片一律丢弃
+        if (regenContentStarted) {
+          return;
+        }
+        // ★ 0.271.0：合规线——思维链同样过输出扫描器（独立实例）
+        const regenReasonHit: FilterHit | null = regenReasonScanner.scan(reasoning);
+        if (regenReasonHit !== null) {
+          const _fr2: Record<string, string> = {}; _fr2['cat'] = regenReasonHit.category;
+          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fr2);
+          if (this.streamController) {
+            this.streamController.cancel();
+          }
+          if (this.thinkingActiveMsgId === msg.messageId) {
+            this.finishThinkingTrace(msg.messageId);
+          }
+          msg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
+          this.isLoading = false;
+          this.streamController = null;
+          this.streamPhase = 0;
+          this.streamingMsgId = '';
+          this.mirrorStreamToLive(regenBubbleId, msg);
+          this.saveTree();
+          this.showToastSafe('回复包含违规内容，已拦截');
+          return;
+        }
         if (msg.content === PLACEHOLDER_LOADING) {
           msg.content = PLACEHOLDER_THINKING;
         }
+        // ★ 0.271.0：思考卡驱动（同 sendMessage）
+        if (this.thinkingActiveMsgId !== msg.messageId) {
+          this.beginThinkingTrace(msg.messageId);
+        }
+        this.appendThinkingTrace(msg.messageId, reasoning);
         this.streamPhase = 2; // ★ 0.191.0：阶段 2——等待服务器返回（思考模型思考阶段）
         this.scroller.scrollEdge(Edge.Bottom);
-      }
+      },
+      'AI 回复',
+      false,
+      thinkReq // ★ 0.271.0：思考档注入
     );
+    };
+    startRegenStream(regenThinking);
     this.scroller.scrollEdge(Edge.Bottom);
   }
 
@@ -2605,6 +2852,11 @@ export struct ChatPage {
       clearTimeout(this.inputBlurTimer);
       this.inputBlurTimer = -1;
     }
+    // ★ 0.271.0：思考计时器必清（防泄漏）；退出会话思维链/思考态自动清空（组件销毁 Map 随之回收）
+    if (this.thinkingTimer >= 0) {
+      clearInterval(this.thinkingTimer);
+      this.thinkingTimer = -1;
+    }
     // ★ 0.265.0 记忆引擎：会话结束触发画像更新（本段有新增用户消息才做）+ 失活节点入摘要头 pending 队列
     if (this.profileTick > 0) {
       this.triggerProfileUpdate();
@@ -2938,6 +3190,18 @@ export struct ChatPage {
         Text(this.tokenInfoHookLine)
           .fontSize(13)
           .fontColor(this.theme.brandSecondary)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+      }
+      // ★ 0.271.0：思考拆分行（§3.8——「其中深度思考 N SP」；reasoning token 按输出价换算 SP 展示，
+      //   对外禁 token 字样防反推成本；未思考/旧消息空串不渲染）
+      if (this.tokenInfoReasoningLine.length > 0) {
+        Divider()
+          .color(this.theme.strokeCard)
+          .margin({ top: 9, bottom: 9 })
+        Text(this.tokenInfoReasoningLine)
+          .fontSize(13)
+          .fontColor(this.theme.textPrimary)
           .textAlign(TextAlign.Center)
           .width('100%')
       }
@@ -4417,6 +4681,18 @@ export struct ChatPage {
     this.stopTTS(); // ★ 0.151-D：切气泡前补停 TTS（原依赖 pop 退页触发 aboutToDisappear，直接切气泡须在此停）
     this.recordReadingPosition(); // ★ 0.191.0：切气泡前记录阅读高度（此路径不触发 aboutToDisappear，须手动记录）
     noteInactiveNode(this.currentBubble); // ★ 0.265.0：切走=旧节点失活（满足条件入摘要头 pending 队列，闲时 flush）
+    // ★ 0.271.0：切分支清空思维链/思考态（任务书 §3.4——会话级数据不跨气泡；新分支新思考卡）
+    if (this.thinkingTimer >= 0) {
+      clearInterval(this.thinkingTimer);
+      this.thinkingTimer = -1;
+    }
+    this.thinkingTraceByMsg.clear();
+    this.thinkingSecondsByMsg.clear();
+    this.thinkingActiveMsgId = '';
+    this.thinkingHeadText = '';
+    this.reasoningViewerMsgId = '';
+    this.thinkingRetryMsgIds = [];
+    this.thinkingDoneTick += 1;
     // ★ 0.162 第一段：消息区淡出 140ms（EaseIn 加速消失，模拟「页面关闭」）
     this.getUIContext().animateTo({
       duration: 140,
@@ -4747,6 +5023,87 @@ export struct ChatPage {
   }
 
   // ②段 SP 预估（状态行小字——输入≈全文字数粗估 + 输出≈钩子 JSON ~500 token；扣点前给足预期）
+  // ============================================================
+  // ★ 0.271.0：深度思考辅助方法（思考卡状态机驱动+埋点+手动降级重试）
+  // ============================================================
+
+  // 思考开始：登记活动消息 + 启动秒表计时器（1s tick——思考卡「深度思考中 Ns」）
+  beginThinkingTrace(msgId: string): void {
+    this.thinkingActiveMsgId = msgId;
+    this.thinkingElapsed = 0;
+    this.thinkingHeadText = '';
+    this.thinkingTraceByMsg.set(msgId, '');
+    if (this.thinkingTimer >= 0) {
+      clearInterval(this.thinkingTimer);
+    }
+    this.thinkingTimer = setInterval((): void => {
+      this.thinkingElapsed += 1;
+    }, 1000);
+  }
+
+  // 思考分片追加：思维链全文累积（单条超 5000 字截断）+ 滚动摘要（前 120 字）
+  appendThinkingTrace(msgId: string, chunk: string): void {
+    const cur = this.thinkingTraceByMsg.get(msgId) ?? '';
+    if (cur.length >= 5000) {
+      return;
+    }
+    const merged = cur.length + chunk.length > 5000 ? cur + chunk.substring(0, 5000 - cur.length) : cur + chunk;
+    this.thinkingTraceByMsg.set(msgId, merged);
+    this.thinkingHeadText = merged.length > 120 ? `${merged.substring(0, 120)}…` : merged;
+  }
+
+  // 思考冻结收起：停计时器 + 记录秒数（收起行「已深度思考 Ns」；进入 phase3 或流结束时调用）
+  finishThinkingTrace(msgId: string): void {
+    if (this.thinkingTimer >= 0) {
+      clearInterval(this.thinkingTimer);
+      this.thinkingTimer = -1;
+    }
+    this.thinkingSecondsByMsg.set(msgId, this.thinkingElapsed);
+    this.thinkingActiveMsgId = '';
+    this.thinkingHeadText = '';
+    this.thinkingDoneTick += 1; // Map 非 @Trace——tick 递增触发收起行渲染重建
+  }
+
+  // ★ 0.271.0：thinking_use 埋点（§3.9——ev/mode/eff/dur/rchars/sp；上线后按分位数回调 §3.2 阈值）
+  trackThinkingUse(ev: string, mode: string, eff: string, dur: number, rchars: number, sp: number): void {
+    const p: Record<string, string> = {};
+    p['ev'] = ev;
+    p['mode'] = mode;
+    p['eff'] = eff;
+    p['dur'] = `${dur}`;
+    p['rchars'] = `${rchars}`;
+    p['sp'] = `${sp}`;
+    track(this.getUIContext().getHostContext() as common.Context, 'thinking_use', p);
+  }
+
+  // ★ 0.271.0：手动降级重试（超时类错误专用——§3.6.3 思考场景二次超时概率高=双倍计费零收益，
+  //   不自动重发把选择权给用户；走 regenerate 链路+本条强制 disabled）
+  retryWithNormalMode(msg: ChatMessage): void {
+    const rest: string[] = this.thinkingRetryMsgIds.filter((id: string): boolean => id !== msg.messageId);
+    this.thinkingRetryMsgIds = rest;
+    this.trackThinkingUse('manual_retry', this.replyLengthMode, '', 0, 0, 0);
+    this.regenerateMessage(msg, true);
+  }
+
+  // ★ 0.271.0：取本条 AI 消息之前最近一条用户消息文本（重生成思考计分 S1/S2/S5 信号源）
+  findLastUserTextBefore(target: ChatMessage): string {
+    const bubble = this.currentBubble; // 0.237.0 教训④：null 收窄不流动，提局部变量
+    if (bubble === null || bubble === undefined) {
+      return '';
+    }
+    const msgs = bubble.messages;
+    let found = '';
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].messageId === target.messageId) {
+        break;
+      }
+      if (msgs[i].role === 'user') {
+        found = msgs[i].content;
+      }
+    }
+    return found;
+  }
+
   estimateHookSp(content: string): number {
     const inSp = Math.round(content.length * SP_INPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
     const outSp = Math.round(500 * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
@@ -4868,6 +5225,10 @@ export struct ChatPage {
   handleBack(): boolean {
     if (this.imageViewerVisible) {
       this.imageViewerVisible = false; // 图片预览（0.120）
+      return true;
+    }
+    if (this.reasoningViewerMsgId.length > 0) {
+      this.reasoningViewerMsgId = ''; // ★ 0.271.0：思维链查看弹窗——返回键先关弹窗
       return true;
     }
     if (this.wordFolderPickerVisible) {
@@ -5121,9 +5482,14 @@ export struct ChatPage {
                            // ★ 0.190.5：等待态视图——占位文字（LOADING/THINKING）不再走 Markdown
                            //   通道渲染纯文本，改三点跳动动画+回复模式提示（长模式加耐心等待）；
                            //   Markdown 通道占位时传空串（parseMarkdown('') 零段渲染，不重复显示）
-                           if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
-                              this.waitingView()
-                           }
+                            if (msg.content === PLACEHOLDER_LOADING || msg.content === PLACEHOLDER_THINKING) {
+                               this.waitingView()
+                            }
+                            // ★ 0.271.0：思考卡（phase2 思考中浮现——秒表+计时+滚动摘要；进入 phase3 由
+                            //   finishThinkingTrace 清活动态自动消失，占位区回归打字机正文）
+                            if (this.thinkingActiveMsgId === msg.messageId) {
+                              this.thinkingCard()
+                            }
                             // ★ 0.234.0 注意力锚点+分章折叠：完成态（≥3 节且折叠开）走章节折叠视图；
                             //   流式中/折叠关/节数不足走平铺直显——同一渲染计划 richPlanFor，锚点卡两态同源
                             if (this.useFoldView(msg)) {
@@ -5605,9 +5971,45 @@ export struct ChatPage {
                         .backgroundColor(this.theme.surfaceNode)
                         .alignItems(HorizontalAlign.Start) // ★ 0.145：气泡内段落保持左对齐（阅读习惯），气泡整体位置由外层 alignItems 控制
 
-                         // ★ 0.269.0：②段伴读编排状态行（气泡尾部轻量状态——Q4 裁决 A：灰色小字+取消钮，
-                         //   不加蒙层不置灰；预估 SP 扣点前给足预期，Lv8 免扣不显示消耗段）
-                         if (this.hookArrangingMsgId === msg.messageId) {
+                         // ★ 0.271.0：思考收起行（进入 phase3 后思考卡冻结收起为单行——紫弱高亮，气泡底部；
+                         //   点击「查看思维链」底部半屏弹窗展示全文；thinkingDoneTick 驱动 Map 渲染重建）
+                         if (this.thinkingDoneTick >= 0 && this.thinkingSecondsByMsg.has(msg.messageId) &&
+                           this.thinkingTraceByMsg.has(msg.messageId)) {
+                           Row({ space: 6 }) {
+                             Image($r('app.media.timer'))
+                               .width(12)
+                               .height(12)
+                               .objectFit(ImageFit.Contain)
+                             Text(`已深度思考 ${this.thinkingSecondsByMsg.get(msg.messageId)}s · 查看思维链`)
+                               .fontSize(11)
+                               .fontColor(this.theme.brandSecondary)
+                               .maxLines(1)
+                           }
+                           .padding({ left: 10, right: 10 })
+                           .margin({ top: 4, bottom: 2 })
+                           .onClick(() => {
+                             this.reasoningViewerMsgId = msg.messageId;
+                           })
+                         }
+
+                         // ★ 0.271.0：思考档失败手动降级重试（超时类错误专用——§3.6.3 不自动重发，
+                         //   把选择权给用户；点击走 regenerate 链路+本条强制 disabled）
+                         if (this.thinkingRetryMsgIds.includes(msg.messageId)) {
+                           Text('普通模式重试')
+                             .fontSize(12)
+                             .fontColor(this.theme.brandSecondary)
+                             .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                             .borderRadius(RADIUS_CONTROL)
+                             .backgroundColor(this.theme.surfaceSoft)
+                             .margin({ left: 10, top: 4 })
+                             .onClick(() => {
+                               this.retryWithNormalMode(msg);
+                             })
+                         }
+
+                          // ★ 0.269.0：②段伴读编排状态行（气泡尾部轻量状态——Q4 裁决 A：灰色小字+取消钮，
+                          //   不加蒙层不置灰；预估 SP 扣点前给足预期，Lv8 免扣不显示消耗段）
+                          if (this.hookArrangingMsgId === msg.messageId) {
                            Row({ space: 8 }) {
                              Text(this.spFree() || this.hookEstSp <= 0
                                ? '正在编排阅读节奏…'
@@ -5763,6 +6165,10 @@ export struct ChatPage {
                                   // ★ 0.269.0：伴读编排拆分行快照（会话级 hookSpByMsg 暂存——②段成功补扣过的消息才有）
                                   const hookSp = this.hookSpByMsg.get(msg.messageId);
                                   this.tokenInfoHookLine = hookSp !== undefined ? `其中伴读编排 ${hookSp} SP` : '';
+                                  // ★ 0.271.0：思考拆分行快照（reasoning token 按输出价 ÷7×2 换算 SP——对外禁 token 字样；
+                                  //   思考 token 已含在输出 SP 内，本行=输出 SP 的其中拆分）
+                                  this.tokenInfoReasoningLine = msg.reasoningTokens > 0
+                                    ? `其中深度思考 ${Math.round(msg.reasoningTokens * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER)} SP` : '';
                                 }
                               })
                               .constraintSize({ maxWidth: '60%' })
@@ -7584,6 +7990,80 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
           .alignContent(Alignment.Center)
+        }
+
+        // ★ 0.271.0：思维链查看弹窗（任务书 §3.4——底部半屏展示完整思维链，可滚动/可复制，
+        //   不嵌入气泡正文；遮罩点击/返回键关闭）
+        if (this.reasoningViewerMsgId.length > 0) {
+          Stack({ alignContent: Alignment.Bottom }) {
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor(this.theme.overlay)
+            .onClick(() => {
+              this.reasoningViewerMsgId = '';
+            })
+
+            Column() {
+              Row({ space: 12 }) {
+                Text('思维链')
+                  .fontSize(16)
+                  .fontWeight(600)
+                  .fontColor(this.theme.textPrimary)
+                  .layoutWeight(1)
+                Text('复制')
+                  .fontSize(13)
+                  .fontColor(this.theme.brandSecondary)
+                  .onClick(() => {
+                    const trace = this.thinkingTraceByMsg.get(this.reasoningViewerMsgId) ?? '';
+                    if (trace.length === 0) {
+                      return;
+                    }
+                    try {
+                      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, trace);
+                      pasteboard.getSystemPasteboard().setData(data).then(() => {
+                        this.showToastSafe('已复制思维链');
+                      }).catch((err: Error) => {
+                        // 写入失败静默忽略
+                      });
+                    } catch (e) {
+                      // 复制异常静默忽略（防崩溃）
+                    }
+                  })
+                Text('关闭')
+                  .fontSize(13)
+                  .fontColor(this.theme.textTertiary)
+                  .onClick(() => {
+                    this.reasoningViewerMsgId = '';
+                  })
+              }
+              .width('100%')
+              .margin({ bottom: 12 })
+
+              Scroll() {
+                Text(this.thinkingTraceByMsg.get(this.reasoningViewerMsgId) ?? '（无思维链内容）')
+                  .fontSize(13)
+                  .lineHeight(21)
+                  .fontColor(this.theme.textSecondary)
+                  .textAlign(TextAlign.Start)
+                  .width('100%')
+                  .copyOption(CopyOptions.LocalDevice)
+              }
+              .align(Alignment.Start)
+              .scrollBar(BarState.Auto)
+              .layoutWeight(1)
+              .width('100%')
+            }
+            .width('100%')
+            .height('55%')
+            .padding({ left: 20, right: 20, top: 16, bottom: 24 })
+            .borderRadius({ topLeft: RADIUS_NAV, topRight: RADIUS_NAV })
+            .backgroundColor(this.theme.surfaceNode)
+          }
+          .width('100%')
+          .height('100%')
         }
       }
       .width('100%')

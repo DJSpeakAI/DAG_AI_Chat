@@ -20,7 +20,7 @@
 
 import { http } from '@kit.NetworkKit'; // ★ 0.136：webSocket 已随播客路径移除（TTS 回归 HTTP）
 import { buffer } from '@kit.ArkTS'; // ★ 0.132：streamChat 字节级 UTF-8 缓冲；★ 0.189.0：util 随 synthesizeTTS 移除
-import { ChatMessage, ApiConfig, generateMessageId, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.185.0：connectPhoneticAccent（音标口音，prompt 生成用）
+import { ChatMessage, ApiConfig, generateMessageId, connectPhoneticAccent, ThinkingRequest } from '../common/ChatModel'; // ★ 0.185.0：connectPhoneticAccent（音标口音，prompt 生成用）；★ 0.271.0：ThinkingRequest（思考档类型单一真相源在 ChatModel——防结构类型违规）
 import { WordQueryResult } from '../common/WordModel'; // ★ 0.145：AI 查词结果结构
 import { KnowledgeQueryResult } from '../common/KnowledgeModel'; // ★ 0.146：AI 卡片草稿结果结构
 import { KNOWLEDGE_QUERY_PROMPT, KNOWLEDGE_IMAGE_QUERY_PROMPT, KNOWLEDGE_IMAGE_QUERY_PROMPT_NOTE } from '../common/Prompts'; // ★ 0.193.0：卡片提炼 prompt 单一真相源（C 项数字锚定优化）
@@ -56,11 +56,18 @@ interface StreamOptions {
   include_usage: boolean;
 }
 
+// ★ 0.271.0：思考开关注入位（DeepSeek Thinking Mode——腾讯云 TokenHub 透传，P0-1 实测生效）
+interface ThinkingBody {
+  type: string; // 'enabled' | 'disabled'
+}
+
 interface VolcanoRequestBody {
   model: string;
   messages: VolcanoMessage[];
   stream: boolean;
   stream_options?: StreamOptions;
+  thinking?: ThinkingBody; // ★ 0.271.0：思考开关（缺省显式 disabled——P0-2 实锤网关默认开思考，显式关=成本止血必做）
+  reasoning_effort?: string; // ★ 0.271.0：思考档位（enabled 时追加 low/high）
 }
 
 // 流式控制器：支持手动 cancel 终止请求
@@ -96,10 +103,16 @@ interface SSEResponseUsage {
   completion_tokens?: number;
   total_tokens?: number;
   prompt_tokens_details?: SSEResponsePromptTokensDetails; // ★ 0.247.4：腾讯云 DeepSeek 缓存命中（curl 实锤 OpenAI 风格字段）
+  completion_tokens_details?: SSEResponseCompletionTokensDetails; // ★ 0.271.0：思考 token 拆分（流式尾 chunk usage 携带）
 }
 
 interface SSEResponsePromptTokensDetails {
   cached_tokens?: number; // 命中缓存的输入 token 数（无缓存/未命中=0）
+}
+
+// ★ 0.271.0：输出 token 拆分明细（P0-1 实测 TokenHub 流式尾 chunk 回传 reasoning_tokens——已含在 completion_tokens 内）
+interface SSEResponseCompletionTokensDetails {
+  reasoning_tokens?: number; // 其中思考 token 数（disabled=0）
 }
 
 // ========== 消息转换 ==========
@@ -329,15 +342,21 @@ export function streamChat(
   messages: ChatMessage[],
   config: ApiConfig,
   onChunk: (text: string) => void,
-  onDone: (inputTokens: number, outputTokens: number, cachedTokens: number) => void, // ★ 0.247.4：尾部追加缓存命中（token 数）
+  onDone: (inputTokens: number, outputTokens: number, cachedTokens: number, reasoningTokens: number) => void, // ★ 0.247.4：尾部追加缓存命中（token 数）；★ 0.271.0：第 4 参思考 token（旧 3 参回调赋值位兼容——少参函数可赋多参签名）
   onError: (error: string) => void,
   onReasoning?: (text: string) => void, // ★ 0.132：深度思考内容回调（可选）
   sceneLabel: string = 'AI 回复', // ★ 0.251.0：场景标签（后台完成通知文案用）
   // ★ 0.265.0：Q1 终案 implicit 标记位——隐式 LLM 调用（画像观察/摘要头等用户无感知调用）
   //   暂不扣 SP（预留未来计费开关）；显式调用（用户点发送/查词/提炼）保持缺省 false
-  implicit: boolean = false
+  implicit: boolean = false,
+  // ★ 0.271.0：思考档注入（缺省=显式 disabled 军规——P0-2 实锤网关默认开思考，函数级收口各调用点零负担；
+  //   implicit=true 时无视调用方传参强制钳 disabled，防隐式链路暗耗）
+  thinking?: ThinkingRequest
 ): StreamController {
   // implicit 本期仅作标记传递（计费开关接入前的占位；调用侧已按终案传值）
+  // ★ 0.271.0：思考档归一收口——implicit 强制钳 disabled；缺省/undefined 同样显式 disabled
+  const effThinking: ThinkingRequest = implicit ? { enabled: false, effort: '' } :
+    (thinking ?? { enabled: false, effort: '' });
   let cancelled = false;
   // ★ 0.251.0：后台保活令牌——申请/释放全收口本函数（聊天/查词/提炼/圈注四链唯一咽喉，
   //   页面零侵入）；终结三出口（onDone/onError/cancel）+ 看门狗死流均走 guardFinish 幂等收口
@@ -470,7 +489,8 @@ export function streamChat(
     notifyAiStreamTerminal(true, sceneLabel); // ★ 0.251.0：后台完成"叮咚"（前台静默不打扰）
     guardFinish();
     onDone(trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0,
-      trackedUsage?.prompt_tokens_details?.cached_tokens ?? 0); // ★ 0.247.4：缓存命中随 usage 下发
+      trackedUsage?.prompt_tokens_details?.cached_tokens ?? 0, // ★ 0.247.4：缓存命中随 usage 下发
+      trackedUsage?.completion_tokens_details?.reasoning_tokens ?? 0); // ★ 0.271.0：思考 token 拆分随 usage 下发
     cleanupRequest(httpRequest);
   });
 
@@ -480,8 +500,13 @@ export function streamChat(
     model: config.model,
     messages: buildMessages(messages),
     stream: true,
-    stream_options: streamOpts
+    stream_options: streamOpts,
+    // ★ 0.271.0：思考注入（ArkTS 原生 JSON body 顶层直加，无 extra_body 概念——Python SDK 用法勿照搬）
+    thinking: { type: effThinking.enabled ? 'enabled' : 'disabled' }
   };
+  if (effThinking.enabled) {
+    body.reasoning_effort = effThinking.effort; // 仅 low/high（max 常量开关不暴露——平台约束+成本取舍）
+  }
 
   // 发起流式请求
   // ★ 0.190.4：try-catch 兜底——requestInStream 同步异常（如底层会话异常态）此前直接抛出，

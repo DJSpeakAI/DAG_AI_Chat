@@ -36,7 +36,7 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填�
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
-  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）
+  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
@@ -192,7 +192,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.270.1'; // ★ 0.270.1：占位文案改语音输入引导;上一版 0.270.0：输入区聚焦扩展
+const APP_VERSION: string = 'v0.271.0'; // ★ 0.271.0：深度思考模式接入（版本号顺延）;上一版 0.270.1：语音输入引导
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -334,6 +334,8 @@ export struct GlobalSettingsDialog {
   @Local editAnchorMode: string = 'smart';     // off / smart / companion
   @Local editAnchorDensity: string = 'standard'; // dense 密 / standard 中（默认）/ sparse 疏
   @Local editFoldMode: string = 'on';         // off / on（默认开=折叠模式）
+  // ★ 0.271.0：深度思考三态（auto 跟随模式=短关/中计分/长 high / always 每次思考 / off 全关；默认 auto）
+  @Local editThinkingMode: string = 'auto';   // auto / always / off
   @Local companionConfirmed: boolean = false; // ★ 0.269.0：伴读二次确认会话 flag（确认一次本会话不再弹——Q5「一次点完永久生效」精神，切走再切回重弹=知情提示无害）
   @Local companionConfirmVisible: boolean = false; // ★ 0.269.0：伴读确认弹窗开态（AppConfirmDialog 暗紫双键——系统灰弹窗 0.196.9 起弃用）
   // ★ 0.265.0 记忆引擎一期 WP5：深度记忆总开关编辑副本（默认开；关闭=不注入画像卡/摘要头、
@@ -477,6 +479,8 @@ export struct GlobalSettingsDialog {
     //   不改写已落盘数据（保存时随选择落新值）
     // ★ 0.269.0：anchorMode 三态归一回显——遗留 'on' 归 'smart'（0.237.0 脏检查坑同源：不改写盘值）
     this.editAnchorMode = normalizeAnchorMode(this.anchorPref.anchorMode);
+    // ★ 0.271.0：thinkingMode 归一回显（非法值归 'auto'——同款归一纪律）
+    this.editThinkingMode = normalizeThinkingMode(this.anchorPref.thinkingMode);
     this.editAnchorDensity = this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse';
     this.editFoldMode = this.anchorPref.foldMode;
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
@@ -836,6 +840,8 @@ export struct GlobalSettingsDialog {
     this.anchorPref.anchorMode = this.editAnchorMode;
     this.anchorPref.anchorDensity = this.editAnchorDensity;
     this.anchorPref.foldMode = this.editFoldMode;
+    // ★ 0.271.0：深度思考三态写入（AnchorPref 同 store 尾部字段——保存即落盘，下一条消息即时生效）
+    this.anchorPref.thinkingMode = this.editThinkingMode;
     // ★ 0.265.0：深度记忆总开关写入（独立 key memory-pref-v1 即时落盘）
     this.memoryPref.memoryMode = this.editMemoryMode;
     // ★ 0.197.2：Tab5 复习显示写入（编辑副本→store，PersistenceV2 即时落盘，两处复习区即时生效）
@@ -2159,6 +2165,74 @@ export struct GlobalSettingsDialog {
         .backgroundColor(this.theme.segmentedTrack)
 
         Text('💡 智能锚点：中/长回复中插入考考你、前方高能、换个说法等钩子，读长文时轻轻拉回注意力。伴读模式：长回复生成后由 AI 二次编排阅读节奏（喘息/进度/简单说/文末延伸），额外消耗少量 SP，文末「延伸」可点击拉分支深挖。密档钩子更频繁、疏档更克制。关闭后 AI 按原文回复。短回复与听播模式不插入。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(this.theme.textTertiary)
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
+      // ★ 0.271.0：深度思考三态开关（任务书 §3.7——「AI 偏好」Tab 新卡；锚点三态同款分段控件）
+      Column() {
+        Column({ space: 2 }) {
+          Text('深度思考')
+            .fontSize(14)
+            .fontColor(this.theme.textPrimary)
+          Text('AI 回复前先深度思考再作答，质量更高但更慢、消耗更多 SP')
+            .fontSize(11)
+            .lineHeight(18)
+            .fontColor(this.theme.textTertiary)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+
+        // 三态分段控件（跟随模式 / 每次思考 / 关闭——this.theme.segmentedTrack 轨道+激活段主紫，
+        //   与锚点三态同款样式）
+        Row() {
+          Text('跟随模式')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editThinkingMode === 'auto' ? this.theme.textPrimary : this.theme.textSecondary)
+            .backgroundColor(this.editThinkingMode === 'auto' ? this.theme.brandPrimary : Color.Transparent)
+            .onClick(() => {
+              this.editThinkingMode = 'auto';
+            })
+          Text('每次思考')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editThinkingMode === 'always' ? this.theme.textPrimary : this.theme.textSecondary)
+            .backgroundColor(this.editThinkingMode === 'always' ? this.theme.brandPrimary : Color.Transparent)
+            .onClick(() => {
+              this.editThinkingMode = 'always';
+            })
+          Text('关闭')
+            .fontSize(13)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .padding({ top: 7, bottom: 7 })
+            .borderRadius(RADIUS_CONTROL - 2)
+            .fontColor(this.editThinkingMode === 'off' ? this.theme.textPrimary : this.theme.textSecondary)
+            .backgroundColor(this.editThinkingMode === 'off' ? this.theme.brandPrimary : Color.Transparent)
+            .onClick(() => {
+              this.editThinkingMode = 'off';
+            })
+        }
+        .width('100%')
+        .padding(4)
+        .margin({ top: 10 })
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.theme.segmentedTrack)
+
+        // ★ 0.271.0：成本提示（P0-3 实测基线——同题输出 token：普通 105 / 思考档 278~440，约 2.6~4.2 倍）
+        Text('💡 跟随模式：短回复秒回不思考；中回复按问题难度自动判断（追问越深越容易触发）；长回复默认深度思考。每次思考：除听播外全部思考。深度思考的回复约多消耗 2~4 倍 SP，思考过程可在气泡底部查看。听播模式永远不思考（首字延迟高于一切）。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)
