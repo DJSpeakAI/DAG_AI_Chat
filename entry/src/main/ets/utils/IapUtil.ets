@@ -91,6 +91,22 @@ export async function queryIapSpPrices(context: common.UIAbilityContext): Promis
   return out;
 }
 
+// ── IAP 展示价保底表（0.261.0 localPrice 同口径）——★ 0.273.0：purchaseData.price 缺失/非法时
+//   的 amt 兜底（sp_grant iap 行充值流水数据源；单位元字符串）──
+function iapFallbackAmtCny(productId: string): string {
+  return productId === IAP_PRODUCT_SP_400W ? '19.00' : '9.90';
+}
+
+// ★ 0.273.0：InAppPurchaseData.price（单位分，d.ts+官方文档实查）→ 元字符串；
+//   非法/缺失返回保底价（看板充值流水求和容错——NaN 拒收）；导出供 hypium 断言
+export function iapAmtFromPurchaseData(r: Record<string, Object>, productId: string): string {
+  const priceFen = Number(r['price'] ?? NaN);
+  if (isNaN(priceFen) || priceFen <= 0) {
+    return iapFallbackAmtCny(productId);
+  }
+  return `${(priceFen / 100).toFixed(2)}`;
+}
+
 // ── 未完成订单补单：查 UNFINISHED 消耗型单，逐单幂等到账+消耗确认 ──
 //   场景：支付成功但 finishPurchase 失败（进程被杀等）→ 下次购买报「已拥有」；
 //   本函数恢复：grant 幂等挡双入账（token 已记则只补 finish）
@@ -110,7 +126,7 @@ export async function recoverPendingPurchases(context: common.UIAbilityContext):
         const orderId = String(r['purchaseOrderId'] ?? '');
         const state = Number(r['purchaseState'] ?? 0);
         if (iapSpAmountOf(pid) > 0 && token.length > 0 && state === 0) {
-          grantSiyiSpFromIap(subscription, siyi, pid, token);
+          grantSiyiSpFromIap(subscription, siyi, pid, token, iapAmtFromPurchaseData(r, pid)); // ★ 0.273.0：amt 传参
           try {
             await iap.finishPurchase(context, {
               productType: iap.ProductType.CONSUMABLE,
@@ -172,11 +188,13 @@ export async function purchaseSp(context: common.UIAbilityContext, productId: st
   // 3. 解析+校验 purchaseData（PurchaseData JSON 串：productID 匹配+purchaseState=0 已购买）
   let purchaseToken = '';
   let purchaseOrderId = '';
+  let amountCny = '';
   try {
     const r = JSON.parse(purchaseDataStr) as Record<string, Object>;
     const dataProductId = String(r['productId'] ?? '');
     purchaseToken = String(r['purchaseToken'] ?? '');
     purchaseOrderId = String(r['purchaseOrderId'] ?? '');
+    amountCny = iapAmtFromPurchaseData(r, productId); // ★ 0.273.0：实际成交价 ¥（sp_grant iap amt）
     const state = Number(r['purchaseState'] ?? 0);
     if (state !== 0) {
       out.message = '订单状态异常，未到账（如已扣款请联系列表页客服入口）';
@@ -195,7 +213,7 @@ export async function purchaseSp(context: common.UIAbilityContext, productId: st
     return out;
   }
   // 4. 幂等到账（到账即记 token——finish 失败不丢防线，补单路径幂等挡双入账）
-  const granted = grantSiyiSpFromIap(connectSubscription(), connectSiyiPoints(), productId, purchaseToken);
+  const granted = grantSiyiSpFromIap(connectSubscription(), connectSiyiPoints(), productId, purchaseToken, amountCny);
   if (!granted) {
     // token 已在已入账集合=重复回调，按成功处理但不再加额
     out.state = 'ok';

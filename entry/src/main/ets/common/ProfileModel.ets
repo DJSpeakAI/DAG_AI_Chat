@@ -21,7 +21,7 @@
 
 import { PersistenceV2 } from '@kit.ArkUI';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
-import { BubbleNode, BubbleTree, ChatMessage, ApiConfig, generateMessageId, connectApiConfig } from './ChatModel';
+import { BubbleNode, BubbleTree, ChatMessage, ApiConfig, generateMessageId, connectApiConfig, consumeImplicitSp } from './ChatModel';
 import { streamChat } from '../utils/ApiClient';
 import { PROFILE_OBSERVE_PROMPT, BRANCH_HEAD_PROMPT } from './Prompts';
 
@@ -341,15 +341,25 @@ export function updateProfileFromConversation(store: ProfileStore, cfg: ApiConfi
     msgs,
     cfg,
     (chunk: string) => { out += chunk; },
-    (_inTok: number, _outTok: number, _cached: number) => {
+    (inTok: number, outTok: number, cachedTok: number, _rTok: number) => {
+      // ★ 0.273.0：画像观察实扣（翻 0.265.0 Q1 旧案——用户拍板「要扣啊，加到总账」）；
+      // mid=本段最后一条用户消息（第 8 轮触发消息）；失败路径不走此处=零扣费
+      let triggerMid = '';
+      for (let i = recentMessages.length - 1; i >= 0; i--) {
+        if (recentMessages[i].role === 'user') {
+          triggerMid = recentMessages[i].messageId;
+          break;
+        }
+      }
+      consumeImplicitSp('profile', cfg.model, triggerMid, inTok, outTok, cachedTok);
       applyProfileResult(store, out, sourceNodeID); // 解析+落库（内部静默降级）
     },
     (_err: string) => {
-      // 调用失败静默（下轮重试）
+      // 调用失败静默（下轮重试）；★ 0.273.0：失败零扣费
     },
     undefined,
     'AI 记忆整理',
-    true // ★ Q1 implicit 标记位：隐式调用暂不扣 SP，预留未来计费开关
+    true // implicit 标记位：thinking 钳 disabled（0.271.0）；计费已由 consumeImplicitSp 接管（0.273.0 翻案实扣）
   );
 }
 
@@ -504,17 +514,27 @@ export async function flushPendingHeads(): Promise<boolean> {
       msgs,
       cfg,
       (chunk: string) => { out += chunk; },
-      (_inTok: number, _outTok: number, _cached: number) => {
+      (inTok: number, outTok: number, cachedTok: number, _rTok: number) => {
+        // ★ 0.273.0：分支摘要实扣（批量合并单次调用一笔账；mid=首分支尾条消息——后台 scene:summary 对账）；
+        // 失败路径不走此处=零扣费
+        let tailMid = '';
+        if (nodes.length > 0) {
+          const first = nodes[0];
+          if (first.messages.length > 0) {
+            tailMid = first.messages[first.messages.length - 1].messageId;
+          }
+        }
+        consumeImplicitSp('summary', cfg.model, tailMid, inTok, outTok, cachedTok);
         applyHeadsResult(nodes, out);
         resolve(true);
       },
       (_err: string) => {
-        // 失败降级：摘要头为空的分支直接跳过（不阻塞；下次失活再入队重试）
+        // 失败降级：摘要头为空的分支直接跳过（不阻塞；下次失活再入队重试）；★ 0.273.0：失败零扣费
         resolve(false);
       },
       undefined,
       'AI 记忆整理',
-      true // Q1 implicit 预留位
+      true // implicit 预留位（0.271.0 thinking 钳 disabled）；计费已由 consumeImplicitSp 接管（0.273.0 翻案实扣）
     );
   });
 }

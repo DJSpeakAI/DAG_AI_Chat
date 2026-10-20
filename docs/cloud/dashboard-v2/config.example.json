@@ -8,5 +8,11 @@
   "syncIntervalMs": 600000,
   "detailRetainDays": 90,
   "agcCredentialPath": "../agc-credential.json",
-  "reports": { "enabled": false, "clientId": "", "clientSecret": "", "appId": "" }
+  "reports": { "enabled": false, "clientId": "", "clientSecret": "", "appId": "" },
+  "pricing": {
+    "default": { "inOffPeak": 1, "inPeak": 2, "outOffPeak": 4, "outPeak": 8, "cacheOffPeak": 0.02, "cachePeak": 0.04 },
+    "offPeakHours": [[0, 30], [9, 30]]
+  },
+  "fixedMonthlyCostCny": 0,
+  "aiAssistant": { "provider": "volcano", "apiKey": "", "customEndpoint": "", "customModel": "" }
 }

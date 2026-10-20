@@ -332,7 +332,7 @@ export struct ReviewPage {
         // ★ 0.272.0：免扣照报（鼓励语=产品补贴不扣 SP，任务书 D1；token 成本照实上报 f:y）
         this.encourageInTok = inputTokens;
         this.encourageOutTok = outputTokens;
-        trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'encourage_r');
+        trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'encourage_r', outputTokens);
       },
       (errMsg: string) => {
         this.aiLoading = false;

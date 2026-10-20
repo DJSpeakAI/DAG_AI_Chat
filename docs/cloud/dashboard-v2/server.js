@@ -10,6 +10,12 @@
 //   4. 配额监控（/api/meta 内 quota：当日 events 写入行数 vs 2 万/天，60% 黄 80% 红）
 //   5. 明细滚动清理（保留 90 天明细卷；更早卷文件启动时删除——汇总类数据由 Cloud DB 长期持有）
 //   6. Reports API 配置位（config.reports——凭证拿到后 enabled:true 即接入，未配置时前端显示引导）
+// ★ 0.273.0 毛利财务报表与看板AI助手：
+//   7. /api/fin 财务+运营聚合（Tab3 转正：充值流水/token成本(峰谷单价折算 it/ot/ct)/毛利/净利/
+//      11 scene 明细/用户补贴小计/0-23 时段直方/日活/留存/等级分布——等级阈值=ChatModel 实码抄录）
+//   8. /api/ai/chat 看板 AI 问答助手（四提供商照抄 app 0.190.0 结构默认火山；快照注入数字锚定；
+//      自身成本入账 data/ai-cost.jsonl——tencent 档折 ¥ 扣净利、其余档金额记 0）
+//   9. config 新增 pricing/fixedMonthlyCostCny/aiAssistant 三段（默认值内置，零配置可用）
 // 老能力平移：GET /api/data（内存全量，前端 Tab1 热区+事件分布零改）
 // 凭证：../agc-credential.json（track-events 根，绝不入 git）
 // ============================================================
@@ -32,7 +38,15 @@ let CFG = {
   quotaRedPct: 80,
   syncIntervalMs: 10 * 60 * 1000, // 10 分钟增量同步（保护读配额 5 万/天）
   detailRetainDays: 90,
-  reports: { enabled: false, clientId: '', clientSecret: '', appId: '' } // Connect API 凭证（开发者级凭证→API客户端创建；appId=应用 APP ID）
+  reports: { enabled: false, clientId: '', clientSecret: '', appId: '' }, // Connect API 凭证（开发者级凭证→API客户端创建；appId=应用 APP ID）
+  // ★ 0.273.0 毛利财务（任务书 D3/D7）：单价表元/百万tokens（闲/峰两档）+ 闲时段（北京时间 [时,分]）+
+  //   固定月成本按天分摊；per-model 覆盖位预留 pricing["模型名"]（当前主力走 default）
+  pricing: {
+    default: { inOffPeak: 1, inPeak: 2, outOffPeak: 4, outPeak: 8, cacheOffPeak: 0.02, cachePeak: 0.04 },
+    offPeakHours: [[0, 30], [9, 30]]
+  },
+  fixedMonthlyCostCny: 0,
+  aiAssistant: { provider: 'volcano', apiKey: '', customEndpoint: '', customModel: '' } // 四档=volcano/deepseek/tencent/custom；key 只存服务器 config.json（gitignore，同 password 纪律）
 };
 try {
   const c = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf-8'));
@@ -333,6 +347,236 @@ function quotaStatus() {
     note: '口径=events 表当日行数（云函数 e+t 复合主键 upsert 幂等，重试不增行）；日活破 500 触发 B 案小时聚合后此口径不变' };
 }
 
+// ============================================================
+// ★ 0.273.0 毛利财务与运营聚合（Tab3 转正 + AI 助手快照数据源）
+// ============================================================
+// 等级阈值（ChatModel.siyiLevelTitle 实码抄录——Lv2~Lv8 门槛天数；任务书草稿阈值有误以此为准）
+const LEVEL_DAYS = [7, 30, 90, 150, 210, 240, 365];
+function levelOf(ld) { for (let i = LEVEL_DAYS.length - 1; i >= 0; i--) if (ld >= LEVEL_DAYS[i]) return i + 2; return 1; }
+
+// 闲时判定（事件时间戳北京时间——服务器本地即北京；offPeakHours=[[时,分],[时,分]] 闭开区间）
+function isOffPeak(t) {
+  const oh = (CFG.pricing && CFG.pricing.offPeakHours) || [[0, 30], [9, 30]];
+  const d = new Date(t);
+  const mins = d.getHours() * 60 + d.getMinutes();
+  const s = (oh[0] && oh[0][0] || 0) * 60 + (oh[0] && oh[0][1] || 0);
+  const e = (oh[1] && oh[1][0] || 9) * 60 + (oh[1] && oh[1][1] || 30);
+  return mins >= s && mins < e;
+}
+
+// 单事件 token 成本折算（任务书 D3：cost=(it−ct)×输入价 + ct×缓存价 + ot×输出价，元/百万tokens）
+function eventCostCny(t, modelName, it, ot, ct) {
+  const table = (CFG.pricing && (CFG.pricing[modelName] || CFG.pricing.default)) || { inOffPeak: 1, inPeak: 2, outOffPeak: 4, outPeak: 8, cacheOffPeak: 0.02, cachePeak: 0.04 };
+  const off = isOffPeak(t);
+  const miss = Math.max(0, it - ct);
+  return (miss * (off ? table.inOffPeak : table.inPeak) + ct * (off ? table.cacheOffPeak : table.cachePeak) + ot * (off ? table.outOffPeak : table.outPeak)) / 1e6;
+}
+
+// AI 助手自身成本账本（data/ai-cost.jsonl：date/provider/it/ot/cost 每行一笔）
+function aiCostPath() { return path.join(DATA_DIR, 'ai-cost.jsonl'); }
+function appendAiCost(rec) {
+  try { fs.appendFileSync(aiCostPath(), JSON.stringify(rec) + '\n'); } catch (_e) {}
+}
+function loadAiCosts() {
+  const out = [];
+  try {
+    for (const line of fs.readFileSync(aiCostPath(), 'utf-8').split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try { out.push(JSON.parse(line)); } catch (_e) {}
+    }
+  } catch (_e) {}
+  return out;
+}
+
+// 区间起点（今日0点 / 近7天 / 近30天——D4 日/周/月，年不做）
+function rangeStart(range) {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  if (range === 'day') return d.getTime();
+  d.setDate(d.getDate() - (range === 'week' ? 6 : 29));
+  return d.getTime();
+}
+
+// 财务+运营总聚合（/api/fin 数据源；AI 快照同源——两口径天然一致）
+function finAggregate(range) {
+  const rs = rangeStart(range);
+  const today = dayKey(Date.now());
+  let recharge = 0, rechargeCnt = 0;          // 充值流水（sp_grant src=iap amt 求和——现金口径只认真收到的钱）
+  let tokenCost = 0, tokenCostRows = 0;       // token 成本（新字段行折算）
+  let subsidyCost = 0;                        // 用户补贴成本（encourage_* + Lv8 f:y 行）
+  let spConsume = 0, spConsumeFree = 0;
+  const sceneAgg = new Map();                 // sc -> {cnt, it, ot, ct, sp, cny, free, freeCny}
+  const hourBuckets = new Array(24).fill(0);  // 0-23 使用时段直方（sp_consume 行数）
+  let effFrom = '';                           // it/ot/ct 生效日（老行无字段=成本报表累计起点）
+  // 运营：日活/留存/等级
+  const dailyDay = new Map();                 // day -> Set(uid)（app_daily）
+  const firstDay = new Map();                 // uid -> 首现日（app_first 全期）
+  const latestLd = new Map();                 // uid -> 最新 ld（app_daily 全期取最新）
+  const activeToday = new Set();              // 今日活跃 uid（含 app_daily）
+  let wau = new Set();                        // 区间活跃 uid
+
+  for (const ev of MEM.values()) {
+    const p = parseP(ev.p);
+    const day = dayKey(ev.t);
+    if (ev.e === 'sp_consume') {
+      const sp = Number(p.sp) || 0;
+      const sc = p.sc || '?';
+      const hasTok = p.it !== undefined || p.ot !== undefined || p.ct !== undefined;
+      let cny = 0;
+      if (hasTok) {
+        const it = Number(p.it) || 0, ot = Number(p.ot) || 0, ct = Number(p.ct) || 0;
+        cny = eventCostCny(ev.t, p.m || '', it, ot, ct);
+        tokenCost += cny; tokenCostRows++;
+        if (!effFrom || day < effFrom) effFrom = day;
+      }
+      const isSubsidy = sc === 'encourage_r' || sc === 'encourage_s' || p.f === 'y';
+      if (isSubsidy) subsidyCost += cny;
+      if (ev.t >= rs) {
+        spConsume += sp;
+        if (p.f === 'y') spConsumeFree++;
+        const sa = sceneAgg.get(sc) || { cnt: 0, it: 0, ot: 0, ct: 0, sp: 0, cny: 0, free: 0 };
+        sa.cnt++; sa.sp += sp; sa.cny += cny;
+        if (hasTok) { sa.it += Number(p.it) || 0; sa.ot += Number(p.ot) || 0; sa.ct += Number(p.ct) || 0; }
+        if (p.f === 'y') sa.free++;
+        sceneAgg.set(sc, sa);
+        const h = new Date(ev.t).getHours();
+        hourBuckets[h]++;
+        if (p.id) wau.add(p.id);
+      }
+    } else if (ev.e === 'sp_grant' && p.src === 'iap' && ev.t >= rs) {
+      const amt = parseFloat(p.amt);
+      if (!isNaN(amt) && amt > 0) { recharge += amt; rechargeCnt++; }
+    } else if (ev.e === 'app_daily') {
+      const uid = p.id || '?';
+      if (!dailyDay.has(day)) dailyDay.set(day, new Set());
+      dailyDay.get(day).add(uid);
+      const ld = Number(p.ld) || 0;
+      if (!latestLd.has(uid) || ev.t >= (latestLd.get(uid).t || 0)) latestLd.set(uid, { ld: ld, t: ev.t });
+      if (day === today) activeToday.add(uid);
+      if (ev.t >= rs && p.id) wau.add(p.id);
+    } else if (ev.e === 'app_first') {
+      const uid = p.id || '?';
+      if (!firstDay.has(uid) || day < firstDay.get(uid)) firstDay.set(uid, day);
+    }
+  }
+
+  // AI 助手成本（区间+全期累计；tencent 档才有金额——D7.4 计价规则）
+  const costs = loadAiCosts();
+  let aiCostRange = 0, aiItRange = 0, aiOtRange = 0, aiCostTotal = 0, aiItTotal = 0, aiOtTotal = 0, aiCntTotal = 0;
+  for (const c of costs) {
+    const ct2 = new Date(c.date + 'T00:00:00').getTime() || 0;
+    aiCostTotal += Number(c.cost) || 0; aiItTotal += Number(c.it) || 0; aiOtTotal += Number(c.ot) || 0; aiCntTotal++;
+    if (ct2 >= rs) { aiCostRange += Number(c.cost) || 0; aiItRange += Number(c.it) || 0; aiOtRange += Number(c.ot) || 0; }
+  }
+
+  // 固定成本分摊（月费×1/30 天；周×7/30；月×1）
+  const fixed = Number(CFG.fixedMonthlyCostCny) || 0;
+  const fixedShare = range === 'day' ? fixed / 30 : range === 'week' ? fixed * 7 / 30 : fixed;
+
+  // 毛利/净利（现金口径：毛利=充值−token成本；净利=毛利−固定成本−AI助手成本）
+  const gross = +(recharge - tokenCost).toFixed(2);
+  const net = +(gross - fixedShare - aiCostRange).toFixed(2);
+
+  // 日活曲线（升序 90 天）+ 次日/7 日留存（app_first cohort × app_daily——分母=注册日活跃 uid，分子=D+1/D+7 仍活跃）
+  const days = [...dailyDay.keys()].sort().slice(-90);
+  const dauSeries = days.map(d => ({ day: d, dau: dailyDay.get(d).size }));
+  let r1 = null, r7 = null, cohort1 = 0, hit1 = 0, cohort7 = 0, hit7 = 0;
+  const dayTs = (d) => new Date(d + 'T00:00:00').getTime();
+  for (const [uid, fd] of firstDay.entries()) {
+    const activeFd = dailyDay.has(fd) && dailyDay.get(fd).has(uid);
+    if (!activeFd) continue; // 分母=app_first 注册日当天有 app_daily 活跃
+    cohort1++; cohort7++;
+    const d1 = dayKey(dayTs(fd) + 864e5), d7 = dayKey(dayTs(fd) + 7 * 864e5);
+    if (dailyDay.has(d1) && dailyDay.get(d1).has(uid)) hit1++;
+    if (dailyDay.has(d7) && dailyDay.get(d7).has(uid)) hit7++;
+  }
+  if (cohort1 > 0) r1 = +(hit1 / cohort1 * 100).toFixed(1);
+  if (cohort7 > 0) r7 = +(hit7 / cohort7 * 100).toFixed(1);
+
+  // 等级分布直方（Lv1~Lv8：uid 最新 ld → 阈值表）
+  const lvBuckets = new Array(8).fill(0);
+  for (const v of latestLd.values()) lvBuckets[levelOf(v.ld) - 1]++;
+
+  return {
+    ok: true, range,
+    summary: { recharge: +recharge.toFixed(2), rechargeCnt, tokenCost: +tokenCost.toFixed(4), tokenCostRows,
+      gross, fixedShare: +fixedShare.toFixed(2), aiCostRange: +aiCostRange.toFixed(4), net,
+      spConsume, spConsumeFree, subsidyCost: +subsidyCost.toFixed(4), effFrom,
+      wau: wau.size, dau: activeToday.size, retainNext: r1, retain7: r7, cohort1, cohort7 },
+    scenes: [...sceneAgg.entries()].sort((a, b) => b[1].cny - a[1].cny).map(x => ({ scene: x[0], ...x[1], cny: +x[1].cny.toFixed(4) })),
+    hours: hourBuckets,
+    dauSeries, lvBuckets,
+    aiCost: { range: { cny: +aiCostRange.toFixed(4), it: aiItRange, ot: aiOtRange }, total: { cny: +aiCostTotal.toFixed(4), it: aiItTotal, ot: aiOtTotal, cnt: aiCntTotal } },
+    pricing: CFG.pricing, fixedMonthlyCostCny: fixed
+  };
+}
+
+// ---------- ★ 0.273.0 看板 AI 问答助手（D7：四提供商照抄 app 0.190.0 结构；默认火山） ----------
+const AI_PROVIDERS = {
+  volcano: { name: '火山引擎', endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions', model: 'deepseek-v4-flash-ga-260731', keyUrl: 'https://console.volcengine.com/ark' },
+  deepseek: { name: 'DeepSeek 官网', endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com' },
+  tencent: { name: '腾讯云', endpoint: 'https://tokenhub.tencentmaas.com/v1/chat/completions', model: 'deepseek/deepseek-flash', keyUrl: 'https://console.cloud.tencent.com/tencentmaas' },
+  custom: { name: '自定义', endpoint: '', model: '', keyUrl: '' }
+};
+
+function aiCfgResolved() {
+  const a = CFG.aiAssistant || {};
+  const provider = AI_PROVIDERS[a.provider] ? a.provider : 'volcano';
+  const preset = AI_PROVIDERS[provider];
+  const endpoint = provider === 'custom' ? (a.customEndpoint || '') : preset.endpoint;
+  const model = provider === 'custom' ? (a.customModel || '') : preset.model;
+  return { provider, name: preset.name, endpoint, model, apiKey: a.apiKey || '', keyUrl: preset.keyUrl };
+}
+
+// 聚合数据快照 → 紧凑 JSON（AI 只准用快照回答——数字锚定防编造）
+function aiSnapshot() {
+  const pick = (r) => ({ range: r.range, ...r.summary, scenes: r.scenes.map(s => ({ scene: s.scene, cnt: s.cnt, it: s.it, ot: s.ot, ct: s.ct, sp: s.sp, cny: s.cny, free: s.free })) });
+  return {
+    generatedAt: new Date().toLocaleString('zh-CN'),
+    today: pick(finAggregate('day')),
+    week: pick(finAggregate('week')),
+    month: pick(finAggregate('month')),
+    aiAssistantCost: finAggregate('month').aiCost.total,
+    hourPeak: (() => { const f = finAggregate('day'); const max = Math.max(...f.hours); return { hour: f.hours.indexOf(max), count: max }; })()
+  };
+}
+
+const AI_SYSTEM_PROMPT = '你是 DAG AI Chat 运营看板的数据分析助手。\n' +
+  '铁律：\n' +
+  '1. 只准使用下方【数据快照】中的数字回答，禁止编造、估算或使用快照外的任何数字；快照没有的维度直接回答「该维度暂无数据」。\n' +
+  '2. 对比类问题（如上周 vs 上上周）用 markdown 表格回答：表头=对比维度，一行一个场景或指标。\n' +
+  '3. 回答不超过 10 句：第 1 句给结论，其后给数据支撑。\n' +
+  '4. 金额单位=人民币元（保留 2 位小数）；token 展示为 tokens；SP 即司忆点。\n' +
+  '5. scene 对照：chat=聊天 regen=重生成 word=查词 extract=提炼 encourage_r=复习鼓励 encourage_s=统计鼓励 rerank=AI排序 profile=画像观察 summary=分支摘要 hook=伴读编排。\n' +
+  '6. 毛利=充值流水−token成本；净利润=毛利−固定成本−看板AI助手成本。老数据无 token 字段时成本从生效日起算，须注明。\n' +
+  '7. 不回答与看板数据无关的问题（代码、隐私、密钥等），礼貌引导回数据话题。';
+
+// OpenAI 兼容非流式调用（60s 超时）
+function callAiChat(messages, cb) {
+  const cfg = aiCfgResolved();
+  if (!cfg.apiKey || !cfg.endpoint || !cfg.model) { cb(new Error('未配置 AI 助手（设置卡选提供商并填 Key）'), null); return; }
+  const body = JSON.stringify({ model: cfg.model, messages: messages, stream: false });
+  const u = new URL(cfg.endpoint);
+  const req = require('https').request({ hostname: u.hostname, path: u.pathname + u.search, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey, 'Content-Length': Buffer.byteLength(body) },
+    timeout: 60000 }, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      try {
+        const j = JSON.parse(d);
+        if (j.choices && j.choices[0] && j.choices[0].message) {
+          cb(null, { reply: j.choices[0].message.content || '', usage: j.usage || {} });
+        } else {
+          cb(new Error('模型响应异常：' + d.slice(0, 150)), null);
+        }
+      } catch (_e) { cb(new Error('模型响应非 JSON：' + d.slice(0, 150)), null); }
+    });
+  });
+  req.on('timeout', () => { req.destroy(); cb(new Error('模型请求超时（60s）'), null); });
+  req.on('error', (e) => cb(e, null));
+  req.end(body);
+}
+
 // ---------- HTTP ----------
 function sendFile(res, filePath) {
   fs.readFile(filePath, (err, buf) => {
@@ -396,6 +640,65 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, count: MEM.size, events: arr });
     } else if (url === '/api/sp') {
       sendJson(res, 200, spAggregate());
+    } else if (url === '/api/fin') {
+      // ★ 0.273.0 Tab3 财务+运营聚合（range=day/week/month——D4 日/周/月，年不做）
+      const m = /range=(day|week|month)/.exec(req.url);
+      sendJson(res, 200, finAggregate(m ? m[1] : 'week'));
+    } else if (url === '/api/ai/chat' && req.method === 'POST') {
+      // ★ 0.273.0 看板 AI 问答助手（口令鉴权沿用；快照注入+非流式+成本入账 ai-cost.jsonl）
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const q = (JSON.parse(body || '{}') || {}).question || '';
+          const history = (JSON.parse(body || '{}') || {}).history || [];
+          if (!q.trim()) { sendJson(res, 400, { ok: false, error: '问题不能为空' }); return; }
+          const snap = aiSnapshot();
+          const msgs = [{ role: 'system', content: AI_SYSTEM_PROMPT + '\n\n【数据快照】\n' + JSON.stringify(snap) }];
+          for (const h of history.slice(-10)) { // 近 10 轮历史（D7.2）
+            if (h && h.role && h.content) msgs.push({ role: h.role === 'user' ? 'user' : 'assistant', content: String(h.content).slice(0, 4000) });
+          }
+          msgs.push({ role: 'user', content: q.slice(0, 4000) });
+          const cfg = aiCfgResolved();
+          callAiChat(msgs, (err, out) => {
+            if (err) { sendJson(res, 200, { ok: false, error: String(err.message || err) }); return; }
+            // 成本入账：usage prompt/completion tokens；tencent 档按 D3 单价折算 ¥、其余档金额记 0（D7.4 计价规则）
+            const it = Number(out.usage.prompt_tokens) || 0;
+            const ot = Number(out.usage.completion_tokens) || 0;
+            const cost = cfg.provider === 'tencent' ? eventCostCny(Date.now(), '', it, ot, 0) : 0;
+            appendAiCost({ date: dayKey(Date.now()), provider: cfg.provider, it: it, ot: ot, cost: +cost.toFixed(6) });
+            sendJson(res, 200, { ok: true, reply: out.reply, usage: { it: it, ot: ot, cost: +cost.toFixed(6) } });
+          });
+        } catch (_e) { sendJson(res, 400, { ok: false, error: '请求格式错误' }); }
+      });
+      return;
+    } else if (url === '/api/ai/config' && req.method === 'GET') {
+      // 配置回显（不回 key 全文——只回是否已配）
+      const cfg = aiCfgResolved();
+      sendJson(res, 200, { ok: true, provider: cfg.provider, name: cfg.name, model: cfg.model,
+        endpoint: cfg.endpoint, keyUrl: cfg.keyUrl, hasKey: !!cfg.apiKey,
+        providers: Object.keys(AI_PROVIDERS).map(k => ({ id: k, name: AI_PROVIDERS[k].name, keyUrl: AI_PROVIDERS[k].keyUrl })) });
+    } else if (url === '/api/ai/config' && req.method === 'POST') {
+      // 保存配置（写回 config.json 三段合并；apiKey 空串=不覆盖已存 key）
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const j = JSON.parse(body || '{}');
+          const cur = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf-8'));
+          const a = cur.aiAssistant || {};
+          if (j.provider && AI_PROVIDERS[j.provider]) a.provider = j.provider;
+          if (typeof j.apiKey === 'string' && j.apiKey.trim() !== '') a.apiKey = j.apiKey.trim();
+          if (typeof j.clearKey === 'boolean' && j.clearKey) a.apiKey = '';
+          if (typeof j.customEndpoint === 'string') a.customEndpoint = j.customEndpoint.trim();
+          if (typeof j.customModel === 'string') a.customModel = j.customModel.trim();
+          cur.aiAssistant = a;
+          fs.writeFileSync(path.join(ROOT, 'config.json'), JSON.stringify(cur, null, 2));
+          CFG.aiAssistant = a;
+          sendJson(res, 200, { ok: true });
+        } catch (e) { sendJson(res, 200, { ok: false, error: '保存失败：' + (e && e.message ? e.message : String(e)) }); }
+      });
+      return;
     } else if (url === '/api/meta') {
       sendJson(res, 200, { ok: true, rows: MEM.size, lastSyncT: lastSyncT, lastSyncAt: lastSyncAt, quota: quotaStatus(),
         reports: { enabled: rptCfgOk() } });

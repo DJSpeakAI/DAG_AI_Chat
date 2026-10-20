@@ -68,9 +68,10 @@
 <div class="tabs">
   <div class="tab active" data-p="p1" onclick="switchTab('p1')">① 行为埋点</div>
   <div class="tab" data-p="p2" onclick="switchTab('p2')">② SP 消耗与发放</div>
-  <div class="tab dim" data-p="p3" onclick="switchTab('p3')">③ 收入</div>
+  <div class="tab" data-p="p3" onclick="switchTab('p3')">③ 毛利财务</div>
   <div class="tab" data-p="p4" onclick="switchTab('p4')">④ 规模与质量</div>
   <div class="tab dim" data-p="p5" onclick="switchTab('p5')">⑤ 告警</div>
+  <div class="tab" data-p="p6" onclick="switchTab('p6')">⑥ AI 助手</div>
 </div>
 
 <!-- ============ Tab1 行为埋点（0.206.dash 平移） ============ -->
@@ -152,9 +153,64 @@
   </div>
 </div>
 
-<!-- ============ Tab3 收入（二期占位） ============ -->
+<!-- ============ Tab3 毛利财务（★ 0.273.0 转正：现金口径毛利+净利+scene 成本明细+运营区） ============ -->
 <div class="page" id="p3">
-  <div class="card"><div class="empty">二期：IAPExport 定时拉取（node-cron）+ CSV 解析 + 收入走势 + 毛利视图（收入对冲 SP 成本）+ 兑码人工登记过渡<br><br>前置依赖：AGC Reports API IAPExport 授权（client_id/access_token——待向华为 AI 索取授权流程后接入）</div></div>
+  <div class="card">
+    <h2>毛利财务（现金口径：毛利=IAP 充值流水−token 成本；净利润=毛利−固定成本−看板 AI 助手成本）</h2>
+    <div class="controls">
+      <button class="btn" data-fg="day" onclick="setFinGran('day')">日（今日）</button>
+      <button class="btn active" data-fg="week" onclick="setFinGran('week')">周（近 7 天）</button>
+      <button class="btn" data-fg="month" onclick="setFinGran('month')">月（近 30 天）</button>
+      <span class="hint" id="finEff"></span>
+    </div>
+    <div id="finStats"></div>
+    <div class="hint">token 成本=逐事件按单价表折算（(it−ct)×输入价+ct×缓存价+ot×输出价，峰谷按事件时刻）；老数据无 token 字段从生效日起精确；毛利只认真实收到的钱（sp_grant src=iap 的 amt）</div>
+  </div>
+  <div class="card">
+    <h2>场景成本明细（11 scene 全展：次数 / tokens / SP / ¥；免扣照报=产品补贴与 Lv8 免费次数，余额不动成本照实）</h2>
+    <div id="finScenes"></div>
+    <div class="hint" id="finSubsidy"></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h2>使用时段分布（0-23 点 · sp_consume 行数 · 工作日/周末分色）</h2>
+      <div id="finHours" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>日活曲线（app_daily：每 uid 每日 1 行）</h2>
+      <div id="finDau" class="chart"></div>
+      <div class="hint" id="finRetain"></div>
+    </div>
+    <div class="card">
+      <h2>等级分布（每 uid 最新 ld → Lv1~Lv8，阈值与 app 同源：7/30/90/150/210/240/365）</h2>
+      <div id="finLv" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>看板 AI 助手自身成本（每次问答 token 与金额；腾讯云档按单价表折 ¥ 计入净利，其余档金额记 0）</h2>
+      <div id="finAi"></div>
+      <div class="hint" id="finPricing"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab6 AI 助手（★ 0.273.0 D7：自然语言问数据 + 四提供商配置） ============ -->
+<div class="page" id="p6">
+  <div class="card">
+    <h2>AI 问答助手（直接问数据：「上周 vs 上上周 chat 场景消耗对比出表格」「本月毛利多少」「昨天几点用得最多」）</h2>
+    <div id="aiStatus"></div>
+    <div id="aiChat" style="max-height:420px;overflow:auto;margin-bottom:10px"></div>
+    <div class="controls">
+      <input id="aiQ" placeholder="输入问题，回车发送…" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px" onkeydown="if(event.key==='Enter')aiAsk()">
+      <button class="btn active" onclick="aiAsk()">发送</button>
+      <button class="btn" onclick="aiClear()">清空</button>
+    </div>
+    <div class="hint">回答只基于看板真实聚合数据（快照注入）；AI 助手自身 token 消耗计入成本（Tab3「看板 AI 助手成本」卡）</div>
+  </div>
+  <div class="card">
+    <h2>AI 助手配置（四提供商——照抄 app API 配置结构；key 只存服务器 config.json 不回显）</h2>
+    <div class="controls" id="aiProvBtns"></div>
+    <div id="aiCfgBox"></div>
+  </div>
 </div>
 
 <!-- ============ Tab4 规模与质量 ============ -->
@@ -194,7 +250,7 @@ const SPLIT = { splitLine: { lineStyle: { color: '#342a52' } } };
 function switchTab(id) {
   document.querySelectorAll('.tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.p === id));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('show', p.id === id));
-  [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart].forEach(c => c && c.resize());
+  [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart, finHoursChart, finDauChart, finLvChart].forEach(c => c && c.resize());
 }
 
 async function loadAll() {
@@ -212,6 +268,7 @@ async function loadAll() {
   sel.innerHTML = Object.keys(cj.events).map(e => '<option value="' + e + '">' + cj.events[e] + '（' + e + '）</option>').join('');
   if (curEvent) sel.value = curEvent; else curEvent = sel.value;
   renderTabs(); renderShot(); renderChart(); renderSp(); renderQuota(); loadReports();
+  loadFin(); loadAiCfg(); aiRender(); // ★ 0.273.0 Tab3 财务 + Tab6 AI 助手
 }
 
 async function syncNow() {
@@ -456,7 +513,208 @@ async function loadReports() {
 }
 let RPT_LAST = null;
 
-window.addEventListener('resize', () => [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart].forEach(c => c && c.resize()));
+// ================= ★ 0.273.0 Tab3 毛利财务 =================
+let FIN = null, curFinGran = 'week';
+const finHoursChart = echarts.init(document.getElementById('finHours'));
+const finDauChart = echarts.init(document.getElementById('finDau'));
+const finLvChart = echarts.init(document.getElementById('finLv'));
+const FIN_SCENE_LABEL = { chat: '聊天', regen: '重生成', word: '查词', extract: '提炼', encourage_r: '复习鼓励', encourage_s: '统计鼓励', rerank: 'AI排序', profile: '画像观察', summary: '分支摘要', hook: '伴读编排' };
+
+function setFinGran(g) {
+  curFinGran = g;
+  document.querySelectorAll('[data-fg]').forEach(b => b.classList.toggle('active', b.dataset.fg === g));
+  loadFin();
+}
+
+async function loadFin() {
+  FIN = await fetch('/api/fin?range=' + curFinGran).then(r => r.json());
+  renderFin();
+}
+
+function renderFin() {
+  if (!FIN || !FIN.ok) { document.getElementById('finStats').innerHTML = '<div class="empty">暂无财务数据</div>'; return; }
+  const s = FIN.summary;
+  const st = (label, n, sub) => '<span class="stat">' + label + '<b>' + n + '</b>' + (sub ? ' <span class="hint">' + sub + '</span>' : '') + '</span>';
+  document.getElementById('finStats').innerHTML =
+    st('充值流水', '¥' + s.recharge.toFixed(2), s.rechargeCnt + ' 笔') +
+    st('token 成本', '¥' + s.tokenCost.toFixed(4), s.tokenCostRows + ' 条新口径行') +
+    st('毛利', '¥' + s.gross.toFixed(2)) +
+    st('净利润', '¥' + s.net.toFixed(2), '已扣固定 ¥' + s.fixedShare.toFixed(2) + ' + AI ¥' + s.aiCostRange.toFixed(4)) +
+    st('SP 消耗', fmtSp(s.spConsume), s.spConsumeFree + ' 笔免扣') +
+    st('区间活跃', s.wau + ' 人', '今日 ' + s.dau);
+  document.getElementById('finEff').textContent = s.effFrom ? 'token 单价折算自 ' + s.effFrom + ' 起精确（老行无 it/ot/ct 字段）' : '（暂无 token 字段数据——新版本装机上报后此处标注生效日）';
+
+  const sc = FIN.scenes || [];
+  document.getElementById('finScenes').innerHTML = sc.length === 0
+    ? '<div class="empty">区间内暂无 sp_consume 数据</div>'
+    : '<table class="tbl"><tr><th>场景</th><th>次数</th><th>输入 tok</th><th>输出 tok</th><th>缓存命中</th><th>SP</th><th>成本 ¥</th><th>免扣照报</th></tr>' +
+      sc.map(x => '<tr><td>' + (FIN_SCENE_LABEL[x.scene] || x.scene) + '</td><td>' + x.cnt + '</td><td>' + (x.it ? x.it.toLocaleString() : '-') +
+        '</td><td>' + (x.ot ? x.ot.toLocaleString() : '-') + '</td><td>' + (x.ct ? x.ct.toLocaleString() : '-') + '</td><td>' + fmtSp(x.sp) +
+        '</td><td>' + x.cny.toFixed(4) + '</td><td>' + (x.free > 0 ? x.free : '-') + '</td></tr>').join('') + '</table>';
+  document.getElementById('finSubsidy').textContent = '用户补贴成本小计（encourage_* + Lv8 免扣行）：¥' + s.subsidyCost.toFixed(4) + '（送用户，成本照实入账）';
+
+  // 0-23 时段直方（工作日/周末两色）
+  const now = new Date();
+  const daysBack = curFinGran === 'day' ? 1 : (curFinGran === 'week' ? 7 : 30);
+  finHoursChart.setOption({
+    tooltip: { trigger: 'axis' }, legend: { data: ['工作日', '周末'], textStyle: { color: '#cfc2f5' } },
+    grid: { left: 40, right: 16, top: 36, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: FIN.hours.map((_, i) => i + '点') }, AXIS),
+    yAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS, SPLIT),
+    series: [ // 服务端未分工作日/周末时单色全量（hours 为合并值）——预留分色结构
+      { name: '使用量', type: 'bar', barMaxWidth: 18, data: FIN.hours, itemStyle: { color: '#6c4fe0', borderRadius: [4,4,0,0] } }
+    ]
+  }, true);
+
+  finDauChart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 16, top: 24, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: FIN.dauSeries.map(d => d.day), axisLabel: Object.assign({ rotate: FIN.dauSeries.length > 10 ? 38 : 0 }, AXIS.axisLabel) }, { axisLine: AXIS.axisLine }),
+    yAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS, SPLIT),
+    series: [{ type: 'line', data: FIN.dauSeries.map(d => d.dau), smooth: true, areaStyle: { opacity: .15 }, itemStyle: { color: '#3fa7a0' } }]
+  }, true);
+  document.getElementById('finRetain').textContent = '次日留存 ' + (s.retainNext === null ? '暂无' : s.retainNext + '%') +
+    ' · 7 日留存 ' + (s.retain7 === null ? '暂无' : s.retain7 + '%') + '（cohort=' + s.cohort1 + '——单用户阶段恒 100% 属正常）';
+
+  const lvNames = ['Lv1', 'Lv2', 'Lv3', 'Lv4', 'Lv5', 'Lv6', 'Lv7', 'Lv8'];
+  finLvChart.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 16, top: 24, bottom: 28 },
+    xAxis: Object.assign({ type: 'category', data: lvNames }, AXIS),
+    yAxis: Object.assign({ type: 'value', minInterval: 1 }, AXIS, SPLIT),
+    series: [{ type: 'bar', barMaxWidth: 40, data: FIN.lvBuckets, itemStyle: { color: p => ['#7a6da0','#3fa7a0','#6c4fe0','#c78a3d','#b0567a','#5a8a3d','#7a7ad0','#c7a23d'][p.dataIndex], borderRadius: [4,4,0,0] } }]
+  }, true);
+
+  const aic = FIN.aiCost;
+  document.getElementById('finAi').innerHTML =
+    st('区间问答成本', '¥' + aic.range.cny.toFixed(4), aic.range.it + '/' + aic.range.ot + ' tok') +
+    st('累计成本', '¥' + aic.total.cny.toFixed(4), aic.total.cnt + ' 次问答') +
+    st('累计 tokens', (aic.total.it + aic.total.ot).toLocaleString());
+  const pr = FIN.pricing && FIN.pricing.default;
+  document.getElementById('finPricing').textContent = pr
+    ? '单价表（元/百万tokens）：输入 闲' + pr.inOffPeak + '/峰' + pr.inPeak + ' · 输出 闲' + pr.outOffPeak + '/峰' + pr.outPeak +
+      ' · 缓存 闲' + pr.cacheOffPeak + '/峰' + pr.cachePeak + '；闲时段 ' + JSON.stringify(FIN.pricing.offPeakHours) + '；固定月成本 ¥' + FIN.fixedMonthlyCostCny + '（config.json 可改）'
+    : '';
+}
+
+// ================= ★ 0.273.0 Tab6 AI 助手 =================
+let AI_CFG = null, AI_HISTORY = [];
+let AI_BUSY = false;
+
+function mdToHtml(md) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const lines = String(md || '').split(/\r?\n/);
+  let html = '', inTable = false, tableRows = [];
+  const flushTable = () => {
+    if (!inTable) return;
+    let t = '<table class="tb">';
+    tableRows.forEach((r, i) => {
+      t += '<tr>' + r.map(c => (i === 0 ? '<th>' : '<td>') + c + (i === 0 ? '</th>' : '</td>')).join('') + '</tr>';
+    });
+    html += t + '</table>';
+    tableRows = []; inTable = false;
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (/^\|.*\|$/.test(line)) {
+      const cells = line.slice(1, -1).split('|').map(c => c.trim());
+      if (cells.every(c => /^:?-+:?$/.test(c))) continue; // 分隔行
+      inTable = true; tableRows.push(cells.map(c => esc(c).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')));
+      continue;
+    }
+    flushTable();
+    if (line.startsWith('```')) { html += '<div class="hint">（代码块略）</div>'; continue; }
+    if (line === '') { html += '<br>'; continue; }
+    html += '<p>' + esc(line).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>') + '</p>';
+  }
+  flushTable();
+  return html;
+}
+
+function aiBubble(role, text, sub) {
+  const cls = role === 'user' ? 'background:#2c2440;border:1px solid #4a3d75' : 'background:#241d38;border:1px solid #4a3d75';
+  return '<div style="' + cls + ';border-radius:10px;padding:10px 14px;margin-bottom:8px;max-width:92%">' + mdToHtml(text) +
+    (sub ? '<div class="hint">' + sub + '</div>' : '') + '</div>';
+}
+
+function aiRender() {
+  document.getElementById('aiChat').innerHTML = AI_HISTORY.map(h => aiBubble(h.role, h.content)).join('') || '<div class="empty">问点什么吧——AI 只基于看板真实数据回答</div>';
+  document.getElementById('aiChat').scrollTop = 1e9;
+}
+
+async function aiAsk() {
+  if (AI_BUSY) return;
+  const inp = document.getElementById('aiQ');
+  const q = inp.value.trim();
+  if (!q) return;
+  inp.value = '';
+  AI_HISTORY.push({ role: 'user', content: q });
+  AI_BUSY = true;
+  AI_HISTORY.push({ role: 'assistant', content: '查询中…' });
+  aiRender();
+  try {
+    const r = await fetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, history: AI_HISTORY.slice(0, -2) }) }).then(x => x.json());
+    AI_HISTORY.pop();
+    if (r.ok) {
+      AI_HISTORY.push({ role: 'assistant', content: r.reply, sub: '本次消耗 输入 ' + r.usage.it + ' · 输出 ' + r.usage.ot + ' tokens · ¥' + r.usage.cost });
+    } else {
+      AI_HISTORY.push({ role: 'assistant', content: '出错了：' + (r.error || '未知错误') });
+    }
+  } catch (e) {
+    AI_HISTORY.pop();
+    AI_HISTORY.push({ role: 'assistant', content: '请求失败：网络异常' });
+  }
+  AI_BUSY = false;
+  aiRender();
+  loadFin(); // 成本已入账——顺手刷新财务
+}
+
+function aiClear() { AI_HISTORY = []; aiRender(); }
+
+async function loadAiCfg() {
+  AI_CFG = await fetch('/api/ai/config').then(r => r.json());
+  const box = document.getElementById('aiProvBtns');
+  box.innerHTML = (AI_CFG.providers || []).map(p =>
+    '<button class="btn' + (p.id === AI_CFG.provider ? ' active' : '') + '" data-prov="' + p.id + '" onclick="aiPickProv(\'' + p.id + '\')">' + p.name + '</button>').join('');
+  renderAiCfgBox();
+}
+
+function aiPickProv(id) {
+  document.querySelectorAll('[data-prov]').forEach(b => b.classList.toggle('active', b.dataset.prov === id));
+  AI_CFG.provider = id;
+  const p = (AI_CFG.providers || []).find(x => x.id === id);
+  renderAiCfgBox(p ? p.keyUrl : '');
+}
+
+function renderAiCfgBox(keyUrl) {
+  const c = AI_CFG;
+  const isCustom = c.provider === 'custom';
+  const provName = ((c.providers || []).find(x => x.id === c.provider) || {}).name || '';
+  document.getElementById('aiCfgBox').innerHTML =
+    '<div class="controls"><span class="stat">当前 <b style="color:#b9a5ff">' + provName + '</b></span>' +
+    '<span class="stat">模型 <b style="color:#b9a5ff">' + (isCustom ? (c.model || '待填') : c.model) + '</b></span>' +
+    '<span class="stat">Key <b style="color:#b9a5ff">' + (c.hasKey ? '已配置' : '未配置') + '</b></span></div>' +
+    (isCustom ? '<div class="controls"><input id="aiCE" placeholder="自定义 endpoint（https://…/chat/completions）" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:6px 10px;font-size:12px">' +
+      '<input id="aiCM" placeholder="模型 ID" style="width:180px;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:6px 10px;font-size:12px"></div>' : '') +
+    '<div class="controls"><input id="aiCK" type="password" placeholder="API Key（留空=保持已存 key 不变）" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:6px 10px;font-size:12px">' +
+    '<button class="btn active" onclick="aiSaveCfg()">保存</button>' +
+    (keyUrl ? '<a class="btn" href="' + keyUrl + '" target="_blank">获取 Key ↗</a>' : '') + '</div>' +
+    '<div class="hint">四档端点内置不可编辑（火山 ark / DeepSeek 官网 / 腾讯云 tokenhub）；默认火山引擎（免费额度更多）；只有腾讯云档按单价表折 ¥ 计入净利扣减，其余档金额记 0</div>';
+}
+
+async function aiSaveCfg() {
+  const body = { provider: AI_CFG.provider };
+  const k = document.getElementById('aiCK');
+  if (k && k.value.trim()) body.apiKey = k.value.trim();
+  const ce = document.getElementById('aiCE'), cm = document.getElementById('aiCM');
+  if (ce) body.customEndpoint = ce.value;
+  if (cm) body.customModel = cm.value;
+  const r = await fetch('/api/ai/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json());
+  if (r.ok) { loadAiCfg(); } else { alert('保存失败：' + (r.error || '')); }
+}
+
+window.addEventListener('resize', () => [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart, finHoursChart, finDauChart, finLvChart].forEach(c => c && c.resize()));
 loadAll();
 </script>
 </body>

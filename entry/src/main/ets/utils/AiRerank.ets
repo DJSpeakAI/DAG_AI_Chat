@@ -5,11 +5,14 @@
 // 数据流：用户发送问题时并行预触发（fire-and-forget，照抄 ProfileModel 隐式调用先例），
 // AI 回复完成渲染司忆区时消费结果；失败/超时/离线/超限一律静默兜底本地序，用户零感知。
 // 红线：纯只读视图层——不改 reviewCount/nextReviewAt/strength，不落任何持久化数据。
-// 护栏：日上限 20 次（两库合计，内存计数重启清零可接受）；单请求 3s 超时 Abort；
-//       无 apiKey 自动休眠；AI_RERANK_ENABLED=false 全局关停（编译期常量，出问题改 false 即可）。
+// 护栏：单请求 3s 超时 Abort；无 apiKey 自动休眠；AI_RERANK_ENABLED=false 全局关停
+//   （编译期常量，出问题改 false 即可）。
+// ★ 0.273.0：删日上限 20 次（用户翻案原话「问答 30 次后面 10 次就不排了？这不是很傻逼的逻辑
+//   吗」——问答多少次排多少次）；implicit 调用通道改计费——onDone 收 usage 走
+//   consumeImplicitSp 实扣并入总账（sc:'rerank' 挂触发 messageId；失败/超时零扣）。
 import { WordItem } from '../common/WordModel';
 import { KnowledgeCard, parseTags } from '../common/KnowledgeModel';
-import { ApiConfig, ChatMessage, generateMessageId } from '../common/ChatModel';
+import { ApiConfig, ChatMessage, generateMessageId, consumeImplicitSp } from '../common/ChatModel';
 import { streamChat, StreamController } from './ApiClient';
 import { RERANK_PROMPT } from '../common/Prompts';
 import { trackAuto } from './TrackUtil';
@@ -17,7 +20,6 @@ import { trackAuto } from './TrackUtil';
 // 一期不加用户开关、零新持久化 key（任务书 Q8 终裁）——编译期常量即全局关停阀
 export const AI_RERANK_ENABLED: boolean = true;
 const AI_RERANK_TIMEOUT_MS: number = 3000;      // 单请求 3s 超时（附属区不值得久等）
-const AI_RERANK_DAILY_LIMIT: number = 20;       // 日上限（两库合计一次重排记 1 次）
 const AI_RERANK_MIN_CANDIDATES: number = 4;     // 候选 <4 条直接本地序不调 AI
 const AI_RERANK_POOL_SIZE: number = 20;         // 候选池=本地全序前 20 条
 
@@ -28,17 +30,8 @@ class RerankResult {
   orderedCardIds: string[] = []; // 空=卡库未成功/未触发
 }
 
-// 模块级缓存 + 日计数（内存态；重启清零=该消息回本地序，可接受）
+// 模块级缓存（内存态；重启清零=该消息回本地序，可接受）
 const rerankCache: Map<string, RerankResult> = new Map();
-let rerankDayKey: string = '';
-let rerankDayCount: number = 0;
-
-function rerankTodayKey(now: number): string {
-  const d = new Date(now);
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return `${d.getFullYear()}-${m < 10 ? '0' + m : m}-${day < 10 ? '0' + day : day}`;
-}
 
 // ── 消费接口（ChatPage 司忆区渲染调用） ──
 export function getRerankWordIds(messageId: string): string[] {
@@ -163,8 +156,10 @@ export function buildRerankPrompt(question: string, topics: string, candLines: s
   return p;
 }
 
-// ── 单库请求（非流式拼接 onDone 文本；3s 超时 Abort；全程静默降级） ──
-function requestRerankOrder(question: string, topics: string, candLines: string[], candidateIds: string[],
+// ── 单库请求（非流式拼接 onDone 文本；3s 超时 Abort；全程静默降级）──
+// ★ 0.273.0：onDone 收 usage → consumeImplicitSp 实扣（成功即扣——含解析失败 fallback 分支，
+//   AI 已返回 token 成本真实发生；失败/超时不走此路径=零扣费铁律天然继承）
+function requestRerankOrder(messageId: string, question: string, topics: string, candLines: string[], candidateIds: string[],
   cfg: ApiConfig, lib: string, onSettled: (orderedIds: string[]) => void): void {
   const msgs: ChatMessage[] = [new ChatMessage(generateMessageId(), 'system', buildRerankPrompt(question, topics, candLines))];
   let out = '';
@@ -176,7 +171,7 @@ function requestRerankOrder(question: string, topics: string, candLines: string[
     (chunk: string) => {
       out += chunk;
     },
-    (_inTok: number, _outTok: number, _cached: number) => {
+    (inTok: number, outTok: number, cachedTok: number, _rTok: number) => {
       if (settled) {
         return;
       }
@@ -184,6 +179,7 @@ function requestRerankOrder(question: string, topics: string, candLines: string[
       if (timerId >= 0) {
         clearTimeout(timerId);
       }
+      consumeImplicitSp('rerank', cfg.model, messageId, inTok, outTok, cachedTok); // ★ 0.273.0：实扣并入总账（挂触发 messageId）
       const nums = parseRerankOrder(out, candidateIds.length);
       if (nums.length === 0) {
         const pf: Record<string, string> = {};
@@ -210,12 +206,12 @@ function requestRerankOrder(question: string, topics: string, candLines: string[
       const pe: Record<string, string> = {};
       pe['r'] = 'fallback';
       pe['lib'] = lib;
-      trackAuto('ai_rerank', pe); // 调用失败静默（本地序兜底，用户零感知）
+      trackAuto('ai_rerank', pe); // 调用失败静默（本地序兜底，用户零感知）；★ 0.273.0：失败零扣费（onDone 不会回调）
       onSettled([]);
     },
     undefined,
     'AI 智慧排序',
-    true // ★ implicit=true：隐式调用不扣 SP（0.265.0 Q1 终案先例）
+    true // implicit=true：隐式调用 thinking 钳 disabled（0.271.0）；计费已由 consumeImplicitSp 接管（0.273.0 翻案实扣）
   );
   timerId = setTimeout(() => {
     if (settled) {
@@ -254,15 +250,6 @@ export function triggerAiRerank(messageId: string, question: string, topics: str
   if (cfg.apiKey.trim().length === 0) {
     return; // 无 apiKey/离线自动休眠
   }
-  const today = rerankTodayKey(Date.now());
-  if (rerankDayKey !== today) {
-    rerankDayKey = today;
-    rerankDayCount = 0;
-  }
-  if (rerankDayCount >= AI_RERANK_DAILY_LIMIT) {
-    return; // 日上限护栏（两库合计 20 次/日）
-  }
-  rerankDayCount += 1;
   rerankCache.set(messageId, new RerankResult()); // 占位条目（两库结果分头回填）
   if (hasWordJob) {
     const pool = wordCandidates.slice(0, AI_RERANK_POOL_SIZE);
@@ -272,7 +259,7 @@ export function triggerAiRerank(messageId: string, question: string, topics: str
       ids.push(pool[i].id);
       lines.push(`${i + 1}. ${buildWordCandLine(pool[i])}`);
     }
-    requestRerankOrder(q, topics, lines, ids, cfg, 'word', (orderedIds: string[]) => {
+    requestRerankOrder(messageId, q, topics, lines, ids, cfg, 'word', (orderedIds: string[]) => {
       const r = rerankCache.get(messageId);
       if (r !== undefined && orderedIds.length > 0) {
         r.orderedWordIds = orderedIds;
@@ -288,7 +275,7 @@ export function triggerAiRerank(messageId: string, question: string, topics: str
       ids.push(pool[i].id);
       lines.push(`${i + 1}. ${buildCardCandLine(pool[i], parseTags(pool[i].tags))}`);
     }
-    requestRerankOrder(q, topics, lines, ids, cfg, 'card', (orderedIds: string[]) => {
+    requestRerankOrder(messageId, q, topics, lines, ids, cfg, 'card', (orderedIds: string[]) => {
       const r = rerankCache.get(messageId);
       if (r !== undefined && orderedIds.length > 0) {
         r.orderedCardIds = orderedIds;

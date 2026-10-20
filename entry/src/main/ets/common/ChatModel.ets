@@ -24,7 +24,7 @@ import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, revive
 import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
-import { trackUidAuto } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）
+import { trackUidAuto, setDailyLdProvider } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）；★ 0.273.0：setDailyLdProvider（app_daily 日活行的 ld 字段注入位——TrackUtil 禁 import ChatModel，由本模块单向注入）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
@@ -1151,17 +1151,56 @@ export function spCostOfTokens(inputTokens: number, outputTokens: number, cached
 
 // ★ 0.272.0：sp_consume 埋点公共函数（原 ChatPage.trackSpConsume 抽出——chat/regen 之外的
 //   新场景 word/extract/encourage_r/encourage_s 复用；免扣账号照报 f:y，成本红线要真实 token/命中/余额）
+// ★ 0.273.0：尾加 outputTokens/mid 两参（默认值=既有调用点零波及）；p 尾加 it/ot/ct/ld 四字段
+//   （毛利成本侧数据源：it=总输入（含命中，看板按 (it−ct)×输入价 折算）/ot=输出（含思考）/
+//    ct=缓存命中/ld=累计学习天数）；mid=关联消息 ID（隐式场景对账，空不写）
 export function trackSpConsumeAuto(model: string, free: boolean, actualSp: number,
-  inputTokens: number, cachedTokens: number, scene: string): void {
+  inputTokens: number, cachedTokens: number, scene: string,
+  outputTokens: number = 0, mid: string = ''): void {
   const p: Record<string, string> = {};
   p['sp'] = `${actualSp}`;
   p['m'] = model;
-  p['sc'] = scene; // chat=发送 / regen=重生成 / word=查词 / extract=提炼 / encourage_r=复习鼓励 / encourage_s=统计鼓励
+  p['sc'] = scene; // chat=发送 / regen=重生成 / word=查词 / extract=提炼 / encourage_r=复习鼓励 / encourage_s=统计鼓励 /
+  // rerank=AI排序 / profile=画像观察 / summary=分支摘要（★ 0.273.0 隐式三件套翻案实扣）
   p['f'] = free ? 'y' : 'n';
   p['bal'] = `${siyiTotalSp(connectSiyiPoints())}`;
   p['h'] = `${inputTokens > 0 ? Math.round(cachedTokens * 100 / inputTokens) : 0}`;
+  p['it'] = `${inputTokens}`;
+  p['ot'] = `${outputTokens}`;
+  p['ct'] = `${Math.min(cachedTokens, inputTokens)}`;
+  p['ld'] = `${currentLearnDays()}`;
+  if (mid.length > 0) {
+    p['mid'] = mid;
+  }
   trackUidAuto('sp_consume', p);
 }
+
+// ★ 0.273.0：隐式调用（rerank/profile/summary）实扣收口——只在 onDone 成功路径调用
+//   （失败/取消/超时零扣费铁律：onError/timeout 分支禁调）；翻 0.265.0 Q1「隐式暂不扣」旧案
+//   （用户拍板「要扣啊，加到总账」）；Lv8 司忆令免扣照报 f:y；余额不足 clamp 0（0.248.7 先例）；
+//   展示与扣点同源=spCostOfTokens 同公式；用户端不单展示（并入总账，D2 展示边界）
+// 纯核心（hypium 可测——不动 connect 单例）：返回实扣额（免扣=0；不足=clamp 后实际值）
+export function consumeImplicitSpCore(store: SiyiPointStore, free: boolean, cost: number): number {
+  if (free) {
+    return 0; // Lv8 司忆令：一分不扣（f:y 由调用方上报）
+  }
+  const bal0 = siyiTotalSp(store);
+  consumeSiyiSp(store, cost);
+  return bal0 - siyiTotalSp(store);
+}
+
+export function consumeImplicitSp(scene: string, model: string, mid: string,
+  inputTokens: number, outputTokens: number, cachedTokens: number): void {
+  const store = connectSiyiPoints();
+  const free = isSiyiSpFree(currentLearnDays());
+  const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
+  const actual = consumeImplicitSpCore(store, free, cost);
+  trackSpConsumeAuto(model, free, actual, inputTokens, cachedTokens, scene, outputTokens, mid);
+}
+
+// ★ 0.273.0：app_daily 日活埋点 ld 注入（模块级一次性注入——惰性调用，currentLearnDays 在
+//   maybeTrackDaily 真正发 app_daily 时才执行；TrackUtil→ChatModel 反向依赖由此断路）
+setDailyLdProvider((): number => currentLearnDays());
 
 // 新用户礼包分档（用户 2026-10-18 拍板）：上线首月注册=200 万（≈免费畅用一月）；次月起新用户=100 万
 // ⚠️ SIYI_FIRST_MONTH_END 为首月截止占位——上线时间确定后更新此常量即可
@@ -1581,8 +1620,10 @@ export function iapSpAmountOf(productId: string): number {
 
 // IAP 到账（幂等）：purchaseToken 已入集合拒到账；到账+记 token 同帧原子完成——
 //   finishPurchase 失败不丢防线（补单链路再入时 token 已记，grant 幂等挡双入账）
+// ★ 0.273.0：尾加 amountCny（实际成交价 ¥ 字符串如 '9.90'）——sp_grant iap 行补 amt/pid 两字段
+//   （毛利收入侧数据源；InAppPurchaseData.price 单位分，调用方换算；空串=看板按 0 并标注）
 export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPointStore,
-  productId: string, purchaseToken: string): boolean {
+  productId: string, purchaseToken: string, amountCny: string = ''): boolean {
   const amount = iapSpAmountOf(productId);
   if (amount <= 0 || purchaseToken.length === 0) {
     return false; // 未知商品/脏凭据拒到账
@@ -1612,6 +1653,8 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   _ip['src'] = 'iap';
   _ip['sp'] = `${amount}`;
   _ip['bal'] = `${siyiTotalSp(siyi)}`;
+  _ip['amt'] = amountCny; // ★ 0.273.0：实际成交价 ¥（充值流水求和数据源）
+  _ip['pid'] = productId; // ★ 0.273.0：商品 ID
   trackUidAuto('sp_grant', _ip);
   return true;
 }

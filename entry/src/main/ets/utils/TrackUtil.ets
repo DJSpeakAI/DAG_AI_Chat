@@ -12,6 +12,10 @@
 //   - 匿名 uid 可插拔 {id_type:'uuid', id}（12 位随机 hex；同意+加入计划后惰性生成——同意前零生成；
 //     id_type 预留 uuid→aaid→openid 升级位，历史数据不白攒）
 //   - app_first 一次性激活事件（实际入队才写标记；开关关时零动作）
+// ★ 0.273.0 后台毛利财务报表：
+//   - app_daily 日活事件（当日首条埋点自动补发恰 1 行/uid/天；字段 id_type/id/ld——
+//     看板日活/留存/等级分布数据源）
+//   - track() 主体抽 emitEvent（app_daily 直发防递归）
 // ============================================================
 
 import { preferences } from '@kit.ArkData';
@@ -23,10 +27,20 @@ const KEY_ENABLED = 'analytics_enabled'; // 隐私开关（默认 false——用
 const KEY_QUEUE = 'event_queue';         // 攒批队列（JSON 数组）
 const KEY_UID = 'track_uid';             // ★ 0.260.0：匿名设备标识（12 位随机 hex；同意后惰性生成）
 const KEY_FIRST = 'app_first_sent';      // ★ 0.260.0：app_first 一次性标记（实际入队才写）
+const KEY_DAILY_DATE = 'track_daily_date'; // ★ 0.273.0：app_daily 当日去重（date+sent 固定两 key 不膨胀——任务书单日 key 语义等价实现）
+const KEY_DAILY_SENT = 'track_daily_sent'; // ★ 0.273.0：当日 app_daily 已入队标记
 const QUEUE_FLUSH_SIZE = 50;             // ★ 0.260.0：攒够 50 条自动上报（20→50，配额治理）
 const CLOUD_FN_NAME = 'track-events'; // AGC 云函数名（★ 命名规则：仅小写/数字/中划线——trackEvents 大写被拒，0.206.1 改）
 const TRACK_TAG = 'DAGAI_TE';         // hilog 标签（flush 成败可查——0.206.2 前全静默无法诊断）
 const QUEUE_MAX = 200;                // 失败回滚合并后队列上限（防长期断网无限膨胀——超出丢最旧）
+
+// ★ 0.273.0：app_daily 行 ld（累计学习天数）注入位——TrackUtil 禁 import ChatModel（循环依赖铁律），
+//   由 ChatModel 模块级调 setDailyLdProvider 单向注入；未注入时 ld 报 0（EntryAbility 加载链保证已注入）
+let dailyLdProvider: (() => number) | null = null;
+
+export function setDailyLdProvider(fn: () => number): void {
+  dailyLdProvider = fn;
+}
 
 /** 队列条目（.ts 风格平铺——云函数参数只认基础类型） */
 interface TrackedEvent {
@@ -104,11 +118,48 @@ export function getTrackUid(ctx: Context): string {
 /**
  * 埋点统一入口（全项目唯一写法：track(ctx, 'podcast_mode', {page:'chat'})）。
  * 未开隐私开关 → 直接返回（零开销）；开启 → hiAppEvent 本地双落 + 入队（满 50 条自动上报）。
+ * ★ 0.273.0：当日首条埋点入队前自动补发一行 app_daily（日活/等级分布数据源——1 行/uid/天）。
  */
 export function track(context: Context, eventId: string, params?: Record<string, string>): void {
   if (!isTrackingEnabled(context)) {
     return;
   }
+  maybeTrackDaily(context);
+  emitEvent(context, eventId, params);
+}
+
+/**
+ * ★ 0.273.0：app_daily 当日去重自动插行——「入队才写标记」防重（trackFirstAuto 模式）；
+ * 切日首条埋点自然触发。app_daily 行直发 emitEvent（不走 track 防递归）。
+ */
+function maybeTrackDaily(context: Context): void {
+  try {
+    const pref = getPref(context);
+    const d = new Date();
+    const today = `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+    const savedDate = pref.getSync(KEY_DAILY_DATE, '') as string;
+    if (savedDate !== today) {
+      pref.putSync(KEY_DAILY_DATE, today); // 切日重置（新的一天首条重新触发）
+      pref.putSync(KEY_DAILY_SENT, false);
+      pref.flush();
+    } else if ((pref.getSync(KEY_DAILY_SENT, false) as boolean) === true) {
+      return; // 今日已发——恰 1 行/uid/天
+    }
+    const p: Record<string, string> = {};
+    p['id_type'] = 'uuid';
+    p['id'] = getTrackUid(context);
+    p['ld'] = `${dailyLdProvider === null ? 0 : dailyLdProvider()}`;
+    if (emitEvent(context, 'app_daily', p)) {
+      pref.putSync(KEY_DAILY_SENT, true);
+      pref.flush();
+    }
+  } catch (_e) {
+    // 静默（日活缺一行可接受，不阻塞业务埋点）
+  }
+}
+
+/** hiAppEvent 本地双落 + 入队（原 track 主体抽出）；返回是否入队成功（app_daily 防重标记依据） */
+function emitEvent(context: Context, eventId: string, params?: Record<string, string>): boolean {
   // 双保险：系统事件域（本地 hiview 可查——诊断兜底，不依赖云端）
   try {
     const emptyParams: Record<string, string> = {};
@@ -138,8 +189,10 @@ export function track(context: Context, eventId: string, params?: Record<string,
       pref.putSync(KEY_QUEUE, JSON.stringify(q));
       pref.flush();
     }
+    return true;
   } catch (_e) {
     // 静默
+    return false;
   }
 }
 

@@ -2173,12 +2173,12 @@ export struct ChatPage {
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
           const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额（consumeSiyiSp 不足 clamp 到 0）
           consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
-          this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'chat'); // ★ 0.260.0
+          this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'chat', outputTokens); // ★ 0.260.0；★ 0.273.0 补 ot
           // ★ 0.271.0：thinking_use 埋点（sp=本条实扣；思考生效但零思考 token=网关静默忽略 degraded）
           this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
             this.replyLengthMode, thinkReq.effort, thinkDur, thinkChars, _bal0 - siyiTotalSp(this.siyiStore));
         } else {
-          this.trackSpConsume(aiMsg, true, 0, inputTokens, cachedTokens, 'chat'); // ★ 0.260.0：免扣照报 f:y（成本红线要真实 token/命中/余额）
+          this.trackSpConsume(aiMsg, true, 0, inputTokens, cachedTokens, 'chat', outputTokens); // ★ 0.260.0：免扣照报 f:y（成本红线要真实 token/命中/余额）；★ 0.273.0 补 ot
           this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
             this.replyLengthMode, thinkReq.effort, thinkDur, thinkChars, 0);
         }
@@ -2412,12 +2412,12 @@ export struct ChatPage {
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
           const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额
           consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
-          this.trackSpConsume(msg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'regen'); // ★ 0.260.0
+          this.trackSpConsume(msg, false, _bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'regen', outputTokens); // ★ 0.260.0；★ 0.273.0 补 ot
           // ★ 0.271.0：thinking_use 埋点（regen 场景同款五态）
           this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (regenDowngraded ? 'auto_downgrade' : 'use') : 'degrade'),
             this.replyLengthMode, thinkReq.effort, regenThinkDur, regenThinkChars, _bal0 - siyiTotalSp(this.siyiStore));
         } else {
-          this.trackSpConsume(msg, true, 0, inputTokens, cachedTokens, 'regen'); // ★ 0.260.0：免扣照报 f:y
+          this.trackSpConsume(msg, true, 0, inputTokens, cachedTokens, 'regen', outputTokens); // ★ 0.260.0：免扣照报 f:y；★ 0.273.0 补 ot
           this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (regenDowngraded ? 'auto_downgrade' : 'use') : 'degrade'),
             this.replyLengthMode, thinkReq.effort, regenThinkDur, regenThinkChars, 0);
         }
@@ -3080,12 +3080,12 @@ export struct ChatPage {
         const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
         if (this.spFree()) {
           this.wordPopupSpText = 'Lv8 免费';
-          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'word');
+          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'word', outputTokens);
           return;
         }
         consumeSiyiSp(this.siyiStore, cost);
         this.wordPopupSpText = `消耗 ${cost} SP`;
-        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'word');
+        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'word', outputTokens);
       });
   }
 
@@ -3171,8 +3171,8 @@ export struct ChatPage {
   // ★ 0.260.0：sp_consume 埋点（与 consumeSiyiSp 实扣同点双写——0.259.0 本地统计外再加云端上报）：
   //   免扣账号照报 f:y（sp=0，成本红线要真实 token/命中率/余额）；h=缓存命中率%（cached/input，输入 0 防除零）
   //   ★ 0.272.0：实现抽 common/ChatModel.trackSpConsumeAuto（word/extract/encourage 新场景共用），薄壳化
-  trackSpConsume(msg: ChatMessage, free: boolean, actualSp: number, inputTokens: number, cachedTokens: number, scene: string): void {
-    trackSpConsumeAuto(msg.model, free, actualSp, inputTokens, cachedTokens, scene);
+  trackSpConsume(msg: ChatMessage, free: boolean, actualSp: number, inputTokens: number, cachedTokens: number, scene: string, outputTokens: number): void {
+    trackSpConsumeAuto(msg.model, free, actualSp, inputTokens, cachedTokens, scene, outputTokens);
   }
 
   // ★ 0.247.3：token 明细弹层 builder（感叹号弹出）——无参 @Builder 直读 tokenInfoText 快照；
@@ -4067,12 +4067,12 @@ export struct ChatPage {
         const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
         if (this.spFree()) {
           this.knowledgeEditSpText = 'Lv8 免费';
-          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract');
+          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract', outputTokens);
           return;
         }
         consumeSiyiSp(this.siyiStore, cost);
         this.knowledgeEditSpText = `消耗 ${cost} SP`;
-        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract');
+        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract', outputTokens);
       });
   }
 
@@ -4966,12 +4966,12 @@ export struct ChatPage {
         const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
         if (this.spFree()) {
           this.knowledgeEditSpText = 'Lv8 免费';
-          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract');
+          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract', outputTokens);
           return;
         }
         consumeSiyiSp(this.siyiStore, cost);
         this.knowledgeEditSpText = `消耗 ${cost} SP`;
-        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract');
+        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract', outputTokens);
       });
   }
 
@@ -5231,7 +5231,7 @@ export struct ChatPage {
             if (delta > 0) {
               const bal0 = siyiTotalSp(this.siyiStore);
               consumeSiyiSp(this.siyiStore, delta);
-              this.trackSpConsume(msg, false, bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'hook');
+              this.trackSpConsume(msg, false, bal0 - siyiTotalSp(this.siyiStore), inputTokens, cachedTokens, 'hook', outputTokens);
               this.hookSpByMsg.set(msg.messageId, delta); // 明细弹层「伴读编排 Y SP」拆分行（会话级暂存）
             }
           }
