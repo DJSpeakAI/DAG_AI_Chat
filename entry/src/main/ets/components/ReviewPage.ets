@@ -9,7 +9,7 @@
 
 import { WordItem, WordBankStore } from '../common/WordModel';
 import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, getCardImages, getTitleImages } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡（复习即问场景）
-import { ChatMessage, ApiConfig, AiPreference, connectApiConfig, connectAiPreference, generateMessageId, StatisticsStore, connectStatistics, recordStat } from '../common/ChatModel';
+import { ChatMessage, ApiConfig, AiPreference, connectApiConfig, connectAiPreference, generateMessageId, StatisticsStore, connectStatistics, recordStat, trackSpConsumeAuto } from '../common/ChatModel';
 import { buildStatEncouragePrompt } from '../common/Prompts';
 import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
@@ -31,6 +31,7 @@ import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.2
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默走 fallback）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：完成页未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
 import { FireworksOverlay } from './FireworksOverlay'; // ★ 0.255.1：完成页烟花顶层 Transparent（点击放烟花+透传按钮）；自动高密度 8s 后静默等点击
+import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：结束语 SP 信息卡（免扣照报明细）
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -130,6 +131,9 @@ export struct ReviewPage {
   @Local aiText: string = '';
   @Local aiLoading: boolean = false;
   @Local aiTextFromAi: boolean = false; // ★ 0.249.1：鼓励语是否真为 AI 生成（未登录/失败降级=本地 fallback，不显示 AI 标识）
+  // ★ 0.272.0：SP 透明化——结束语 token 用量（信息卡数据源；aiTextFromAi=true 才渲染信息卡）
+  @Local encourageInTok: number = 0;
+  @Local encourageOutTok: number = 0;
 
   aboutToAppear(): void {
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange 写入）
@@ -322,9 +326,13 @@ export struct ReviewPage {
       (chunk: string) => {
         this.aiText += chunk;
       },
-      () => {
+      (inputTokens: number, outputTokens: number, cachedTokens: number, _reasoningTokens: number) => {
         this.aiLoading = false;
         this.aiTextFromAi = true; // ★ 0.249.1：AI 成功生成——显示 AI 内容标识
+        // ★ 0.272.0：免扣照报（鼓励语=产品补贴不扣 SP，任务书 D1；token 成本照实上报 f:y）
+        this.encourageInTok = inputTokens;
+        this.encourageOutTok = outputTokens;
+        trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'encourage_r');
       },
       (errMsg: string) => {
         this.aiLoading = false;
@@ -658,11 +666,19 @@ export struct ReviewPage {
             .textAlign(TextAlign.Center)
             .lineHeight(21)
           // ★ 0.249.1：AI 生成标识（仅 AI 成功生成时显示；未登录/失败降级=本地文案不标——口径不骗人）
+          // ★ 0.272.0：标识行尾 SP 信息卡（免扣照报明细——「AI 鼓励 · 免费」；仅 AI 真生成渲染）
           if (this.aiTextFromAi) {
-            Text('内容由 AI 生成 · 仅供参考')
-              .fontSize(11)
-              .fontColor(this.theme.textTertiary)
-              .margin({ top: 6 })
+            Row({ space: 6 }) {
+              Text('内容由 AI 生成 · 仅供参考')
+                .fontSize(11)
+                .fontColor(this.theme.textTertiary)
+              TokenInfoChip({
+                inputTokens: this.encourageInTok,
+                outputTokens: this.encourageOutTok,
+                spText: 'AI 鼓励 · 免费'
+              })
+            }
+            .margin({ top: 6 })
           }
         }
       }

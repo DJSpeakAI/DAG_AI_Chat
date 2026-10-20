@@ -641,7 +641,9 @@ export function queryWord(
   word: string,
   config: ApiConfig,
   onDone: (result: WordQueryResult) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  // ★ 0.272.0：token 用量透传（尾部追加向后兼容）——成功解析出结果才回调（失败零扣费铁律：解析失败=无有效结果不透传）
+  onUsage?: (inputTokens: number, outputTokens: number, cachedTokens: number) => void
 ): StreamController {
   // ★ 0.222.21：划词首字符中文 → 中译英 prompt（原文+音标+英文格式）；
   // 其余（英文/数字/符号开头）→ 原英译中 prompt（中文释义格式）
@@ -657,10 +659,13 @@ export function queryWord(
     messages,
     config,
     (chunk: string) => { full += chunk; }, // accumulate silently — no typewriter UI for lookup
-    () => {
+    (inputTokens: number, outputTokens: number, cachedTokens: number, _reasoningTokens: number) => {
       const result = parseWordQueryResult(full, word);
       if (result !== null) {
         onDone(result);
+        if (onUsage !== undefined) {
+          onUsage(inputTokens, outputTokens, cachedTokens); // ★ 0.272.0：成功路径透传 usage
+        }
       } else {
         onError('AI 返回内容无法解析为词条，请重试');
       }
@@ -784,7 +789,9 @@ export function queryKnowledge(
   config: ApiConfig,
   onDone: (result: KnowledgeQueryResult) => void,
   onError: (error: string) => void,
-  onPartial?: (title: string, definition: string) => void // ★ 0.153：流式实时填充弹窗输入框
+  onPartial?: (title: string, definition: string) => void, // ★ 0.153：流式实时填充弹窗输入框
+  // ★ 0.272.0：token 用量透传（尾部追加向后兼容）——成功解析出卡片才回调（失败零扣费铁律）
+  onUsage?: (inputTokens: number, outputTokens: number, cachedTokens: number) => void
 ): StreamController {
   const messages: ChatMessage[] = [
     new ChatMessage(generateMessageId(), 'system', KNOWLEDGE_QUERY_PROMPT),
@@ -801,10 +808,13 @@ export function queryKnowledge(
         onPartial(extractPartialField(full, 'title'), extractPartialField(full, 'definition'));
       }
     },
-    () => {
+    (inputTokens: number, outputTokens: number, cachedTokens: number, _reasoningTokens: number) => {
       const result = parseKnowledgeQueryResult(full);
       if (result !== null) {
         onDone(result);
+        if (onUsage !== undefined) {
+          onUsage(inputTokens, outputTokens, cachedTokens); // ★ 0.272.0：成功路径透传 usage
+        }
         return;
       }
       // ★ 0.153：检测方舟错误体（{"error":{"message":"..."}}）→ 归类「AI服务返回错误」
@@ -853,7 +863,9 @@ export function queryKnowledgeFromImage(
   config: ApiConfig,
   onDone: (result: KnowledgeQueryResult) => void,
   onError: (error: string) => void,
-  onPartial?: (title: string, definition: string) => void // ★ 0.153：流式实时填充弹窗输入框
+  onPartial?: (title: string, definition: string) => void, // ★ 0.153：流式实时填充弹窗输入框
+  // ★ 0.272.0：token 用量透传（尾部追加向后兼容）——成功解析出卡片才回调（失败零扣费铁律）
+  onUsage?: (inputTokens: number, outputTokens: number, cachedTokens: number) => void
 ): StreamController {
   const hasNote = note.trim().length > 0;
   const messages: ChatMessage[] = [
@@ -874,10 +886,13 @@ export function queryKnowledgeFromImage(
         onPartial(extractPartialField(full, 'title'), extractPartialField(full, 'definition'));
       }
     },
-    () => {
+    (inputTokens: number, outputTokens: number, cachedTokens: number, _reasoningTokens: number) => {
       const result = parseKnowledgeQueryResult(full);
       if (result !== null) {
         onDone(result);
+        if (onUsage !== undefined) {
+          onUsage(inputTokens, outputTokens, cachedTokens); // ★ 0.272.0：成功路径透传 usage
+        }
         return;
       }
       // ★ 0.153：检测方舟错误体（{"error":{"message":"..."}}）→ 归类「AI服务返回错误」

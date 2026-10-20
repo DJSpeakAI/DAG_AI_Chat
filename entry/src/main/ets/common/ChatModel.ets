@@ -261,9 +261,11 @@ export class ApiConfig {
   // Key 不通用，0.139 拿方舟 Key 实测 401 Invalid X-Api-Key）
   @Trace audioKey: string = '';
   // ★ 0.236.0：千问 TTS 专属字段（Schema 铁律——只尾部追加，不改不删前三字段）
-  // ttsProvider：'volcano' | 'qianwen' | 'custom' 三引擎物理互斥（用户铁律：选了哪个只调哪个，
-  //   禁止按 Key 存在自动切换）；audioKey/audioModel/audioVoice 三档复用承载当前生效引擎的值
-  @Trace ttsProvider: string = 'volcano';
+  // ttsProvider：'local' | 'volcano' | 'qianwen' | 'custom' 四档（★ 0.272.0 扩 local——TTS 1.0
+  //   默认本地语音零成本；云端三档物理互斥铁律不变：选了哪个只调哪个，禁止按 Key 存在自动切换）；
+  // audioKey/audioModel/audioVoice 云端三档复用承载当前生效引擎的值（local 档不写入不覆盖——
+  // 切回云端档配置还在）；存量已存 volcano/qianwen/custom 的不迁移（PersistenceV2 落盘值不动）
+  @Trace ttsProvider: string = 'local';
   // ttsEmotion：千问档情感档位（'默认'=不带 instruction；'开心'/'中立'/'生气'/'悲伤'/'惊讶'
   //   引擎内映射为百炼 instruction 自然语言指令——2026-10-14 实测 cosyvoice-v3.5-plus 无 emotion 枚举字段）
   @Trace ttsEmotion: string = '开心';
@@ -1121,6 +1123,44 @@ export function siyiBalanceDisplay(store: SiyiPointStore, learnDays: number): st
     return '999,999';
   }
   return siyiTotalSp(store).toLocaleString();
+}
+
+// ============================================================
+// ★ 0.272.0：SP 计价常量与公式单一真相源（从 ChatPage 迁入——全场景 SP 透明化）
+// ============================================================
+// SP=token÷7×2，结果四舍五入无小数；÷7 刻意不整除防反推成本；界面永不出现 token 字样=商业铁律；
+// 调价只改本处勿散落逻辑（原 ChatPage 模块级常量整体搬家，公式/数值零变化）
+export const SP_TOKEN_DIVISOR: number = 7;
+export const SP_COST_MULTIPLIER: number = 2;
+// 价格倍数系数（腾讯云 DeepSeek-V4-Flash 实价：输入 1 元 / 命中 0.02 元=1/50 / 输出 4 元 每百万）
+export const SP_INPUT_PRICE_RATIO: number = 1;     // 输入·未命中
+export const SP_HIT_PRICE_RATIO: number = 0.02;    // 输入·缓存命中（未命中的 1/50）
+export const SP_OUTPUT_PRICE_RATIO: number = 4;    // 输出（输入的 4 倍）
+// 缓存节省展示系数：命中部分假如未命中本要按基准价扣，实扣仅 0.02 → 省 98%（1 − 0.02/1）
+export const SP_CACHE_SAVING_RATIO: number = 0.98;
+
+// ★ 0.272.0：SP 换算公共纯函数（原 ChatPage.spCostOf 内联公式抽出——查词/提炼/鼓励语等
+//   全场景 AI 调用统一走此口径；展示与扣点同源军令：信息卡显示的数字=本函数输出=实扣值）
+export function spCostOfTokens(inputTokens: number, outputTokens: number, cachedTokens: number): number {
+  const hit = Math.min(cachedTokens, inputTokens);
+  const miss = inputTokens - hit;
+  const inSp = Math.round((miss * SP_INPUT_PRICE_RATIO + hit * SP_HIT_PRICE_RATIO) / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+  const outSp = Math.round(outputTokens * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
+  return inSp + outSp;
+}
+
+// ★ 0.272.0：sp_consume 埋点公共函数（原 ChatPage.trackSpConsume 抽出——chat/regen 之外的
+//   新场景 word/extract/encourage_r/encourage_s 复用；免扣账号照报 f:y，成本红线要真实 token/命中/余额）
+export function trackSpConsumeAuto(model: string, free: boolean, actualSp: number,
+  inputTokens: number, cachedTokens: number, scene: string): void {
+  const p: Record<string, string> = {};
+  p['sp'] = `${actualSp}`;
+  p['m'] = model;
+  p['sc'] = scene; // chat=发送 / regen=重生成 / word=查词 / extract=提炼 / encourage_r=复习鼓励 / encourage_s=统计鼓励
+  p['f'] = free ? 'y' : 'n';
+  p['bal'] = `${siyiTotalSp(connectSiyiPoints())}`;
+  p['h'] = `${inputTokens > 0 ? Math.round(cachedTokens * 100 / inputTokens) : 0}`;
+  trackUidAuto('sp_consume', p);
 }
 
 // 新用户礼包分档（用户 2026-10-18 拍板）：上线首月注册=200 万（≈免费畅用一月）；次月起新用户=100 万

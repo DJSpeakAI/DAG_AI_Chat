@@ -246,6 +246,7 @@ function spAggregate() {
   const uidSp = new Map();    // uid -> consume 累计（TOP 榜）
   const hitBuckets = [0, 0, 0, 0, 0]; // 0% / 1-20 / 21-50 / 51-80 / 81-100
   const grantSrc = new Map(); // src -> grant
+  const sceneAgg = new Map(); // sc -> {sp, cnt}（★ 0.272.0 按场景拆分：chat/regen/word/extract/encourage_r/encourage_s）
   let consumeTotal = 0, grantTotal = 0, consumeToday = 0, grantToday = 0;
   let consumeCnt = 0;
 
@@ -260,6 +261,11 @@ function spAggregate() {
       if (day === today) consumeToday += sp;
       const m = p.m || '(unknown)';
       modelAgg.set(m, (modelAgg.get(m) || 0) + sp);
+      const sc = p.sc || '?';
+      const scAgg = sceneAgg.get(sc) || { sp: 0, cnt: 0, free: 0 };
+      scAgg.sp += sp; scAgg.cnt++;
+      if (p.f === 'y') scAgg.free++; // 免扣照报行（encourage_*/Lv8）单独计数
+      sceneAgg.set(sc, scAgg);
       const uid = p.id || '?';
       const uk = uid + '|' + day;
       uidDay.set(uk, (uidDay.get(uk) || 0) + sp);
@@ -309,6 +315,7 @@ function spAggregate() {
     summary: { consumeTotal, grantTotal, consumeToday, grantToday, cny, cnyToday, consumeCnt, spCostPer10kCny: CFG.spCostPer10kCny },
     series, uidTop,
     models: [...modelAgg.entries()].sort((a, b) => b[1] - a[1]).map(x => ({ model: x[0], sp: x[1] })),
+    scenes: [...sceneAgg.entries()].sort((a, b) => b[1].sp - a[1].sp).map(x => ({ scene: x[0], sp: x[1].sp, cnt: x[1].cnt, free: x[1].free })), // ★ 0.272.0 按场景拆分
     grantSrc: [...grantSrc.entries()].sort((a, b) => b[1] - a[1]).map(x => ({ src: x[0], sp: x[1] })),
     p50: pct(0.5), p90: pct(0.9),
     balBuckets, hitBuckets

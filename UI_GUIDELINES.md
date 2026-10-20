@@ -588,3 +588,28 @@
   fontSize 12 brandSecondary + padding 10/4 + RADIUS_CONTROL + surfaceSoft 底 + margin left 10；
 - 点击=regenerate 链路+本条强制 disabled（超时场景二次思考概率高=双倍计费零收益，不自动重发把选择权给用户）；
 - 参数不兼容 400（窄门关键词）自动降级重发一次，不发此按钮（用户无感）。
+
+## 二十五、AI 调用信息卡 TokenInfoChip（★ 0.272.0 全场景 SP 透明化定稿）
+
+> 聊天主链路感叹号弹层（tokenInfoBuilder，0.247.3 起）不动不换；新场景（查词/提炼/鼓励语）一律用本组件——形态同源、逻辑零耦合。
+
+### 25.1 触发器（感叹号图标）
+- `info.svg` 12×12、objectFit Contain、**opacity 0.65**（白 65% 对齐消息操作行图标规格）；点击开/关 bindPopup；
+- 渲染条件=调用侧数据就绪（查词/提炼=onUsage 透传后；鼓励语=aiTextFromAi=true）——加载中/失败/取消/fallback 文案一律不渲染。
+
+### 25.2 明细卡（bindPopup 自绘）
+- 版式照 tokenInfoBuilder：**272 定宽 + radius 12 + surfaceNode 底 + strokeCard 描边 + padding 12/16**、placement Top、popupColor Transparent、mask overlayLight；
+- 两行式（**无缓存行**——新场景输入各异缓存命中期短，用户拍板不展示）：
+  - 第一行「输入 X SP · 输出 Y SP」：spCostOfTokens 公共公式换算（展示与扣点同源军令——数字=实扣公式输出，禁两套口径；**对外禁 token 字样**）；
+  - 第二行 SP 行（brandSecondary 紫字）：实扣=「消耗 N SP」/ 鼓励=「AI 鼓励 · 免费」/ Lv8=「Lv8 免费」（文本调用侧拼好传入）；
+- 组件零业务逻辑：不扣费、不埋点、不做免扣判定——`@Param inputTokens/outputTokens/spText` 三入参。
+
+### 25.3 落位规格（四点位）
+- 翻译浮窗：结果区底部**左下角**、与「加入单词库」按钮同排另一侧（Row space 8 + 按钮 layoutWeight(1)）；
+- 提炼弹窗：按钮区**右下角**（取消/保存 Row 内、保存按钮右侧）；提炼中不渲染、完成即现；
+- 复习结束语/统计鼓励语：「内容由 AI 生成 · 仅供参考」标识**行尾同排**（Row space 6）——多行文案不嵌行内，与标识行成组。
+
+### 25.4 计费口径（D1 分层表）
+- 查词 `word`/提炼 `extract`=**实扣**（Lv8 豁免标「Lv8 免费」；失败/取消/超时零扣费——onUsage 仅成功路径回调）；
+- 鼓励语 `encourage_r`/`encourage_s`=**免扣照报**（产品补贴；f:y 成本数据照实上报，余额不动）；
+- 提炼（含圈注多模态）发起前 SP 余额闸门（余额≤0 且非 Lv8 → 充值引导）；查词划词即查无闸门（防打断，事后 clamp）。

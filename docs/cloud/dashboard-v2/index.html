@@ -37,6 +37,10 @@
   .chart { width: 100%; height: 300px; }
   .chart.tall { height: 340px; }
   .hint { color: #8a7fa8; font-size: 11px; margin-top: 6px; }
+  /* ★ 0.272.0 按场景拆分表格 */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 12px; color: #cfc2f5; }
+  .tbl th, .tbl td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #2c2440; }
+  .tbl th { color: #8a7fa8; font-weight: 500; }
   .empty { color: #8a7fa8; font-size: 12px; padding: 20px; text-align: center; }
   .quota-bar { height: 14px; background: #2c2440; border-radius: 7px; overflow: hidden; border: 1px solid #342a52; }
   .quota-bar i { display: block; height: 100%; background: #4fae6d; }
@@ -119,6 +123,10 @@
     <div class="card">
       <h2>消耗按模型分布</h2>
       <div id="spModel" class="chart"></div>
+    </div>
+    <div class="card">
+      <h2>消耗按场景拆分（★ 0.272.0：chat=聊天 / regen=重生成 / word=查词 / extract=提炼 / encourage_r=复习鼓励 / encourage_s=统计鼓励；免扣照报列=产品补贴与 Lv8 免费次数——成本照实、余额不动）</h2>
+      <div id="spScene"></div>
     </div>
     <div class="card">
       <h2>消耗按匿名 uid TOP10</h2>
@@ -355,6 +363,15 @@ function renderSp() {
   });
   spModelChart.setOption(pieOpt(SP.models, 'model', 'sp'), true);
   spSrcChart.setOption(pieOpt(SP.grantSrc, 'src', 'sp'), true);
+
+  // ★ 0.272.0 按场景拆分表格（新场景 word/extract/encourage_* 上报后 10 分钟增量自然汇总；零数据=装机前空表）
+  const SCENE_LABEL = { chat: '聊天', regen: '重生成', word: '查词', extract: '提炼', encourage_r: '复习鼓励', encourage_s: '统计鼓励' };
+  const sc = SP.scenes || [];
+  document.getElementById('spScene').innerHTML = sc.length === 0
+    ? '<div class="empty">暂无分场景数据（新场景装机上报后 10 分钟内自然出现）</div>'
+    : '<table class="tbl"><tr><th>场景</th><th>消耗 SP</th><th>次数</th><th>免扣照报</th><th>占总消耗</th></tr>' +
+      sc.map(x => '<tr><td>' + (SCENE_LABEL[x.scene] || x.scene) + '</td><td>' + fmtSp(x.sp) + '</td><td>' + x.cnt +
+        '</td><td>' + (x.free > 0 ? x.free : '-') + '</td><td>' + (s.consumeTotal > 0 ? (x.sp * 100 / s.consumeTotal).toFixed(1) + '%' : '-') + '</td></tr>').join('') + '</table>';
 
   spUidChart.setOption({
     tooltip: { trigger: 'axis' },

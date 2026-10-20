@@ -55,6 +55,7 @@ import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.232.1：弹窗宽度断点制（PC/Pad 固定 560 不做屏宽自适应——用户拍板「配置类 UI 自适应宽度难看」）
 import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.236.1：火山/自定义档试听（speakWithParams 显式传参）
+import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.272.0：本机语音档试听（TTS 1.0 默认档——设备内置引擎零配置）
 import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流式轻量 POST，零侵入 streamChat 主链路）
 
 import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME, isPrivacySensitiveSection } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回；★ 0.264.0：隐私敏感条款判定（华为审核独立项）
@@ -173,6 +174,9 @@ const TTS_DEFAULT_VOICE: string = 'S_bv8H32Sg2';
 
 // ★ 0.236.0：千问 TTS（百炼 CosyVoice 复刻音色）预设
 const TTS_PROVIDER_QWEN: string = 'qianwen'; // ttsProvider 三值之一（volcano/qianwen/custom 三引擎物理互斥）
+// ★ 0.272.0：TTS 1.0 本地语音档（四档制——local/volcano/qianwen/custom；默认档=local 设备内置语音零成本，
+//   出厂值与重置值都 local；存量已存云端三档的不迁移——档位值域扩不改写旧值，0.237.0 脏检查坑惯例）
+const TTS_PROVIDER_LOCAL: string = 'local';
 const TTS_QWEN_DEFAULT_MODEL: string = 'cosyvoice-v3.5-plus'; // 空值兜底（引擎内同款常量）
 // 情感档位（引擎内映射百炼 instruction 自然语言指令——2026-10-14 实测无 emotion 枚举字段）
 const TTS_EMOTION_PRESETS: string[] = ['默认', '开心', '中立', '生气', '悲伤', '惊讶'];
@@ -192,7 +196,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.271.0'; // ★ 0.271.0：深度思考模式接入（版本号顺延）;上一版 0.270.1：语音输入引导
+const APP_VERSION: string = 'v0.272.0'; // ★ 0.272.0：AI 调用全场景 SP 透明化与统计补全（版本号顺延）;上一版 0.271.0：深度思考模式接入
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -361,6 +365,10 @@ export struct GlobalSettingsDialog {
   // ★ 0.236.0：三档分判 + 显示引擎名（volcano/qianwen=Key+模型（qwen 另需音色——cosyvoice 无系统音色）；custom=端点+模型+Key）
   @Computed
   get ttsCloudOn(): boolean {
+    // ★ 0.272.0：本地档恒 false（零成本非云端——状态卡显示「本机语音」灰字）
+    if (this.apiConfig.ttsProvider === TTS_PROVIDER_LOCAL) {
+      return false;
+    }
     if (this.apiConfig.ttsProvider === TTS_PROVIDER_QWEN) {
       return this.apiConfig.audioKey.trim().length > 0 && this.apiConfig.audioVoice.trim().length > 0;
     }
@@ -489,7 +497,7 @@ export struct GlobalSettingsDialog {
     //   持久化只存当前档的值（audioKey/audioModel/audioVoice 三档复用承载），非当前档字段用档默认
     const savedTtsProvider = this.apiConfig.ttsProvider;
     this.editTtsProvider = (savedTtsProvider === 'volcano' || savedTtsProvider === TTS_PROVIDER_QWEN ||
-      savedTtsProvider === 'custom') ? savedTtsProvider :
+      savedTtsProvider === 'custom' || savedTtsProvider === TTS_PROVIDER_LOCAL) ? savedTtsProvider :
       (this.apiConfig.audioEndpoint.includes('bytedance.com') ? 'volcano' : 'custom');
     this.editTtsKey = this.apiConfig.audioKey;
     this.editTtsVoice = this.apiConfig.audioVoice;
@@ -659,6 +667,9 @@ export struct GlobalSettingsDialog {
         this.refillVolcanoDefaults();
       } else if (target === 'custom') {
         this.editTtsModelSel = TTS_MODEL_PRESETS.length; // bug 修复：自定义档干净起点落「自定义模型」
+      } else if (target === TTS_PROVIDER_LOCAL) {
+        // ★ 0.272.0：本机语音档零配置——字段保持上方清空态即可（表单整段不渲染，无 Key 预填）
+        this.editTtsModelSel = 0;
       } else {
         this.editTtsModelSel = 0;
         const builtinKey = getBuiltinQwenTtsKey(); // 千问档：内置 Key 预填（开发期；用户自定义值优先）
@@ -720,11 +731,33 @@ export struct GlobalSettingsDialog {
   // ★ 0.236.0：千问档试听（当前表单值直接走引擎完整合成+播放链路——未保存也可验证）
   // ★ 0.236.1：三档全上试听（用户拍板「没试听很傻」）——千问=qianwenTts；火山/自定义=cloudTts
   //   显式传参（火山=内置端点+下拉模型+联动音色；自定义=手填端点+Key+模型，音色空兜底官方）
+  // ★ 0.272.0：本机语音档试听=localTts 直播一句（零配置零成本；出声=本机引擎可用性即验）
   onTtsPreviewTap(): void {
     if (this.ttsPreviewing) {
       qianwenTts.stop(); // 双引擎齐停（幂等——只停当前生效引擎，另一个空转无害）
       cloudTts.stop();
+      localTts.stop(); // ★ 0.272.0：本机档同停（幂等无害）
       this.ttsPreviewing = false;
+      return;
+    }
+    // ★ 0.272.0：本机语音档——直发本地引擎（无 Key/模型前置，跳过云端校验链）
+    if (this.editTtsProvider === TTS_PROVIDER_LOCAL) {
+      this.ttsPreviewing = true;
+      localTts.speakText('你好，这是本机语音试听。', {
+        onStart: () => {},
+        onComplete: () => {
+          this.ttsPreviewing = false; // 试听播完自动复位
+        },
+        onError: (code: number, message: string) => {
+          this.ttsPreviewing = false;
+          this.showToastSafe(`本机语音试听失败（${code}）：${message.substring(0, 60)}`);
+        }
+      }).then((ok: boolean) => {
+        if (!ok) {
+          this.ttsPreviewing = false;
+          this.showToastSafe('本机语音引擎不可用：请在系统设置检查「文字转语音」语音包是否已下载');
+        }
+      });
       return;
     }
     const ctx = this.getUIContext().getHostContext();
@@ -851,23 +884,27 @@ export struct GlobalSettingsDialog {
     // ★ 0.232.1：豆包语音合成2.0 强制官方音色（2.0 模型只能用 2.0 官方音色，0.139 教训；置灰输入框的落盘侧闭环）
     // ★ 0.236.0：三档分写——ttsProvider 落盘；千问档写 Key/模型/音色/情感/语速/音量
     //   （audioEndpoint 不动——该字段留给火山/自定义体系）；三引擎物理互斥（引擎只认 ttsProvider）
+    // ★ 0.272.0：本机语音档只写 ttsProvider——audio* 字段一律不碰（用户已填的云端配置原样保留，
+    //   切回云端档配置还在；「档位值域扩不改写旧值」精神）
     this.apiConfig.ttsProvider = this.editTtsProvider;
-    this.apiConfig.audioKey = this.editTtsKey.trim();
-    if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
-      this.apiConfig.audioModel = this.editTtsQwenModel.trim().length > 0
-        ? this.editTtsQwenModel.trim() : TTS_QWEN_DEFAULT_MODEL;
-      this.apiConfig.audioVoice = this.editTtsVoice.trim();
-      this.apiConfig.ttsEmotion = this.editTtsEmotion;
-      this.apiConfig.ttsSpeed = this.editTtsSpeed;
-      this.apiConfig.ttsVolume = this.editTtsVolume;
-    } else {
-      this.apiConfig.audioModel = this.currentTtsModelValue();
-      // ★ 0.232.2：自定义提供商音色不适用（字段已隐藏）——存空串，引擎空值自动兜底官方音色；
-      //   豆包语音合成2.0 仍强制官方音色（0.232.1 置灰闭环）
-      // ★ 0.237.2：音频模型选「自定义模型」音色恢复可填（推翻 0.233.0 存空串——三字段配套落盘）
-      this.apiConfig.audioVoice = this.editTtsProvider !== 'volcano' ? '' :
-        (this.ttsVoiceEditable() ? this.editTtsVoice.trim() : TTS_OFFICIAL_VOICE);
-      this.apiConfig.audioEndpoint = this.currentTtsEndpointValue();
+    if (this.editTtsProvider !== TTS_PROVIDER_LOCAL) {
+      this.apiConfig.audioKey = this.editTtsKey.trim();
+      if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
+        this.apiConfig.audioModel = this.editTtsQwenModel.trim().length > 0
+          ? this.editTtsQwenModel.trim() : TTS_QWEN_DEFAULT_MODEL;
+        this.apiConfig.audioVoice = this.editTtsVoice.trim();
+        this.apiConfig.ttsEmotion = this.editTtsEmotion;
+        this.apiConfig.ttsSpeed = this.editTtsSpeed;
+        this.apiConfig.ttsVolume = this.editTtsVolume;
+      } else {
+        this.apiConfig.audioModel = this.currentTtsModelValue();
+        // ★ 0.232.2：自定义提供商音色不适用（字段已隐藏）——存空串，引擎空值自动兜底官方音色；
+        //   豆包语音合成2.0 仍强制官方音色（0.232.1 置灰闭环）
+        // ★ 0.237.2：音频模型选「自定义模型」音色恢复可填（推翻 0.233.0 存空串——三字段配套落盘）
+        this.apiConfig.audioVoice = this.editTtsProvider !== 'volcano' ? '' :
+          (this.ttsVoiceEditable() ? this.editTtsVoice.trim() : TTS_OFFICIAL_VOICE);
+        this.apiConfig.audioEndpoint = this.currentTtsEndpointValue();
+      }
     }
     // ★ 0.232.0：首次启用云端朗读一次性提示（用户规则：第一次填写音频配置时提示，之后不再）
     const ttsHint = connectTtsHint();
@@ -1208,8 +1245,20 @@ export struct GlobalSettingsDialog {
 
       // ★ 0.232.2：以下配置表单仅在展开态渲染（默认收起）
       if (!this.ttsCollapsed) {
-      // ★ 0.236.0：提供商三段：火山引擎 / 通义千问 / 自定义（三引擎物理互斥——切档走会话级缓存）
+      // ★ 0.236.0：提供商分段：本机语音 / 火山引擎 / 通义千问 / 自定义（★ 0.272.0 扩 local 默认档——
+      //   四引擎物理互斥，切档走会话级缓存；本机语音=设备内置引擎零成本无需任何配置）
       Row({ space: 8 }) {
+        Text('本机语音')
+          .fontSize(13)
+          .fontColor(this.editTtsProvider === TTS_PROVIDER_LOCAL ? Color.White : this.theme.textSecondary)
+          .layoutWeight(1)
+          .height(40)
+          .textAlign(TextAlign.Center)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(this.editTtsProvider === TTS_PROVIDER_LOCAL ? this.theme.brandPrimary : this.theme.surfaceSoft)
+          .onClick(() => {
+            this.onTtsProviderTap(TTS_PROVIDER_LOCAL);
+          })
         Text('火山引擎')
           .fontSize(13)
           .fontColor(this.editTtsProvider === 'volcano' ? Color.White : this.theme.textSecondary)
@@ -1245,7 +1294,14 @@ export struct GlobalSettingsDialog {
           })
       }
       .width('100%')
-      .margin({ bottom: 12 })
+      .margin({ bottom: 8 })
+
+      // ★ 0.272.0：各档计费小字（成本预期管理——本地免费/云端按量；云端计费接入与否后议，先亮预期）
+      Text(this.editTtsProvider === TTS_PROVIDER_LOCAL ? '设备内置语音 · 免费' : '云端合成 · 按量计费')
+        .fontSize(11)
+        .fontColor(this.editTtsProvider === TTS_PROVIDER_LOCAL ? this.theme.textTertiary : this.theme.brandSecondary)
+        .width('100%')
+        .margin({ bottom: 12 })
 
       // 自定义端点（仅自定义提供商显示；火山/千问端点内置）
       if (this.editTtsProvider === 'custom') {
@@ -1397,6 +1453,8 @@ export struct GlobalSettingsDialog {
       }
 
       // 音频 API Key（三档各自语义：火山=豆包语音 Key / 千问=sk-ws- Key / 自定义；均与对话 Key 相互独立）
+      // ★ 0.272.0：本机语音档零配置——Key 及以下云端表单整段不渲染
+      if (this.editTtsProvider !== TTS_PROVIDER_LOCAL) {
       Column() {
         Text('音频 API Key')
           .fontSize(14)
@@ -1417,6 +1475,7 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 12 })
+      } // ★ 0.272.0：非本机语音档 Key 块结束
 
       // ★ 0.236.0：千问档模型 TextInput（默认 cosyvoice-v3.5-plus；空值引擎兜底该常量——
       //   平台模型迭代快不做下拉，手填最灵活）

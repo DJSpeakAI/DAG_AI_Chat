@@ -32,7 +32,7 @@ import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（Doc
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
 
-  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, normalizeThinkingMode, resolveThinkingFor, isThinkingParamError, ThinkingRequest } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, normalizeThinkingMode, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）
   import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT, HOOK_SYSTEM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）；★ 0.269.0：HOOK_SYSTEM_PROMPT（两段式②段伴读编排 prompt——任务书 §七终版）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
@@ -56,6 +56,7 @@ import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog, isKnownTextOnlyModel, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）；★ 0.230.0：加共享开态 store
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一——chevron SVG 旋转两态）
+import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：通用感叹号信息卡（查词/提炼 SP 透明化；主链路 tokenInfoBuilder 不动防回归）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
@@ -120,16 +121,8 @@ const PLACEHOLDER_THINKING = 'AI 正在深度思考中...';
 // ★ 0.222.21：树形连接线每层缩进宽度（vp，与单词库/知识库 TREE_CELL 同款——加词文件夹选择弹窗用）
 const TREE_CELL: number = 14;
 
-// ★ 0.247.4：司忆点 SP 换算常量（V2.0 商业方案定稿 2026-10-17——SP=token÷7×2，结果四舍五入无小数；
-//   ÷7 刻意不整除防反推成本；界面永不出现 token 字样=商业铁律；调价只改本处勿散落逻辑）
-const SP_TOKEN_DIVISOR: number = 7;
-const SP_COST_MULTIPLIER: number = 2;
-// 价格倍数系数（腾讯云 DeepSeek-V4-Flash 实价：输入 1 元 / 命中 0.02 元=1/50 / 输出 4 元 每百万）
-const SP_INPUT_PRICE_RATIO: number = 1;     // 输入·未命中
-const SP_HIT_PRICE_RATIO: number = 0.02;    // 输入·缓存命中（未命中的 1/50）
-const SP_OUTPUT_PRICE_RATIO: number = 4;    // 输出（输入的 4 倍）
-// 缓存节省展示系数：命中部分假如未命中本要按基准价扣，实扣仅 0.02 → 省 98%（1 − 0.02/1）
-const SP_CACHE_SAVING_RATIO: number = 0.98;
+// ★ 0.247.4：司忆点 SP 换算常量已迁 common/ChatModel.ets（★ 0.272.0 单一真相源——全场景
+//   SP 透明化：查词/提炼/鼓励语等新扣点与聊天主链路共用同一套常量与公式，调价改一处）
 
 // ★ 0.191.0：会话级阅读高度记忆（方案 A）——模块级 Map，页面销毁不丢（同会话内返回画布/切气泡
 // 再回来都在），重启清零（像素值跨设备/字体漂移不做持久化，重启走书签/底部兜底）
@@ -655,6 +648,10 @@ export struct ChatPage {
   @Local wordPopupResult: WordQueryResult | null = null; // 查词结果（null=未出结果）
    @Local wordPopupError: string = '';         // 查词错误信息
    @Local wordPopupAdded: boolean = false;     // 当前结果已加入单词库（按钮转「已加入」防重复）
+  // ★ 0.272.0：查词 SP 透明化——token 用量与 SP 行文本（信息卡数据源；spText 空串=不出结果前不渲染）
+  @Local wordPopupInTok: number = 0;
+  @Local wordPopupOutTok: number = 0;
+  @Local wordPopupSpText: string = '';
   // ★ 0.246.0：翻译浮窗司忆区——划词查词等待期顺便学习（词库 N 词+知识库 M 卡，⚙ 设置驱动）；
   //   样式与提炼弹窗复习区同款，独立状态+`wpp|` 前缀 key（与提炼弹窗 `edit|` 互不干扰）
   @Local wordPopupReviewWords: WordItem[] = [];
@@ -707,6 +704,10 @@ export struct ChatPage {
    @Local knowledgeImageUri: string = '';         // 卡片配图（base64 data URI；'' = 无图片，图片区不渲染）
    @Local knowledgeEditLoading: boolean = false;  // AI 提炼进行中
    @Local knowledgeEditError: string = '';        // AI 提炼错误信息（输入框仍可手动填写）
+  // ★ 0.272.0：提炼 SP 透明化——token 用量与 SP 行文本（信息卡数据源；弹窗右下角、完成即现）
+  @Local knowledgeEditInTok: number = 0;
+  @Local knowledgeEditOutTok: number = 0;
+  @Local knowledgeEditSpText: string = '';
    // ★ 0.222.22：知识卡入库目标文件夹选择弹窗（点「保存入库」弹出；UI 与知识库移动/复制弹窗同款）
    @Local cardFolderPickerVisible: boolean = false;
    // ★ 0.222.22：选择弹窗折叠态（@Local string[] 替换引用触发重渲染——0.222.2 铁律）
@@ -2553,6 +2554,12 @@ export struct ChatPage {
     }
     this.playingMessageId = msg.messageId;
     this.ttsLoadingMessageId = msg.messageId;
+    // ★ 0.272.0：本地语音档（TTS 1.0 默认档）——零成本直发本地引擎，不碰云端三档
+    //   （云端三档保留可用：volcano/qianwen/custom 逻辑零改动，未配置/失败兜底链照旧）
+    if (this.apiConfig.ttsProvider === 'local') {
+      this.startLocalTts(speakText);
+      return;
+    }
     // ★ 0.232.0：云端优先（audioKey+audioModel 已配置）→ 失败回退本地 CoreSpeechKit（用户规则）
     // ★ 0.236.0：三引擎物理互斥（用户铁律）——ttsProvider='qianwen' 只发千问、'volcano'/'custom'
     //   只发火山系，哪怕另一引擎 Key 填得再全也绝不发请求；未配置/失败 → 本地兜底链不动
@@ -3049,6 +3056,9 @@ export struct ChatPage {
     this.wordPopupError = '';
     this.wordPopupAdded = false;
     this.wordExistsTip = false;
+    this.wordPopupInTok = 0;   // ★ 0.272.0：新查询清零（上一轮用量不带入）
+    this.wordPopupOutTok = 0;
+    this.wordPopupSpText = '';
     this.refreshWordPopupReview(); // ★ 0.246.0：浮窗司忆区——打开时抽一批固定（查词等待期顺便学习）
     if (this.wordQueryController) {
       this.wordQueryController.cancel(); // 上一次查词未完成 → 取消
@@ -3061,6 +3071,21 @@ export struct ChatPage {
       (error: string) => {
         this.wordPopupLoading = false;
         this.wordPopupError = error;
+      },
+      // ★ 0.272.0：token 用量透传——实扣 SP（scene='word'）+ 信息卡数据；失败/取消路径不回调（零扣费铁律）；
+      //   事后实扣不足 clamp 到 0（0.248.7 先例——划词即查无确认步骤，不加事前闸门防打断）
+      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
+        this.wordPopupInTok = inputTokens;
+        this.wordPopupOutTok = outputTokens;
+        const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
+        if (this.spFree()) {
+          this.wordPopupSpText = 'Lv8 免费';
+          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'word');
+          return;
+        }
+        consumeSiyiSp(this.siyiStore, cost);
+        this.wordPopupSpText = `消耗 ${cost} SP`;
+        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'word');
       });
   }
 
@@ -3132,13 +3157,9 @@ export struct ChatPage {
   }
 
   // ★ 0.248.7：本次 AI 调用实扣 SP（与 tokenDisplayText 同公式同口径——明细行显示多少、账户就扣多少，
-  //   展示与扣点永远一致；实扣=输入未命中×1+命中×0.02+输出×4，÷7×2 换算四舍五入）
+  //   展示与扣点永远一致）；★ 0.272.0：公式抽 common/ChatModel.spCostOfTokens 单一真相源，本方法薄壳化
   spCostOf(msg: ChatMessage): number {
-    const hit = Math.min(msg.cacheHitTokens, msg.inputTokens);
-    const miss = msg.inputTokens - hit;
-    const inSp = Math.round((miss * SP_INPUT_PRICE_RATIO + hit * SP_HIT_PRICE_RATIO) / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
-    const outSp = Math.round(msg.outputTokens * SP_OUTPUT_PRICE_RATIO / SP_TOKEN_DIVISOR * SP_COST_MULTIPLIER);
-    return inSp + outSp;
+    return spCostOfTokens(msg.inputTokens, msg.outputTokens, msg.cacheHitTokens);
   }
 
   // ★ 0.249.0：Lv8 司忆令免扣判定（用户拍板「SP 永久免费」）——learnDays=累计学习天数（cfg:stat-days
@@ -3149,15 +3170,9 @@ export struct ChatPage {
 
   // ★ 0.260.0：sp_consume 埋点（与 consumeSiyiSp 实扣同点双写——0.259.0 本地统计外再加云端上报）：
   //   免扣账号照报 f:y（sp=0，成本红线要真实 token/命中率/余额）；h=缓存命中率%（cached/input，输入 0 防除零）
+  //   ★ 0.272.0：实现抽 common/ChatModel.trackSpConsumeAuto（word/extract/encourage 新场景共用），薄壳化
   trackSpConsume(msg: ChatMessage, free: boolean, actualSp: number, inputTokens: number, cachedTokens: number, scene: string): void {
-    const p: Record<string, string> = {};
-    p['sp'] = `${actualSp}`;
-    p['m'] = msg.model;
-    p['sc'] = scene; // chat=发送 / regen=重生成
-    p['f'] = free ? 'y' : 'n';
-    p['bal'] = `${siyiTotalSp(this.siyiStore)}`;
-    p['h'] = `${inputTokens > 0 ? Math.round(cachedTokens * 100 / inputTokens) : 0}`;
-    trackUidAuto('sp_consume', p);
+    trackSpConsumeAuto(msg.model, free, actualSp, inputTokens, cachedTokens, scene);
   }
 
   // ★ 0.247.3：token 明细弹层 builder（感叹号弹出）——无参 @Builder 直读 tokenInfoText 快照；
@@ -4002,6 +4017,11 @@ export struct ChatPage {
     if (!requireLoginForCloud()) {
       return;
     }
+    // ★ 0.272.0：提炼 SP 余额闸门（D3——余额≤0 且非 Lv8 弹充值引导，事前拦截防白跑 180s）
+    if (!this.spFree() && siyiTotalSp(this.siyiStore) <= 0) {
+      connectConfirmDialog().spRechargePromptVisible = true;
+      return;
+    }
     const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
@@ -4015,6 +4035,9 @@ export struct ChatPage {
     this.knowledgeImageUri = '';
     this.knowledgeEditLoading = true;
     this.knowledgeEditError = '';
+    this.knowledgeEditInTok = 0;   // ★ 0.272.0：新提炼清零（上一轮用量不带入）
+    this.knowledgeEditOutTok = 0;
+    this.knowledgeEditSpText = '';
     this.refreshEditReview(); // ★ 0.160：抽一组复习内容——提炼等待期顺便学习
     if (this.knowledgeQueryController) {
       this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
@@ -4036,6 +4059,20 @@ export struct ChatPage {
       (title: string, definition: string) => { // ★ 0.153：流式实时填充弹窗输入框
         this.knowledgeCardTitle = title;
         this.knowledgeCardDefinition = definition;
+      },
+      // ★ 0.272.0：token 用量透传——实扣 SP（scene='extract'）+ 信息卡数据；失败/取消/超时不回调（零扣费铁律）
+      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
+        this.knowledgeEditInTok = inputTokens;
+        this.knowledgeEditOutTok = outputTokens;
+        const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
+        if (this.spFree()) {
+          this.knowledgeEditSpText = 'Lv8 免费';
+          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract');
+          return;
+        }
+        consumeSiyiSp(this.siyiStore, cost);
+        this.knowledgeEditSpText = `消耗 ${cost} SP`;
+        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract');
       });
   }
 
@@ -4884,6 +4921,11 @@ export struct ChatPage {
   //（与 onToolbarAddKnowledge 同流程，仅数据源从划词文本换成标注图）
   // ★ 0.184.0：note = 标注页补充要求（空串 = 原纯图提炼行为不变）
   openKnowledgeFromImage(img: string, note: string): void {
+    // ★ 0.272.0：提炼 SP 余额闸门（D3——与划词提炼同口径，事前拦截防白跑 180s）
+    if (!this.spFree() && siyiTotalSp(this.siyiStore) <= 0) {
+      connectConfirmDialog().spRechargePromptVisible = true;
+      return;
+    }
     this.knowledgeEditVisible = true;
     this.knowledgeCardTitle = '';
     this.knowledgeCardDefinition = '';
@@ -4892,6 +4934,9 @@ export struct ChatPage {
     this.knowledgeImageUri = img; // 标注合成图直接作卡片配图
     this.knowledgeEditLoading = true;
     this.knowledgeEditError = '';
+    this.knowledgeEditInTok = 0;   // ★ 0.272.0：新提炼清零（上一轮用量不带入）
+    this.knowledgeEditOutTok = 0;
+    this.knowledgeEditSpText = '';
     this.refreshEditReview(); // ★ 0.160：抽一组复习内容——提炼等待期顺便学习
     if (this.knowledgeQueryController) {
       this.knowledgeQueryController.cancel(); // 上一次提炼未完成 → 取消
@@ -4913,6 +4958,20 @@ export struct ChatPage {
       (title: string, definition: string) => { // ★ 0.153：流式实时填充弹窗输入框
         this.knowledgeCardTitle = title;
         this.knowledgeCardDefinition = definition;
+      },
+      // ★ 0.272.0：token 用量透传——实扣 SP（scene='extract'）+ 信息卡数据；失败/取消/超时不回调（零扣费铁律）
+      (inputTokens: number, outputTokens: number, cachedTokens: number) => {
+        this.knowledgeEditInTok = inputTokens;
+        this.knowledgeEditOutTok = outputTokens;
+        const cost = spCostOfTokens(inputTokens, outputTokens, cachedTokens);
+        if (this.spFree()) {
+          this.knowledgeEditSpText = 'Lv8 免费';
+          trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract');
+          return;
+        }
+        consumeSiyiSp(this.siyiStore, cost);
+        this.knowledgeEditSpText = `消耗 ${cost} SP`;
+        trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract');
       });
   }
 
@@ -6934,6 +6993,15 @@ export struct ChatPage {
                   .onClick(() => {
                     this.saveKnowledgeCard();
                   })
+                // ★ 0.272.0：SP 信息卡（弹窗右下角、确认按钮旁——用户点名位置）——
+                //   提炼完成（onUsage 透传）才渲染；提炼中/失败/超时天然不出现
+                if (this.knowledgeEditSpText.length > 0) {
+                  TokenInfoChip({
+                    inputTokens: this.knowledgeEditInTok,
+                    outputTokens: this.knowledgeEditOutTok,
+                    spText: this.knowledgeEditSpText
+                  })
+                }
               }
               .width('100%')
               .margin({ top: 12 })
@@ -7194,15 +7262,27 @@ export struct ChatPage {
                   .margin({ bottom: 4 })
               }
 
-              // 加入单词库按钮（已加入后转灰禁用防重复）
-              Button(this.wordPopupAdded ? '已加入' : '加入单词库')
-                .width('100%')
-                .backgroundColor(this.wordPopupAdded ? (this.theme.surfaceHover) : this.theme.brandPrimary)
-                .fontColor(this.wordPopupAdded ? (this.theme.textTertiary) : this.theme.textPrimary)
-                .enabled(!this.wordPopupAdded && this.wordPopupResult !== null)
-                .onClick(() => {
-                  this.addCurrentWordToBank();
-                })
+              // ★ 0.272.0：SP 信息卡（浮窗结果区底部左下角，与加入按钮同排另一侧）——
+              //   spText 仅查词成功（onUsage 透传）才非空，加载中/失败天然不渲染
+              Row({ space: 8 }) {
+                if (this.wordPopupSpText.length > 0) {
+                  TokenInfoChip({
+                    inputTokens: this.wordPopupInTok,
+                    outputTokens: this.wordPopupOutTok,
+                    spText: this.wordPopupSpText
+                  })
+                }
+                // 加入单词库按钮（已加入后转灰禁用防重复）
+                Button(this.wordPopupAdded ? '已加入' : '加入单词库')
+                  .layoutWeight(1)
+                  .backgroundColor(this.wordPopupAdded ? (this.theme.surfaceHover) : this.theme.brandPrimary)
+                  .fontColor(this.wordPopupAdded ? (this.theme.textTertiary) : this.theme.textPrimary)
+                  .enabled(!this.wordPopupAdded && this.wordPopupResult !== null)
+                  .onClick(() => {
+                    this.addCurrentWordToBank();
+                  })
+              }
+              .width('100%')
 
               // ★ 0.246.0：翻译浮窗司忆区——查词/等待期顺便学习（与提炼弹窗复习区同款样式；
               //   key 前缀 wpp|/wppcard| 独立命名空间，评分交互复用 reviewExpandKey/reviewRatedMap/ratingArea）
