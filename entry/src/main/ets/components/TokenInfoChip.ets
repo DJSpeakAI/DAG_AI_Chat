@@ -6,7 +6,7 @@
 //   无缓存行（任务书拍板：新场景输入各不相同缓存命中期短，不展示缓存）。
 // 零业务逻辑：不做扣费、不做埋点、不做免扣判定——全部由调用侧完成；
 // ChatPage 主链路 tokenInfoBuilder 不动不换（防回归，本组件只给四个新点位用）。
-import { spCostOfTokens, SP_TTS_PER_KCHAR } from '../common/ChatModel';
+import { spCostOfTokens } from '../common/ChatModel';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 
 @ComponentV2
@@ -57,21 +57,6 @@ export struct TokenInfoChip {
       Text(this.spText)
         .fontSize(13)
         .fontColor(this.theme.brandSecondary)
-        .textAlign(TextAlign.Center)
-        .width('100%')
-      // ★ 0.279.0：音频计价说明行（与 ChatPage.tokenInfoBuilder 同款文案——两卡口径一致）；
-      //   灰 12 号弱化：计价规则说明非本次消耗数字
-      Divider()
-        .color(this.theme.strokeCard)
-        .margin({ top: 9, bottom: 9 })
-      Text(`音频输出 · 本机免费 / 云端 ${SP_TTS_PER_KCHAR} SP/千字`)
-        .fontSize(12)
-        .fontColor(this.theme.textTertiary)
-        .textAlign(TextAlign.Center)
-        .width('100%')
-      Text('音频输入 · 免费（语音转文字走系统输入法）')
-        .fontSize(12)
-        .fontColor(this.theme.textTertiary)
         .textAlign(TextAlign.Center)
         .width('100%')
     }

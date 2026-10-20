@@ -14,8 +14,8 @@
 //     API Key 三字段；上下文窗口 Tokens 不要（用户指示：那是开发代码用配置，AI 回复用不到）
 //     （★ 0.189.1：音频 Key/音频模型/音频 Endpoint 随云端 TTS 取消整体移除——发音/朗读已走
 //     本地 CoreSpeechKit，火山配置存档见 docs/0.165+/0.189.0 §9）
-//   - Tab 2「AI 偏好」：自定义称呼（默认空，填写后短/中/长全部回复模式生效）+
-//     自动鼓励开关（默认开启，仅中/长回复生成鼓励，短回复不生成）
+//   - Tab 2「AI 偏好」：自定义称呼（默认空，填写后所有回复模式生效）+
+//     自动鼓励开关（默认开启，仅中/长回复生成鼓励）
 //   - 保存：两 Tab 全部修改一次写入持久化 + toast「已保存」，不关弹窗（用户自己 ✕）
 //   - ✕ 关闭：有未保存修改时 AlertDialog 二次确认（0.135 防误触丢输入教训沿用）
 //   - 遮罩点击不关闭（0.148 教训：弹窗内输入中误触遮罩会丢输入）
@@ -196,7 +196,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.279.0'; // ★ 0.279.0：PC 划词 Ctrl+C+短回复 prompt 泄漏修复+音频 SP 计价；上一版 0.278.14：边栏把手垂直居中加长
+const APP_VERSION: string = 'v0.282.0'; // ★ 0.282.0：回复模式两档（深度思考开关）+ 播客入口下线 + 输入区工具行重构；更早历史见 MEMORY.md 版本表
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2125,7 +2125,7 @@ export struct GlobalSettingsDialog {
           .placeholderColor(this.theme.textTertiary)
           .borderRadius(RADIUS_CONTROL)
           .backgroundColor(this.theme.surfaceSoft)
-        Text('💡 填写后 AI 在短/中/长全部回复模式都会以此称呼你；留空则不添加称呼。')
+        Text('💡 填写后 AI 在全部回复模式都会以此称呼你；留空则不添加称呼。')
           .fontSize(11)
           .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
           .fontColor(this.theme.textTertiary)
@@ -2141,7 +2141,7 @@ export struct GlobalSettingsDialog {
           Text('锚点与伴读')
             .fontSize(14)
             .fontColor(this.theme.textPrimary)
-          Text('中/长回复中插入注意力钩子；伴读模式为长回复额外编排阅读节奏')
+          Text('深度思考（长回复）中插入注意力钩子；伴读模式额外编排阅读节奏')
             .fontSize(11)
             .lineHeight(18)
             .fontColor(this.theme.textTertiary)
@@ -2224,7 +2224,7 @@ export struct GlobalSettingsDialog {
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(this.theme.segmentedTrack)
 
-        Text('💡 智能锚点：中/长回复中插入考考你、前方高能、换个说法等钩子，读长文时轻轻拉回注意力。伴读模式：长回复生成后由 AI 二次编排阅读节奏（喘息/进度/简单说/文末延伸），额外消耗少量 SP，文末「延伸」可点击拉分支深挖。密档钩子更频繁、疏档更克制。关闭后 AI 按原文回复。短回复与听播模式不插入。')
+        Text('💡 智能锚点：中/长回复中插入考考你、前方高能、换个说法等钩子，读长文时轻轻拉回注意力。伴读模式：长回复生成后由 AI 二次编排阅读节奏（喘息/进度/简单说/文末延伸），额外消耗少量 SP，文末「延伸」可点击拉分支深挖。密档钩子更频繁、疏档更克制。关闭后 AI 按原文回复。未开启深度思考的回复不插入。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)
@@ -2292,7 +2292,7 @@ export struct GlobalSettingsDialog {
         .backgroundColor(this.theme.segmentedTrack)
 
         // ★ 0.271.0：成本提示（P0-3 实测基线——同题输出 token：普通 105 / 思考档 278~440，约 2.6~4.2 倍）
-        Text('💡 跟随模式：短回复秒回不思考；中回复按问题难度自动判断（追问越深越容易触发）；长回复默认深度思考。每次思考：除听播外全部思考。深度思考的回复约多消耗 2~4 倍 SP，思考过程可在气泡底部查看。听播模式永远不思考（首字延迟高于一切）。')
+        Text('💡 跟随模式：中回复按问题难度自动判断是否思考（追问越深越容易触发）；开启深度思考（长回复）默认思考。每次思考：除听播外全部思考。深度思考的回复约多消耗 2~4 倍 SP，思考过程可在气泡底部查看。听播模式永远不思考（首字延迟高于一切）。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)
@@ -2309,7 +2309,7 @@ export struct GlobalSettingsDialog {
             Text('分章折叠')
               .fontSize(14)
               .fontColor(this.theme.textPrimary)
-            Text('中/长回复生成完毕后自动按章节折叠呈现')
+            Text('开启深度思考的回复生成完毕后自动按章节折叠呈现')
               .fontSize(11)
               .lineHeight(18)
               .fontColor(this.theme.textTertiary)
@@ -2324,7 +2324,7 @@ export struct GlobalSettingsDialog {
         }
         .width('100%')
 
-        Text('💡 中/长回复生成完毕后自动按章节折叠（默认展开前 1/3，其余收起），点章节行展开继续读；生成过程中仍为流式直显。与锚点卡片互相独立，可分别开关。')
+        Text('💡 开启深度思考的回复生成完毕后自动按章节折叠（默认展开前 1/3，其余收起），点章节行展开继续读；生成过程中仍为流式直显。与锚点卡片互相独立，可分别开关。')
           .fontSize(11)
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)

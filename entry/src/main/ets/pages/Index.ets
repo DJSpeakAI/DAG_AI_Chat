@@ -25,7 +25,7 @@ import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markReminderShownToday, isVip } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定；★ 0.248.1：markWelcomeShown 随首登欢迎弹窗移除
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markReminderShownToday, isVip, wipeHistoricalTestStats } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定；★ 0.248.1：markWelcomeShown 随首登欢迎弹窗移除；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
@@ -48,7 +48,7 @@ import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // �
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
 import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：阅读并同意弹窗（首启/边栏/云同步三入口共用）
 import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
-import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, needsHwAgreement, markHwAgreed, AGREEMENT_CHECK_PREFIX } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分
+import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, needsHwAgreement, markHwAgreed, markImprovePromptShown, AGREEMENT_CHECK_PREFIX, AgreementStore, AGREEMENT_VERSION } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分；★ 0.279.5：markImprovePromptShown 落盘收口（存储层已迁 preferences）
 import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
 import { ThemeChooseDialog } from '../components/ThemeChooseDialog'; // ★ 0.262.0：新用户首启主题选择弹窗（协议同意后弹）
 import { AppTheme, connectAppTheme, connectThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员
@@ -86,8 +86,24 @@ struct Index {
   //   不受 600vp 断点踩线误判影响（畅享90pro 1128px≈600.6vp 被旧断点误判平板）；
   //   Pad/PC(2in1) 维持窗口宽度断点不变
   isPhoneDevice: boolean = deviceInfo.deviceType === 'phone';
+  // ★ 0.279.6：PC（2in1）恒按平板布局——用户实测「PC 窗口缩小到很小后边栏直接消失，对话页也没有
+  //   任何边栏切换入口」（Pad/手机有抽屉、PC 窄窗走手机布局但对话页无抽屉=导航断头）。
+  //   用户拍板：PC 不管窗口多小都要保留边栏。故 PC 恒 isTablet=true，Pad/手机维持原断点/手机布局。
+  //   ★ 边栏宽度随窗口自适应（极窄窗按比例收窄，不与内容区抢满），见 sidebarWidth。
+  isPcDevice: boolean = deviceInfo.deviceType !== 'phone' && deviceInfo.deviceType !== 'tablet' &&
+    deviceInfo.deviceType !== 'tv' && deviceInfo.deviceType !== 'car' && deviceInfo.deviceType !== 'wearable'; // ★ 与 ChatPage/WordBankPage 既有 PC 档判定同口径（非移动设备全算 PC）
+  @Local winWidth: number = 0; // 窗口实宽（vp，onAreaChange 写入；PC 窄窗边栏收窄依据）
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
+  }
+  // ★ 0.279.6：边栏宽度自适应——宽窗维持 208 原值；PC 窄窗按 42% 收窄、下限 140（保证导航可读可用），
+  //   避免窗口缩到手机宽度时 208 边栏把内容区挤没（用户偏好：布局不写死、随屏幕大小自适应）。
+  @Computed get sidebarWidth(): number {
+    if (!this.isPcDevice) {
+      return 208;
+    }
+    const w = this.winWidth > 0 ? this.winWidth : 208;
+    return Math.max(140, Math.min(208, Math.floor(w * 0.42)));
   }
   // ★ 0.219.0：宽屏边栏收起状态（AppStorageV2 共享实例——气泡树页把手与本页同源，跨页面保持收起）
   indexSidebarState: IndexSidebarState = connectIndexSidebarState();
@@ -104,6 +120,27 @@ struct Index {
   confirmDialog: ConfirmDialogStore = connectConfirmDialog(); // ★ 0.196.9：确认弹窗触发桥（退出账号/云同步询问——根 Stack 挂载消费）
   // ★ 0.226.0：阅读并同意——运行时桥（弹窗可见性 / 待执行动作 / 体验改进引导）+ 首页勾选框本地态
   agreementBridge: AgreementBridge = connectAgreementBridge();
+  // ★ 0.279.2：协议同意持久化态（响应式接入——水合迟到翻真时弹窗自动校正的观察源）
+  agreement: AgreementStore = connectAgreement();
+  // ★ 0.279.2 水合竞态根治：弹窗可见 = 桥开关 && 确实未同意（AgreementStore @Trace 响应式）。
+  //   根因=PersistenceV2 冷启水合异步（persistent_storage 已 270KB+ 全量 base64 卡图），启动 800ms
+  //   判定时若水合未完，needsAgreement 读到 factory 默认 false → 已同意用户误弹；水合随后完成把
+  //   盘值（agreed=true）写入 @Trace → 本 @Computed 重算 → 误弹弹窗自动从渲染树消失，时序无关。
+  @Computed get showAgreementPrompt(): boolean {
+    return this.agreementBridge.promptVisible &&
+      (!this.agreement.agreed || this.agreement.agreedVersion < AGREEMENT_VERSION);
+  }
+  // ★ 0.279.2：华为协议门禁弹窗同款校正（hwAgreed 水合迟到同理）
+  @Computed get showHwAgreementPrompt(): boolean {
+    return this.agreementBridge.hwPromptVisible && !this.agreement.hwAgreed;
+  }
+  // ★ 0.279.3：首页「我已阅读并同意」勾选框响应式判定（原 build 内直调 needsAgreement()——
+  //   冷启动首帧水合未完时读到 false→勾选框区块闪现给已同意用户，水合后才消失；改 @Computed
+  //   响应式后闪现窗口内也随水合翻值即时校正，且已同意用户恒不渲染）
+  @Computed get showHomeAgreeCheck(): boolean {
+    return this.isTablet && !this.getHuaweiAccount().isLoggedIn &&
+      (!this.agreement.agreed || this.agreement.agreedVersion < AGREEMENT_VERSION);
+  }
   @Local homeAgreed: boolean = false; // 首页（仅 PC/Pad）常驻勾选框本地态（勾选后点登录=同意）
   @Local homeShakeX: number = 0;      // 未勾选点登录的抖动偏移（负反馈）
   @Local themeChooseVisible: boolean = false; // ★ 0.262.0：新用户主题选择弹窗（协议同意后、theme-mode-v1 未落盘时弹）
@@ -285,9 +322,12 @@ struct Index {
     // ★ 0.196.4：只做首帧初始猜测——真值由根 Stack onAreaChange 按窗口实宽写入（分屏/悬浮窗纠正）
     try {
       const d = display.getDefaultDisplaySync();
-      this.windowMode.isTablet = !this.isPhoneDevice && d.densityPixels > 0 && d.width / d.densityPixels >= 600;
+      const screenW = d.densityPixels > 0 ? d.width / d.densityPixels : 0;
+      this.winWidth = screenW;
+      // ★ 0.279.6：PC 恒平板布局（窄窗也保留边栏）；手机恒手机布局；Pad 维持 600vp 断点
+      this.windowMode.isTablet = !this.isPhoneDevice && (this.isPcDevice || screenW >= 600);
     } catch (_e) {
-      this.windowMode.isTablet = false; // 取显示信息失败：保守按手机处理（无边栏，画布抽屉承担导航）
+      this.windowMode.isTablet = this.isPcDevice; // ★ 0.279.6：PC 取显示信息失败也保留边栏；其余保守按手机处理
     }
     // ★ 0.195.0 bugfix：边栏选中态动态跟踪——didShow 拿目标页名（'navBar'=首页清空高亮；
     //   push/pop/replacePath 全走这里，边栏高亮恒与主界面页面一致）
@@ -307,6 +347,10 @@ struct Index {
     //   延迟 800ms 等 PersistenceV2 磁盘水合完成再构建（冷启动首帧 store 可能未就绪）。
     setTimeout(() => {
       try {
+        wipeHistoricalTestStats(); // ★ 0.279.1：一次性清理今天之前的历史测试统计（保留当日真实数据；云端旧行同步自愈）
+        // ★ 0.279.4：存量已登录 hwAgreed 对齐**已挪 needsHwAgreement() 内**（0.279.3 曾放此处——
+        //   启动 800ms 时 agreement-v1 水合未完成，写实例触发 factory 默认值整体落盘覆盖盘上
+        //   agreed:true（写侧水合竞态实锤事故，盘值已直修回）。教训：启动回调内禁止写 PersistenceV2）
         const wb = connectWordBank();
         const kb = connectKnowledgeBank();
         const dc = connectDailyReviewCount();
@@ -370,13 +414,14 @@ struct Index {
     // PersistenceV2：API 配置持久化，跨重启保存
     PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());
     // ★ 0.226.0：首次启动（未同意 / 协议版本落后）自动弹同意弹窗（全端，弹一次；同意后不再弹）
-    //   延迟 300ms 等 PersistenceV2 磁盘水合完成，避免已同意用户冷启动误弹
+    //   ★ 0.279.2：延迟 300→800ms 对齐水合等待惯例（persistent_storage 大文件解析提速判定可靠性；
+    //   残余竞态由 showAgreementPrompt @Computed 自动校正兜底——水合翻真弹窗即自动消失）
     setTimeout(() => {
       if (needsAgreement() && !this.agreementBridge.promptVisible) {
         this.agreementBridge.pendingAction = '';
         this.agreementBridge.promptVisible = true;
       }
-    }, 300);
+    }, 800);
   }
 
   // ============================================================
@@ -444,7 +489,7 @@ struct Index {
   // 体验改进计划——加入（开启匿名埋点上报）
   onImproveJoin(): void {
     this.agreementBridge.improveVisible = false;
-    connectAgreement().improvePromptShown = true;
+    markImprovePromptShown(); // ★ 0.279.5：收口函数落盘（原直接字段赋值不触发 preferences 持久化）
     setTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext, true);
     trackFirstAuto(); // ★ 0.260.0：开关已开，补报 app_first（同意时开关未开未报的场景；幂等恰 1 行）
   }
@@ -452,7 +497,7 @@ struct Index {
   // 体验改进计划——暂不加入（保持关闭；仅记账，此后不再弹）
   onImproveSkip(): void {
     this.agreementBridge.improveVisible = false;
-    connectAgreement().improvePromptShown = true;
+    markImprovePromptShown(); // ★ 0.279.5：同上收口
   }
 
   // 首页未勾选点登录的抖动负反馈（逐帧 setTimeout 偏移，末尾归零）
@@ -521,7 +566,7 @@ struct Index {
       //   把 bgNav 铺进状态栏/手势条区，折叠时宽 0 自动消失；置于 Row 之下、hitTest 穿透不挡事件
       if (this.isTablet) {
         Column()
-          .width(this.indexSidebarState.collapsed ? 0 : 208)
+          .width(this.indexSidebarState.collapsed ? 0 : this.sidebarWidth) // ★ 0.279.6：PC 窄窗自适应收窄
           .height('100%')
           .backgroundColor(this.theme.bgNav)
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
@@ -536,6 +581,7 @@ struct Index {
           Column() {
             AppSideBar({
               currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
+              sidebarWidth: this.sidebarWidth, // ★ 0.279.6：PC 窄窗自适应收窄（其余宿主不传=默认 208）
 
               settingsOpen: this.gsShared.visible, // ★ 0.230.0
               onNavClick: (kind: string) => {
@@ -553,7 +599,7 @@ struct Index {
               }
             })
           }
-          .width(this.indexSidebarState.collapsed ? 0 : 208)
+          .width(this.indexSidebarState.collapsed ? 0 : this.sidebarWidth) // ★ 0.279.6：PC 窄窗自适应收窄
           .opacity(this.indexSidebarState.collapsed ? 0 : 1)
           .clip(true)
           .alignItems(HorizontalAlign.Start)
@@ -692,7 +738,8 @@ struct Index {
           })
         }
         // ★ 0.226.0：首页底部阅读并同意勾选框（仅 PC/Pad 常驻；未登录且未同意时显示）
-        if (this.isTablet && !this.getHuaweiAccount().isLoggedIn && needsAgreement()) {
+        // ★ 0.279.3：改接 @Computed（水合竞态闪现校正——同 showAgreementPrompt 方案）
+        if (this.showHomeAgreeCheck) {
           Row({ space: 8 }) {
             if (this.homeAgreed) {
               Image($r('app.media.checkbox_on'))
@@ -731,7 +778,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-          Text('v0.279.0') // ★ 0.279.0：PC 划词 Ctrl+C 复制+短回复 prompt 泄漏修复+音频输出/输入 SP 计价；上一版 0.278.14：边栏把手垂直居中加长
+          Text('v0.282.0') // ★ 0.282.0：回复模式两档（深度思考开关）+ 播客入口下线 + 输入区工具行重构；更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -772,7 +819,7 @@ struct Index {
         .height(240)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .position({ x: this.indexSidebarState.collapsed ? -8 : 196, y: '50%' })
+        .position({ x: this.indexSidebarState.collapsed ? -8 : this.sidebarWidth - 12, y: '50%' }) // ★ 0.279.6：把手跟随边栏宽度
         .translate({ y: -120 })
         .onClick(() => {
           this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
@@ -917,8 +964,9 @@ struct Index {
     })
     // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）
     // ★ 0.264.0：基础门禁（两份协议，不同意=挽留后退出应用）
+    // ★ 0.279.2：visible 改接 @Computed（水合迟到翻真时弹窗自动消失——已同意用户不再被误弹卡门）
     AgreementDialog({
-      visible: this.agreementBridge.promptVisible,
+      visible: this.showAgreementPrompt,
       onAgree: () => {
         this.onAgreementAgree();
       },
@@ -927,8 +975,9 @@ struct Index {
       }
     })
     // ★ 0.264.0：华为协议登录门禁弹窗（hw 形态；同意=markHwAgreed+续跑登录，不同意=仅取消登录）
+    // ★ 0.279.2：visible 同接 @Computed 自动校正
     AgreementDialog({
-      visible: this.agreementBridge.hwPromptVisible,
+      visible: this.showHwAgreementPrompt,
       mode: 'hw',
       onAgree: () => {
         this.onHwAgreementAgree();
@@ -966,7 +1015,10 @@ struct Index {
     // ★ 0.196.4：窗口实宽写入共享模式——根 Stack 满窗，onAreaChange 在分屏/悬浮窗 resize 时
     //   实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）
     .onAreaChange((oldVal: Area, newVal: Area) => {
-      this.windowMode.isTablet = !this.isPhoneDevice && (newVal.width as number) >= 600; // ★ 0.222.11：手机设备永远手机模式（断点踩线误判根治）
+      const w = newVal.width as number;
+      // ★ 0.279.6：窗口实宽记录 + PC 恒平板布局（窄窗保留边栏）；手机恒手机布局；Pad 维持 600vp 断点
+      this.winWidth = w;
+      this.windowMode.isTablet = this.isPhoneDevice ? false : (this.isPcDevice ? true : w >= 600);
     })
   }
 }

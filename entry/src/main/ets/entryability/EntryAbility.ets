@@ -11,7 +11,8 @@
 
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { rpc } from '@kit.IPCKit'; // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 机制（真机日志实证：进程存活时 call 走 Callee onRemoteMessageRequest 而非 onNewWant）
-import { AppStorageV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）
+import { AppStorageV2, PersistenceV2, window } from '@kit.ArkUI'; // ★ 0.167：Inter 三字重注册（UIContext.Font，见 loadContent 回调）；★ 0.279.5：PersistenceV2.notifyOnError 过渡期排查
+import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.279.5：持久化异常日志
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flushCloudRowsNow } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
@@ -25,6 +26,7 @@ import { flushTrackQueue, initTrackContext } from '../utils/TrackUtil'; // 0.206
 import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
 import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：退后台短时任务续跑摘要头 flush
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
+import { initAgreementPrefs } from '../utils/Agreement'; // ★ 0.279.5：协议同意态 preferences 同步初始化（onCreate 最早同步点——此后任意时刻读到的即磁盘真值）
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
@@ -46,6 +48,16 @@ export class AppLifecycleStore {
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    initAgreementPrefs(this.context); // ★ 0.279.5：preferences 同步初始化（getPreferencesSync 返回即完成载入——协议门禁自此零水合竞态）
+    // ★ 0.279.5：过渡期持久化异常排查（华为官方建议）——知识库卡 base64 图或触发 API<23 单 key
+    //   8KB 配额静默失败（quota）或序列化失败（serialization），有日志才能定位「写不进去」类表象
+    try {
+      PersistenceV2.notifyOnError((key: string, reason: string, msg: string): void => {
+        hilog.error(0x0000, 'DagChat', 'persistence error key=%{public}s reason=%{public}s msg=%{public}s', key, reason, msg);
+      });
+    } catch (_e) {
+      // 注册失败静默
+    }
     this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（冷启动路径——method/params 在 want.parameters）
     this.registerWidgetCallee(); // ★ 0.204.1：桌面卡片 call（热路径——进程存活/解冻后走 Callee，onCreate 时注册一次）
     this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
@@ -160,6 +172,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    // ★ 0.281.4：键盘避让不再在 EntryAbility 设全局 RESIZE（0.281.2 真机实测 NavDestination
+    //   页面仍被软键盘遮挡、输入卡下半截露不出来）——改由 ChatPage 的 onShown/onHidden 自控：
+    //   进对话页设 KeyboardAvoidMode.NONE + 监听 keyboardHeightChange 手动给根容器让位，
+    //   离开恢复默认 OFFSET（其他页面行为不变）
+
     // ★ 0.165.1：初始化云同步 RDB（建库 dag_chat_cloud.db + 建表 cloud_data + 设分布式表 autoSync）——
     // 异步执行不阻塞启动；此后各持久化点的 upsertCloudData 内部等待 init 完成后写入；
     // 云侧 AGC 未配置时本地写入正常、上云失败仅日志（静默降级，不影响本地功能）
@@ -211,15 +228,9 @@ export default class EntryAbility extends UIAbility {
       } catch (_e) {
         // 接口不可用/非自由窗口时静默
       }
-      // ★ 0.278.12 二段：maximize 沉浸式全屏（华为官方 Q3 方案——普通应用无需权限直接调用）。
-      //   实测 Pad 点图标启动=「最大化自由窗口」形态，系统 Shell 的 SCBSceneTitleBar（系统进程
-      //   窗口、Z 序压顶、app 内容被压到 y=88 起）不受 setWindowDecorVisible 控制；ENTER_IMMERSIVE
-      //   让 app 进入沉浸全屏=装饰场景窗撤除、内容铺满整窗（y=0 起）——左侧黑块/黑条嫌疑层根除
-      try {
-        windowStage.getMainWindowSync().maximize(window.MaximizePresentation.ENTER_IMMERSIVE);
-      } catch (_e) {
-        // 接口不可用/设备不支持时静默（手机全屏形态无影响）
-      }
+      // ★ 0.279.3：maximize 沉浸式全屏**移除**（用户拍板「不要打开默认全屏」——0.278.12 为黑块
+      //   嫌疑层加的 ENTER_IMMERSIVE 全屏体验差；黑块已定性系统渲染缺陷转华为工单，应用侧
+      //   不再以全屏换黑块规避，恢复默认窗口形态；setWindowDecorVisible 保留非全屏防黑块尝试）
       // ★ 0.167：注册 Inter 三字重（UI_GUIDELINES.md 字体策略）——三个不同 familyName
       //（Pixso 导出代码三份同名注册会互相覆盖，是导出瑕疵勿照抄）；
       // Inter 无中文字形，中文自动 fallback 系统字体，无需打包 HarmonyOS Sans SC

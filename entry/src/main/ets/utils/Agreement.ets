@@ -10,8 +10,65 @@
 //   - 合规边界：同意只 gate「登录 / 云同步」，不禁用本地功能
 // ============================================================
 
-import { PersistenceV2, AppStorageV2 } from '@kit.ArkUI';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { preferences } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
 import { trackFirstAuto } from './TrackUtil'; // ★ 0.260.0：app_first 激活埋点（markAgreed 单一收口——两同意路径全覆盖）
+import { connectHuaweiAccount } from './HuaweiAccountUtil'; // ★ 0.279.4：存量已登录 hwAgreed 对齐（单向依赖无环）
+
+// ★ 0.279.5 存储层整体迁移：PersistenceV2 → preferences 同步接口（华为官方 AI 答复定案）。
+//   根因（三台设备实锤）：PersistenceV2（API<23）磁盘载入异步且无完成通知——水合窗口期
+//   读实例=factory 默认值（已同意用户被误弹协议弹窗）；此窗口内写=@Trace 变化触发**整对象
+//   快照**落盘（factory 半成品覆盖盘上真值——agreed/improvePromptShown/hwAgreed 字段回退）。
+//   官方建议「持久化时机有强诉求改用 Preferences」+同步接口族：getPreferencesSync /
+//   getSync / putSync / flushSync——调用返回即真值即落盘，无水合竞态、进程被杀不丢。
+//   ⚠️ 官方迁移红线：PersistenceV2 与 preferences 不得混存同一份数据——AgreementStore 四字段
+//   **整体**迁出，旧 key 'agreement-v1' 永不再 connect（盘上旧数据保留不动，不删不改）。
+//   preferences 文件名 'agreement_store' 仅主进程使用（卡片进程不碰，无多进程互踩）。
+
+let agreementPrefs: preferences.Preferences | null = null;
+
+/** ★ 0.279.5：同步初始化（EntryAbility.onCreate 调——getPreferencesSync 返回即完成磁盘载入） */
+export function initAgreementPrefs(context: common.Context): void {
+  if (agreementPrefs === null) {
+    agreementPrefs = preferences.getPreferencesSync(context, { name: 'agreement_store' });
+  }
+}
+
+function prefs(): preferences.Preferences {
+  if (agreementPrefs === null) {
+    throw new Error('agreement prefs not initialized');
+  }
+  return agreementPrefs;
+}
+
+function prefsLoadOnce(store: AgreementStore): void {
+  if (store.loaded) {
+    return;
+  }
+  store.loaded = true;
+  try {
+    store.agreed = prefs().getSync('agreed', false) as boolean;
+    store.agreedVersion = prefs().getSync('agreedVersion', 0) as number;
+    store.improvePromptShown = prefs().getSync('improvePromptShown', false) as boolean;
+    store.hwAgreed = prefs().getSync('hwAgreed', false) as boolean;
+  } catch (_e) {
+    // 初始化缺失按未同意（onCreate 必注入，理论不可达）
+  }
+}
+
+function prefsPersist(store: AgreementStore): void {
+  try {
+    const p = prefs();
+    p.putSync('agreed', store.agreed);
+    p.putSync('agreedVersion', store.agreedVersion);
+    p.putSync('improvePromptShown', store.improvePromptShown);
+    p.putSync('hwAgreed', store.hwAgreed);
+    p.flushSync(); // 同步落盘——关键合规标志，进程被杀不丢
+  } catch (_e) {
+    // 静默（下次写再试；读侧内存态仍正确）
+  }
+}
 
 // 协议版本：协议重大更新时 +1 → 下次启动/登录重新弹同意
 // ★ 0.264.0：1→2 协议合规修订定稿（门禁拆分+SP 条款重写+三方 SDK 清单+链接核实）——存量已同意用户重新弹首启门禁
@@ -81,18 +138,22 @@ export function isPrivacySensitiveSection(sec: string): boolean {
   return sec.startsWith('1. 本地存储') || sec.startsWith('2. AI 服务与安全审计');
 }
 
-// 同意状态（持久化——每台设备单独确认，不随云同步）
+// 同意状态（★ 0.279.5：运行时响应式单例走 AppStorageV2；持久化走 preferences 同步接口——
+//   connectAgreement() 首调即同步载入磁盘真值，无水合竞态；每台设备单独确认，不随云同步）
 @ObservedV2
 export class AgreementStore {
   @Trace agreed: boolean = false;           // 是否已同意全部协议
   @Trace agreedVersion: number = 0;         // 已同意的协议版本（落后则重新弹）
   @Trace improvePromptShown: boolean = false; // 体验改进计划引导是否已弹过（仅弹一次）
-  @Trace hwAgreed: boolean = false;         // ★ 0.264.0：华为账号用户认证协议同意态（登录门禁，与基础协议分开征求；Schema 铁律尾部追加+默认值）
+  @Trace hwAgreed: boolean = false;         // ★ 0.264.0：华为账号用户认证协议同意态（登录门禁，与基础协议分开征求）
+  @Trace loaded: boolean = false;           // ★ 0.279.5：preferences 真值已载入标记（幂等防重复载）
 }
 
 export function connectAgreement(): AgreementStore {
-  return PersistenceV2.connect(AgreementStore, 'agreement-v1',
+  const store = AppStorageV2.connect(AgreementStore, 'agreement-store-runtime',
     () => new AgreementStore()) as AgreementStore;
+  prefsLoadOnce(store); // 同步载入磁盘真值（★ 0.279.5 根治点——启动任意时刻读到的即真值）
+  return store;
 }
 
 // 运行时桥（不持久化——弹窗可见性与待执行动作，重启即清）
@@ -115,22 +176,41 @@ export function needsAgreement(): boolean {
   return !ag.agreed || ag.agreedVersion < AGREEMENT_VERSION;
 }
 
-// 记录同意
+// 记录同意（★ 0.279.5：putSync+flushSync 同步落盘——根治「水合窗口写=半成品快照覆盖盘值」）
 export function markAgreed(): void {
   const ag = connectAgreement();
   ag.agreed = true;
   ag.agreedVersion = AGREEMENT_VERSION;
+  prefsPersist(ag);
   trackFirstAuto(); // ★ 0.260.0：app_first 一次性激活上报（内部幂等+隐私闸门：开关未开零动作、加入计划后恰 1 行）
 }
 
+// ★ 0.279.5：体验改进引导已弹（Index 两路径收口——直接字段赋值不落盘，一律走本函数）
+export function markImprovePromptShown(): void {
+  const ag = connectAgreement();
+  ag.improvePromptShown = true;
+  prefsPersist(ag);
+}
+
 // ★ 0.264.0：华为协议是否需要同意（登录门禁——首启基础门禁拆分后单独征求；同意一次即可，不随协议版本重置）
+// ★ 0.279.4：存量已登录用户对齐——0.264.0 拆分门禁时漏补：0.164~0.263 期间完成登录的用户（登录时华为
+//   授权页已事实同意华为账号认证协议）升级后 hwAgreed=false，点任何登录入口必弹「同意并登录」门禁。
+//   isLoggedIn 即视为历史同意，幂等置 true 后不再弹。
+//   ★ 0.279.5：读的已是 preferences 同步真值（无水合竞态），本函数任何时机调用均安全。
 export function needsHwAgreement(): boolean {
-  return !connectAgreement().hwAgreed;
+  const ag = connectAgreement();
+  if (!ag.hwAgreed && connectHuaweiAccount().isLoggedIn) {
+    ag.hwAgreed = true;
+    prefsPersist(ag);
+  }
+  return !ag.hwAgreed;
 }
 
 // ★ 0.264.0：记录华为协议同意
 export function markHwAgreed(): void {
-  connectAgreement().hwAgreed = true;
+  const ag = connectAgreement();
+  ag.hwAgreed = true;
+  prefsPersist(ag);
 }
 
 // 撤回同意（关于页入口）——回到未同意态，重新 gate 登录/云同步
@@ -139,4 +219,5 @@ export function revokeAgreement(): void {
   ag.agreed = false;
   ag.agreedVersion = 0;
   ag.hwAgreed = false; // ★ 0.264.0：一并重置华为协议同意（最简实现——重新走两段门禁）
+  prefsPersist(ag);
 }

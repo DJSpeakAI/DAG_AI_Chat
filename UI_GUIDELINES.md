@@ -635,3 +635,23 @@
 - 两处落码点固定：`ChatPage.ets` 用户消息 Text（fontColor=userMsgText + backgroundColor=bubbleUserBg）与 AI 消息容器（backgroundColor=bubbleAiBg）；**禁止在页面内写死色值**，一律走 AppTheme token（深浅两套自动跟随）；
 - 新增任何大面积内容容器（阅读区/引用块/摘要卡）不得用高亮浅底铺底——优先 `surfaceSoft`/`hookBg` 等低亮度叠加面；
 - 气泡内子区块（司忆区、生词区、操作行）底色与描边规格不变，本条只动气泡外框底色与用户正文色。
+
+## 二十七、对话页输入区尺寸与水平对齐（★ 0.279.9 定稿，0.281.4 / 0.282.0 修订）
+
+1. **水平对齐**：输入卡、引用栏、待发图片区、消息列表四者左右边距统一 **12vp**（0.279.12 用户拍板 x 轴拉宽；实机同轴，禁止各自为政）。
+2. **禁止 width(100%) + margin 组合**：ArkUI 下百分比宽度不含 margin，会溢出导致 margin 失效（实机表现为输入框贴屏边）。需要左右留白时一律写 `.width('calc(100% - Nvp)')`，N = 左右边距之和。
+3. **高度与上下留白**：输入卡非聚焦约 **39vp**、聚焦约 **62vp**（TextArea minHeight 30/56 + 上下内 padding 8 + 行上下 3）；输入卡 `margin top 10 / bottom 10` 完全对称（0.279.17：top 6→10，bottom 10 中含原声明行 top 4），声明行自身 top 必须为 0，**禁止两处重复叠间距**。
+4. **AIGC 声明行**：位于输入卡下方、页面最底，`margin top 0 / bottom 0`（0.279.16：原 top 4 已并入输入卡 bottom 10；bottom 0 为物理最低，不能再往下）；居中小字，禁止再加底部留白。
+5. **左右图标对称 + 尽量靠中间**：输入卡内左侧新建气泡树图标（20vp，Row 宽 28vp）、右侧屏幕圈注图标（20vp，Row 24vp）距卡内缘必须等距 **18vp**（0.279.14：左侧 `.margin left 10`、右侧 `.margin right 12`，叠加 Row padding 4 后图标外缘落 18vp）；两侧成对取值、改一侧必须同步另一侧。
+6. **占位文案单行 + 与正文首行同轴同位 + 字框优先**：要让文字变大，先压缩外围占位器（输入行 Row 左右 padding 4、TextArea 左右 margin 2、左右内 padding 5），把 TextArea 的文字可用宽度做大，再放字号；当前字号 **13**、17 字引导语手机端单行。**自绘占位只允许 Stack 方案且占位行必须给固定高度**（0.279.19）：输入行用 `Stack({alignContent: Alignment.Start})` 包住 TextArea（layoutWeight 挂 Stack、TextArea 宽 100%），占位 Row 仅空文本时渲染、width 100% + `height(this.isInputFocused ? 56 : 33)` + **`padding({ top: 8, bottom: 8, left: 5, right: 5 })` 与 TextArea 内 padding 完全同值** + **`alignItems(VerticalAlign.Top)`** + `hitTestBehavior(None)`。★ **0.281.5 用户实机定案：占位必须与正文/光标同一行**——原 `VerticalAlign.Center` 在聚焦态（占位行 56 高、中心 28）会把提示压到正文首行下方约 11vp，与光标错行；**禁止再改回 Center**（占位行高度只用于撑高，不得参与文字定位）。**严禁占位行用 `height('100%')`**——Stack 内百分比高会反向参与父级测量、把 Stack 和输入卡撑满整屏（消息区被挤没，0.279.18 实机翻车）；**禁止 `.overlay()` 自绘占位**（0.279.16 容器未定尺寸→0 高）。高度定值须与 TextArea 自适应高一致（非聚焦 33=行高 17+上下内 padding 8×2，聚焦 56）。占位文案内嵌 `mic.svg`（14×14）替代 🎤 emoji，文字分三段拼接、文案本体一字不许改；禁止放大到换行。
+
+7. **输入区工具行（大框内第二层·仅聚焦态）**（★ 0.282.0 定稿，取代 0.281.4「三组标签」）：工具行**包在输入大框内部**，且**只在输入框聚焦后才出现**——未聚焦态大框内只保留三件（左树杈 / 中间占位文字 / 右屏幕圈注）。聚焦态大框内分两层：上层输入文字（输入行 Row）／下层工具行 = 左 `+` 添加图片（28×28 圆钮、`surfaceHover` 底、`plus.svg` 16vp）＋ `深度思考` chip（timer.svg 13vp + 文字 11 号，选中 `brandPrimary` 紫底白字、未选中透明底 + `strokeCard` 0.5 描边 + `textSecondary`）＋ `Blank()` ＋ 右下角发送圆钮。**短/中/长三档标签、正常对话/播客模式标签已整体下线**（0.282.0 用户拍板：短回复并入中回复由 prompt 自适应、播客入口下线）——禁止再恢复三档切换；深度思考=唯一模式开关（关=中回复、开=长回复）。工具行 `.width(100%)` + 卡内 `padding 左右 4 / 上下 2`；chip 高 26、圆角 13。
+8. **发送键**（★ 0.282.0 修订）：位置=**聚焦态工具行最右侧（右下角）**，原聚焦态输入行内右侧位置退役；规格沿用 0.281.2——32×32 圆钮（`borderRadius(16)`）+ `surfaceHover` 中性底（禁紫底白字块）+ 18vp `arrow_up.svg` 双主题；`isLoading` 时 opacity 0.45 且点击短路。
+9. **键盘避让（页面级自控，★ 0.281.4 真机定案）**：**禁全局 `setKeyboardAvoidMode(RESIZE)`**——真机实测在 Navigation/NavDestination 页面内不生效，输入卡下半截仍被软键盘盖住（0.281.2 翻车）。终态=ChatPage `.onShown` 设 `KeyboardAvoidMode.NONE` + `window.on('keyboardHeightChange')` 监听键盘高度（px→vp 存 `@Local kbAvoidHeight`），根 Column `.padding({ bottom: kbAvoidHeight })` 让位；`.onHidden`/`aboutToDisappear` 必须 `off` 监听并恢复 `OFFSET`（防 NONE 残留影响其他页面）。效果=消息区收缩、输入大框（含聚焦态标签层）+ AIGC 声明行整体贴在软键盘上沿，顶上标题栏不被顶出屏幕。
+
+## 二十八、对话页「回到底部」悬浮钮（★ 0.280.0 定稿）
+
+1. **可见性判定**：`onScrollIndex` 的 end < 最后一条消息索引（视口未覆盖最后一行，即用户上滑看历史）时显示；滚回底部（含发送新消息 `scrollEdge(Edge.Bottom)` 自动滚底）自动隐藏；内容不满一屏、空对话恒不出现。
+2. **挂点结构**（★ 0.280.1 修订）：悬浮钮挂**输入卡外包 `Stack({ alignContent: Alignment.Top })`** 内（★ 0.280.2 用户拍板「还在右边」——改水平居中）——`offset({ y: -44 })` 浮出绘制不占测量，恒贴输入卡正上方（底缘距卡顶 8vp）、引用栏/待发图出现时自动跟随下移；输入卡 margin 上移到 Stack（Stack 顶=卡顶，offset 参照才准）。消息区外层 BottomEnd Stack（0.280.0 建）保留作消息区容器。
+3. **规格**（★ 0.280.3 官方终式，华为客服五问答复定案）：36vp 圆钮用 **`backgroundEffect({ radius: 24, saturation: 1.1, brightness: 1.05, color: '#1AFFFFFF' })` 自定义玻璃**——color 的 alpha（10% 白）全权决定透明度，想更透降 `#0DFFFFFF`（5%）；+ 0.5 描边 `#33FFFFFF`（20% 白高光边）+ 阴影 `{ radius: 12, color: '#66000000', offsetY: 4 }`。**禁用 `backgroundBlurStyle(COMPONENT_THICK)`**（组件材质组第二厚档、深色蒙版深且不透明度高=真机显实色深底，0.280.1 翻车根因）；**三背景模糊接口（backgroundBlurStyle/backgroundEffect/backdropBlur）同组件仅最后设置的生效、禁与 backgroundColor 混设**；radius 小面积组件取 20~40。内 18vp `arrow_down.svg` 双主题（华为细线 1.5 描边/圆帽/65% 透明，照 mic.svg 定式）；出现/消失 150ms `TransitionEffect.OPACITY` 过渡。
+4. **点击行为**：`scroller.scrollEdge(Edge.Bottom)` 滚到最底并复位状态；禁止另造滚动通道。

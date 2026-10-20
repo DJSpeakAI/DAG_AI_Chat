@@ -49,6 +49,9 @@ export struct AppSideBar {
   //   原画布项硬编码永久高亮已废）。宿主注入当前路由名，本组件按映射判定高亮；
   //   BBTreeCanvas 手机抽屉形态固定传 'BBTreeCanvas'（抽屉只能从画布唤出，人就在画布上）
   @Param currentRoute: string = '';
+  // ★ 0.279.6：边栏宽度由宿主注入——PC 窄窗自适应收窄（Index 传 sidebarWidth），
+  //   手机抽屉/其余宿主不传=默认 208 原样
+  @Param sidebarWidth: number = 208;
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
   account: HuaweiAccountStore = connectHuaweiAccount();
   subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
@@ -1004,7 +1007,7 @@ export struct AppSideBar {
         })
       }
     }
-    .width(208)
+    .width(this.sidebarWidth)
     .height('100%')
     .padding({ left: 12, right: 12, bottom: 16 })
     .backgroundColor(this.theme.bgNav)

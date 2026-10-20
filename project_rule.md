@@ -93,11 +93,11 @@
 
 -   局部小功能、延续迭代、单文件 Bug 修复：当前对话继续做完
 -   全局清理、项目优化、大重构、跨模块大功能：必须新开对话框
--   新开对话第一步：强制读取根目录 [MEMORY.md](http://MEMORY.md) + project\_rule.md，对齐项目基线
+-   新开对话第一步：强制读取五文档对齐基线（★ 2026-10-21 起，清单见 AGENTS.md「强制第一步」：project_rule.md + MEMORY.md + CONTEXT_MANAGEMENT.md + AOCI_INDEX.md + UI_GUIDELINES.md 按需）——**改任何源码文件前必读其 AOCI_INDEX.md 条目（F/R/A/S），按行号区段精读，禁止无导航整读大文件**
 -   **★ 一任务一会话 + 收尾四件套（2026-10-14 用户定稿——32G 内存跑 CI+DevEco+大模型同会话膨胀卡死，一个任务一个窗口）**：
     -   一个开发任务完成（含 AI 自测）即收尾，不在同一会话无限续接；**用户自测出的 bug 一律新开对话修复**
-    -   新会话续接机制 = 三文档（project\_rule.md + MEMORY.md + docs/CONTEXT\_MANAGEMENT.md）+ 用户口述 bug：AI 从 MEMORY 最近版本条目定位上下文，禁止凭空猜测
-    -   **收尾四件套（缺一不算收官）**：①本轮全部改动记入 MEMORY.md「迭代记录」（含遗留/已知问题——这是新会话唯一的上下文来源）②桌面清理（123.txt 等交接文件删除）③git push 按**降级链**（★ 2026-10-20 更新：GitHub 主通道；codearts 已冻结且用户永不续费——失败即走 MEMORY 全局约束#15 降级链：测本地服务器→不行删 codearts remote+本地保存待推，禁反复重试）④版本号三处同步（app.json5 versionCode / Index.ets / GlobalSettingsDialog APP\_VERSION）
+    -   新会话续接机制 = 五文档（project\_rule.md + MEMORY.md + docs/CONTEXT\_MANAGEMENT.md + AOCI_INDEX.md + UI_GUIDELINES.md 按需）+ 用户口述 bug：AI 从 MEMORY 最近版本条目 + AOCI_INDEX 条目定位上下文，禁止凭空猜测
+    -   **收尾五件套（缺一不算收官，★ 2026-10-21 四件套升级）**：①本轮全部改动记入 MEMORY.md「迭代记录」（含遗留/已知问题——这是新会话唯一的上下文来源）②桌面清理（123.txt 等交接文件删除）③git push 按**降级链**（★ 2026-10-20 更新：GitHub 主通道；codearts 已冻结且用户永不续费——失败即走 MEMORY 全局约束#15 降级链：测本地服务器→不行删 codearts remote+本地保存待推，禁反复重试）④版本号三处同步（app.json5 versionCode / Index.ets / GlobalSettingsDialog APP\_VERSION）⑤**AOCI_INDEX.md 受影响条目刷新（新增文件补条目、职责/接口/强关系变更同步改、新踩坑教训归位 S 字目）**
     -   MEMORY.md 条目须自包含：新会话只读该条目即可了解「改了什么、怎么改的、还差什么」，不依赖旧对话记忆
 
 * * *
@@ -123,6 +123,11 @@
 -   APP 下一版 = **0.230.0**（跳过 0.229 整段——0.229.x 全归测试台工具线，属工具迭代、非 app 功能）
 -   **测试台前台顶栏版本显示跟 APP 走**（只显示前三段如 `0.230.0`；测试台第四段不前台显示，只在 MEMORY/docs 记录）
 -   测试台工具自身版本演进照常在 MEMORY「迭代记录」以四段格式沉淀
+
+    **★ 多 AI 并行定号规则（2026-10-21 用户定稿）**：
+
+-   用户会同时让多个 AI 并行开发同一仓库。定版本号时若发现基线已被顶进 1~2 个版本（预定号被占用、或他版改动正落在你看的代码上），**属正常并行占用、不是异常**——AI 只需把自己这版**顺延定号（versionCode 同步 +1）**即可，勿停、勿问、勿回滚他版改动
+-   定号唯一依据 = **AppScope/app.json5 实读 versionCode**（记忆/文档里的预定号都可能被并行线顶掉、一律不可信）；定号后**尽快落三处同步**防再撞
 
 * * *
 

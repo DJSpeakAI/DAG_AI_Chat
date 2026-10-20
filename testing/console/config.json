@@ -139,7 +139,12 @@
       "cloud-sync-arbiter-v2",
       "tombstone-purge-v1",
       "knowledge-view-mode",
-      "huawei-account"
+      "huawei-account",
+      "stats-wipe-date-v1",
+      "profile-observations-v1",
+      "memory-pref-v1",
+      "memory-inject-stats-v1",
+      "agreement-store-runtime"
     ],
     "redlineKeysNote": "★0.243.0.2 内容级红线：git diff 删除/修改行中出现这些持久化 key（PersistenceV2/AppStorageV2 key 禁改铁律）=命中回滚；新增 key 时须同步补录本清单"
   },

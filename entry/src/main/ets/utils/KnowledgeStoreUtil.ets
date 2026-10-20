@@ -52,11 +52,15 @@ function buildPresetCards(): KnowledgeCard[] {
     new KnowledgeCard('preset-econ-supply', '供给与需求', '经济学的万有引力：价格是两股力量的平衡点——供给曲线向上（价高多产）、需求曲线向下（价高少买），交点即均衡。一切价格管制、补贴、税收的分析都从移动这两条线开始。', '', now - 12000, 0, 0, 0, 0, '经济,供需,市场,入门', '', JSON.stringify([PRESET_IMG_1]), '', now - 12000),
     new KnowledgeCard('preset-psych-curve', '艾宾浩斯遗忘曲线', '记忆的衰减规律：学后 20 分钟忘 42%、1 天忘 66%，先快后慢呈负指数曲线。破局之道是间隔重复——在快忘时复习一次，记忆强度就被抬高一截，本应用的复习算法正是它的工程实现。', '', now - 13000, 0, 0, 0, 0, '心理学,记忆,学习法,间隔重复,科普', '', JSON.stringify([PRESET_IMG_2, PRESET_IMG_3]), '', now - 13000),
     new KnowledgeCard('preset-lang-idiom', '英语习语', '字面之外的语言密码：break the ice 不是砸冰是破冰开场、hit the books 不是打书是突击复习、piece of cake 不是蛋糕是小菜一碟。习语承载文化基因，直译必翻车，只能整块记忆。', '', now - 14000, 0, 0, 0, 0, '英语,习语,语言学习,文化', '', '', JSON.stringify([PRESET_IMG_3]), now - 14000),
-    new KnowledgeCard('preset-hist-print', '古腾堡印刷术', '知识传播的第一次爆炸：1440 年金属活字印刷让书籍成本暴跌千倍，五十年内欧洲出书量超过此前一千年总和。宗教改革、科学革命、文艺复兴都踩着它的纸页展开——媒介即变革。', '', now - 15000, 0, 0, 0, 0, '历史,印刷术,文艺复兴,媒介', '', '', '', now - 15000)
+    new KnowledgeCard('preset-hist-print', '古腾堡印刷术', '知识传播的第一次爆炸：1440 年金属活字印刷让书籍成本暴跌千倍，五十年内欧洲出书量超过此前一千年总和。宗教改革、科学革命、文艺复兴都踩着它的纸页展开——媒介即变革。', '', now - 15000, 0, 0, 0, 0, '历史,印刷术,文艺复兴,媒介', '', '', '', now - 15000),
+    // ★ 0.279.1 v5：多图重载测试卡（用户需求——标题图 4~5 张 + 内容图 4~5 张，测标题/内容双区多图横滑链路）
+    new KnowledgeCard('preset-multimg-1', '贝叶斯定理', '逆概率推理的黄金公式：P(H|E)=P(E|H)·P(H)/P(E)——看到证据 E 后如何更新假设 H 的置信度。先验×似然=后验，医生看化验单、雷达判信号、邮箱滤垃圾邮件，背后都是同一台贝叶斯机器在转动。', '', now - 16000, 0, 0, 0, 0, '数学,概率,贝叶斯,统计,推理', JSON.stringify([PRESET_IMG_2, PRESET_IMG_3, PRESET_IMG_1, PRESET_IMG_2]), '', JSON.stringify([PRESET_IMG_1, PRESET_IMG_2, PRESET_IMG_3, PRESET_IMG_1]), now - 16000),
+    new KnowledgeCard('preset-multimg-2', '多巴胺与奖赏回路', '大脑的动力泵：腹侧被盖区→伏隔核的中脑多巴胺通路把「想要」变成行动。多巴胺不等于快乐——它编码预期误差（比想象更好才喷发），所以刷短视频停不下来：每次下滑都是一次新期望。', '', now - 17000, 0, 0, 0, 0, '神经科学,多巴胺,心理学,成瘾,动机', JSON.stringify([PRESET_IMG_3, PRESET_IMG_1, PRESET_IMG_2, PRESET_IMG_3, PRESET_IMG_1]), '', JSON.stringify([PRESET_IMG_1, PRESET_IMG_2, PRESET_IMG_3, PRESET_IMG_1, PRESET_IMG_2]), now - 17000),
+    new KnowledgeCard('preset-multimg-3', '可再生能源', '把阳光风浪变成电流的工程学：光伏用半导体内光电效应直换直流、风机靠电磁感应把动能转交流、储能用锂离子在正负极间搬运原子。难点从来不在发电而在消纳——电即发即用，特高压输电与储能才是下半场。', '', now - 18000, 0, 0, 0, 0, '能源,光伏,风电,储能,工程', JSON.stringify([PRESET_IMG_2, PRESET_IMG_1, PRESET_IMG_3, PRESET_IMG_2]), '', JSON.stringify([PRESET_IMG_3, PRESET_IMG_2, PRESET_IMG_1, PRESET_IMG_3, PRESET_IMG_2]), now - 18000)
   ];
 }
 
-const KNOWLEDGE_SEED_VERSION = 4; // ★ 0.274.0：v4 = 多主题测试数据（数学/物理/经济/心理/语言/历史 6 张新卡——标题图/内容图例子扩充；同 id 更新补 titleImages 同步）
+const KNOWLEDGE_SEED_VERSION = 5; // ★ 0.279.1：v5 = 多图重载测试卡 3 张（标题图 4~5 张 + 内容图 4~5 张——双区多图横滑链路测试；v4 = 多主题 6 张）
 const KNOWLEDGE_SEED_KEY = 'knowledge-bank-seed';
 
 // Ids already seeded by v1 (0.146): v2 seeding must NOT resurrect this

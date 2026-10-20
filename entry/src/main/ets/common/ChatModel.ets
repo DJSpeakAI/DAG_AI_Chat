@@ -923,6 +923,42 @@ export function recordStat(store: StatisticsStore, kind: string, inTok: number, 
 }
 
 // ============================================================
+// ★ 0.279.1：历史测试统计数据一次性清理（用户指令——0.202.3 一年测试 seed 已随上线清零删除，
+//   但设备/云端 statistics-v1 与 cfg:stat-days 行仍残留 360 天假数据；今日起用户真实使用，
+//   需清掉「今天之前」的全部统计天，只保留当天真实数据）。
+// 设计：持久化清理界 wipeDate（'YYYY-MM-DD'，空=未清理）——
+//   ① 本地：启动后一次性删除 date < wipeDate 的天记录，flush 上行覆盖云端旧行（自愈）；
+//   ② 云端：mergeStatDaysRow 下行吸收时丢弃 date < wipeDate 的云端天（防旧全量行 union 回灌）。
+//   不动等级/签到/SP——头衔按 days.length 动态回落为真实值；升级桥 lastLevel 为 AppStorageV2
+//   会话级，冷启动自然重建基线。
+// ============================================================
+@ObservedV2
+export class StatsWipeMarker {
+  @Trace wipeDate: string = ''; // 统计清理界日期（'YYYY-MM-DD'；'' = 未执行过清理）
+}
+
+export function connectStatsWipeMarker(): StatsWipeMarker {
+  return PersistenceV2.connect(StatsWipeMarker, 'stats-wipe-date-v1', () => new StatsWipeMarker()) as StatsWipeMarker;
+}
+
+/** ★ 0.279.1：一次性清理历史测试统计（保留当天真实数据；本地已净也落 wipeDate——云端旧行同需免疫） */
+export function wipeHistoricalTestStats(): void {
+  const marker = connectStatsWipeMarker();
+  if (marker.wipeDate.length > 0) {
+    return; // 已清理过（幂等）
+  }
+  const today = statDateKey(Date.now());
+  marker.wipeDate = today;
+  const store = connectStatistics();
+  const days = getStatDays(store);
+  const kept = days.filter((d: StatDayEntry): boolean => d.date >= today);
+  if (kept.length !== days.length) {
+    store.raw = JSON.stringify({ days: kept } as StatDayData);
+  }
+  scheduleRowFlush(); // 无论本地是否有删动都上行——云端 360 天旧行靠本地净表覆盖自愈
+}
+
+// ============================================================
 // ★ 0.194.0：订阅体系（用户定稿：¥9.9/月 + ¥99/年；到期只锁云同步其他 100% 可用；
 //   新用户登录华为账号免费试用 30 天；种子用户兑换码 +90 天）
 // 存储：PersistenceV2 独立 key（0.143 教训：全新 key 无旧快照坑）
@@ -3504,6 +3540,12 @@ function mergeStatDaysRow(v: string | undefined): void {
     }
   } catch (_e) {
     return; // 云端坏行——保持本地，flush 上行好值自愈
+  }
+  // ★ 0.279.1：清理界回灌防护——早于 wipeDate 的云端天一律丢弃（未装新版的旧端把 360 天
+  //   测试旧行推上来时，union 吸收会把已清数据拉回；丢弃后 changed 语义不变，flush 上行净表自愈）
+  const wipeDate = connectStatsWipeMarker().wipeDate;
+  if (wipeDate.length > 0) {
+    cloudDays = cloudDays.filter((c: StatDayEntry): boolean => c.date >= wipeDate);
   }
   const store = connectStatistics();
   const localDays = getStatDays(store);
