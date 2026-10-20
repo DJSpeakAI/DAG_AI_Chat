@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.266.0.1'; // ★ 0.266.0.1：华为协议门禁自动同意（0.264.0 遗留）+ LOGIN-REVOKE 撤回门禁用例 + SYNC-CLOSE 云同步关闭入口用例（app 0.266.0 配套）；上版 0.263.0.1 LOGIN-WIPE// 更早历史见 MEMORY.md 版本表
+const VERSION = '0.274.0.1'; // ★ 0.274.0.1：WIDGET-SWITCH 桌面卡片切库死锁回归 + SEED-V4 种子数据用例 + widget 套件（app 0.274.0 配套）；上版 0.266.0.1 华为协议门禁// 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -4040,6 +4040,101 @@ const CASES = [
       ctx.log('备注', 'info', '10vp 轻蹭防抖为细粒度手势——保留人工验收项「轻蹭不抖动」');
     } },
 
+  // ---------- ★ 0.274.0 桌面服务卡片（用户需求「桌面卡片测试进测试台」；切库死锁修复回归） ----------
+  // 复现链（修前真机实锤）：switchPill @Builder 按值传参 active 快照冻结 + onClick !active 拦截
+  // = 「只能切换一次，再也切不回」+「左上角标签不变」；叠加完成态无 pill=第二死锁。
+  // 修后断言：知识卡→单词库→知识卡 三连切，每切指纹必变；完成态若现身必须带双 pill。
+  { id: 'WIDGET-SWITCH', suite: 'widget', name: '切库死锁回归·知识卡→单词库→知识卡三连切每切必变+完成态pill常驻（0.274.0 修复）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '桌面卡片切库（UI 断言专属，PC 无 UI 通道）'); return; }
+      // ① 回桌面
+      await sh(serial, `uitest uiInput keyEvent Home`, 15000); await sleep(1800);
+      // ② 卡片存在性：找 pill「单词库」；不存在→自举添加（长按图标→卡片→添加至桌面）
+      let d = await dumpLayout(serial);
+      if (!d.ok) { ctx.log('★切库死锁回归', 'fail', 'dumpLayout 失败（桌面不可读）'); return; }
+      if (!findNodeBoundsAll(d.text, '单词库').length) {
+        ctx.log('② 桌面未见 DAG 卡片', 'info', '自举添加：长按图标→卡片→添加至桌面');
+        const ico = findNodeBoundsAll(d.text, 'DAGAI')[0];
+        if (!ico) { ctx.log('★切库死锁回归', 'skip', '桌面未见 DAGAI 图标（在其他页）——手动滑到图标所在页再跑'); return; }
+        await uiLongPress(serial, ico.x, Math.max(ico.y - 70, 50), 2600);
+        const m = await dumpLayout(serial);
+        const cardBtn = m.ok && m.text.includes('卡片') ? await uiClickText(serial, '卡片', { exact: true, waitMs: 2200 }) : { ok: false };
+        if (!cardBtn.ok) { ctx.log('★切库死锁回归', 'skip', '长按图标未出「卡片」菜单（图标位置或长按不稳定）——手动添加卡片后重跑'); return; }
+        const add = await uiClickText(serial, '添加至桌面', { exact: true, waitMs: 2500 });
+        ctx.log('② 自举添加卡片', add.ok ? 'pass' : 'skip', add.ok ? '已点「添加至桌面」' : (add.err || '未找到添加按钮——手动添加后重跑'));
+        await sh(serial, `uitest uiInput keyEvent Home`, 15000); await sleep(1800);
+        d = await dumpLayout(serial);
+        if (!d.ok || !findNodeBoundsAll(d.text, '单词库').length) { ctx.log('★切库死锁回归', 'skip', '添加后仍未见卡片 pill——手动确认卡片已上桌面再跑'); return; }
+      }
+      // ③ 卡片区指纹：以「单词库」pill 为锚，收集周边文本集合（title/progress/完成态文案全在内）
+      const fpOf = async () => {
+        const dd = await dumpLayout(serial);
+        if (!dd.ok) return null;
+        const anchor = findNodeBoundsAll(dd.text, '单词库')[0];
+        if (!anchor) return null;
+        const near = [];
+        const walk = (node) => {
+          if (!node || typeof node !== 'object') return;
+          if (node.attributes) {
+            const t = String(node.attributes.text || '').trim();
+            const m = String(node.attributes.bounds || '').match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+            if (t && m && Math.abs((+m[2] + +m[4]) / 2 - anchor.y) < 420 && Math.abs((+m[1] + +m[3]) / 2 - anchor.x) < 620) near.push(t.slice(0, 40));
+          }
+          for (const k of Object.keys(node)) if (node[k] && typeof node[k] === 'object') walk(node[k]);
+        };
+        try { walk(JSON.parse(dd.text), false); } catch (_) { return null; }
+        near.sort();
+        return { fp: near.join('|'), done: /今日复习已完成|全部学完|暂无复习内容/.test(near.join('|')), pills: near.includes('单词库') && near.includes('知识卡') };
+      };
+      // ④ 三连切：知识卡→单词库→知识卡（首点可能幂等，断言只看后两切）
+      const f1 = await (async () => { const c = await uiClickText(serial, '知识卡', { exact: true, waitMs: 2600 }); return c.ok ? await fpOf() : null; })();
+      if (!f1) { ctx.log('④ 点「知识卡」pill', 'fail', 'pill 未找到或 dump 失败（卡片结构异常）'); return; }
+      ctx.log('④ 点「知识卡」', 'pass', `指纹 ${f1.fp.slice(0, 60)}…`);
+      artSave('WIDGET-SWITCH', `fp1-${dev.id}.json`, f1.fp);
+      const c2 = await uiClickText(serial, '单词库', { exact: true, waitMs: 2600 });
+      const f2 = c2.ok ? await fpOf() : null;
+      if (!f2) { ctx.log('⑤ 点「单词库」pill', 'fail', 'pill 未找到或 dump 失败'); return; }
+      const sw2 = f2.fp !== f1.fp;
+      ctx.log('★⑤ 切回单词库生效（死锁主断言）', sw2 ? 'pass' : 'fail',
+        sw2 ? `指纹已变 ${f2.fp.slice(0, 60)}…——第二切未被拦截（0.274.0 修前：active 快照冻结致此切永远锁死）`
+          : `指纹与切前完全一致——切库被拦截（0.274.0 前「只能切一次」死锁复现）`);
+      if (f2.done && !f2.pills) ctx.log('★完成态pill常驻', 'fail', '完成态未见「单词库/知识卡」pill——0.274.0 完成态切换入口缺失');
+      if (f2.done && f2.pills) ctx.log('完成态pill常驻', 'pass', '完成态下双 pill 在场——切走入口常驻');
+      const c3 = await uiClickText(serial, '知识卡', { exact: true, waitMs: 2600 });
+      const f3 = c3.ok ? await fpOf() : null;
+      const sw3 = f3 !== null && f2 !== null && f3.fp !== f2.fp;
+      ctx.log('★⑥ 再切回知识卡（第三切）', f3 === null ? 'fail' : (sw3 ? 'pass' : 'fail'),
+        f3 === null ? 'pill 未找到或 dump 失败' : (sw3 ? '指纹再变——往复切换全通（无一次性锁死）' : '指纹未变——第三切又锁死'));
+      if (f3 && f3.done && !f3.pills) ctx.log('★完成态pill常驻', 'fail', '完成态未见双 pill——0.274.0 完成态切换入口缺失');
+    } },
+
+  // ---------- ★ 0.274.0 种子数据 v4 回归（知识卡 6 域新卡 + 单词 6 词；标题图链路人工抽查） ----------
+  { id: 'SEED-V4', suite: 'kbview', name: '种子v4·知识库/单词库新测试数据在场（艾宾浩斯遗忘曲线等6卡+熵/Blockchain等6词；0.274.0 新功能）', semi: false, scope: 'each',
+    run: async (ctx) => {
+      const dev = ctx.devices[0]; const serial = dev.serial;
+      if (!canUiDump(dev)) { uiSkip(ctx.log, dev, '种子数据断言（UI 断言专属，PC 无 UI 通道）'); return; }
+      await coldStart(serial);
+      // ① 知识库：v4 新卡 6 张（最新排序插队首，首屏必见）
+      const nav = await navTo(serial, '知识库', ctx.log);
+      if (!nav.ok) { ctx.log('★种子v4·知识库', 'fail', '未能进入知识库页'); return; }
+      const dk = await dumpLayout(serial);
+      if (!dk.ok) { ctx.log('★种子v4·知识库', 'fail', 'dump 失败'); return; }
+      const kHits = ['艾宾浩斯遗忘曲线', '熵增定律', '供给与需求', '英语习语', '古腾堡印刷术', '极限'].filter((t) => dk.text.includes(t));
+      ctx.log('★① 知识库 v4 新卡在场', kHits.length > 0 ? 'pass' : 'fail',
+        kHits.length > 0 ? `命中 ${kHits.length}/6：${kHits.join('、')}（v3→v4 seed 合并生效；标题图/内容图为视觉项——人工抽查）`
+          : '首屏未见任何 v4 新卡——seed v4 未合并（检查 KNOWLEDGE_SEED_VERSION=4 与装机版本，或列表非「最新」排序）');
+      // ② 单词库：v4 新词（选低误判词断言）
+      await sh(serial, `uitest uiInput keyEvent Back`, 15000); await sleep(1500);
+      const nav2 = await navTo(serial, '单词库', ctx.log);
+      if (!nav2.ok) { ctx.log('★② 单词库 v4 新词', 'fail', '未能进入单词库页'); return; }
+      const dw = await dumpLayout(serial);
+      if (!dw.ok) { ctx.log('★② 单词库 v4 新词', 'fail', 'dump 失败'); return; }
+      const wHits = ['Blockchain', '深度学习', 'Cache', 'Application Programming Interface'].filter((t) => dw.text.includes(t));
+      ctx.log('★② 单词库 v4 新词在场', wHits.length > 0 ? 'pass' : 'fail',
+        wHits.length > 0 ? `命中 ${wHits.length}/4：${wHits.join('、')}` : '首屏未见 v4 新词——WORD_SEED_VERSION=4 未生效或排序不符（下滑人工确认）');
+    } },
+
   // ---------- 功能⑤ 云端语音朗读 API（★ 0.232.0；用户规则：没填 Key 的设备不测） ----------
   { id: 'TTS-API', suite: 'tts', name: '云端TTS·openspeech 直打验证（读设备已填配置；未填 Key=skip；55000000 自动官方音色回退）', semi: false, scope: 'each',
     run: async (ctx) => {
@@ -4852,7 +4947,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', 'sync-boot': '云同步·三端从零引导（★0.241.0.4：fresh 装机后 协议→登录→开同步→三端收敛；唯一人工=华为授权页）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）+ 手机操作端链路（0.241.0.4 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', 'sync-boot': '云同步·三端从零引导（★0.241.0.4：fresh 装机后 协议→登录→开同步→三端收敛；唯一人工=华为授权页）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）+ 手机操作端链路（0.241.0.4 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', widget: '桌面服务卡片（切库死锁回归+完成态切换入口；0.274.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }

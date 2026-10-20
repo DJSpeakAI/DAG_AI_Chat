@@ -44,11 +44,19 @@ function buildPresetCards(): KnowledgeCard[] {
     new KnowledgeCard('preset-finetuning', '并发编程', '多任务同时执行的协调艺术：线程/协程是执行单元，锁防止数据竞争，死锁是互相等待的僵局，原子操作与消息队列是解法。用对并发模型，吞吐量翻倍。', '', now - 6000, 0, 0, 0, 0, '并发,多线程,锁,内存模型,后端,性能优化'),
     new KnowledgeCard('preset-rag', 'Git 版本控制', '代码的时间机器：commit 是快照、branch 是平行宇宙、merge 汇流合流、rebase 重写历史。分布式设计让每个克隆都是完整仓库，协作与回滚皆从容。', '', now - 7000, 0, 0, 0, 0, 'Git,版本控制,协作,命令行,工具,工程实践,DevOps', JSON.stringify([PRESET_IMG_1, PRESET_IMG_2, PRESET_IMG_3])),
     new KnowledgeCard('preset-multimodal', '递归', '函数调用自身的分治智慧：基准情形终止展开、递归情形缩小问题规模，像俄罗斯套娃层层打开。栈是它的天然载体，栈溢出是它的悬崖边界。', '', now - 8000, 0, 0, 0, 0, '算法,递归,编程基础,思维模型,栈,函数,入门,计算机科学'),
-    new KnowledgeCard('preset-agent', 'SOLID 原则', '面向对象设计的五条军规：单一职责、开闭、里氏替换、接口隔离、依赖倒置。目标是高内聚低耦合——需求变化时只改一处而非牵一发动全身。', '', now - 9000, 0, 0, 0, 0, 'SOLID,设计原则,面向对象,架构,代码质量,可维护性,设计模式,工程实践,编程进阶')
+    new KnowledgeCard('preset-agent', 'SOLID 原则', '面向对象设计的五条军规：单一职责、开闭、里氏替换、接口隔离、依赖倒置。目标是高内聚低耦合——需求变化时只改一处而非牵一发动全身。', '', now - 9000, 0, 0, 0, 0, 'SOLID,设计原则,面向对象,架构,代码质量,可维护性,设计模式,工程实践,编程进阶'),
+    // ★ 0.274.0 v4：多主题测试数据（用户需求「种类更多、标题图例子更多」）——数学/物理/经济/心理学/语言/历史六域各一张；
+    //   3 张带标题图（titleImages——0.210.0 标题图链路测试）、2 张带内容图（images——多图横滑链路测试）
+    new KnowledgeCard('preset-math-limit', '极限', '微积分的地基：当 n 无限增大时数列无限逼近的那个数。ε-N 语言把它从「无限接近」的直觉变成可证明的严格数学，导数与积分皆由它定义。', '', now - 10000, 0, 0, 0, 0, '数学,微积分,极限,高等数学', '', '', JSON.stringify([PRESET_IMG_1]), now - 10000),
+    new KnowledgeCard('preset-physics-entropy', '熵增定律', '热力学第二定律：孤立系统的熵永不减少。无序度只增不减是宇宙的最終命运——房间会乱、热量会散、信息会失真；生命以负熵为食，靠摄入秩序对抗混沌。', '', now - 11000, 0, 0, 0, 0, '物理,热力学,熵,科普', '', '', JSON.stringify([PRESET_IMG_2, PRESET_IMG_3]), now - 11000),
+    new KnowledgeCard('preset-econ-supply', '供给与需求', '经济学的万有引力：价格是两股力量的平衡点——供给曲线向上（价高多产）、需求曲线向下（价高少买），交点即均衡。一切价格管制、补贴、税收的分析都从移动这两条线开始。', '', now - 12000, 0, 0, 0, 0, '经济,供需,市场,入门', '', JSON.stringify([PRESET_IMG_1]), '', now - 12000),
+    new KnowledgeCard('preset-psych-curve', '艾宾浩斯遗忘曲线', '记忆的衰减规律：学后 20 分钟忘 42%、1 天忘 66%，先快后慢呈负指数曲线。破局之道是间隔重复——在快忘时复习一次，记忆强度就被抬高一截，本应用的复习算法正是它的工程实现。', '', now - 13000, 0, 0, 0, 0, '心理学,记忆,学习法,间隔重复,科普', '', JSON.stringify([PRESET_IMG_2, PRESET_IMG_3]), '', now - 13000),
+    new KnowledgeCard('preset-lang-idiom', '英语习语', '字面之外的语言密码：break the ice 不是砸冰是破冰开场、hit the books 不是打书是突击复习、piece of cake 不是蛋糕是小菜一碟。习语承载文化基因，直译必翻车，只能整块记忆。', '', now - 14000, 0, 0, 0, 0, '英语,习语,语言学习,文化', '', '', JSON.stringify([PRESET_IMG_3]), now - 14000),
+    new KnowledgeCard('preset-hist-print', '古腾堡印刷术', '知识传播的第一次爆炸：1440 年金属活字印刷让书籍成本暴跌千倍，五十年内欧洲出书量超过此前一千年总和。宗教改革、科学革命、文艺复兴都踩着它的纸页展开——媒介即变革。', '', now - 15000, 0, 0, 0, 0, '历史,印刷术,文艺复兴,媒介', '', '', '', now - 15000)
   ];
 }
 
-const KNOWLEDGE_SEED_VERSION = 3; // ★ 0.202.2：v3 = 编程主题测试数据（更新同 id 卡内容，保留记忆字段）
+const KNOWLEDGE_SEED_VERSION = 4; // ★ 0.274.0：v4 = 多主题测试数据（数学/物理/经济/心理/语言/历史 6 张新卡——标题图/内容图例子扩充；同 id 更新补 titleImages 同步）
 const KNOWLEDGE_SEED_KEY = 'knowledge-bank-seed';
 
 // Ids already seeded by v1 (0.146): v2 seeding must NOT resurrect this
@@ -90,6 +98,7 @@ function seedPresetCards(store: KnowledgeBankStore): void {
   }
   const presets = buildPresetCards();
   // ★ 0.202.2 v3：同 id 已存在的卡 → 内容更新为新测试数据（记忆字段保留——用户的复习进度不丢）
+  // ★ 0.274.0 v4：更新列表补 titleImages（v3 漏同步——标题图字段在旧版同 id 更新时被跳过）
   const presetMap = new Map<string, KnowledgeCard>();
   presets.forEach((p: KnowledgeCard) => {
     presetMap.set(p.id, p);
@@ -102,6 +111,7 @@ function seedPresetCards(store: KnowledgeBankStore): void {
       store.cards[i].tags = fresh.tags;
       store.cards[i].imageUri = fresh.imageUri;
       store.cards[i].images = fresh.images;
+      store.cards[i].titleImages = fresh.titleImages;
     }
   }
   const existing: Set<string> = new Set<string>();

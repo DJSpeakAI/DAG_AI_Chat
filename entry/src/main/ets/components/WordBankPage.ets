@@ -2389,9 +2389,10 @@ export struct WordBankPage {
                         .fontColor(this.theme.textPrimary)
                       if (w.fullName.length > 0) {
                         // Abbreviation full term — row not rendered when empty
+                        // ★ 0.274.0 用户拍板：全称行格式与其他行统一（去紫色高亮——同释义行灰色）
                         Text(w.fullName)
                           .fontSize(13)
-                          .fontColor(this.theme.brandSecondary)
+                          .fontColor(this.theme.textSecondary)
                           .margin({ top: 2 })
                       }
                       if (w.usPhonetic.length > 0) {

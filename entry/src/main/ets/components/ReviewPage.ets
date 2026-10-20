@@ -27,6 +27,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：卡面模式全局单通道（原居本文件——外提防 WidgetHostBridge 反向成环）
+import { DailyReviewCountStore, connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.274.0：每日复习量（原居本文件——外提防 WidgetHostBridge 反向成环，FaceModeStore 同款）
 import { connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.230.0：返回键优先关设置弹窗
 import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 合规守卫（未登录静默走 fallback）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：完成页未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
@@ -53,16 +54,7 @@ export function connectReviewDailyState(): ReviewDailyState {
   return PersistenceV2.connect(ReviewDailyState, 'review-daily-v1', () => new ReviewDailyState()) as ReviewDailyState;
 }
 
-// ★ 0.202.0：每日复习条目数（复习页右上角 ⚙ 设置；10 默认 / 20 / 自定义 1~500）
-@ObservedV2
-export class DailyReviewCountStore {
-  @Trace wordCount: number = 10;      // 单词库每日复习条目
-  @Trace knowledgeCount: number = 10; // 知识库每日复习条目
-}
-
-export function connectDailyReviewCount(): DailyReviewCountStore {
-  return PersistenceV2.connect(DailyReviewCountStore, 'daily-review-count-v1', () => new DailyReviewCountStore()) as DailyReviewCountStore;
-}
+// ★ 0.202.0：DailyReviewCountStore/connectDailyReviewCount 已外提 common/DailyReviewCountStore.ets（★ 0.274.0）
 
 // ★ 0.209.0：卡面模式（用户需求：复习卡支持「正反两面」——先看题面，点击翻面后再评分）
 // ★ 0.224.0：升级全局单通道——类与 store 外提 common/FaceModeStore.ets（桌面卡片跟随需
@@ -427,10 +419,10 @@ export struct ReviewPage {
         // ★ 0.224.2：全称行（四行制第二行=缩写全称专用）——复习卡此前漏渲染；双面=反面内容
         //   （缩写全称是「答案」与释义同藏，翻面后显示；单面恒显）
         if ((this.currentItem() as WordItem).fullName.length > 0 && (!this.isDoubleFace || this.cardFlipped)) {
+          // ★ 0.274.0 用户拍板：全称行格式与其他行统一（去紫色高亮与加粗——同释义行样式）
           Text((this.currentItem() as WordItem).fullName)
             .fontSize(18)
-            .fontWeight(500)
-            .fontColor(this.theme.brandSecondary)
+            .fontColor(this.theme.textSecondary)
             .maxLines(2)
             .minFontSize(12)
             .maxFontSize(18)

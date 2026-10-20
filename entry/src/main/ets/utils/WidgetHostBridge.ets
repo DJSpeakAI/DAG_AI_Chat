@@ -12,11 +12,12 @@ import { KnowledgeCard, KnowledgeBankStore } from '../common/KnowledgeModel';
 import { pickReviewWords, pickReviewCards, applyRating, MemoryRating } from './MemoryAlgorithm';
 import { connectWordBank } from './WordStoreUtil';
 import { connectKnowledgeBank } from './KnowledgeStoreUtil';
-import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds } from './WidgetReviewUtil';
+import { WidgetCardItem, WidgetQueue, WidgetState, writeWidgetStateForHost, readWidgetPending, clearWidgetPending, readWidgetState, pushWidgetState, ensureWidgetFormIds, emptyWidgetQueue } from './WidgetReviewUtil';
 import { track } from './TrackUtil'; // 0.206.0 埋点
 import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：卡片评分进度上云钩子
 import { wordSpeaker } from './WordSpeaker'; // ★ 0.255.0：卡片音标点击发音（主进程发音单例复用）
 import { connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：快照注入卡面模式（主进程安全；卡片进程经 face 字段读）
+import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.274.0：切库自愈重拉需每日量（外提防反向成环）
 // ★ 0.252.0：connectSiyiPoints/siyiTotalSp/siyiLevelTitle/connectStatistics/getStatDays import 已删
 //   （随左下角 siyiLine 行下线）
 
@@ -156,7 +157,12 @@ export function handleWidgetRate(context: Context, rating: string): void {
   writeWidgetStateForHost(context, s);
 }
 
-/** 卡片切库：快照 mode 切换 + 推送刷新 */
+/** 卡片切库：快照 mode 切换 + 推送刷新
+ *  ★ 0.274.0 死锁修复（用户实测「只能切换一次」）：切到 done=true 的队列时卡片进完成态——
+ *    此前完成态 UI 无切换入口=死锁（只能靠继续复习解锁）。修复=目标队列 done 时重拉当日队列
+ *    （与 buildWidgetState 同算法：到期+新词按每日量截断——当日真无内容则保持完成态，
+ *    完成态 UI 已同步加切换 pill，永远有路可走）。
+ */
 export function handleWidgetSwitch(context: Context, mode: string): void {
   if (mode !== 'word' && mode !== 'knowledge') {
     return;
@@ -168,7 +174,40 @@ export function handleWidgetSwitch(context: Context, mode: string): void {
   s.mode = mode;
   s.flipped = 'n'; // ★ 0.252.0 切库 bug 修复②：切库一律回正面——call 主链路此前不重置翻面态
   //   （message 备用链路 processWidgetCommand 有重置，两链路不一致致切库后停留反面态污染显示）
+  // ★ 0.274.0：目标队列已完成 → 重拉当日队列自愈（主应用 switchMode→buildQueue 同语义）
+  const target = mode === 'word' ? s.word : s.knowledge;
+  if (target.done) {
+    const rebuilt = rebuildDailyQueue(mode);
+    if (mode === 'word') {
+      s.word = rebuilt;
+    } else {
+      s.knowledge = rebuilt;
+    }
+  }
   writeWidgetStateForHost(context, s);
+}
+
+/** ★ 0.274.0：重拉指定库当日队列（与 buildWidgetState 单队列构建同算法；纯只读不动真数据） */
+function rebuildDailyQueue(mode: string): WidgetQueue {
+  const now = Date.now();
+  const dc = connectDailyReviewCount();
+  const q: WidgetQueue = emptyWidgetQueue();
+  q.done = false;
+  if (mode === 'word') {
+    const wb = connectWordBank();
+    const all = pickReviewWords(wb, wb.words.length, now);
+    const picked = all.filter((w: WordItem): boolean => w.reviewCount === 0 || w.nextReviewAt <= now).slice(0, dc.wordCount);
+    picked.forEach((w: WordItem) => q.items.push(wordToItem(w)));
+  } else {
+    const kb = connectKnowledgeBank();
+    const all = pickReviewCards(kb, kb.cards.length, now);
+    const picked = all.filter((c: KnowledgeCard): boolean => c.reviewCount === 0 || c.nextReviewAt <= now).slice(0, dc.knowledgeCount);
+    picked.forEach((c: KnowledgeCard) => q.items.push(cardToItem(c)));
+  }
+  if (q.items.length === 0) {
+    q.done = true; // 当日确无内容——保持完成态（完成态 UI 已有切换 pill，可切另一库）
+  }
+  return q;
 }
 
 /**

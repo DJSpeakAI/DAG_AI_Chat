@@ -149,22 +149,52 @@ struct ReviewWidgetCard {
   }
 
   // ── 切库 pill（当前模式高亮）──
-  // ★ 0.255.0：0.252.0「消费层空 onClick」已删——空 onClick 物理上挡不住冒泡（事件照样
-  //   穿过到卡身），该修复无效；冒泡双发改由「热区收窄+gate 门闸」根治（见文件头注释）。
+  // ★ 0.274.0 死锁根治（用户实测「只能切换一次，再也切不回」）：
+  //   ①原 switchPill(label, target, active) @Builder 按值传参——active 布尔快照在 pill
+  //     重新挂载时刻冻结、不随 this.mode 刷新（0.190.1 同款教训重演），「标签高亮不变」真身；
+  //   ②onClick 的 if(!active) 拦截在快照错位时把当前库 pill 永久锁死（点不动）。
+  //   修复=拆两枚无参 pill 直读 this.mode（@LocalStorageProp 变化正确触发重渲染）+
+  //   去掉 !active 拦截（主进程同 mode 幂等切换无害，双保险防锁死）。
   @Builder
-  switchPill(label: string, target: string, active: boolean) {
-    Text(label)
+  switchPillWord() {
+    Text('单词库')
       .fontSize(10)
       .fontFamily('HarmonyOS Sans')
-      .fontColor(active ? '#FFFFFF' : SUB_COLOR)
+      .fontColor(this.mode === 'word' ? '#FFFFFF' : SUB_COLOR)
       .padding({ left: 9, right: 9, top: 3, bottom: 3 })
       .borderRadius(10)
-      .backgroundColor(active ? '#559B7BFF' : '#1AFFFFFF')
+      .backgroundColor(this.mode === 'word' ? '#559B7BFF' : '#1AFFFFFF')
       .onClick(() => {
-        if (!active) {
-          this.sendSwitch(target);
-        }
+        this.sendSwitch('word');
       })
+  }
+
+  @Builder
+  switchPillKnowledge() {
+    Text('知识卡')
+      .fontSize(10)
+      .fontFamily('HarmonyOS Sans')
+      .fontColor(this.mode === 'knowledge' ? '#FFFFFF' : SUB_COLOR)
+      .padding({ left: 9, right: 9, top: 3, bottom: 3 })
+      .borderRadius(10)
+      .backgroundColor(this.mode === 'knowledge' ? '#559B7BFF' : '#1AFFFFFF')
+      .onClick(() => {
+        this.sendSwitch('knowledge');
+      })
+  }
+
+  // ★ 0.274.0：pill 行（队列态/完成态共用——完成态加切换入口是死锁修复第二环：
+  //   切到当日已完成的队列时卡片进完成态，此前完成态无 pill=再也切不走）
+  @Builder
+  switchPillRow() {
+    Row() {
+      Row({ space: 5 }) {
+        this.switchPillWord()
+        this.switchPillKnowledge()
+      }
+      Blank()
+    }
+    .width('100%')
   }
 
   // ★ 0.255.0：评分按钮对齐主应用 ReviewPage 三行结构（档名档色粗体+描述灰+预计间隔档色带「后」）；
@@ -218,59 +248,65 @@ struct ReviewWidgetCard {
 
   // ── 完成态（纯文案+统计；零评分=空库引导；★ 0.204.2 用户拍板两规格必须加「继续复习」按钮；
   //    noMore=y=连未来队列都空 →「全部学完」无按钮态）──
+  // ★ 0.274.0：完成态顶部加 pill 行（死锁修复——切到已完成队列时此处是唯一切换入口）
   @Builder
   doneArea() {
-    Column({ space: 6 }) {
-      if (this.noMore === 'y') {
-        if (Number(this.hard) + Number(this.good) + Number(this.easy) > 0) {
-          Text('🏅')
+    Column() {
+      this.switchPillRow()
+      Column({ space: 6 }) {
+        if (this.noMore === 'y') {
+          if (Number(this.hard) + Number(this.good) + Number(this.easy) > 0) {
+            Text('🏅')
+              .fontSize(this.dim() === 4 ? 40 : 30)
+            Text('全部学完啦')
+              .fontSize(this.dim() === 4 ? 16 : 13)
+              .fontColor(TITLE_COLOR)
+            Text('明天再来，记忆更牢固')
+              .fontSize(10)
+              .fontColor(SUB_COLOR)
+          } else {
+            Text('📚')
+              .fontSize(this.dim() === 4 ? 40 : 30)
+            Text('暂无复习内容')
+              .fontSize(this.dim() === 4 ? 16 : 13)
+              .fontColor(TITLE_COLOR)
+            Text('打开应用添加单词或知识卡')
+              .fontSize(10)
+              .fontColor(SUB_COLOR)
+          }
+        } else {
+          Text('🎉')
             .fontSize(this.dim() === 4 ? 40 : 30)
-          Text('全部学完啦')
+          Text('今日复习已完成')
             .fontSize(this.dim() === 4 ? 16 : 13)
             .fontColor(TITLE_COLOR)
           Text('明天再来，记忆更牢固')
             .fontSize(10)
             .fontColor(SUB_COLOR)
-        } else {
-          Text('📚')
-            .fontSize(this.dim() === 4 ? 40 : 30)
-          Text('暂无复习内容')
-            .fontSize(this.dim() === 4 ? 16 : 13)
+          Text(`生疏 ${this.hard} · 尚可 ${this.good} · 熟知 ${this.easy}`)
+            .fontSize(11)
+            .fontColor(ACCENT)
+            .margin({ top: 2 })
+          // ★ 0.204.2：继续复习按钮（把未来排期提前背——用户拍板必加）
+          Text('继续复习 ›')
+            .fontSize(13)
+            .fontWeight(600)
             .fontColor(TITLE_COLOR)
-          Text('打开应用添加单词或知识卡')
-            .fontSize(10)
-            .fontColor(SUB_COLOR)
+            .padding({ left: 22, right: 22, top: 9, bottom: 9 })
+            .backgroundColor('#339B7BFF')
+            .borderRadius(999)
+            .margin({ top: 6 })
+            .onClick(() => {
+              this.sendContinue();
+            })
         }
-      } else {
-        Text('🎉')
-          .fontSize(this.dim() === 4 ? 40 : 30)
-        Text('今日复习已完成')
-          .fontSize(this.dim() === 4 ? 16 : 13)
-          .fontColor(TITLE_COLOR)
-        Text('明天再来，记忆更牢固')
-          .fontSize(10)
-          .fontColor(SUB_COLOR)
-        Text(`生疏 ${this.hard} · 尚可 ${this.good} · 熟知 ${this.easy}`)
-          .fontSize(11)
-          .fontColor(ACCENT)
-          .margin({ top: 2 })
-        // ★ 0.204.2：继续复习按钮（把未来排期提前背——用户拍板必加）
-        Text('继续复习 ›')
-          .fontSize(13)
-          .fontWeight(600)
-          .fontColor(TITLE_COLOR)
-          .padding({ left: 22, right: 22, top: 9, bottom: 9 })
-          .backgroundColor('#339B7BFF')
-          .borderRadius(999)
-          .margin({ top: 6 })
-          .onClick(() => {
-            this.sendContinue();
-          })
       }
+      .width('100%')
+      .layoutWeight(1)
+      .justifyContent(FlexAlign.Center)
     }
     .width('100%')
     .layoutWeight(1)
-    .justifyContent(FlexAlign.Center)
   }
 
   build() {
@@ -282,8 +318,8 @@ struct ReviewWidgetCard {
         Column({ space: 6 }) {
           Row() {
             Row({ space: 5 }) {
-              this.switchPill('单词库', 'word', this.mode === 'word')
-              this.switchPill('知识卡', 'knowledge', this.mode === 'knowledge')
+              this.switchPillWord()
+              this.switchPillKnowledge()
             }
             Blank()
             Text(this.progress)

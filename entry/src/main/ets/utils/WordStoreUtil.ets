@@ -59,14 +59,23 @@ function buildPresetWords(): WordItem[] {
     new WordItem('机器学习', '', '/məˈʃiːn ˈlɜːrnɪŋ/', 'Machine Learning', 'preset-ml', now - 7000),
     // EN→CN phrase (English phrase → Chinese phrase)
     new WordItem('Neural Network', '', '/ˈnʊrəl ˈnetwɜːrk/', 'n. 神经网络', 'preset-neural-network', now - 8000),
-    new WordItem('Natural Language Processing', '', '/ˈnætʃrəl ˈlæŋɡwɪdʒ prəˈsesɪŋ/', 'n. 自然语言处理（缩写 NLP）', 'preset-nlp', now - 9000)
+    new WordItem('Natural Language Processing', '', '/ˈnætʃrəl ˈlæŋɡwɪdʒ prəˈsesɪŋ/', 'n. 自然语言处理（缩写 NLP）', 'preset-nlp', now - 9000),
+    // ★ 0.274.0 v4：多方向测试数据扩充（用户需求「单词也多加几张、多元化」）——
+    //   缩写 2 + 中译英 2 + 英译中 2；explain 保持简洁纯释义格式（与存量词条一致）
+    new WordItem('API', 'Application Programming Interface', '/ˌeɪ piː ˈaɪ/', 'n. 应用程序编程接口', 'preset-api', now - 10000),
+    new WordItem('CPU', 'Central Processing Unit', '/ˌsiː piː ˈjuː/', 'n. 中央处理器', 'preset-cpu', now - 11000),
+    new WordItem('熵', '', '/ˈentrəpi/', 'Entropy', 'preset-entropy', now - 12000),
+    new WordItem('深度学习', '', '/diːp ˈlɜːrnɪŋ/', 'Deep Learning', 'preset-deep-learning', now - 13000),
+    new WordItem('Cache', '', '/kæʃ/', 'n. 高速缓存', 'preset-cache', now - 14000),
+    new WordItem('Blockchain', '', '/ˈblɒktʃeɪn/', 'n. 区块链', 'preset-blockchain', now - 15000)
   ];
 }
 
 // ★ 0.151: one-shot seed-merge marker. v1 = 0.145 Harmony/OS presets;
-// v2 = the 10-entry test set; v3 = ★ 0.224.2 四行制内容修正（中译英 4 条：英文
-//   从 fullName 挪到 explain、fullName 置空——同 id 更新内容保留记忆字段）。
-const WORD_SEED_VERSION = 3;
+//   v2 = the 10-entry test set; v3 = ★ 0.224.2 四行制内容修正（中译英 4 条：英文
+//   从 fullName 挪到 explain、fullName 置空——同 id 更新内容保留记忆字段）；
+//   v4 = ★ 0.274.0 多方向扩充 6 条（API/CPU 缩写、熵/深度学习中译英、Cache/Blockchain 英译中）。
+const WORD_SEED_VERSION = 4;
 const WORD_SEED_KEY = 'word-bank-seed';
 
 // Ids already seeded by v1 (0.145): v2 seeding must NOT resurrect these

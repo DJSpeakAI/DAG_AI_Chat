@@ -44,7 +44,7 @@ import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启�
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204.0：同上
 import { buildWidgetState } from '../utils/WidgetHostBridge'; // ★ 0.204.0：同上；★ 0.204.3：ensureWidgetFormIds formId 自愈
 import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3：卸载重装后残留卡片推送自愈
-import { connectDailyReviewCount } from '../components/ReviewPage'; // ★ 0.204.0：每日量（快照按量截断；ReviewPage 不反向 import Index，无循环）
+import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.204.0：每日量（快照按量截断）；★ 0.274.0 外提件（原居 ReviewPage）
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
 import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：阅读并同意弹窗（首启/边栏/云同步三入口共用）
 import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
@@ -719,7 +719,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-        Text('v0.273.0') // ★ 0.273.0：后台毛利财务报表与看板AI助手（任务书拟 0.272.0 已被占用顺延）;上一版 0.272.0：AI 调用全场景 SP 透明化;更早历史见 MEMORY.md
+        Text('v0.274.0') // ★ 0.274.0：桌面卡片切库死锁修复+种子数据v4+缩写全称格式统一;上一版 0.273.0：后台毛利财务报表与看板AI助手;更早历史见 MEMORY.md
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

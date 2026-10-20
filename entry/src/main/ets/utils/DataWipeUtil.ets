@@ -30,7 +30,8 @@ import { PersistData, connectTabForest, connectStatistics, connectSiyiPoints,
 import { connectWordBank } from './WordStoreUtil';
 import { connectKnowledgeBank } from './KnowledgeStoreUtil';
 import { connectAttention } from '../common/KnowledgeModel';
-import { connectReviewDailyState, connectDailyReviewCount } from '../components/ReviewPage';
+import { connectReviewDailyState } from '../components/ReviewPage';
+import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.274.0：外提件（原居 ReviewPage）
 import { buildWidgetState } from './WidgetHostBridge';
 import { pushWidgetState } from './WidgetReviewUtil';
 

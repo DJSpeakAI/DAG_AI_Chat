@@ -3,7 +3,7 @@
   "bundle": "com.dagaichat.app",
   "ability": "EntryAbility",
   "hap": "entry/build/default/outputs/default/entry-default-signed.hap",
-  "expectedVersionCode": 1000330,
+  "expectedVersionCode": 1000340,
   "rdb": "/data/app/el2/100/database/com.dagaichat.app/entry/rdb/dag_chat_cloud.db",
   "sandboxBase": "/data/app/el2/100/base/com.dagaichat.app",
   "dumpRemote": "/data/local/tmp/dagtest_dump.json",

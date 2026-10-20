@@ -5774,7 +5774,7 @@ export struct ChatPage {
                                         // ★ 0.232.1：全称可点=展开评分（点击区扩大——与音标/释义同规）
                                         Text(w.fullName, { controller: this.getOrCreateTextController(`${msg.messageId}|rwf${idx}`) })
                                           .fontSize(this.fs(12))
-                                          .fontColor(this.theme.brandSecondary)
+                                          .fontColor(this.theme.textSecondary) // ★ 0.274.0 用户拍板：全称行格式与释义行统一（去紫色高亮）
                                           .maxLines(1)
                                           .margin({ top: 1 })
                                           .copyOption(CopyOptions.LocalDevice)
@@ -6834,11 +6834,11 @@ export struct ChatPage {
                        Column() {
                        if (w.fullName.length > 0) {
                       // ★ 0.232.1：全称可点=展开评分（点击区扩大）
-                      Text(w.fullName)
-                        .fontSize(12)
-                        .fontColor(this.theme.brandSecondary)
-                        .maxLines(1)
-                        .margin({ top: 1 })
+                       Text(w.fullName)
+                         .fontSize(12)
+                         .fontColor(this.theme.textSecondary) // ★ 0.274.0 用户拍板：全称行格式与释义行统一（去紫色高亮）
+                         .maxLines(1)
+                         .margin({ top: 1 })
                         .onClick(() => {
                           this.onReviewWordTap(`edit|${w.id}`);
                         })
