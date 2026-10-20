@@ -56,18 +56,8 @@ export struct ImproveDataDialog {
           .fontColor(this.theme.textTertiary)
           .margin({ bottom: 16 })
 
+        // ★ 0.278.6 用户拍板：主操作「加入」在左、次操作「暂不加入」在右（与协议弹窗同排布）
         Row({ space: 10 }) {
-          Button('暂不加入')
-            .layoutWeight(1)
-            .height(46)
-            .fontSize(FONT_SIZE_CARD_TITLE_SM)
-            .backgroundColor(this.theme.surfaceSoft)
-            .fontColor(this.theme.textSecondary)
-            .border({ width: 1, color: this.theme.strokeCard })
-            .borderRadius(RADIUS_CONTROL)
-            .onClick(() => {
-              this.onSkip();
-            })
           Button('加入')
             .layoutWeight(1)
             .height(46)
@@ -79,6 +69,17 @@ export struct ImproveDataDialog {
             .onClick(() => {
               this.onJoin();
             })
+          Button('暂不加入')
+            .layoutWeight(1)
+            .height(46)
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .backgroundColor(this.theme.surfaceSoft)
+            .fontColor(this.theme.textSecondary)
+            .border({ width: 1, color: this.theme.strokeCard })
+            .borderRadius(RADIUS_CONTROL)
+            .onClick(() => {
+              this.onSkip();
+            })
         }
         .width('100%')
       }
@@ -89,4 +90,4 @@ export struct ImproveDataDialog {
       .border({ width: 1, color: this.theme.strokeCard })
     }
   }
-}
+}

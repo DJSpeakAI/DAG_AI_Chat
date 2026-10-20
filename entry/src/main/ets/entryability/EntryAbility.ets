@@ -202,6 +202,24 @@ export default class EntryAbility extends UIAbility {
       } catch (err2) {
         // 加载失败静默——设置页可自填
       }
+      // ★ 0.278.12：隐藏自由窗口标题栏装饰（华为官方 AI 归因建议）——平板「最大化自由窗口」
+      //   形态下系统 SCBSceneTitleBar 装饰层（Z 序压顶）是左侧黑块/左缘黑条的头号嫌疑层；
+      //   隐藏后页面延伸至标题栏区域进入沉浸式布局，鼠标悬停热区仍浮现悬浮标题栏（关窗能力
+      //   保留）；非自由窗口形态（手机全屏）调用无副作用；须在 loadContent 生效后调用（华为文档）
+      try {
+        windowStage.getMainWindowSync().setWindowDecorVisible(false); // 本 SDK 签名为同步 void（无 Promise）
+      } catch (_e) {
+        // 接口不可用/非自由窗口时静默
+      }
+      // ★ 0.278.12 二段：maximize 沉浸式全屏（华为官方 Q3 方案——普通应用无需权限直接调用）。
+      //   实测 Pad 点图标启动=「最大化自由窗口」形态，系统 Shell 的 SCBSceneTitleBar（系统进程
+      //   窗口、Z 序压顶、app 内容被压到 y=88 起）不受 setWindowDecorVisible 控制；ENTER_IMMERSIVE
+      //   让 app 进入沉浸全屏=装饰场景窗撤除、内容铺满整窗（y=0 起）——左侧黑块/黑条嫌疑层根除
+      try {
+        windowStage.getMainWindowSync().maximize(window.MaximizePresentation.ENTER_IMMERSIVE);
+      } catch (_e) {
+        // 接口不可用/设备不支持时静默（手机全屏形态无影响）
+      }
       // ★ 0.167：注册 Inter 三字重（UI_GUIDELINES.md 字体策略）——三个不同 familyName
       //（Pixso 导出代码三份同名注册会互相覆盖，是导出瑕疵勿照抄）；
       // Inter 无中文字形，中文自动 fallback 系统字体，无需打包 HarmonyOS Sans SC
@@ -267,8 +285,14 @@ export default class EntryAbility extends UIAbility {
       // 设置失败静默（页面 token 色不受影响）
     }
     try {
+      windowStage.getMainWindowSync().setWindowBackgroundColor(isDark ? '#120B1F' : '#F7F5FA'); // ★ 0.278.8：窗口底色=页面 bgApp——状态栏/导航条区同色不黑边（对标 ChatCube 全屏一色，用户拍板）
+    } catch (_e) {
+      // 底色设置失败静默
+    }
+    try {
       windowStage.getMainWindowSync().setWindowSystemBarProperties({
-        statusBarContentColor: isDark ? '#FFFFFF' : '#000000'
+        statusBarContentColor: isDark ? '#FFFFFF' : '#000000',
+        navigationBarContentColor: isDark ? '#FFFFFF' : '#000000' // ★ 0.278.8：导航条手势区内容色随主题
       });
     } catch (_e) {
       // 状态栏设置失败静默

@@ -188,19 +188,8 @@ export struct AgreementDialog {
     .width('100%')
     .alignItems(VerticalAlign.Top)
 
-    // 按钮组（不同意在左、主操作在右；鸿蒙规范；未勾选点同意=抖动提示不置灰）
+    // 按钮组（★ 0.278.6 用户拍板：主操作「同意」在左、次操作在右——推翻原「不同意在左、主操作在右」排布）
     Row({ space: 10 }) {
-      Button('不同意，退出')
-        .layoutWeight(1)
-        .height(46)
-        .fontSize(FONT_SIZE_CARD_TITLE_SM)
-        .backgroundColor(this.theme.surfaceSoft)
-        .fontColor(this.theme.textSecondary)
-        .border({ width: 1, color: this.theme.strokeCard })
-        .borderRadius(RADIUS_CONTROL)
-        .onClick(() => {
-          this.requestReject();
-        })
       Button('同意并进入')
         .layoutWeight(1)
         .height(46)
@@ -212,6 +201,17 @@ export struct AgreementDialog {
         .translate({ x: this.shakeX })
         .onClick(() => {
           this.requestAgree();
+        })
+      Button('不同意，退出')
+        .layoutWeight(1)
+        .height(46)
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .backgroundColor(this.theme.surfaceSoft)
+        .fontColor(this.theme.textSecondary)
+        .border({ width: 1, color: this.theme.strokeCard })
+        .borderRadius(RADIUS_CONTROL)
+        .onClick(() => {
+          this.requestReject();
         })
     }
     .width('100%')
@@ -235,17 +235,6 @@ export struct AgreementDialog {
       .margin({ bottom: 16 })
 
     Row({ space: 10 }) {
-      Button('仍不同意，退出')
-        .layoutWeight(1)
-        .height(46)
-        .fontSize(FONT_SIZE_CARD_TITLE_SM)
-        .backgroundColor(this.theme.surfaceSoft)
-        .fontColor(this.theme.textSecondary)
-        .border({ width: 1, color: this.theme.strokeCard })
-        .borderRadius(RADIUS_CONTROL)
-        .onClick(() => {
-          this.onReject(); // Index 消费=退出应用
-        })
       Button('返回继续使用')
         .layoutWeight(1)
         .height(46)
@@ -256,6 +245,17 @@ export struct AgreementDialog {
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
           this.stage = 0; // 回主面板重新选择
+        })
+      Button('仍不同意，退出')
+        .layoutWeight(1)
+        .height(46)
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .backgroundColor(this.theme.surfaceSoft)
+        .fontColor(this.theme.textSecondary)
+        .border({ width: 1, color: this.theme.strokeCard })
+        .borderRadius(RADIUS_CONTROL)
+        .onClick(() => {
+          this.onReject(); // Index 消费=退出应用
         })
     }
     .width('100%')
@@ -294,17 +294,6 @@ export struct AgreementDialog {
       .margin({ bottom: 4 })
 
     Row({ space: 10 }) {
-      Button('不同意')
-        .layoutWeight(1)
-        .height(46)
-        .fontSize(FONT_SIZE_CARD_TITLE_SM)
-        .backgroundColor(this.theme.surfaceSoft)
-        .fontColor(this.theme.textSecondary)
-        .border({ width: 1, color: this.theme.strokeCard })
-        .borderRadius(RADIUS_CONTROL)
-        .onClick(() => {
-          this.onReject(); // 仅取消登录，不退出应用
-        })
       Button('同意并登录')
         .layoutWeight(1)
         .height(46)
@@ -315,6 +304,17 @@ export struct AgreementDialog {
         .borderRadius(RADIUS_CONTROL)
         .onClick(() => {
           this.onAgree(); // Index 消费=markHwAgreed+拉起登录
+        })
+      Button('不同意')
+        .layoutWeight(1)
+        .height(46)
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .backgroundColor(this.theme.surfaceSoft)
+        .fontColor(this.theme.textSecondary)
+        .border({ width: 1, color: this.theme.strokeCard })
+        .borderRadius(RADIUS_CONTROL)
+        .onClick(() => {
+          this.onReject(); // 仅取消登录，不退出应用
         })
     }
     .width('100%')

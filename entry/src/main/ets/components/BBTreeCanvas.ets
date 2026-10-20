@@ -1883,10 +1883,15 @@ export struct BBTreeCanvas {
       }
       .width('100%')
       .height('100%')
+      // ★ 0.278.9：NavDestination 根容器用 background() 延伸背景（官方最佳实践）——NavDestination 自带
+      //   不透明默认背景且只绘制在安全区内，安全区外露窗口底色（Pad 上下黑边真凶）；background()
+      //   自动铺进避让区、内容仍留在安全区，无需 expandSafeArea/布局改动
+      .background(this.theme.bgCanvas) // ★ 0.278.10：background() 背景延伸进安全区，上下与页面主体同色（统一 0.278.9 模板）
     }
     // ★ 0.151-D：弃用默认标题栏（.title('气泡树')）——其左上角系统返回按钮即需求 3 要取消的
     // 「返回气泡树」按钮；改 hideTitleBar + 内容区自绘标题行（平铺：←+标题+按钮组；选项卡：Tab 栏+按钮组）
     .hideTitleBar(true)
+    .backgroundColor(this.theme.bgCanvas) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险——覆盖默认系统背景，消除黑块嫌疑层）
     .onBackPressed(() => {
       // ★ 0.200.0：导入选择模式打开时返回键先退出选择模式（清 store 零残留），不直接退应用
       if (this.importSelecting) {

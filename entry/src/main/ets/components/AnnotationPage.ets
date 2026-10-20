@@ -401,7 +401,7 @@ export struct AnnotationPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.theme.bgApp)
+      .background(this.theme.bgApp) // ★ 0.278.10：background() 背景延伸进安全区，上下与页面主体同色（统一 0.278.9 模板）
       // ★ 0.195.0：点空白/画布收起键盘（补充要求输入后点空白处输入法下降——ChatPage 0.182.0 同款兜底；
       //   ArkUI 点击不冒泡：有自身 onClick 的按钮各自消费不触发此处）
       .onClick(() => {
@@ -463,6 +463,7 @@ export struct AnnotationPage {
       } // ★ 0.195.0：Stack 收口（确认弹窗移入 Stack 顶层）
     }
     .hideTitleBar(true)
+    .backgroundColor(this.theme.bgApp) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险）
     .onBackPressed(() => {
       return this.requestExit(); // 有涂鸦/补充要求时拦截返回弹确认，否则直接返回
     })

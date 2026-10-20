@@ -20,6 +20,9 @@
 | surfaceNode | `#241640` | `#FFFFFF` | 气泡节点卡片底色 |
 | surfaceHover | `#2C1B4D` | `#EFE9FA` | 悬停态底色 |
 | surfaceSoft | 白 4% | `rgba(29,18,48,0.04)` | 账号区等柔面 |
+| bubbleAiBg | `#1E1236` | `#FFFFFF` | AI 回复气泡底（★ 0.278.13 独立 token，比 surfaceNode 暗一档） |
+| bubbleUserBg | `#190F2A` | `#F1ECFA` | 用户消息气泡底（★ 0.278.13 再暗一档，恒暗于 bubbleAiBg） |
+| userMsgText | 白 88% | 墨 88% | 用户消息正文（★ 0.278.13 恒暗于 AI 正文 textPrimary） |
 | brandPrimary | `#7C4DFF` | `#6C3EE8`（4.7:1 达标） | 主紫：品牌 / 选中 / 连线 |
 | brandSecondary | `#A78BFA` | `#5D3FD3` | 辅助紫：悬停强调 / 提示文字 |
 | textPrimary | `#FFFFFF` | `#1D1230` | 主文字 |
@@ -613,3 +616,22 @@
 - 查词 `word`/提炼 `extract`=**实扣**（Lv8 豁免标「Lv8 免费」；失败/取消/超时零扣费——onUsage 仅成功路径回调）；
 - 鼓励语 `encourage_r`/`encourage_s`=**免扣照报**（产品补贴；f:y 成本数据照实上报，余额不动）；
 - 提炼（含圈注多模态）发起前 SP 余额闸门（余额≤0 且非 Lv8 → 充值引导）；查词划词即查无闸门（防打断，事后 clamp）。
+
+## 二十六、对话气泡底色/文字明度分层（★ 0.278.13 用户定稿）
+
+> 用户拍板原话：「AI 回复的内容的框背景太亮，影响阅读集中力」+「用户发的文字可以暗一点，至少比 AI 回复的暗」。本条取代 0.195.0「用户/AI 气泡一律 surfaceNode」。
+
+### 26.1 三层明度阶梯（恒成立，禁反向/同亮度）
+| 层级 | 深色 | 浅色 | token |
+|------|------|------|------|
+| AI 回复气泡底 | `#1E1236`（比原 `#241640` 暗一档） | `#FFFFFF` | `bubbleAiBg` |
+| 用户消息气泡底 | `#190F2A`（**再暗一档**） | `#F1ECFA` | `bubbleUserBg` |
+| 用户消息正文 | 白 88% | 墨 88% | `userMsgText` |
+
+- AI 正文维持 `textPrimary`（纯白/墨）——AI 侧=**亮字暗底**，用户侧=**暗字更暗底**，角色一眼可分；
+- 明度关系硬约束：`bubbleUserBg < bubbleAiBg < 页面/画布底`，`userMsgText < textPrimary`；任何一端反了即违规。
+
+### 26.2 落地纪律
+- 两处落码点固定：`ChatPage.ets` 用户消息 Text（fontColor=userMsgText + backgroundColor=bubbleUserBg）与 AI 消息容器（backgroundColor=bubbleAiBg）；**禁止在页面内写死色值**，一律走 AppTheme token（深浅两套自动跟随）；
+- 新增任何大面积内容容器（阅读区/引用块/摘要卡）不得用高亮浅底铺底——优先 `surfaceSoft`/`hookBg` 等低亮度叠加面；
+- 气泡内子区块（司忆区、生词区、操作行）底色与描边规格不变，本条只动气泡外框底色与用户正文色。

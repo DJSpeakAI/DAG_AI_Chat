@@ -1,0 +1,6 @@
+<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="18.000000" height="18.000000" fill="none" customFrame="#000000">
+	<rect id="mic-capsule" x="6.375" y="1.875" width="5.25" height="8.625" rx="2.625" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="mic-arc" d="M4.125 8.625 V9 A4.875 4.875 0 0 0 13.875 9 V8.625" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="mic-stem" d="M9 13.875 V15.75" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	<path id="mic-base" d="M6.75 15.75 H11.25" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+</svg>

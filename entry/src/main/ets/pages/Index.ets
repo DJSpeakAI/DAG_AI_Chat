@@ -516,6 +516,18 @@ struct Index {
     // NavBar toolbar 预留且 clip 裁剪，Column 在其内 expandSafeArea 底部无法突破露黑；
     // Stack 在 Navigation 外不受 NavBar 裁剪，背景直达全屏——各页安全区统一露暗紫不露黑）
     Stack() {
+      // ★ 0.278.10：平板边栏安全区垫层——边栏本体 bgNav，上下安全区原本露根 Stack 的 bgApp，
+      //   造成边栏上下颜色与本体不一致（用户 Pad 实测指认）；垫层只占边栏宽度并用 expandSafeArea
+      //   把 bgNav 铺进状态栏/手势条区，折叠时宽 0 自动消失；置于 Row 之下、hitTest 穿透不挡事件
+      if (this.isTablet) {
+        Column()
+          .width(this.indexSidebarState.collapsed ? 0 : 208)
+          .height('100%')
+          .backgroundColor(this.theme.bgNav)
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+          .position({ x: 0, y: 0 })
+          .hitTestBehavior(HitTestMode.None)
+      }
       // ★ 0.195.0：大屏边栏常驻；★ 0.219.0 用户拍板改版：右缘竖把手点击→边栏滑向左侧隐藏，
       //   把手浮在左缘变右箭头，再点恢复（滑入滑出带动画）；收起状态 AppStorageV2 共享——
       //   跳到对话页等任何页面边栏保持隐藏，跨页面一致；手机不渲染边栏（画布抽屉承担导航）
@@ -719,7 +731,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-         Text('v0.277.0') // ★ 0.277.0：SP 签到多端重复领取修复（幂等标记上云）；上一版 0.276.0：敏感词过滤放宽;更早历史见 MEMORY.md
+          Text('v0.279.0') // ★ 0.279.0：PC 划词 Ctrl+C 复制+短回复 prompt 泄漏修复+音频输出/输入 SP 计价；上一版 0.278.14：边栏把手垂直居中加长
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -738,23 +750,35 @@ struct Index {
     // 「首页一直出现在屏幕左边」）；改 Stack 强制单栏，push 后目标页全屏覆盖，平板与手机一致
     .mode(NavigationMode.Stack)
     .layoutWeight(1) // ★ 0.195.0：边栏常驻布局——Navigation 占边栏右侧剩余区域（页面在此平移不遮边栏）
+    // ★ 0.278.9：Navigation 容器补 bgApp 底——页面 push/pop 平移转场时容器默认背景露黑，
+    //   用户实测「首页滑到气泡树左侧一大块黑」即此；与页面 bgApp 同色后转场无黑块
+    .backgroundColor(this.theme.bgApp)
       }
-      // ★ 0.219.1 用户拍板（0.219.0 大块头"太难看"）：把手重设计=**极细竖胶囊**——宽 8/高 56/
-      //   圆角 4，无外框无阴影无三角字符（细条本身即表意），底色 this.theme.strokeCard 与边栏描边同色系克制；
-      //   展开时骑缝边栏右缘（x=206），收起时浮左缘（x=2）；交互零变化（点击 220ms 滑入滑出）
-      // ★ 0.222.14 用户拍板再精化：更细更长——宽 8→7（缩小 1vp）、高 56→112（加一倍）
+      // ★ 0.219.1 用户拍板（0.219.0 大块头"太难看"）：把手重设计=**极细竖胶囊**——无外框无阴影无三角字符
+      //   （细条本身即表意），底色 this.theme.strokeCard 与边栏描边同色系克制；交互=点击 220ms 滑入滑出
+      // ★ 0.222.14 用户拍板再精化：更细更长（宽 7/高 112→224）
+      // ★ 0.278.14 用户三诉求：①垂直居中（y:'50%' 是左上角对齐中线，高度越大偏下越明显——translate 半高回退）
+      //   ②长度翻倍 112→224 ③触发热区扩大（7vp 太难点中）——透明热区容器 27×240 包住 7×224 细胶囊，
+      //   视觉不变、可点范围横向翻近 4 倍；onClick 挂热区容器（子组件无点击事件，冒泡到容器）
       if (this.isTablet) {
-        Column()
-          .width(7)
-          .height(112)
-          .borderRadius(4)
-          .backgroundColor(this.theme.strokeCard)
-          .position({ x: this.indexSidebarState.collapsed ? 2 : 206, y: '50%' })
-          .onClick(() => {
-            this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
-              this.indexSidebarState.collapsed = !this.indexSidebarState.collapsed;
-            });
-          })
+        Row() {
+          Column()
+            .width(7)
+            .height(224)
+            .borderRadius(4)
+            .backgroundColor(this.theme.strokeCard)
+        }
+        .width(27)
+        .height(240)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .position({ x: this.indexSidebarState.collapsed ? -8 : 196, y: '50%' })
+        .translate({ y: -120 })
+        .onClick(() => {
+          this.getUIContext().animateTo({ duration: 220, curve: Curve.EaseInOut }, () => {
+            this.indexSidebarState.collapsed = !this.indexSidebarState.collapsed;
+          });
+        })
       }
       // ★ 0.195.0：全局设置弹窗（常驻边栏「设置」入口；实例与画布/对话页共用 PersistenceV2 数据）
       if (this.gsShared.visible) { // ★ 0.230.0

@@ -195,15 +195,6 @@ export struct BillingPage {
   @Builder
   topBar() {
     Row() {
-      Button('←')
-        .fontSize(18)
-        .backgroundColor(Color.Transparent)
-        .fontColor(this.theme.textPrimary)
-        .padding({ left: 4, right: 4 })
-        .margin({ right: 4 })
-        .onClick(() => {
-          this.pathStack.pop();
-        })
       Text('账单')
         .fontSize(FONT_SIZE_SCREEN_TITLE)
         .fontWeight(600)
@@ -506,6 +497,7 @@ export struct BillingPage {
       }
     }
     .hideTitleBar(true)
+    .backgroundColor(this.theme.bgApp) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险）
     .onBackPressed(() => {
       // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——本页原无任何返回键拦截，0.229.26 审计 B9 补全)
       const gsShared = connectGlobalSettingsShared();
@@ -515,6 +507,6 @@ export struct BillingPage {
       }
       return false;
     })
-    .backgroundColor(this.theme.bgCanvas) // ★ 0.230.0：页面根底色对齐四主页面（0.196.5 补全——0.229.26 审计 A1 覆盖度缺口）
+    .background(this.theme.bgApp) // ★ 0.278.10：background() 背景延伸进安全区，上下与页面主体同色（统一 0.278.9 模板）
   }
 }

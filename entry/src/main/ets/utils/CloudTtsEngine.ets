@@ -53,10 +53,13 @@ const DEFAULT_VOICE_ICL = 'S_bv8H32Sg2';
 const CODE_VOICE_RESOURCE_MISMATCH = 55000000;
 
 // 会话回调（调用方：ChatPage——驱动喇叭三态与本地回退）
+// ★ 0.279.0：onSynthesized=合成完成计费回调（chars=全文清洗后字符数；cached=true 命中结果缓存
+//   零请求零计费 / false=完整合成走完——中断/失败/回退重试不触发，失败零扣费铁律天然成立）
 export interface CloudTtsSession {
   onStart?: () => void;                             // 首段开播（⏳→🔊）
   onComplete?: () => void;                          // 全部段播报完成
   onError?: (message: string) => void;              // 云端失败（调用方回退本地）
+  onSynthesized?: (chars: number, cached: boolean) => void; // ★ 0.279.0：SP 计费点（云端 TTS 音频输出实扣）
 }
 
 // 单段合成：HTTP POST openspeech（0.139 实现原样恢复；ArkTS 严格模式接口显式类型）
@@ -164,6 +167,10 @@ export class CloudTtsEngine {
       this.playIndex = 0;
       this.waitingForAudio = true;
       this.started = false;
+      // ★ 0.279.0：缓存命中重播——零请求零计费（调用方按 cached=true 免扣）
+      if (this.session !== null && this.session.onSynthesized !== undefined && this.session.onSynthesized !== null) {
+        this.session.onSynthesized(trimmed.length, true);
+      }
       this.tryPlayNextAudio();
       return true;
     }
@@ -182,6 +189,15 @@ export class CloudTtsEngine {
     const key = this.pendingCacheKey;
     if (key.length === 0) {
       return;
+    }
+    // ★ 0.279.0：完整合成走完（与写缓存同点同口径——中断/失败不写缓存也不计费）——
+    //   触发调用方 SP 实扣（chars=全部段字符总和）
+    if (this.session !== null && this.session.onSynthesized !== undefined && this.session.onSynthesized !== null) {
+      let total = 0;
+      this.segments.forEach((seg: string): void => {
+        total += seg.length;
+      });
+      this.session.onSynthesized(total, false);
     }
     this.pendingCacheKey = '';
     this.resultCache.delete(key);

@@ -3464,7 +3464,7 @@ export struct KnowledgeBankPage {
         // ★ 0.222.7：抽屉移入主 Column children 末尾（与正常工作的弹窗块同层）——「属性链后兄弟」位置弃用
         this.kbMobileDrawerLayer()
       }
-      .backgroundColor(this.theme.bgCanvas) // ★ 0.183.0：页面根底色补齐——原根容器未设底色透出窗口纯黑（实测 #000000），与首页 this.theme.bgApp/画布 this.theme.bgCanvas 暗紫底不一致，统一应用底色
+      .background(this.theme.bgCanvas) // ★ 0.278.10：background() 背景延伸进安全区，上下与页面主体同色（统一 0.278.9 模板）
       // ★ 0.220.2 用户拍板：PC 右键 / Pad 长按空白 → 弹「创建新卡片 / 创建新文件夹」菜单
       //   （bindContextMenu 跟随鼠标右键；bindPopup 供长按唤起——点选项执行、点遮罩收起；
       //    触屏设备 RightClick 响应=长按，与 LongPressGesture 双通道等效冗余）
@@ -3488,6 +3488,7 @@ export struct KnowledgeBankPage {
     }
     // ★ 0.159 pattern: hide the system title bar — the top bar is self-drawn
     .hideTitleBar(true)
+    .backgroundColor(this.theme.bgCanvas) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险）
     // ★ 0.148: back gesture closes dialogs / multi-select first, page last
     .onBackPressed(() => {
       // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——修复仅画布页拦截的盲区，0.229.26 审计 B9 实锤）

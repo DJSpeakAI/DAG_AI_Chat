@@ -1155,6 +1155,20 @@ export function spCostOfTokens(inputTokens: number, outputTokens: number, cached
   return inSp + outSp;
 }
 
+// ★ 0.279.0：云端 TTS 播报 SP 计价（音频输出维度——感叹号明细卡补音频行+播报实扣同源）。
+//   本机语音引擎（CoreSpeechKit）与小艺输入法语音转文字（音频输入）免费零扣；
+//   云端合成（火山/千问/自定义）按字符计费：对齐云端语音合成实价区间折算 SP + 华为抽成
+//   冗余（同 token ×2 口径）；缓存命中重播零请求零计费（0.256.1）。调价改此一处。
+export const SP_TTS_PER_KCHAR: number = 100;
+
+// 云端 TTS 消耗换算（千字符→SP，向上取整，最低 1——展示与扣点同源军令）
+export function spCostOfTts(chars: number): number {
+  if (chars <= 0) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(chars / 1000 * SP_TTS_PER_KCHAR));
+}
+
 // ★ 0.272.0：sp_consume 埋点公共函数（原 ChatPage.trackSpConsume 抽出——chat/regen 之外的
 //   新场景 word/extract/encourage_r/encourage_s 复用；免扣账号照报 f:y，成本红线要真实 token/命中/余额）
 // ★ 0.273.0：尾加 outputTokens/mid 两参（默认值=既有调用点零波及）；p 尾加 it/ot/ct/ld 四字段

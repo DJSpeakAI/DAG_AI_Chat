@@ -58,6 +58,12 @@ export class AppTheme {
   @Trace surfaceNode: string = '#241640';
   @Trace surfaceHover: string = '#2C1B4D';
   @Trace surfaceSoft: string = 'rgba(255,255,255,0.04)';
+  // ★ 0.278.13：对话气泡独立底色——AI 气泡比原 surfaceNode 暗一档（用户反馈「太亮、影响阅读集中力」），
+  //   用户气泡再暗一档（用户拍板「用户发的至少要比 AI 的暗」）；原 0.195.0「两者一律 surfaceNode」作废
+  @Trace bubbleAiBg: string = '#1E1236';
+  @Trace bubbleUserBg: string = '#190F2A';
+  // ★ 0.278.13：用户消息正文色——比 AI 正文（textPrimary）暗一档，用文字明度做角色区分
+  @Trace userMsgText: string = 'rgba(255,255,255,0.88)';
   @Trace brandPrimary: string = '#7C4DFF';
   @Trace brandSecondary: string = '#A78BFA';
   @Trace textPrimary: string = '#FFFFFF';
@@ -131,6 +137,9 @@ export class AppTheme {
     this.surfaceNode = '#241640';
     this.surfaceHover = '#2C1B4D';
     this.surfaceSoft = 'rgba(255,255,255,0.04)';
+    this.bubbleAiBg = '#1E1236';
+    this.bubbleUserBg = '#190F2A';
+    this.userMsgText = 'rgba(255,255,255,0.88)';
     this.brandPrimary = '#7C4DFF';
     this.brandSecondary = '#A78BFA';
     this.textPrimary = '#FFFFFF';
@@ -169,6 +178,9 @@ export class AppTheme {
     this.surfaceNode = '#FFFFFF';
     this.surfaceHover = '#EFE9FA';
     this.surfaceSoft = 'rgba(29,18,48,0.04)';
+    this.bubbleAiBg = '#FFFFFF';
+    this.bubbleUserBg = '#F1ECFA';
+    this.userMsgText = 'rgba(29,18,48,0.88)';
     this.brandPrimary = '#6C3EE8';
     this.brandSecondary = '#5D3FD3';
     this.textPrimary = '#1D1230';

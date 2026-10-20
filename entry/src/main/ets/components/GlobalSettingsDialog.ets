@@ -42,7 +42,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref, ProfileStore, connectProfileObservations, clearAllObservations, activeObservationCount } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关+清空画像入口（WP5）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
-import { SubscriptionStore, connectSubscription, isVip } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）
+import { SubscriptionStore, connectSubscription, isVip, SP_TTS_PER_KCHAR } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）；★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费小字与播报扣点同源常量）
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
 import {
@@ -196,7 +196,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.277.0'; // ★ 0.277.0：SP 签到多端重复领取修复（幂等标记上云）；上一版 0.276.0：敏感词过滤放宽
+const APP_VERSION: string = 'v0.279.0'; // ★ 0.279.0：PC 划词 Ctrl+C+短回复 prompt 泄漏修复+音频 SP 计价；上一版 0.278.14：边栏把手垂直居中加长
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -1296,8 +1296,9 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .margin({ bottom: 8 })
 
-      // ★ 0.272.0：各档计费小字（成本预期管理——本地免费/云端按量；云端计费接入与否后议，先亮预期）
-      Text(this.editTtsProvider === TTS_PROVIDER_LOCAL ? '设备内置语音 · 免费' : '云端合成 · 按量计费')
+      // ★ 0.272.0：各档计费小字（成本预期管理——本地免费/云端按量）；★ 0.279.0 云端计费已接入：
+      //   播报合成完成按字符实扣 SP（SP_TTS_PER_KCHAR 同源常量，缓存命中重播免费）
+      Text(this.editTtsProvider === TTS_PROVIDER_LOCAL ? '设备内置语音 · 免费' : `云端合成 · 消耗 ${SP_TTS_PER_KCHAR} SP/千字（同文本重播免费）`)
         .fontSize(11)
         .fontColor(this.editTtsProvider === TTS_PROVIDER_LOCAL ? this.theme.textTertiary : this.theme.brandSecondary)
         .width('100%')

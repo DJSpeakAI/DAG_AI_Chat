@@ -47,6 +47,7 @@ export interface QianwenTtsSession {
   onStart?: () => void;
   onComplete?: () => void;
   onError?: (message: string) => void;
+  onSynthesized?: (chars: number, cached: boolean) => void; // ★ 0.279.0：SP 计费点（chars=全文清洗后字符数；cached=true 命中缓存零计费）
 }
 
 // 请求体（ArkTS 严格模式接口显式类型；实测形态：参数全在 input 内）
@@ -275,6 +276,10 @@ export class QianwenTtsEngine {
       this.playIndex = 0;
       this.waitingForAudio = true;
       this.started = false;
+      // ★ 0.279.0：缓存命中重播——零请求零计费（调用方按 cached=true 免扣）
+      if (this.session !== null && this.session.onSynthesized !== undefined && this.session.onSynthesized !== null) {
+        this.session.onSynthesized(trimmed.length, true);
+      }
       this.tryPlayNextAudio();
       return true;
     }
@@ -293,6 +298,15 @@ export class QianwenTtsEngine {
     const key = this.pendingCacheKey;
     if (key.length === 0) {
       return;
+    }
+    // ★ 0.279.0：完整合成走完（与写缓存同点同口径——中断/失败不写缓存也不计费）——
+    //   触发调用方 SP 实扣（chars=全部段字符总和）
+    if (this.session !== null && this.session.onSynthesized !== undefined && this.session.onSynthesized !== null) {
+      let total = 0;
+      this.segments.forEach((seg: string): void => {
+        total += seg.length;
+      });
+      this.session.onSynthesized(total, false);
     }
     this.pendingCacheKey = '';
     this.resultCache.delete(key);

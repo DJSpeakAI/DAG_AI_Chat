@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000344, // ★ 0.277.0：SP 签到多端重复领取修复（签到幂等标记上云 cfg:siyi-points）；上一版 0.276.0：敏感词过滤放宽
+     "versionCode": 1000360, // ★ 0.279.0：PC 划词 Ctrl+C 复制+短回复 prompt 泄漏修复+音频输出/输入 SP 计价（感叹号明细卡+云端 TTS 播报实扣）；上一版 0.278.14：边栏把手居中加长
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

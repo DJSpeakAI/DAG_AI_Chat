@@ -33,7 +33,7 @@ import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除；★ 0.275.0：Ctrl+V 读取剪贴板图片（getData + PasteDataRecord.pixelMap/uri）
 import { unifiedDataChannel } from '@kit.ArkData'; // ★ 0.275.0：onDrop 拖拽图片记录类型（DragEvent.getData → UnifiedData → Image.imageUri）
 
-  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, normalizeThinkingMode, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, normalizeThinkingMode, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, SP_TTS_PER_KCHAR } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）
   import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT, HOOK_SYSTEM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）；★ 0.269.0：HOOK_SYSTEM_PROMPT（两段式②段伴读编排 prompt——任务书 §七终版）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
@@ -631,6 +631,9 @@ export struct ChatPage {
    private stickyStart: number = -1;
    private stickyEnd: number = -1;
    @Local selKey: string = '';             // 当前激活选择的 Text 标识（`${msgId}|u` 用户消息 / `${msgId}|${segIdx}` AI 段）
+   // ★ 0.279.0：输入框（TextArea）自身选区——Ctrl+C 双闸之一：框内有有效选区时放行系统默认复制
+   private inputSelStart: number = -1;
+   private inputSelEnd: number = -1;
    @Local selectAllKey: string = '';       // 全选受控态标识（`${selKey}|${nonce}`，nonce 递增确保重复点击仍触发属性重应用）
    @Local selectAllNonce: number = 0;      // 全选触发计数（配合 selectAllKey）
     // ★ 0.235.0 修法 B：最近一次有效选择的 key 副本（不被 clearSelectionState 清理）——
@@ -2483,6 +2486,9 @@ export struct ChatPage {
         onStart: () => {
           this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
         },
+        onSynthesized: (chars: number, cached: boolean) => {
+          this.onTtsSynthesized(chars, cached); // ★ 0.279.0：云端合成完成 SP 实扣（缓存命中免扣）
+        },
         onComplete: () => {
           this.stopTTS(); // 全部段播完——恢复正常态
         },
@@ -2495,6 +2501,9 @@ export struct ChatPage {
       : cloudTts.speak(speakText, cacheDir, {
       onStart: () => {
         this.ttsLoadingMessageId = ''; // ⏳→🔊（首段开播）
+      },
+      onSynthesized: (chars: number, cached: boolean) => {
+        this.onTtsSynthesized(chars, cached); // ★ 0.279.0：云端合成完成 SP 实扣（缓存命中免扣）
       },
       onComplete: () => {
         this.stopTTS(); // 全部段播完——恢复正常态
@@ -2530,6 +2539,26 @@ export struct ChatPage {
         this.showToastSafe('本机语音引擎不可用：请在系统设置检查「文字转语音」语音包是否已下载');
       }
     });
+  }
+
+  // ★ 0.279.0：云端 TTS 合成完成 SP 实扣（音频输出维度——SP 军令#2「凡 AI 交互必扣必展示」补口）。
+  //   cached=true 缓存命中重播：零请求零计费静默（0.256.1）；本机语音档不进本方法（零成本）；
+  //   失败/中断/回退本地不触发（引擎侧与结果缓存写点同源）；Lv8 司忆令免扣照报 f:y；
+  //   余额不足 clamp 到 0 实扣（0.248.7 先例，播报不拦截）；toast 即时反馈消耗额。
+  onTtsSynthesized(chars: number, cached: boolean): void {
+    if (cached) {
+      return;
+    }
+    const cost = spCostOfTts(chars);
+    if (this.spFree()) {
+      trackSpConsumeAuto(this.apiConfig.model, true, 0, 0, 0, 'tts');
+      return;
+    }
+    const bal0 = siyiTotalSp(this.siyiStore);
+    consumeSiyiSp(this.siyiStore, cost);
+    const actual = bal0 - siyiTotalSp(this.siyiStore);
+    trackSpConsumeAuto(this.apiConfig.model, false, actual, 0, 0, 'tts');
+    this.showToastSafe(`音频输出 · 消耗 ${actual} SP`);
   }
 
   // 停止整个朗读会话（★ 0.232.0：云端+本地双引擎一起停，幂等，可安全重复调用；
@@ -3265,6 +3294,22 @@ export struct ChatPage {
           .textAlign(TextAlign.Center)
           .width('100%')
       }
+      // ★ 0.279.0：音频计价说明行（用户需求——感叹号明细补音频输出/输入维度）：
+      //   输出=本机语音免费 / 云端合成按字符实扣（与播报扣点同源常量）；输入=语音转文字走系统
+      //   输入法（小艺）免费。固定计价说明（灰 12 号弱化——非本条消息消耗数字，防与上方实扣行混淆）
+      Divider()
+        .color(this.theme.strokeCard)
+        .margin({ top: 9, bottom: 9 })
+      Text(`音频输出 · 本机免费 / 云端 ${SP_TTS_PER_KCHAR} SP/千字`)
+        .fontSize(12)
+        .fontColor(this.theme.textTertiary)
+        .textAlign(TextAlign.Center)
+        .width('100%')
+      Text('音频输入 · 免费（语音转文字走系统输入法）')
+        .fontSize(12)
+        .fontColor(this.theme.textTertiary)
+        .textAlign(TextAlign.Center)
+        .width('100%')
     }
     .width(272) // ★ 0.247.6：定宽——Divider 无固有宽会把无约束 Column 撑满整行（0.239.0 同款坑：弹层被拉成全宽条），定宽+文字居中收口；★ 0.247.8：216→272（用户拍板「拉宽一点」——两行文字各自单行显示，4 行收 2 行）
     .padding({ top: 12, bottom: 12, left: 16, right: 16 })
@@ -5416,20 +5461,8 @@ export struct ChatPage {
       .alignItems(HorizontalAlign.Start)
       Blank()
         .layoutWeight(1)
-      // ★ 0.247.0：顶栏精简（用户拍板）——删「单词库/知识库」两 icon（入口与边栏重复），设置保留；
-      //   设置左侧新增「模型名 · 内容由 AI 生成 · 仅供参考」常驻标识（华为市场 AIGC 合规：AI 生成内容须界面明确标识）；
-      //   ★ 0.247.1：模型名固定原名不跟别名；文案加「仅供参考」；手机窄屏 45%→60%（截图实测 45% 截断）
-      Row() {
-        Text(this.topBarModelText())
-          .fontSize(11)
-          .fontColor(this.theme.textSecondary)
-          .fontFamily(FONT_INTER)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .height(40) // 与右侧 settings 包裹行同规格（40vp 撑高、8vp 间距统一）
-      .padding({ left: 4, right: 4 })
-      .constraintSize({ maxWidth: this.isTablet ? '50%' : '62%' }) // 长模型名防挤爆：手机放宽到 62%（用户实测 45% 截断），宽屏 50% 足够
+      // ★ 0.278.4：顶栏模型名标识移除（用户拍板——模型名改显到每条消息下方 ⓘ 左侧，
+      //   全局 AIGC 声明移到输入框下方；合规仍满足：每条消息带模型名 + 底部全局声明）
       Row() {
         Image($r('app.media.settings'))
           .width(20)
@@ -5502,10 +5535,10 @@ export struct ChatPage {
                         Text(msg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|u`) })
                           .fontSize(this.fs(16))
                           .lineHeight(this.fs(24))
-                          .fontColor(this.theme.textPrimary)
+                          .fontColor(this.theme.userMsgText) // ★ 0.278.13：用户消息正文比 AI（纯白 textPrimary）暗一档（用户拍板「用户发的至少比 AI 的暗」）
                           .padding(10)
                           .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
-                          .backgroundColor(this.theme.surfaceNode) // ★ 0.195.0：用户气泡底色改与 AI 气泡一致（原主紫 this.theme.brandPrimary，用户拍板「调成一样」）
+                          .backgroundColor(this.theme.bubbleUserBg) // ★ 0.278.13：用户气泡单独暗一档（原 0.195.0「与 AI 一致」作废——用户拍板「用户发的至少要比 AI 的暗」）
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现，不再留侧边空间）；0.190.3 原 90%、0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
@@ -6072,7 +6105,7 @@ export struct ChatPage {
                           .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现）；0.190.3 原 90%、0.148 原约束——长文本行自动换行，防气泡被撑出屏幕右缘（用户截图实证）
                         .padding(10)
                         .borderRadius(RADIUS_CONTROL)
-                        .backgroundColor(this.theme.surfaceNode)
+                        .backgroundColor(this.theme.bubbleAiBg) // ★ 0.278.13：AI 气泡底色调暗一档（用户反馈太亮影响阅读集中力）
                         .alignItems(HorizontalAlign.Start) // ★ 0.145：气泡内段落保持左对齐（阅读习惯），气泡整体位置由外层 alignItems 控制
 
                          // ★ 0.271.0：思考收起行（进入 phase3 后思考卡冻结收起为单行——紫弱高亮，气泡底部；
@@ -6217,7 +6250,7 @@ export struct ChatPage {
                             //   点感叹号 bindPopup 弹 token 明细（输入 N · 输出 N）——单开互斥挂 tokenInfoMsgId
                             if (msg.outputTokens > 0) {
                               Row() {
-                                Text('内容由 AI 生成 · 仅供参考')
+                                Text(this.topBarModelText()) // ★ 0.278.4：改显模型名（用户拍板——声明句移到输入框下方全局一行；ⓘ 弹 token 明细不变）
                                   .fontSize(11)
                                   .fontColor(this.theme.textTertiary)
                                   .maxLines(1)
@@ -6472,24 +6505,26 @@ export struct ChatPage {
           // 换树杈传达「另起一个树杈（新分支）」语义；尺寸样式不变（32×32 圆角 8）
           // ★ 0.182.1：🌿 emoji 换 gitbranch 分叉符号 svg——用户实测反馈「消息页面的左下角 icon 没有换」
           //   （0.182.0 需求1 本意即此处：与 app logo/画布视觉语言统一）；32×32 容器/圆角/底色/描边样式不变
-          Row() {
-            Image($r('app.media.gitbranch'))
-              .width(18)
-              .height(18)
+          // ★ 0.278.0 聚焦态按钮切换（图1/图2）：新建气泡树仅未聚焦态显示，聚焦态切发送▾
+          if (!this.isInputFocused) {
+            Row() {
+              Image($r('app.media.gitbranch'))
+                .width(20)
+                .height(20)
+            }
+            .width(32)
+            .height(32)
+            .justifyContent(FlexAlign.Center)
+            .margin({ right: 2 })
+            .onClick(() => {
+              this.getUIContext().getFocusController().clearFocus();
+              this.addBubble();
+            })
+            .transition(TransitionEffect.OPACITY
+              .animation({ duration: 200, curve: Curve.EaseOut }))
           }
-          .width(32)
-          .height(32)
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(this.theme.surfaceHover)
-          .border({ width: 1, color: this.theme.strokeCard })
-          .margin({ right: 2 })
-          .onClick(() => {
-            this.getUIContext().getFocusController().clearFocus(); // ★ 0.182.0：点击输入框外收键盘（根容器兜底不覆盖有自身 onClick 的按钮，此处显式收）
-            this.addBubble();
-          })
 
-          TextArea({ text: $$this.inputText, placeholder: '试一试小艺输入法的语音转文本功能？' }) // ★ 0.270.1：占位文案改引导语音输入（用户拍板）；★ 0.131：去掉 controller 参数（TextAreaController 已移除）
+          TextArea({ text: $$this.inputText, placeholder: '试一试小艺输入法的🎤语音转文本功能？' }) // ★ 0.278.4：加话筒 icon（placeholder 纯文本不支持组件混排，用 emoji 实现）) // ★ 0.278.3：恢复 0.270.1 原文案（用户强拍板不许改写——引导小艺输入法话筒 icon 语音转文本）+字号调小保一行；上一版 0.270.1 文案「试一试小艺输入法的语音转文本功能？」；★ 0.131：去掉 controller 参数（TextAreaController 已移除）
             .key('chatInputField') // ★ 0.216.2：PC 发送后 requestFocus('chatInputField') 重聚焦（连续打字免鼠标回点）
             .onChange((value: string) => {
               this.inputText = value;
@@ -6526,6 +6561,15 @@ export struct ChatPage {
             //   9/9 首轮仍偏上（TextArea 空态渲染高度大于 minHeight 40、内容顶部对齐致下空隙偏大），
             //   12/12 补偿顶对齐偏移；多行增高时对称 padding 不干扰布局
             .padding({ top: 12, bottom: 12, left: 12, right: 12 })
+            .backgroundColor(Color.Transparent) // ★ 0.278.2：去 TextArea 自带默认灰底（用户截图实锤=孤立小气泡，图标被留在外面）——容器底色由外层卡统一承担
+            .placeholderColor(this.theme.textTertiary) // ★ 0.278.2：占位提示字调浅（用户拍板「太亮了」——提示语低调、与正文区隔）
+            .placeholderFont({ size: 13 }) // ★ 0.278.3：占位字号调小（用户拍板——17 字长文案手机端一行放下；用户实际输入内容换行不受影响）
+            // ★ 0.279.0：输入框自身选区追踪（Ctrl+C 双闸之一——框内有选中文字时放行系统默认复制，
+            //   防「上次消息划词残留 selText」劫持输入框内的 Ctrl+C；光标落下即视为无选区）
+            .onTextSelectionChange((start: number, end: number) => {
+              this.inputSelStart = start;
+              this.inputSelEnd = end;
+            })
             // ★ 0.215.11 回车=发送（用户要求标准 IM 交互；NEW_LINE 时代回车纯换行已废弃）；
             //   Shift+回车=换行：物理键盘经 onKeyEvent 判 Shift（组件层 KeyEvent.getModifierKeyState，
             //   滚轮翻案同源 API）插 \n 并标记时间窗，onSubmit 窗内跳过发送；软键盘无物理键直发。
@@ -6548,6 +6592,25 @@ export struct ChatPage {
             .onKeyPreIme((event: KeyEvent): boolean => {
               if (event.keyCode === 2047 || event.keyCode === 2048) { // Shift 键本身：维护状态不消费
                 this.shiftHeld = event.type === KeyType.Down;
+                return false;
+              }
+              // ★ 0.279.0：Ctrl+C 划词复制（PC 需求——鼠标划选消息文本后键盘直达复制，键值实锤
+              //   KEYCODE_C=2019；写剪贴板 pasteboard.setData 无需权限=华为后台零申请）。
+              //   防误拦双闸：①输入框内有自身选区（inputSelStart/End 有效区间）→ 放行走系统默认
+              //   复制（输入框内选中文字的 Ctrl+C 归 TextArea 原生行为，禁吞）；②消息划词 selText
+              //   非空才拦截消费（复用 onToolbarCopy 同一复制链路+关菜单）。
+              if (event.keyCode === 2019 && event.type === KeyType.Down) {
+                let ctrl = false;
+                try {
+                  ctrl = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+                } catch (err) {
+                  ctrl = false;
+                }
+                const hasInputSel = this.inputSelStart >= 0 && this.inputSelEnd > this.inputSelStart;
+                if (ctrl && !hasInputSel && this.selText.length > 0) {
+                  this.onToolbarCopy();
+                  return true; // 消费——本次 Ctrl+C 语义=复制划词文本
+                }
                 return false;
               }
               if (event.keyCode === 2054 && event.type === KeyType.Down) { // KEY_ENTER=2054 实锤
@@ -6575,89 +6638,79 @@ export struct ChatPage {
           // ★ 0.152：画画Icon（屏幕圈选标注，核心新增亮点）——点击截取当前屏幕画面进入涂鸦标注页；
           // 原底栏 🖼️ 图片按钮与 💬 模式按钮移入发送右侧 ▾ 下拉菜单
           // ★ 0.195.0：✏️ emoji 换 edit.svg 单色图标（UI 统一——屏幕圈选标注入口）
-          Row() {
-            Image($r('app.media.edit'))
-              .width(16)
-              .height(16)
-              .objectFit(ImageFit.Contain)
+          // ★ 0.278.0：屏幕圈注仅未聚焦态显示（图2 拍板——聚焦态删除）
+          if (!this.isInputFocused) {
+            Row() {
+              Image($r('app.media.edit'))
+                .width(20)
+                .height(20)
+                .objectFit(ImageFit.Contain)
+            }
+            .padding({ left: 2, right: 2 })
+            .margin({ left: 0, right: 2 })
+            .onClick(() => {
+              this.getUIContext().getFocusController().clearFocus();
+              this.startAnnotation();
+            })
+            .transition(TransitionEffect.OPACITY
+              .animation({ duration: 200, curve: Curve.EaseOut }))
           }
-          .padding({ left: 2, right: 2 })
-          .margin({ left: 0, right: 2 })
-          .onClick(() => {
-            this.getUIContext().getFocusController().clearFocus(); // ★ 0.182.0：点击输入框外收键盘（根容器兜底不覆盖有自身 onClick 的按钮，此处显式收）
-            this.startAnnotation();
-          })
 
           // ★ 0.182.0：发送按钮与 ▾ 合体——▾ 内嵌进发送按钮右侧（原独立 18×32 小三角，用户要求稍大+内置，
           //   常见「发送 ▾」合体样式）；左区点击=发送、右区点击=模式下拉菜单，整按钮统一主紫背景；
           //   发送区保留 isLoading 禁用（置灰半透明白），▾ 区保持可用（原行为：发送中仍可切模式）
-          Row() {
-            Text('发送')
-              .fontSize(16)
-              .fontColor(this.isLoading ? 'rgba(255,255,255,0.50)' : Color.White)
-              .padding({ left: 12, right: 2 })
-              .onClick(() => {
-                if (!this.isLoading) {
-                  this.sendMessage();
-                }
-              })
-            Text('▾')
-              .fontSize(17) // ★ 0.246.0：14 → 17（用户实测太小）——字号加大+下方 padding 加宽，点击区与视觉宽度同步放大
-              .fontColor(Color.White)
-              .padding({ left: 6, right: 14 })
-              .textAlign(TextAlign.Center)
-              .onClick(() => {
-                this.modeMenuOpen = !this.modeMenuOpen;
-              })
+          if (this.isInputFocused) { // ★ 0.278.0：发送▾ 仅聚焦态显示（图1/图2 拍板——未聚焦态为 新建气泡树+铅笔）
+            Row() {
+              Text('发送')
+                .fontSize(16)
+                .fontColor(this.isLoading ? 'rgba(255,255,255,0.50)' : Color.White)
+                .padding({ left: 12, right: 2 })
+                .onClick(() => {
+                  if (!this.isLoading) {
+                    this.sendMessage();
+                  }
+                })
+              Text('▾')
+                .fontSize(17) // ★ 0.246.0：14 → 17（用户实测太小）——字号加大+下方 padding 加宽，点击区与视觉宽度同步放大
+                .fontColor(Color.White)
+                .padding({ left: 6, right: 14 })
+                .textAlign(TextAlign.Center)
+                .onClick(() => {
+                  this.modeMenuOpen = !this.modeMenuOpen;
+                })
+            }
+            .height(40)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.theme.brandPrimary) // ★ 0.181.0：主操作按钮收敛主紫——原未设背景走系统默认蓝（Material 蓝残留），与暗紫主题冲突
+            .margin({ left: 4 }) // ★ 0.144：收紧与模式按钮的间距，把宽度让给输入框
+            .transition(TransitionEffect.OPACITY
+              .animation({ duration: 200, curve: Curve.EaseOut }))
           }
-          .height(40)
-          .borderRadius(RADIUS_CONTROL)
-          .backgroundColor(this.theme.brandPrimary) // ★ 0.181.0：主操作按钮收敛主紫——原未设背景走系统默认蓝（Material 蓝残留），与暗紫主题冲突
-          .margin({ left: 4 }) // ★ 0.144：收紧与模式按钮的间距，把宽度让给输入框
         }
         .width('100%')
         .padding({ left: 6, right: 6, top: 8, bottom: 8 }) // ★ 0.143：输入区顶部留白——消息列表/图片预览与输入框原本贴边，加 top 12 与列表顶部 padding 呼应
         .opacity(this.importArrived) // ★ 0.200.0：导入落地渐显（L3 末拍 0→1 300ms；常态恒 1 不影响日常输入/截图）
 
-          // ★ 0.270.0 聚焦工具栏（用户裁决）：横向滚动 icon 行，仅聚焦态浮现——一期只放「屏幕圈住」
-          //   快捷入口（画板未做好不入栏、钩子模式为后台能力不入栏）；未来功能在此追加；
-          //   按钮规格与输入行加子气泡同款（32×32 圆角 10 surfaceHover 底+描边）视觉语言统一
-          if (this.isInputFocused) {
-            Scroll() {
-              Row({ space: 10 }) {
-                Row() {
-                  Image($r('app.media.edit'))
-                    .width(16)
-                    .height(16)
-                    .objectFit(ImageFit.Contain)
-                }
-                .width(32)
-                .height(32)
-                .justifyContent(FlexAlign.Center)
-                .borderRadius(RADIUS_CONTROL)
-                .backgroundColor(this.theme.surfaceHover)
-                .border({ width: 1, color: this.theme.strokeCard })
-                .onClick(() => {
-                  this.startAnnotation(); // 屏幕圈住（与输入行铅笔同功能；切圈选页自然收键盘收工具栏）
-                })
-                // ★ 0.275.0 粘贴图片按钮已删（用户否决 PasteButton 交互）——Ctrl+V 直贴待华为答复
-                //   READ_PASTEBOARD ACL 授权问题后恢复（读取链 pasteImageFromClipboard/addPixelMapImage 保留待命）
-              }
-              .padding({ left: 10, right: 10, top: 2, bottom: 8 })
-            }
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .width('100%')
-            .transition(TransitionEffect.OPACITY // 对齐项目浮现范式：淡入+上移 8vp 200ms（UI_GUIDELINES）
-              .combine(TransitionEffect.translate({ y: 8 }))
-              .animation({ duration: 200, curve: Curve.EaseOut }))
-          }
+          // ★ 0.278.0：0.270.0 聚焦工具栏整块移除（用户拍板图2——聚焦态唯一入口「屏幕圈住」删除；
+          //   未来功能膨胀预留位需要时从 git 历史找回）
         }
         .width('100%')
-        .margin({ left: 10, right: 10 }) // 卡片水平外边距（+内部输入行 padding 6 ≈ 引用条 16 缩进对齐）
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.theme.surfaceSoft)
-        .border({ width: 0.5, color: this.dragImageOver ? this.theme.strokeBrand : (this.isInputFocused ? this.theme.strokeBrand : this.theme.strokeCard) }) // 聚焦描边高亮；★ 0.275.1 拖图悬停同款高亮（dragImageOver 由根容器三件套驱动）
+        .margin({ left: 16, right: 16, bottom: 8 }) // ★ 0.278.8：左右 12→16=对齐消息区水平边距（用户拍板「跟对话框间距对齐」）；bottom 12→8 输入区整体下移
+        .borderRadius(24) // ★ 0.278.4：圆角 10→24（用户拍板——上下圆弧转好看，胶囊感）
+        .backgroundColor(this.theme.surfaceSoft) // ★ 0.278.2：恢复容器底色（用户看实机后拍板「像 ChatCube 一样把功能键全包进去」）——唯一容器承担底色，图标裸放其上（TextArea 已透明不再有小气泡）
+        .border({ width: 0.5, color: (this.dragImageOver || this.isInputFocused) ? this.theme.strokeBrand : Color.Transparent }) // ★ 0.278.1：常态无边框，仅聚焦/拖图悬停显描边反馈
+
+        // ★ 0.278.4：AIGC 全局声明行（用户拍板——「内容由 AI 生成」从每条气泡下移到输入框外最下方，
+        //   元宝/千问同款形态；气泡行原位改显模型名）
+        // ⚠️0.278.4-fix：本行必须留在根 Column 内部、输入卡之后——严禁插到 Column 闭合「}」与根容器属性链
+        //   （width/height/id=chatSnapshotRoot/onDragEnter/onDrop/onClick）之间，否则这些属性会被本 Text 吞掉
+        //   （Text 撑满 100% 高 + 带 onClick → 覆盖整页，输入框与功能键全部点不动＝「输入框点不了」真凶）
+        Text('内容由 AI 生成 · 仅供参考')
+          .fontSize(11)
+          .fontColor(this.theme.textTertiary)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ top: 6, bottom: 8 }) // ★ 0.278.8：top 10→6 贴近输入框+bottom 10→8（输入区整体再下移，用户拍板）
         }
         .width('100%')
         .height('100%')
@@ -7982,31 +8035,41 @@ export struct ChatPage {
                 .width('100%')
                 .padding({ left: 12, top: 8 })
                 .textAlign(TextAlign.Start)
-              Text('💬 正常对话')
-                .fontSize(14)
-                .fontColor(this.theme.textPrimary)
-                .width('100%')
-                .padding(12)
-                .textAlign(TextAlign.Start)
-                .backgroundColor(this.sendMode === 'normal' ? (this.theme.brandPrimary) : Color.Transparent)
-                .borderRadius(RADIUS_CONTROL)
-                .onClick(() => {
-                  this.sendMode = 'normal';
-                  this.modeMenuOpen = false;
-                })
-              Text('🎙 播客模式')
-                .fontSize(14)
-                .fontColor(this.theme.textPrimary)
-                .width('100%')
-                .padding(12)
-                .textAlign(TextAlign.Start)
-                .backgroundColor(this.sendMode === 'podcast' ? (this.theme.brandPrimary) : Color.Transparent)
-                .borderRadius(RADIUS_CONTROL)
-                .onClick(() => {
-                  this.sendMode = 'podcast';
-                  this.modeMenuOpen = false;
-                  track(this.getUIContext().getHostContext() as common.Context, 'podcast_mode'); // 0.206.0 埋点：播客模式（伪需求验证重点）
-                })
+              Row({ space: 6 }) {
+                Image($r('app.media.chat'))
+                  .width(15)
+                  .height(15)
+                  .objectFit(ImageFit.Contain)
+                Text('正常对话')
+                  .fontSize(14)
+                  .fontColor(this.theme.textPrimary)
+              }
+              .width('100%')
+              .padding(12)
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(this.sendMode === 'normal' ? (this.theme.brandPrimary) : Color.Transparent)
+              .onClick(() => {
+                this.sendMode = 'normal';
+                this.modeMenuOpen = false;
+              })
+              Row({ space: 6 }) {
+                Image($r('app.media.mic'))
+                  .width(15)
+                  .height(15)
+                  .objectFit(ImageFit.Contain)
+                Text('播客模式')
+                  .fontSize(14)
+                  .fontColor(this.theme.textPrimary)
+              }
+              .width('100%')
+              .padding(12)
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(this.sendMode === 'podcast' ? (this.theme.brandPrimary) : Color.Transparent)
+              .onClick(() => {
+                this.sendMode = 'podcast';
+                this.modeMenuOpen = false;
+                track(this.getUIContext().getHostContext() as common.Context, 'podcast_mode'); // 0.206.0 埋点：播客模式
+              })
               Text('口语化输出，适合朗读')
                 .fontSize(11)
                 .fontColor(this.theme.textTertiary)
@@ -8217,9 +8280,10 @@ export struct ChatPage {
       .height('100%')
       // ★ 0.195.0：根底色补齐 this.theme.bgApp——原根容器未设底色透出窗口纯黑（用户截图实锤 #000000，
       //   与画布/单词库/知识库暗紫底不一致；0.183.0 修三页时本页漏网，本次补上）
-      .backgroundColor(this.theme.bgCanvas)
+      .background(this.theme.bgCanvas) // ★ 0.278.9：background() 背景延伸进安全区（Pad 上下黑边根治）
     }
     .hideTitleBar(true)
+    .backgroundColor(this.theme.bgCanvas) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险）
     // ★ 0.152：标注页 pop 返回时消费标注结果（import/branch/knowledge 三分支；
     // onShown 首次进入及其他页面返回时 action 为空直接跳过）
     .onShown(() => {

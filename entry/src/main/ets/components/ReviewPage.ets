@@ -1155,7 +1155,7 @@ export struct ReviewPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.theme.bgCanvas)
+      .background(this.theme.bgCanvas) // ★ 0.278.10：background() 背景延伸进安全区，上下与页面主体同色（统一 0.278.9 模板）
       // ★ 0.200.0：问 AI 二选一面板（Stack 顶层）
       if (this.askSheetVisible) {
         this.askAiSheet()
@@ -1167,6 +1167,7 @@ export struct ReviewPage {
       }
     }
     .hideTitleBar(true)
+    .backgroundColor(this.theme.bgCanvas) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险）
     // ★ 0.200.0：面板打开时返回键先关面板
     .onBackPressed(() => {
       // ★ 0.230.0：全局设置弹窗打开时返回键先关弹窗（共享真相源——修复仅画布页拦截的盲区，0.229.26 审计 B9 实锤）
