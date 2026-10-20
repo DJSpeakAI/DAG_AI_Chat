@@ -1015,6 +1015,12 @@ export class SiyiPointStore {
   @Trace consumedGiftSp: number = 0;
   @Trace consumedBonusSp: number = 0;
   @Trace consumedPermanentSp: number = 0;
+  // ★ 0.277.0 签到幂等标记下沉云端行（任务书方案 B——多端重复签到/里程碑重复发放根治）：
+  //   signDates/lastSignDate/streak 本是本地数据不上云，换设备后签到状态清零可重复领；
+  //   两字段随本行（cfg:siyi-points）max/并集合并多端收敛，doSignIn 签到前校验。
+  //   存 String 字段而非数组（与 redeemedCodes 同款模式，规避旧快照缺字段坑——Schema 铁律尾部追加）
+  @Trace signedDates: string = '[]';       // 已签到日期并集（JSON 数组 'YYYY-MM-DD'，保留最近 400 天）
+  @Trace milestoneStreakGranted: number = 0; // 已发里程碑的最高连击档（max 合并单调递增，防跨端重发）
 }
 
 export function connectSiyiPoints(): SiyiPointStore {
@@ -1298,6 +1304,54 @@ export function nextStreak(lastSignDate: string, streak: number, today: string):
   return 1;
 }
 
+// ============================================================
+// ★ 0.277.0：签到状态跨端共享纯函数组（任务书方案 B——幂等标记下沉 cfg:siyi-points）
+// ============================================================
+// 云端已签日期保留窗口（天）：100 天里程碑最多需 100 天连续记录，400 窗口充裕；
+//   一年 365 项 JSON 约 4KB，RDB value 承载无碍（截断控体积）
+export const SIGNED_DATES_KEEP: number = 400;
+// 已签日期 JSON 解析（坏值/undefined 兜底空数组——旧云端行缺字段天然兼容）
+export function parseSignedDates(json: string | undefined): string[] {
+  if (json === undefined || json === '') {
+    return [];
+  }
+  try {
+    const arr: string[] = JSON.parse(json) as string[];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+// 日期并集合并（纯函数）：去重→字典序排序（YYYY-MM-DD 字典序=时间序）→截断保留最近 N 天
+export function mergeSignedDates(a: string[], b: string[]): string[] {
+  const set = new Set<string>();
+  for (let i = 0; i < a.length; i++) {
+    set.add(a[i]);
+  }
+  for (let i = 0; i < b.length; i++) {
+    set.add(b[i]);
+  }
+  const sorted = Array.from(set).sort();
+  return sorted.length > SIGNED_DATES_KEEP ? sorted.slice(sorted.length - SIGNED_DATES_KEEP) : sorted;
+}
+
+// 从日期集合推导连击（纯函数）：以 today 为锚（today 须已在集合中）向前逐日连续计数——
+//   PC 冷启动本地 streak 归零也能从云端并集接着数（任务书验收 3：手机签 3 天→PC 接着签第 4 天）
+export function streakFromSignedDates(dates: string[], today: string): number {
+  const set = new Set<string>();
+  for (let i = 0; i < dates.length; i++) {
+    set.add(dates[i]);
+  }
+  let n = 0;
+  let cur = today;
+  while (set.has(cur)) {
+    n++;
+    cur = shiftDateStr(cur, -1);
+  }
+  return n;
+}
+
 // 每日签到奖励（纯函数）——连签递增：第 N 天 = min(2000 + (N-1)×1000, 8000)，第 7 天起封顶
 export function signInRewardSp(streak: number): number {
   const n = Math.max(1, streak);
@@ -1327,19 +1381,38 @@ export function isSignedToday(store: SignInStore): boolean {
 // 签到执行（完整链：防重复→连击→发 SP→云上行；today 由调用方统一走 todayStrWithOffset 传入——
 //   显式参数化=纯函数可测）：返回本次发放总额（0=今日已签未发）
 //   里程碑与当日奖励一并入 bonusSp 嘉奖池（scheduleRowFlush 走 cfg:siyi-points 同款上行）
+//   ★ 0.277.0 多端幂等（任务书方案 B）：幂等/连击/里程碑三处改查云端标记（siyi.signedDates 并集 +
+//   milestoneStreakGranted 档位）——换设备本地清零不再重复发放/重新数连击/重发里程碑
 export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string): number {
-  if (store.signDates.indexOf(today) >= 0) {
+  // 幂等：本地记录 ∪ 云端记录（云端拦跨设备同日重复签到→sp_grant 埋点天然不再多报）
+  if (store.signDates.indexOf(today) >= 0
+    || parseSignedDates(siyi.signedDates).indexOf(today) >= 0) {
     return 0;
   }
-  store.streak = nextStreak(store.lastSignDate, store.streak, today);
-  store.lastSignDate = today;
+  // 连击取双链路最大值：本地续接链路（nextStreak——保留 0.259.0 补签「断签前+1 续接」语义）
+  //   与云端日期并集日历推导（streakFromSignedDates——PC 冷启动接着手机的连击数）；
+  //   ⚠️ 本地链路须用更新前的 lastSignDate/streak 计算（推到 today 后昨天比较恒 false）
+  const localNext = nextStreak(store.lastSignDate, store.streak, today);
   store.signDates.push(today);
+  store.lastSignDate = today;
+  const dates = mergeSignedDates(store.signDates, parseSignedDates(siyi.signedDates));
+  store.streak = Math.max(localNext, streakFromSignedDates(dates, today));
   if (store.streak > store.maxStreak) {
     store.maxStreak = store.streak;
   }
-  const total = signInRewardSp(store.streak) + milestoneBonusSp(store.streak);
+  // 云端签到标记双写（本地 SignInStore.signDates 保留全量供 UI 红点/弹窗展示用）
+  siyi.signedDates = JSON.stringify(dates);
+  // 里程碑：达到节点 && 高于云端已发档才发（换设备重新数到同档不再重发）
+  let milestone = 0;
+  if (store.streak > siyi.milestoneStreakGranted) {
+    milestone = milestoneBonusSp(store.streak);
+    if (milestone > 0) {
+      siyi.milestoneStreakGranted = store.streak;
+    }
+  }
+  const total = signInRewardSp(store.streak) + milestone;
   siyi.bonusSp += total;
-  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端余额+签到标记一致）
   const _sg: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（签到发放）
   _sg['src'] = 'sign';
   _sg['sp'] = `${total}`;
@@ -3488,6 +3561,8 @@ class SiyiRowPayload {
   consumedGiftSp: number = 0;
   consumedBonusSp: number = 0;
   consumedPermanentSp: number = 0;
+  signedDates: string = '[]';        // ★ 0.277.0：已签日期并集（旧云端行缺字段=undefined 走兜底，零迁移）
+  milestoneStreakGranted: number = 0; // ★ 0.277.0：已发里程碑最高档
 }
 
 function siyiPointsToJson(): string {
@@ -3501,6 +3576,8 @@ function siyiPointsToJson(): string {
   p.consumedGiftSp = s.consumedGiftSp;
   p.consumedBonusSp = s.consumedBonusSp;
   p.consumedPermanentSp = s.consumedPermanentSp;
+  p.signedDates = s.signedDates;
+  p.milestoneStreakGranted = s.milestoneStreakGranted;
   return JSON.stringify(p);
 }
 
@@ -3549,6 +3626,17 @@ function mergeSiyiPointsRow(v: string | undefined): void {
   }
   if (cloud.consumedPermanentSp > s.consumedPermanentSp) {
     s.consumedPermanentSp = cloud.consumedPermanentSp;
+    changed = true;
+  }
+  // ★ 0.277.0：签到标记下行合并——已签日期取并集（跨端接续/幂等的数据源），
+  //   里程碑档取 max（单调递增防重发）。云端行并集更大才落盘（幂等收敛，防 flush 上行乒乓）。
+  const mergedDates = mergeSignedDates(parseSignedDates(s.signedDates), parseSignedDates(cloud.signedDates));
+  if (mergedDates.length > parseSignedDates(s.signedDates).length) {
+    s.signedDates = JSON.stringify(mergedDates);
+    changed = true;
+  }
+  if (cloud.milestoneStreakGranted > s.milestoneStreakGranted) {
+    s.milestoneStreakGranted = cloud.milestoneStreakGranted;
     changed = true;
   }
   if (changed) {

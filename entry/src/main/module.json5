@@ -124,6 +124,9 @@
           "when": "always"
         }
       }
+      // ★ 0.275.0：READ_PASTEBOARD（Ctrl+V 贴图）装机 9568289 实锤回退——调试 Profile 无该 ACL
+      //   受限授权（0.164.7 同款死法二踩）。改走 PasteButton 安全控件（点击=临时授权读取，免权限声明）；
+      //   拖拽 onDrop 走 UDMF 通道本就免此权限。若未来 AGC Profile 可勾选该 ACL 再恢复纯 Ctrl+V 方案。
     ]
   }
 }

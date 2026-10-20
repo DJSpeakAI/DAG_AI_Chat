@@ -23,14 +23,15 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2, curves } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）；★ 0.234.0：curves（onDone 收拢 springMotion 弹簧曲线——华为物理动效血统）
-import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext
+import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext（★ 0.275.0：abilityAccessCtrl 随 9568289 回退移除；hilog 诊断埋点随拖拽验证通过删除）
 import { track, trackUidAuto } from '../utils/TrackUtil'; // 0.206.0 埋点；★ 0.260.0：trackUidAuto（sp_consume）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（DocumentViewPicker 保存图片——免权限系统保存对话框）
 import { buffer } from '@kit.ArkTS';
-import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除
+import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除；★ 0.275.0：Ctrl+V 读取剪贴板图片（getData + PasteDataRecord.pixelMap/uri）
+import { unifiedDataChannel } from '@kit.ArkData'; // ★ 0.275.0：onDrop 拖拽图片记录类型（DragEvent.getData → UnifiedData → Image.imageUri）
 
   import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, normalizeThinkingMode, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一——遗留 'on'→'smart'）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）
   import { PODCAST_PROMPT, SHORT_REPLY_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, buildAnchorLongPrompt, ANCHOR_MEDIUM_PROMPT, HOOK_SYSTEM_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）+摘要结构化（A 项）；★ 0.234.0：ENCOURAGE 两常量随回复开头鼓励删除，新增 SECTION/ANCHOR 三 prompt（注意力锚点一期）；★ 0.237.0：ANCHOR_LONG 改 buildAnchorLongPrompt（密度档联动五选一+quiz 难度红条）；★ 0.269.0：HOOK_SYSTEM_PROMPT（两段式②段伴读编排 prompt——任务书 §七终版）
@@ -1803,8 +1804,10 @@ export struct ChatPage {
   @Local fontScale: number = 1.0;        // 字号缩放系数（0.75~1.6）
   pinchStartFontScale: number = 1.0;     // 捏合起点快照
   ctrlAxisAt: number = 0; // ★ 0.215.10：最近 Ctrl+滚轮时刻（300ms 窗内 List 滚动被吞=只缩放不滚动）
-  shiftEnterAt: number = 0; // ★ 0.215.11：最近 Shift+回车时刻（300ms 窗内 onSubmit 跳过发送=只换行）
-  shiftHeld: boolean = false; // ★ 0.215.15：Shift 键按住状态（onKeyPreIme 追踪 Down/Up，判定兜底）
+   shiftEnterAt: number = 0; // ★ 0.215.11：最近 Shift+回车时刻（300ms 窗内 onSubmit 跳过发送=只换行）
+   shiftHeld: boolean = false; // ★ 0.215.15：Shift 键按住状态（onKeyPreIme 追踪 Down/Up，判定兜底）
+   ctrlVPasting: boolean = false; // ★ 0.275.0：Ctrl+V 读剪贴板防重入（异步期间重复按键忽略）
+   dragImageOver: boolean = false; // ★ 0.275.0：图片拖入输入卡高亮态（onDragEnter/Leave/Drop 三点维护）
   // ★ 0.270.0 输入区聚焦扩展（千问式）：聚焦态驱动输入框 minHeight 40→76 展开两行高 + 卡片内下方
   //   工具栏浮现；blur 走 150ms 宽限收起——PC 发送后 50ms 重聚焦（0.216.2）落在窗内 → 工具栏不闪，
   //   点工具栏按钮的焦点转移同样受保护（宽限内重新聚焦则不收）
@@ -2010,9 +2013,6 @@ export struct ChatPage {
     const thinkingReq: ThinkingRequest = resolveThinkingFor(normalizeThinkingMode(this.anchorPref.thinkingMode),
       this.replyLengthMode, isPodcast, this.inputText, topicForThink, aiCountForThink);
     this.thinkingEnabledNow = thinkingReq.enabled;
-    // ★ 0.271.0：思维链独立输出扫描器（合规线——思维链摘要展示给用户=AI 生成内容露出面，
-    //   网关侧思维链不经内容安全审核；独立实例防与正文扫描器尾巴缓冲互污）
-    const reasonScanner = ContentFilter.makeOutputScanner();
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
     // ★ 0.202.0：注意力提取——消息命中卡标题/标签 → 标签热度+1（纯本地毫秒级；AI 还在流式回复时复习权重已算完）
     updateAttention(this.attention, this.knowledgeBank.cards, userMsg.content);
@@ -2104,9 +2104,6 @@ export struct ChatPage {
 
     // ★ 0.217.0 端侧大模型全线回滚（个人开发者白名单不通过=企业限定，0.216.0~0.216.2 时代终结）
 
-    // ★ 0.250.0：输出侧实时扫描器（仅政治+色情两表防科普误杀；尾巴缓冲防 chunk 边界切词漏检）
-    const outScanner = ContentFilter.makeOutputScanner();
-
     // ★ 0.271.0：流式调用包装为可降级重发的局部函数（§3.6——自动降级=400+关键词窄门，
     //   同上下文同消息以 disabled 原样重发一次；单次发送尝试只降一次，手动重试=新尝试）
     let downgraded = false; // 降级防循环锚（降级请求本身 disabled 不可能再触发参数型降级，天然无循环）
@@ -2126,25 +2123,6 @@ export struct ChatPage {
           this.finishThinkingTrace(aiMsg.messageId);
         }
         aiMsg.content += chunk;
-        // ★ 0.250.0：输出侧命中即中断流（平台侧漏网兜底；cancel 后 ApiClient 全回调静默，
-        //   安全文案不会被 onError 覆盖——0.250.0 已核 ApiClient cancelled 三处守卫）
-        const outHit: FilterHit | null = outScanner.scan(chunk);
-        if (outHit !== null) {
-          const _fo: Record<string, string> = {}; _fo['cat'] = outHit.category;
-          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fo);
-          if (this.streamController) {
-            this.streamController.cancel();
-          }
-          aiMsg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
-          this.isLoading = false;
-          this.streamController = null;
-          this.streamPhase = 0;
-          this.streamingMsgId = '';
-          this.mirrorStreamToLive(streamBubbleId, aiMsg);
-          this.saveTree();
-          this.showToastSafe('回复包含违规内容，已拦截');
-          return;
-        }
         this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：流式写穿（防 reconcile 孤儿化丢流尾）
         // ★ 0.191.0：接收态已删——首字节到达即清占位，等待态消失，「正在接收内容」永远显示不出来
         // ★ 流式接收时自动滚到底部（恢复 0.104-0.107 移除的行为）
@@ -2227,28 +2205,6 @@ export struct ChatPage {
         if (contentStarted) {
           return;
         }
-        // ★ 0.271.0：合规线——思维链同样过输出扫描器（思维链摘要展示给用户=AI 生成内容露出面，
-        //   网关侧思维链不经内容安全审核，防违规内容经思维链绕过；命中走现有输出拦截链路）
-        const reasonHit: FilterHit | null = reasonScanner.scan(reasoning);
-        if (reasonHit !== null) {
-          const _fr: Record<string, string> = {}; _fr['cat'] = reasonHit.category;
-          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fr);
-          if (this.streamController) {
-            this.streamController.cancel();
-          }
-          if (this.thinkingActiveMsgId === aiMsg.messageId) {
-            this.finishThinkingTrace(aiMsg.messageId);
-          }
-          aiMsg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
-          this.isLoading = false;
-          this.streamController = null;
-          this.streamPhase = 0;
-          this.streamingMsgId = '';
-          this.mirrorStreamToLive(streamBubbleId, aiMsg);
-          this.saveTree();
-          this.showToastSafe('回复包含违规内容，已拦截');
-          return;
-        }
         if (aiMsg.content === PLACEHOLDER_LOADING) {
           aiMsg.content = PLACEHOLDER_THINKING;
         }
@@ -2310,8 +2266,6 @@ export struct ChatPage {
       resolveThinkingFor(normalizeThinkingMode(this.anchorPref.thinkingMode), this.replyLengthMode,
         msg.isPodcastMode, regenUserText, regenTopic, regenAiCount);
     this.thinkingEnabledNow = regenThinking.enabled;
-    // ★ 0.271.0：思维链独立输出扫描器（同 sendMessage 合规线）
-    const regenReasonScanner = ContentFilter.makeOutputScanner();
     // ★ 0.271.0：重生成清旧思考态（新尝试新思考卡）
     if (this.thinkingActiveMsgId === msg.messageId) {
       this.finishThinkingTrace(msg.messageId);
@@ -2348,9 +2302,6 @@ export struct ChatPage {
       messagesToSend.push(new ChatMessage(generateMessageId(), 'system', PODCAST_PROMPT));
     }
 
-    // ★ 0.250.0：输出侧实时扫描器（同 sendMessage——重新生成同属 AI 输出，合规口径一致）
-    const regenScanner = ContentFilter.makeOutputScanner();
-
     // ★ 0.271.0：流式调用包装为可降级重发的局部函数（同 sendMessage §3.6 窄门降级）
     let regenDowngraded = false;
     let regenContentStarted = false; // 乱序防护
@@ -2369,24 +2320,6 @@ export struct ChatPage {
           this.finishThinkingTrace(msg.messageId);
         }
         msg.content += chunk;
-        // ★ 0.250.0：输出侧命中即中断流（同 sendMessage 口径）
-        const regenHit: FilterHit | null = regenScanner.scan(chunk);
-        if (regenHit !== null) {
-          const _fo2: Record<string, string> = {}; _fo2['cat'] = regenHit.category;
-          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fo2);
-          if (this.streamController) {
-            this.streamController.cancel();
-          }
-          msg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
-          this.isLoading = false;
-          this.streamController = null;
-          this.streamPhase = 0;
-          this.streamingMsgId = '';
-          this.mirrorStreamToLive(regenBubbleId, msg);
-          this.saveTree();
-          this.showToastSafe('回复包含违规内容，已拦截');
-          return;
-        }
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：流式写穿（防 reconcile 孤儿化丢流尾）
         // ★ 0.191.0：接收态已删（同 sendMessage——死代码）
         this.scroller.scrollEdge(Edge.Bottom);
@@ -2458,27 +2391,6 @@ export struct ChatPage {
         // onReasoning：深度思考内容到达，占位切换为思考态（不持久化，仅 UI 反馈）
         // ★ 0.271.0：乱序防护——phase3 之后到达的 reasoning 分片一律丢弃
         if (regenContentStarted) {
-          return;
-        }
-        // ★ 0.271.0：合规线——思维链同样过输出扫描器（独立实例）
-        const regenReasonHit: FilterHit | null = regenReasonScanner.scan(reasoning);
-        if (regenReasonHit !== null) {
-          const _fr2: Record<string, string> = {}; _fr2['cat'] = regenReasonHit.category;
-          track(this.getUIContext().getHostContext() as common.Context, 'filter_output_hit', _fr2);
-          if (this.streamController) {
-            this.streamController.cancel();
-          }
-          if (this.thinkingActiveMsgId === msg.messageId) {
-            this.finishThinkingTrace(msg.messageId);
-          }
-          msg.content = '（回复包含违规内容，已被安全机制拦截，请重新提问）';
-          this.isLoading = false;
-          this.streamController = null;
-          this.streamPhase = 0;
-          this.streamingMsgId = '';
-          this.mirrorStreamToLive(regenBubbleId, msg);
-          this.saveTree();
-          this.showToastSafe('回复包含违规内容，已拦截');
           return;
         }
         if (msg.content === PLACEHOLDER_LOADING) {
@@ -2910,6 +2822,139 @@ export struct ChatPage {
     }
     this.pendingImages = newList;
     this.saveDraft(); // 0.214.2 删图实时写回草稿
+  }
+
+  // ============================================================
+  // ★ 0.275.0 PC 输入框图片直载（用户需求：Ctrl+V 粘贴剪贴板图片 + 拖拽图片进输入框）
+  //   与选图器同链路（图源 → base64 data URI → pendingImages），发送/草稿/预览链零新增改动
+  // ============================================================
+
+  // 从 uri 读图入待发区（拖拽 File/Image 记录、剪贴板 uri 记录共用；与 selectImages 同读法）
+  async addImageFromUri(uri: string): Promise<boolean> {
+    if (this.pendingImages.length >= 9) {
+      this.showToastSafe('最多添加 9 张图片');
+      return false;
+    }
+    try {
+      const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(file.fd);
+      const arrayBuffer = new ArrayBuffer(stat.size);
+      fileIo.readSync(file.fd, arrayBuffer);
+      fileIo.closeSync(file);
+      const base64 = buffer.from(arrayBuffer).toString('base64');
+      this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
+      this.saveDraft();
+      return true;
+    } catch (err) {
+      this.showToastSafe('图片读取失败，请重试');
+      return false;
+    }
+  }
+
+  // 剪贴板 PixelMap（截图场景）打包 JPEG 入待发区（对齐 0.211.1 压缩档：q80 控制落盘体积）
+  async addPixelMapImage(pm: image.PixelMap): Promise<void> {
+    if (this.pendingImages.length >= 9) {
+      this.showToastSafe('最多添加 9 张图片');
+      return;
+    }
+    try {
+      const packer = image.createImagePacker();
+      const opts: image.PackingOption = { format: 'image/jpeg', quality: 80 };
+      const packed = await packer.packToData(pm, opts);
+      packer.release();
+      const base64 = buffer.from(packed).toString('base64');
+      this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
+      this.saveDraft();
+      this.showToastSafe('已粘贴图片');
+    } catch (err) {
+      this.showToastSafe('图片粘贴失败，请重试');
+    }
+  }
+
+  // Ctrl+V 贴图读取（PasteButton 安全控件点击授权后调用——SUCCESS=本次临时授权，免 READ_PASTEBOARD 声明）：
+  //   pixelMap 优先（截图场景）、uri 次之（图库/文件管理器复制的图片）；无图静默
+  async pasteImageFromClipboard(): Promise<void> {
+    if (this.ctrlVPasting) {
+      return;
+    }
+    this.ctrlVPasting = true;
+    try {
+      const data = await pasteboard.getSystemPasteboard().getData();
+      const count = data.getRecordCount();
+      for (let i = 0; i < count; i++) {
+        const rec = data.getRecordAt(i);
+        if (rec.pixelMap !== undefined && rec.pixelMap !== null) {
+          await this.addPixelMapImage(rec.pixelMap);
+          return;
+        }
+        if (rec.uri !== undefined && rec.uri !== null && rec.uri.length > 0) {
+          const ok = await this.addImageFromUri(rec.uri);
+          if (ok) {
+            this.showToastSafe('已粘贴图片');
+          }
+          return;
+        }
+      }
+      this.showToastSafe('剪贴板中没有图片');
+    } catch (err) {
+      this.showToastSafe('图片粘贴失败，请重试');
+    } finally {
+      this.ctrlVPasting = false;
+    }
+  }
+
+  // 拖拽落点：UDMF 记录流收集全部 Image uri（多选拖入全收，与选图器同上限 9 张截断）
+  handleDropImages(event: DragEvent): void {
+    try {
+      const udata: unifiedDataChannel.UnifiedData = event.getData();
+      const records: Array<unifiedDataChannel.UnifiedRecord> = udata.getRecords();
+      const uris: string[] = [];
+      for (let i = 0; i < records.length; i++) {
+        const rec = records[i];
+        if (rec instanceof unifiedDataChannel.Image) {
+          const uri = rec.imageUri.length > 0 ? rec.imageUri : rec.uri;
+          if (uri.length > 0) {
+            uris.push(uri);
+          }
+        }
+      }
+      if (uris.length === 0) {
+        this.showToastSafe('仅支持拖入图片');
+        return;
+      }
+      // ★ 0.275.2 多张拖入（用户拍板：最多 9 张对齐选图器，超出截前 9 张+提示删了再拖）
+      const room = 9 - this.pendingImages.length;
+      if (room <= 0) {
+        this.showToastSafe('待发区已有 9 张图片，请先删除再拖入');
+        return;
+      }
+      const take = Math.min(uris.length, room);
+      let added = 0;
+      let done = false;
+      const addNext = (idx: number): void => {
+        if (done) {
+          return;
+        }
+        if (idx >= take) {
+          done = true;
+          if (uris.length > room) {
+            this.showToastSafe(`图片较多，已添加前 ${added} 张（上限 9 张）`);
+          } else {
+            this.showToastSafe(`已添加 ${added} 张图片`);
+          }
+          return;
+        }
+        this.addImageFromUri(uris[idx]).then((ok: boolean) => {
+          if (ok) {
+            added++;
+          }
+          addNext(idx + 1);
+        });
+      };
+      addNext(0);
+    } catch (err) {
+      this.showToastSafe('拖入内容无法读取');
+    }
   }
 
   // ★ 0.150：删除入口——首次点 × 弹确认防误触；本次会话内勾选过「不再提示」则直接删
@@ -6522,6 +6567,10 @@ export struct ChatPage {
               return false; // 普通回车放行 → onSubmit 发送
             })
             .margin({ left: 6, right: 6 }) // ★ 0.144：输入框与两侧图标按钮留出呼吸间距
+            // ★ 0.275.1 拖拽事件穿透（华为官方答复实锤根因：TextArea 属「默认可拖入组件」自带默认拖入处理，
+            //   拖拽点落在其上事件被组件吞掉、外层根容器 onDrop 零回调）——allowDrop(null)=拒绝所有拖入类型，
+            //   事件落到根容器三件套（全页面释放区），拖图无论落点都进待发区
+            .allowDrop(null)
 
           // ★ 0.152：画画Icon（屏幕圈选标注，核心新增亮点）——点击截取当前屏幕画面进入涂鸦标注页；
           // 原底栏 🖼️ 图片按钮与 💬 模式按钮移入发送右侧 ▾ 下拉菜单
@@ -6591,6 +6640,8 @@ export struct ChatPage {
                 .onClick(() => {
                   this.startAnnotation(); // 屏幕圈住（与输入行铅笔同功能；切圈选页自然收键盘收工具栏）
                 })
+                // ★ 0.275.0 粘贴图片按钮已删（用户否决 PasteButton 交互）——Ctrl+V 直贴待华为答复
+                //   READ_PASTEBOARD ACL 授权问题后恢复（读取链 pasteImageFromClipboard/addPixelMapImage 保留待命）
               }
               .padding({ left: 10, right: 10, top: 2, bottom: 8 })
             }
@@ -6606,11 +6657,27 @@ export struct ChatPage {
         .margin({ left: 10, right: 10 }) // 卡片水平外边距（+内部输入行 padding 6 ≈ 引用条 16 缩进对齐）
         .borderRadius(RADIUS_CONTROL)
         .backgroundColor(this.theme.surfaceSoft)
-        .border({ width: 0.5, color: this.isInputFocused ? this.theme.strokeBrand : this.theme.strokeCard }) // 聚焦描边高亮
+        .border({ width: 0.5, color: this.dragImageOver ? this.theme.strokeBrand : (this.isInputFocused ? this.theme.strokeBrand : this.theme.strokeCard) }) // 聚焦描边高亮；★ 0.275.1 拖图悬停同款高亮（dragImageOver 由根容器三件套驱动）
         }
         .width('100%')
         .height('100%')
         .id('chatSnapshotRoot') // ★ 0.152：屏幕圈选截图锚点（componentSnapshot.get 截取顶栏+消息列表+输入区当前画面）
+        // ★ 0.275.1 图片拖入全页面化（华为官方客服 AI 答复定位根因：TextArea 属「默认可拖入组件」
+        //   自带默认拖入处理，拖拽点落在其上时事件被吞、外层容器三件套零回调）——正解方式 B：
+        //   ①TextArea .allowDrop(null)（拒绝所有拖入类型=事件穿透，见输入框属性链）
+        //   ②三件套挂页面根容器（用户拍板「拖进对话页面即加载」——整个对话页都是释放区，
+        //     落点无论在消息区/输入区，图都进待发区并高亮输入卡引导）
+        //   ③onDrop 免剪贴板权限（UDMF 通道）；拖图悬停输入卡 strokeBrand 描边反馈
+        .onDragEnter((event: DragEvent) => {
+          this.dragImageOver = true;
+        })
+        .onDragLeave((event: DragEvent) => {
+          this.dragImageOver = false;
+        })
+        .onDrop((event: DragEvent) => {
+          this.dragImageOver = false;
+          this.handleDropImages(event);
+        })
         // ★ 0.182.0：点击输入框外任意处收起软键盘——根容器兜底 onClick（ArkUI 点击不冒泡：
         // 有自身 onClick 的按钮/菜单项各自消费不触发此处；TextArea 点击获焦点自消费；
         // 其余空白/消息区点击落到此处 → clearFocus 收键盘，与发送后收键盘同一先例）
