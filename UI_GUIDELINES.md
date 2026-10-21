@@ -468,6 +468,7 @@
 - **三端一律 `bindSelectionMenu(..., TextResponseType.SELECT)`（选中即弹）——禁用 `TextResponseType.LONG_PRESS`+`bindContextMenu(RightClick)` 组合**。Why：PC 右键走 bindContextMenu 会被系统菜单容器包裹（白底框包暗紫卡=两层皮，用户截图实锤「好丑」）；SELECT 模式 PC 拖选完成即弹自研栏、与手机/Pad 长按同机制同 UI=零容器污染（0.248.0 用户拍板「和手机 pad 长按划词之后的 UI 一样」）
 - 现有落点：正文 SelectionToolbar / 代码块 codeToolbar（CodeBlockView 内两处挂点）/ 复习区 ReviewSelectionToolbar——16 处挂点全量切换
 - 菜单卡规格沿 17.2 同款深色卡（SURFACE_NODE+STROKE_CARD+阴影）；样式改动三处 Builder 同步
+- **★ 0.284.0 PC 纵向菜单（仅 PC）**：正文 SelectionToolbar 在 PC 档改 **Column 纵向排列**，顺序=复制→粘贴→翻译→入知识库→引用→[标记·条件]→删除（粘贴=贴剪贴板图片入待发区；标记 0.191.0 条件项保留置引用后；分隔线改水平 Divider）；手机/Pad 维持横向原序（if 布局分治）。代码块 codeToolbar 与复习区 ReviewSelectionToolbar 未跟改（用户仅指名正文右键菜单）。
 
 ### 18.2 司忆点资产展示（三端分工）
 - **手机/Pad**：桌面卡片（ReviewWidgetCard）底部 9fp 小字「等级头衔 · N 万 SP」（宿主 buildWidgetState 拼串经 siyiLine 注入——卡片进程禁连 store，0.204.1 铁律）

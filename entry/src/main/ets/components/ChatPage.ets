@@ -4677,90 +4677,174 @@ export struct ChatPage {
   }
 
   // ★ 0.145：划词悬浮操作栏（bindSelectionMenu 自定义菜单——完全替代系统小艺菜单）
+  // ★ 0.284.0 PC 纵向菜单（用户需求「只在 PC：右击划词菜单改纵向排列，顺序=复制/粘贴/翻译/入知识库/
+  //   引用/删除」）：粘贴=贴剪贴板图片入待发区（复用 0.283.0 Ctrl+V 同链路+运行时授权链）；标记条件项
+  //   保留（置引用后，0.191.0 功能不删）；手机/Pad 维持横向原序不变（if 布局分治，isPcDevice 恒定值
+  //   非 0.160 铁律的动态状态场景）
   @Builder
   SelectionToolbar() {
-    Row() {
-      Text('翻译')
-        .fontSize(14)
-        .fontColor(this.theme.brandSecondary)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .onClick(() => {
-          this.onToolbarTranslate();
-        })
-      Divider()
-        .vertical(true)
-        .height(16)
-        .color(this.theme.strokeCard)
-      // ★ 0.146：入知识库——选中原文交 AI 提炼草稿，编辑弹窗二次修改后入库
-      Text('入知识库')
-        .fontSize(14)
-        .fontColor(this.theme.brandSecondary)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .onClick(() => {
-          this.onToolbarAddKnowledge();
-        })
-      // ★ 0.235.0：引用——「入知识库」右侧新增（用户拍板）；仅消息正文划词显示（放大弹窗/复习区不显示）；
-      //   样式与相邻按钮一致（this.theme.brandSecondary、fontSize 14、padding 14/8、同款分隔线）
-      if (this.isQuoteTargetKey(this.selKey)) {
-        Divider()
-          .vertical(true)
-          .height(16)
-          .color(this.theme.strokeCard)
-        Text('引用')
-          .fontSize(14)
-          .fontColor(this.theme.brandSecondary)
-          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-          .onClick(() => {
-            this.onToolbarQuote();
-          })
-      }
-      Divider()
-        .vertical(true)
-        .height(16)
-        .color(this.theme.strokeCard)
-      // ★ 0.191.0 重做：标记移到「复制」左边 + 白字（用户定稿）；仅可标记 key 显示
-      // （AI 正文文本段/代码块/表格格；用户消息/复习区/放大页不显示）
-      // ★ 0.191.0 定稿：划选首字符已被标记 → 按钮变「取消标记」（标记/取消统一走工具栏，无独立清除入口）
-      if (this.isBookmarkTargetKey(this.selKey)) {
-        Text(this.bookmarkBtnLabel())
+    if (this.isPcDevice()) {
+      Column() {
+        Text('复制')
           .fontSize(14)
           .fontColor(this.theme.textPrimary)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
           .onClick(() => {
-            this.onToolbarBookmark();
+            this.onToolbarCopy();
+          })
+        Divider()
+          .color(this.theme.strokeCard)
+        // ★ 0.284.0：粘贴——剪贴板图片入待发区（菜单点击场景非 silent：无图提示「剪贴板中没有图片」）
+        Text('粘贴')
+          .fontSize(14)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.pasteImageFromClipboard();
+          })
+        Divider()
+          .color(this.theme.strokeCard)
+        Text('翻译')
+          .fontSize(14)
+          .fontColor(this.theme.brandSecondary)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarTranslate();
+          })
+        Divider()
+          .color(this.theme.strokeCard)
+        // ★ 0.146：入知识库——选中原文交 AI 提炼草稿，编辑弹窗二次修改后入库
+        Text('入知识库')
+          .fontSize(14)
+          .fontColor(this.theme.brandSecondary)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarAddKnowledge();
+          })
+        // ★ 0.235.0：引用——仅消息正文划词显示（放大弹窗/复习区不显示）
+        if (this.isQuoteTargetKey(this.selKey)) {
+          Divider()
+            .color(this.theme.strokeCard)
+          Text('引用')
+            .fontSize(14)
+            .fontColor(this.theme.brandSecondary)
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .onClick(() => {
+              this.onToolbarQuote();
+            })
+        }
+        // ★ 0.191.0 标记（条件项保留——置引用后；划选首字符已标记→「取消标记」）
+        if (this.isBookmarkTargetKey(this.selKey)) {
+          Divider()
+            .color(this.theme.strokeCard)
+          Text(this.bookmarkBtnLabel())
+            .fontSize(14)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .onClick(() => {
+              this.onToolbarBookmark();
+            })
+        }
+        Divider()
+          .color(this.theme.strokeCard)
+        // ★ 0.160：划词删除——红色警示（破坏性操作），确认防误触与 × 按钮共享状态
+        Text('删除')
+          .fontSize(14)
+          .fontColor(this.theme.danger)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarDelete();
+          })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .backgroundColor(this.theme.surfaceNode)
+      .borderRadius(RADIUS_CONTROL)
+      .border({ width: 0.5, color: this.theme.strokeCard })
+      .shadow({ radius: 12, color: this.theme.shadowColorSoft, offsetX: 0, offsetY: 4 })
+    } else {
+      Row() {
+        Text('翻译')
+          .fontSize(14)
+          .fontColor(this.theme.brandSecondary)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarTranslate();
           })
         Divider()
           .vertical(true)
           .height(16)
           .color(this.theme.strokeCard)
+        // ★ 0.146：入知识库——选中原文交 AI 提炼草稿，编辑弹窗二次修改后入库
+        Text('入知识库')
+          .fontSize(14)
+          .fontColor(this.theme.brandSecondary)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarAddKnowledge();
+          })
+        // ★ 0.235.0：引用——「入知识库」右侧新增（用户拍板）；仅消息正文划词显示（放大弹窗/复习区不显示）；
+        //   样式与相邻按钮一致（this.theme.brandSecondary、fontSize 14、padding 14/8、同款分隔线）
+        if (this.isQuoteTargetKey(this.selKey)) {
+          Divider()
+            .vertical(true)
+            .height(16)
+            .color(this.theme.strokeCard)
+          Text('引用')
+            .fontSize(14)
+            .fontColor(this.theme.brandSecondary)
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .onClick(() => {
+              this.onToolbarQuote();
+            })
+        }
+        Divider()
+          .vertical(true)
+          .height(16)
+          .color(this.theme.strokeCard)
+        // ★ 0.191.0 重做：标记移到「复制」左边 + 白字（用户定稿）；仅可标记 key 显示
+        // （AI 正文文本段/代码块/表格格；用户消息/复习区/放大页不显示）
+        // ★ 0.191.0 定稿：划选首字符已被标记 → 按钮变「取消标记」（标记/取消统一走工具栏，无独立清除入口）
+        if (this.isBookmarkTargetKey(this.selKey)) {
+          Text(this.bookmarkBtnLabel())
+            .fontSize(14)
+            .fontColor(this.theme.textPrimary)
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .onClick(() => {
+              this.onToolbarBookmark();
+            })
+          Divider()
+            .vertical(true)
+            .height(16)
+            .color(this.theme.strokeCard)
+        }
+        Text('复制')
+          .fontSize(14)
+          .fontColor(this.theme.textPrimary)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarCopy();
+          })
+        Divider()
+          .vertical(true)
+          .height(16)
+          .color(this.theme.strokeCard)
+        // ★ 0.191.0：「全选」按钮移除（用户定稿——工具栏过长致「删除」超出屏幕边界；
+        //   代码块工具栏的全选保留：顶替已删的顶栏⧉复制按钮，全选→复制整段代码）
+        // ★ 0.160：划词删除——AI 超长回复时免滚到 × 按钮就地删本条消息；
+        // 红色警示（破坏性操作），确认防误触与 × 按钮共享状态
+        Text('删除')
+          .fontSize(14)
+          .fontColor(this.theme.danger)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.onToolbarDelete();
+          })
       }
-      Text('复制')
-        .fontSize(14)
-        .fontColor(this.theme.textPrimary)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .onClick(() => {
-          this.onToolbarCopy();
-        })
-      Divider()
-        .vertical(true)
-        .height(16)
-        .color(this.theme.strokeCard)
-      // ★ 0.191.0：「全选」按钮移除（用户定稿——工具栏过长致「删除」超出屏幕边界；
-      //   代码块工具栏的全选保留：顶替已删的顶栏⧉复制按钮，全选→复制整段代码）
-      // ★ 0.160：划词删除——AI 超长回复时免滚到 × 按钮就地删本条消息；
-      // 红色警示（破坏性操作），确认防误触与 × 按钮共享状态
-      Text('删除')
-        .fontSize(14)
-        .fontColor(this.theme.danger)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .onClick(() => {
-          this.onToolbarDelete();
-        })
+      .backgroundColor(this.theme.surfaceNode)
+      .borderRadius(RADIUS_CONTROL)
+      .border({ width: 0.5, color: this.theme.strokeCard })
+      .shadow({ radius: 12, color: this.theme.shadowColorSoft, offsetX: 0, offsetY: 4 })
     }
-    .backgroundColor(this.theme.surfaceNode)
-    .borderRadius(RADIUS_CONTROL)
-    .border({ width: 0.5, color: this.theme.strokeCard })
-    .shadow({ radius: 12, color: this.theme.shadowColorSoft, offsetX: 0, offsetY: 4 })
   }
 
   // ★ 0.169.1：复习区划词悬浮操作栏——AI 气泡底部生词/知识卡复习区专用（翻译 | 入知识库 | 复制）。
