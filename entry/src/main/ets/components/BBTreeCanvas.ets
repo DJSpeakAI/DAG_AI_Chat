@@ -1783,7 +1783,7 @@ export struct BBTreeCanvas {
             }
             .width('100%')
           }
-          .width('70%')
+          .width(this.isTablet ? 400 : '70%') // ★ 0.286.1：断点制（UI_GUIDELINES 12a 定式）——PC/Pad 固定 400（确认弹窗窄档），手机 70% 不动（用户拍板：70% 裸百分比在宽屏超宽）
           .padding(20)
           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
           .backgroundColor(this.theme.surfaceNode)
@@ -1847,7 +1847,7 @@ export struct BBTreeCanvas {
             }
             .width('100%')
           }
-          .width('70%')
+          .width(this.isTablet ? 400 : '70%') // ★ 0.286.1：断点制（UI_GUIDELINES 12a 定式）——PC/Pad 固定 400（确认弹窗窄档），手机 70% 不动（用户拍板：70% 裸百分比在宽屏超宽）
           .padding(20)
           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
           .backgroundColor(this.theme.surfaceNode)

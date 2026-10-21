@@ -49,7 +49,7 @@ import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, conne
 import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
-  import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, HookSpec, parseHookJsonResponse, scanBlockSpans, mergeHooksIntoContent } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）；★ 0.237.1：blockRenderedText（划词取词基准=渲染态文本）；★ 0.269.0：两段式钩子合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）
+  import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, HookSpec, parseHookJsonResponse, scanBlockSpans, mergeHooksIntoContent, buildTableMarkdown, buildTablePlainText } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）；★ 0.237.1：blockRenderedText（划词取词基准=渲染态文本）；★ 0.269.0：两段式钩子合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）；★ 0.285.5：表格整表工具两件（复制整表 MD/文本模式展示）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
@@ -69,9 +69,15 @@ import { ProfileStore, connectProfileObservations, buildCardView, updateProfileF
   MemoryInjectStatsStore, connectMemoryInjectStats, recordMemoryInjectStats,
   connectMemoryPref, isMemoryOn } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎一期（画像观察行+分支摘要头+注入埋点）
 import { triggerAiRerank, getRerankWordIds, getRerankCardIds, rerankDisplayBatch } from '../utils/AiRerank'; // ★ 0.268.0：司忆区 AI 智慧排序（发送时预触发+渲染时消费 AI 序，失败静默兜底本地序）
+import { fetchWebContextForMessage, detectWebUrls, WebFetchSummary } from '../utils/WebFetchUtil'; // ★ 0.286.0：AI 读网页一期（纯客户端抓取——消息含链接时抽正文一次性注入本次请求，失败不阻断）
 
 // ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
 const glowHighlight: boolean = true;
+// ★ 0.285.0 对话正文行高倍率（UI_GUIDELINES 二十九章）：WCAG 1.4.12 行高 ≥1.5 为下限、1.75 为中文长文舒适档（对标 DeepSeek 16/28）
+//   铁律：AI 正文（MdBlockText 行高公式）、用户消息气泡、书签回退纯文本段三处必须走同一倍率，禁止单侧收紧。
+const BODY_LINE_HEIGHT_RATIO: number = 1.75;
+// ★ 0.285.0 PC 划词菜单定宽：条目文字 2~4 字，180vp 内整行可命中且不出现大片空白。
+const PC_SELECTION_MENU_WIDTH: number = 180;
 
 // ★ 新增：Markdown 解析段（0.121）
 class MdSegment {
@@ -481,6 +487,8 @@ struct CodeBlockView {
           .backgroundColor(this.theme.bgCanvas)
           .borderRadius(RADIUS_CONTROL)
           .copyOption(CopyOptions.LocalDevice)
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+          .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
           .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
             onAppear: () => {
               this.onMenuAppear(this.textKey);
@@ -524,6 +532,8 @@ struct CodeBlockView {
             .backgroundColor(this.theme.bgCanvas)
             .borderRadius(RADIUS_CONTROL)
             .copyOption(CopyOptions.LocalDevice)
+            .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+            .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
             .bindSelectionMenu(TextSpanType.TEXT, this.codeToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
               onAppear: () => {
                 this.onMenuAppear(this.textKey);
@@ -634,13 +644,16 @@ export struct ChatPage {
    @Local selEnd: number = -1;             // ★ 0.191.0：选中结束偏移
    // ★ 0.191.0：粘性选中区间（不被 clearSelectionState 清理）——表格横向 Scroll 内拖选时菜单消失重弹
    // 丢失 selStart/selEnd，点「标记」误报「请划选文字」；同 key 兜底恢复（见 effectiveSelStart）
-   private stickySelKey: string = '';
-   private stickyStart: number = -1;
-   private stickyEnd: number = -1;
+    private stickySelKey: string = '';
+    private stickyStart: number = -1;
+    private stickyEnd: number = -1;
+    // ★ 0.285.5：粘性选中文本副本（同上族）——表格跨格拖选时拖出格子边界系统即取消选区，
+    //   clearSelectionState 清空 selText 后 Ctrl+Shift+C/复制/翻译连锁报「请先划选文字」
+    //   （用户实锤「找不到词」）；lastSelKey 配对兜底（见 effectiveSelText）
+    private stickySelText: string = '';
    @Local selKey: string = '';             // 当前激活选择的 Text 标识（`${msgId}|u` 用户消息 / `${msgId}|${segIdx}` AI 段）
    // ★ 0.279.0：输入框（TextArea）自身选区——Ctrl+C 双闸之一：框内有有效选区时放行系统默认复制
-   private inputSelStart: number = -1;
-   private inputSelEnd: number = -1;
+  // （0.285.3 删 inputSelStart/inputSelEnd——输入框选区追踪随 Ctrl+C 接管一起退役）
    @Local selectAllKey: string = '';       // 全选受控态标识（`${selKey}|${nonce}`，nonce 递增确保重复点击仍触发属性重应用）
    @Local selectAllNonce: number = 0;      // 全选触发计数（配合 selectAllKey）
     // ★ 0.235.0 修法 B：最近一次有效选择的 key 副本（不被 clearSelectionState 清理）——
@@ -676,7 +689,10 @@ export struct ChatPage {
   @Local deleteConfirmVisible: boolean = false; // 确认弹窗可见
   @Local deleteConfirmMessageId: string = '';   // 待删除的消息 ID
   @Local deleteConfirmNoAsk: boolean = false;   // 弹窗内「不再提示」勾选框当前状态（每次打开复位）
-  @Local deleteSkipConfirm: boolean = false;    // 本次会话内已勾选「不再提示」（aboutToAppear 重置）
+   @Local deleteSkipConfirm: boolean = false;    // 本次会话内已勾选「不再提示」（aboutToAppear 重置）
+   // ★ 0.286.0：AI 内容举报（华为上架合规 G.3.8——AI 对话模块需显著举报入口）：flag 按钮 → 本地确认弹窗 → mailto
+   @Local reportConfirmVisible: boolean = false; // 举报确认弹窗可见
+   @Local reportTargetModel: string = '';        // 被举报消息的模型 ID（邮件正文自动附，便于追溯）
   // ★ 0.247.1：PC 判定——true=停用消息滑动删除（PC 鼠标按下拖动是划词手势，被 swipe 抢走）。
   //   ★ 0.247.2 改设备形态判定：deviceInfo.deviceType==='2in1'（Matebook=2in1）——弃 inputDevice
   //   sources 探测（Pad/手机外接触控板/蓝牙鼠标或系统虚拟设备即误报 true → 滑动删除被误停）；
@@ -761,6 +777,9 @@ export struct ChatPage {
   @Local tableZoomHeader: string[] = [];
   @Local tableZoomRows: string[][] = [];
   @Local tableZoomWrap: boolean = false;  // 放大视图默认不换行（与气泡内表格默认一致）
+  // ★ 0.285.5：文本模式——整表渲染为一个 Text（行间 \n、格间 ' | '），可整体划词（翻译/入知识库/
+  //   引用/复制/系统 Ctrl+C 全链路）；格子架构选区不跨组件，跨格/整表划选唯一落点在此
+  @Local tableZoomTextMode: boolean = false;
   // ★ 0.150：全局设置弹窗状态（顶栏 ⚙ 唤起；遮罩不关闭，✕/返回键走弹窗内未保存确认）
       // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
@@ -851,6 +870,7 @@ export struct ChatPage {
     this.tableZoomHeader = header;
     this.tableZoomRows = rows;
     this.tableZoomWrap = false;
+    this.tableZoomTextMode = false; // ★ 0.285.5：每次打开重置文本模式（默认格子视图）
     this.tableZoomVisible = true;
   }
 
@@ -1234,10 +1254,12 @@ export struct ChatPage {
       this.MdInlineSpans(blk.lines, fontSize)
     }
       .fontSize(this.fs(fontSize))
-      .lineHeight(this.fs(Math.round(fontSize * 1.5)))
+      .lineHeight(this.fs(Math.round(fontSize * BODY_LINE_HEIGHT_RATIO)))
       .fontColor(this.isHeadingKind(blk.kind) ? this.theme.brandSecondary : (blk.kind === 'quote' ? this.theme.textSecondary : this.theme.textPrimary)) // ★ 0.237.0 文章小标题品牌色（整条染色不拆编号——AI 编号格式不统一，拆解有误伤风险）
       .fontWeight(this.isHeadingKind(blk.kind) ? 600 : 400)
       .copyOption(CopyOptions.LocalDevice)
+      .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+      .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
       .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
         onAppear: () => {
           this.selKey = selKey;
@@ -1409,6 +1431,8 @@ export struct ChatPage {
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .textAlign(TextAlign.Center)
                 .copyOption(CopyOptions.LocalDevice)
+                .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                 .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                   onAppear: () => {
                     this.selKey = `${keyBase}h${ci}`;
@@ -1458,6 +1482,8 @@ export struct ChatPage {
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .textAlign(TextAlign.Center)
                   .copyOption(CopyOptions.LocalDevice)
+                  .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                  .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                   .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                     onAppear: () => {
                       this.selKey = `${keyBase}r${ri}c${ci}`;
@@ -1806,6 +1832,7 @@ export struct ChatPage {
   // ★ 0.191.0：流式请求阶段（等待态一行提示——用户核心诉求：干等难受，必须告知当前在哪一步）
   // 0=无 1=已提交请求（点发送/刷新瞬间） 2=等待服务器返回（思考模型思考阶段——锅甩给服务器，用户知道不是自己设备的问题）
   // 3=整理历史记忆中（★ 0.199.0：上下文超 48K 触发线时的摘要生成期间，一次完整 LLM 调用 5~15s，平时不出现）
+  // 4=正在读取网页（★ 0.286.0：消息含链接时的网页抓取期间，最多 2 页 × 12s 超时，平时不出现）
   // 「正在接收内容」状态已删（用户指出：首字节一到占位即消失，该状态永远显示不出来=死代码）
   @Local streamPhase: number = 0;
 
@@ -1862,7 +1889,8 @@ export struct ChatPage {
   waitingView() { // ★ 0.191.0 清理：单行化后不再区分 LOADING/THINKING 文案，死参数 content 移除
     Row() {
       WaitingDots()
-      Text(this.streamPhase === 3 ? '整理历史记忆中' // ★ 0.199.0：阶段 3——上下文压缩摘要生成期间（无省略号，遵循 0.191.0 定稿：三点动画已表达进行中）
+      Text(this.streamPhase === 4 ? '正在读取网页' // ★ 0.286.0：阶段 4——消息含链接时的网页抓取期间（无省略号，遵循 0.191.0 定稿）
+        : this.streamPhase === 3 ? '整理历史记忆中' // ★ 0.199.0：阶段 3——上下文压缩摘要生成期间（无省略号，遵循 0.191.0 定稿：三点动画已表达进行中）
         : this.streamPhase === 1 ? (this.thinkingEnabledNow ? '已提交请求 · 深度思考' : '已提交请求') // ★ 0.271.0：思考档生效加后缀（计费透明——SP 预估行任务书 §3.8）
         : this.streamPhase === 2 ? (this.thinkingEnabledNow ? '深度思考中' : '等待服务器返回') // ★ 0.271.0：三阶段状态行「深度思考中→生成正文→编排阅读节奏」首段
         : 'AI 正在回复')
@@ -2098,6 +2126,30 @@ export struct ChatPage {
         }
       }
       this.quoteText = ''; // 发送后引用栏清空（一次性消费）
+    }
+
+    // ★ 0.286.0：AI 读网页一期——消息含 http/https 链接时，从设备直接抓取网页正文，以 system
+    //   消息一次性拼进本次请求副本（复刻 0.235.0 划词引用模式：气泡原文/持久化/Schema 零改动）；
+    //   失败不阻断发送（块内列明失败原因，模型不瞎编）；正文已过 ContentFilter、截断 6000 字符、
+    //   最多 2 个链接（WebFetchUtil 内双闸，防 token 爆炸多扣 SP）
+    if (detectWebUrls(userMsg.content).length > 0) {
+      this.streamPhase = 4; // 抓取期间独立等待态（最多 2 页 × 12s）
+      let webSummary: WebFetchSummary;
+      try {
+        webSummary = await fetchWebContextForMessage(userMsg.content);
+      } catch (_we) {
+        webSummary = { block: '', okCount: 0, failCount: 0 }; // 全链兜底：异常不阻断发送
+      } finally {
+        this.streamPhase = 1; // 恢复阶段 1（成败都继续，请求即将真正发出）
+      }
+      if (webSummary.block.length > 0) {
+        messagesToSend.push(new ChatMessage(generateMessageId(), 'system', webSummary.block));
+        if (webSummary.okCount > 0) {
+          this.showToastSafe(`已读取 ${webSummary.okCount} 个网页，AI 将结合网页内容回答`);
+        } else {
+          this.showToastSafe('网页读取失败，AI 将按原文回答');
+        }
+      }
     }
 
     // ★ 0.282.0：回复模式两档——深度思考关=中回复（prompt 内按问题类型自适应短/常规篇幅）/ 开=长回复
@@ -3102,6 +3154,53 @@ export struct ChatPage {
   }
 
   // ============================================================
+  // ★ 0.286.0：AI 内容举报（华为上架合规 G.3.8——AI 对话模块需显著举报入口；
+  //   链路复刻 0.253.0 openComplaintMail：mailto 预填 + 无邮件应用降级复制邮箱）
+  // ============================================================
+
+  // flag 按钮 → 本地确认弹窗（防误触；正文自动附模型 ID 便于追溯）
+  requestReportMessage(model: string): void {
+    this.reportTargetModel = model;
+    this.reportConfirmVisible = true;
+  }
+
+  // 确认举报 → 拉起邮件（主题/正文预填；失败降级复制邮箱 + toast，禁止展示原始英文报错）
+  confirmReportMessage(): void {
+    this.reportConfirmVisible = false;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const modelLabel = this.reportTargetModel.length > 0 ? this.reportTargetModel : '未知模型';
+    this.reportTargetModel = '';
+    if (context === undefined || context === null) {
+      this.copyReportEmail();
+      return;
+    }
+    const subject = encodeURIComponent('DAGAI AI 内容举报');
+    const body = encodeURIComponent(
+      `举报对象：AI 生成的回复内容\n涉及模型：${modelLabel}\n举报描述：\n\n（请描述违规内容及发生位置，可附截图）`);
+    const url = `mailto:1725912449@qq.com?subject=${subject}&body=${body}`;
+    try {
+      context.openLink(url).catch(() => {
+        this.copyReportEmail();
+        this.showToastSafe('未找到邮件应用，邮箱已复制请手动发送');
+      });
+    } catch (_e) {
+      this.copyReportEmail();
+      this.showToastSafe('未找到邮件应用，邮箱已复制请手动发送');
+    }
+  }
+
+  // 降级：复制举报邮箱到剪贴板
+  copyReportEmail(): void {
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, '1725912449@qq.com');
+      pasteboard.getSystemPasteboard().setData(data).catch(() => {});
+      this.showToastSafe('邮箱已复制');
+    } catch (_e2) {
+      this.showToastSafe('复制失败，请手动记录邮箱');
+    }
+  }
+
+  // ============================================================
   // ★ 0.145：划词翻译——选择状态管理
   // ============================================================
 
@@ -3146,6 +3245,7 @@ export struct ChatPage {
     this.stickySelKey = key;
     this.stickyStart = start;
     this.stickyEnd = end;
+    this.stickySelText = this.selText; // ★ 0.285.5：文本粘性副本（selText 清空后 effectiveSelText 兜底）
   }
 
   // 选择菜单关闭时清理全部选择状态（点空白/点菜单按钮后由 onDisappear 触发）
@@ -3179,6 +3279,18 @@ export struct ChatPage {
     return -1;
   }
 
+  // ★ 0.285.5：有效选中文本（selText 优先；被 clearSelectionState 误清时 lastSelKey 与
+  //   粘性副本配对兜底——表格跨格拖选/菜单消失重弹场景 Ctrl+Shift+C/复制/翻译三消费点共用）
+  effectiveSelText(): string {
+    if (this.selText.length > 0) {
+      return this.selText;
+    }
+    if (this.lastSelKey.length > 0 && this.stickySelKey === this.lastSelKey) {
+      return this.stickySelText;
+    }
+    return '';
+  }
+
   // 关闭当前激活 Text 的选择菜单（悬浮栏按钮点击后调用）
   // ★ 0.235.0 修法 B：selKey 为空（onDisappear 先行清空）但系统菜单残留时，退用 lastSelKey 副本兜底关闭
   closeActiveSelectionMenu(): void {
@@ -3199,7 +3311,7 @@ export struct ChatPage {
     if (!requireLoginForCloud()) {
       return;
     }
-    const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
+    const text = this.effectiveSelText().trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态（0.285.5 粘性兜底）
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
       return;
@@ -3244,21 +3356,38 @@ export struct ChatPage {
       });
   }
 
+  // ★ 0.285.2（华为官方范式）：剪贴板同一时间只支持一个复制操作——失败立即重试大概率再冲突，
+  //   改「await + 延迟 300ms 重试（上限 2 次）+ 每次重新构造 PasteData」；成功/失败 toast 反馈。
+  //   写剪贴板零权限（0.279.0 华为官方答复）。
+  async copyTextToClipboard(text: string, retry: number = 0): Promise<boolean> {
+    if (text.length === 0) {
+      return false;
+    }
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      await pasteboard.getSystemPasteboard().setData(data);
+      this.showToastSafe('已复制');
+      return true;
+    } catch (e) {
+      if (retry < 2) {
+        await new Promise<void>((resolve: () => void) => {
+          setTimeout(resolve, 300); // 延迟重试，避开并发复制冲突窗口
+        });
+        return this.copyTextToClipboard(text, retry + 1);
+      }
+      this.showToastSafe('复制失败，请重试');
+      return false;
+    }
+  }
+
   // 「复制」：选中文本写入系统剪贴板
   onToolbarCopy(): void {
-    const text = this.selText; // 先取值（同上）
+    const text = this.effectiveSelText(); // 先取值（同上；0.285.5 粘性兜底）
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
       return;
     }
-    try {
-      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-      pasteboard.getSystemPasteboard().setData(data).catch((err: Error) => {
-        // 写入失败静默忽略（复制为辅助功能，不打断主流程）
-      });
-    } catch (e) {
-      // 复制异常静默忽略（防崩溃）
-    }
+    this.copyTextToClipboard(text);
   }
 
   // ★ 0.235.2：复制全文——消息操作行按钮（AI 消息 stripAnchorMarks 剥锚点标记防污染剪贴板，
@@ -3443,7 +3572,7 @@ export struct ChatPage {
   // 「引用」：先取值再关菜单（同 onToolbarTranslate 模式——closeSelectionMenu 可能同步触发 onDisappear 清状态），
   // 暂存 quotePendingText 后弹二选一；取消则丢弃不生效
   onToolbarQuote(): void {
-    const text = this.selText.trim();
+    const text = this.effectiveSelText().trim(); // 0.285.5 粘性兜底（同上族）
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
       return;
@@ -4167,7 +4296,7 @@ export struct ChatPage {
       connectConfirmDialog().spRechargePromptVisible = true;
       return;
     }
-    const text = this.selText.trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态
+    const text = this.effectiveSelText().trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态（0.285.5 粘性兜底）
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
       return;
@@ -4689,6 +4818,7 @@ export struct ChatPage {
           .fontSize(14)
           .fontColor(this.theme.textPrimary)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .width('100%')
           .onClick(() => {
             this.onToolbarCopy();
           })
@@ -4699,6 +4829,7 @@ export struct ChatPage {
           .fontSize(14)
           .fontColor(this.theme.textPrimary)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .width('100%')
           .onClick(() => {
             this.pasteImageFromClipboard();
           })
@@ -4708,6 +4839,7 @@ export struct ChatPage {
           .fontSize(14)
           .fontColor(this.theme.brandSecondary)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .width('100%')
           .onClick(() => {
             this.onToolbarTranslate();
           })
@@ -4718,6 +4850,7 @@ export struct ChatPage {
           .fontSize(14)
           .fontColor(this.theme.brandSecondary)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .width('100%')
           .onClick(() => {
             this.onToolbarAddKnowledge();
           })
@@ -4729,6 +4862,7 @@ export struct ChatPage {
             .fontSize(14)
             .fontColor(this.theme.brandSecondary)
             .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .width('100%')
             .onClick(() => {
               this.onToolbarQuote();
             })
@@ -4741,6 +4875,7 @@ export struct ChatPage {
             .fontSize(14)
             .fontColor(this.theme.textPrimary)
             .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .width('100%')
             .onClick(() => {
               this.onToolbarBookmark();
             })
@@ -4752,11 +4887,13 @@ export struct ChatPage {
           .fontSize(14)
           .fontColor(this.theme.danger)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .width('100%')
           .onClick(() => {
             this.onToolbarDelete();
           })
       }
       .alignItems(HorizontalAlign.Start)
+      .width(PC_SELECTION_MENU_WIDTH) // ★ 0.285.0：定宽收口——原无宽度约束时 Divider 把纵向菜单撑到菜单上限（宽得离谱），对标鸿蒙系统右键菜单；PC 划词标准宽度
       .backgroundColor(this.theme.surfaceNode)
       .borderRadius(RADIUS_CONTROL)
       .border({ width: 0.5, color: this.theme.strokeCard })
@@ -5676,7 +5813,7 @@ export struct ChatPage {
                         Column() {
                         Text(msg.content, { controller: this.getOrCreateTextController(`${msg.messageId}|u`) })
                           .fontSize(this.fs(16))
-                          .lineHeight(this.fs(24))
+                          .lineHeight(this.fs(Math.round(16 * BODY_LINE_HEIGHT_RATIO)))
                           .fontColor(this.theme.userMsgText) // ★ 0.278.13：用户消息正文比 AI（纯白 textPrimary）暗一档（用户拍板「用户发的至少比 AI 的暗」）
                           .padding(10)
                           .borderRadius(RADIUS_NODE) // ★ 0.181.0：气泡圆角对齐节点卡片规格（8→18）
@@ -5684,6 +5821,8 @@ export struct ChatPage {
                           .copyOption(CopyOptions.LocalDevice)
                           .constraintSize({ maxWidth: '100%' }) // ★ 0.233.0：气泡宽度拉满（用户拍板「用户发的和 AI 回复的宽度全部凑齐拉满、填平对齐」——删除已由左滑/右滑/长按实现，不再留侧边空间）；0.190.3 原 90%、0.148 原约束——长文本自动换行，防溢出屏幕
                           // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
+                           .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                           .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                            .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                              onAppear: () => {
                                this.selKey = `${msg.messageId}|u`;
@@ -5797,10 +5936,12 @@ export struct ChatPage {
                                  }
                                }
                                  .fontSize(this.fs(16))
-                                 .lineHeight(this.fs(24))
+                                 .lineHeight(this.fs(Math.round(16 * BODY_LINE_HEIGHT_RATIO)))
                                  .fontColor(this.theme.textPrimary)
                                  .copyOption(CopyOptions.LocalDevice)
                                  // ★ 0.145：长按弹自研选择工具栏；onAppear 记录来源 key，onDisappear 清理选中状态
+                                  .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                                  .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                                   .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                                     onAppear: () => {
                                       this.selKey = `${msg.messageId}|${idx}`;
@@ -5932,6 +6073,8 @@ export struct ChatPage {
                                         .onClick(() => {
                                           this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                         })
+                                        .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                                        .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                                         .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                                           onAppear: () => {
                                             this.selKey = `${msg.messageId}|rw${idx}`;
@@ -6001,6 +6144,8 @@ export struct ChatPage {
                                           .onClick(() => {
                                             this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                           })
+                                          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                                          .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                                           .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                                             onAppear: () => {
                                               this.selKey = `${msg.messageId}|rwf${idx}`;
@@ -6035,6 +6180,8 @@ export struct ChatPage {
                                          .onClick(() => {
                                            this.onReviewWordTap(`${msg.messageId}|${w.id}`);
                                          })
+                                         .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                                         .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                                          .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                                            onAppear: () => {
                                              this.selKey = `${msg.messageId}|rwe${idx}`;
@@ -6143,6 +6290,8 @@ export struct ChatPage {
                                             .onClick(() => {
                                               this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                             })
+                                            .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                                            .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                                             .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                                               onAppear: () => {
                                                 this.selKey = `${msg.messageId}|rk${idx}`;
@@ -6198,6 +6347,8 @@ export struct ChatPage {
                                             .onClick(() => {
                                               this.onReviewWordTap(`${msg.messageId}|${card.id}`);
                                             })
+                                             .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                                             .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                                              .bindSelectionMenu(TextSpanType.TEXT, this.ReviewSelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                                                onAppear: () => {
                                                  this.selKey = `${msg.messageId}|rkd${idx}`;
@@ -6368,19 +6519,31 @@ export struct ChatPage {
                             .onClick(() => {
                               this.requestDeleteMessage(msg.messageId);
                             })
-                            // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
-                            // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
-                            // ★ 0.237.4：从第2挪到第5收尾（用户拍板，低频 destructive 前置、再生垫后）
-                            Row() {
-                              Image($r('app.media.refresh'))
-                                .width(14)
-                                .height(14)
-                                .objectFit(ImageFit.Contain)
-                            }
-                            .padding(4)
-                            .onClick(() => {
-                              this.regenerateMessage(msg);
-                            })
+                             // ★ 0.149：刷新按钮——原位重新生成本条 AI 回复
+                             // ★ 0.195.0：🔄 emoji 换 refresh.svg 单色图标（UI 统一）
+                             // ★ 0.237.4：从第2挪到第5收尾（用户拍板，低频 destructive 前置、再生垫后）
+                             Row() {
+                               Image($r('app.media.refresh'))
+                                 .width(14)
+                                 .height(14)
+                                 .objectFit(ImageFit.Contain)
+                             }
+                             .padding(4)
+                             .onClick(() => {
+                               this.regenerateMessage(msg);
+                             })
+                             // ★ 0.286.0：举报本条 AI 内容（上架合规 G.3.8——AI 模块显著举报入口）：
+                             //   确认后拉起邮件（无邮件应用降级复制邮箱），正文自动附模型 ID
+                             Row() {
+                               Image($r('app.media.flag'))
+                                 .width(14)
+                                 .height(14)
+                                 .objectFit(ImageFit.Contain)
+                             }
+                             .padding(4)
+                             .onClick(() => {
+                               this.requestReportMessage(msg.model);
+                             })
                             // ★ 0.237.3：弹性占位——把右侧模型信息组推到行尾（右对齐）
                             Blank()
                             // ★ 0.238.0：token 合并单一滑动区（方案 1 拍板）——手机滑一次看全，
@@ -6497,14 +6660,14 @@ export struct ChatPage {
               this.recordReadingPosition();
             })
             // ★ 0.215.9 对话页 Ctrl+滚轮缩放（用户核心诉求翻案成功）：
-            // BaseEvent.getModifierKeyState(['ctrl'])（API12+，d.ts 实锤支持 Ctrl/Alt/Shift）——
+            // BaseEvent.getModifierKeyState(['Ctrl'])（API12+，d.ts 实锤支持 Ctrl/Alt/Shift）——
             // 此前"Ctrl 判死"基于 MouseEvent 无按键状态，AxisEvent 继承 BaseEvent 有此方法；
             // Ctrl 按住+滚轮 → 正文/表格/代码块/司忆区字号缩放（fs 体系+持久化全复用）；
             // 未按 Ctrl → 零干预（消息列表正常滚动翻页）；仅宽屏启用（手机端无缩放=既定设计）
             .onAxisEvent((event: AxisEvent) => {
               let ctrl = false;
               try {
-                ctrl = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+                ctrl = event.getModifierKeyState ? event.getModifierKeyState(['Ctrl']) : false;
               } catch (e) {
                 ctrl = false;
               }
@@ -6742,12 +6905,7 @@ export struct ChatPage {
             .backgroundColor(Color.Transparent) // ★ 0.278.2：去 TextArea 自带默认灰底（用户截图实锤=孤立小气泡，图标被留在外面）——容器底色由外层卡统一承担
             .placeholderColor(this.theme.textTertiary) // ★ 0.278.2：占位提示字调浅（用户拍板「太亮了」——提示语低调、与正文区隔）
             .placeholderFont({ size: 13 }) // ★ 0.279.17：恢复原生占位字号 13（0.279.16 自绘 overlay 真机整行不可见已回退；overlay 内 height 100% 相对未定尺寸容器致 0 高）
-            // ★ 0.279.0：输入框自身选区追踪（Ctrl+C 双闸之一——框内有选中文字时放行系统默认复制，
-            //   防「上次消息划词残留 selText」劫持输入框内的 Ctrl+C；光标落下即视为无选区）
-            .onTextSelectionChange((start: number, end: number) => {
-              this.inputSelStart = start;
-              this.inputSelEnd = end;
-            })
+            // （0.285.3 删 onTextSelectionChange 选区追踪——随 Ctrl+C 自研接管一起退役，复制交还系统默认）
             // ★ 0.215.11 回车=发送（用户要求标准 IM 交互；NEW_LINE 时代回车纯换行已废弃）；
             //   Shift+回车=换行：物理键盘经 onKeyEvent 判 Shift（组件层 KeyEvent.getModifierKeyState，
             //   滚轮翻案同源 API）插 \n 并标记时间窗，onSubmit 窗内跳过发送；软键盘无物理键直发。
@@ -6772,25 +6930,11 @@ export struct ChatPage {
                 this.shiftHeld = event.type === KeyType.Down;
                 return false;
               }
-              // ★ 0.279.0：Ctrl+C 划词复制（PC 需求——鼠标划选消息文本后键盘直达复制，键值实锤
-              //   KEYCODE_C=2019；写剪贴板 pasteboard.setData 无需权限=华为后台零申请）。
-              //   防误拦双闸：①输入框内有自身选区（inputSelStart/End 有效区间）→ 放行走系统默认
-              //   复制（输入框内选中文字的 Ctrl+C 归 TextArea 原生行为，禁吞）；②消息划词 selText
-              //   非空才拦截消费（复用 onToolbarCopy 同一复制链路+关菜单）。
-              if (event.keyCode === 2019 && event.type === KeyType.Down) {
-                let ctrl = false;
-                try {
-                  ctrl = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
-                } catch (err) {
-                  ctrl = false;
-                }
-                const hasInputSel = this.inputSelStart >= 0 && this.inputSelEnd > this.inputSelStart;
-                if (ctrl && !hasInputSel && this.selText.length > 0) {
-                  this.onToolbarCopy();
-                  return true; // 消费——本次 Ctrl+C 语义=复制划词文本
-                }
-                return false;
-              }
+              // ★ 0.285.3（华为二轮 Q4 正解）：Ctrl+C 接管整体删除——TextArea 是系统输入组件，
+              //   获焦态系统默认 Ctrl+C 复制与系统备忘录同款链路（框架保证可靠性）；自研接管
+              //   （选区变量+substring+setData）每一环都可能出错且 return true 拦截后无系统兜底。
+              //   划词文本复制走：气泡 Text textSelectable(SELECTABLE_FOCUSABLE) 后系统 Ctrl+C
+              //   直接生效 + 右键菜单「复制」+ 页面级 Ctrl+Shift+C 三条链。
               // ★ 0.283.0：Ctrl+V 贴图（PC 需求——截图存剪贴板后键盘直达贴入待发区）。
               //   KEYCODE_V=2038 实锤（keyCode 枚举）；READ_PASTEBOARD 已声明+新 Profile ACL 授权。
               //   拦截策略=放行（return false）：文本粘贴归 TextArea 原生行为（截图场景剪贴板无文本=
@@ -6799,7 +6943,7 @@ export struct ChatPage {
               if (event.keyCode === 2038 && event.type === KeyType.Down) {
                 let ctrlV = false;
                 try {
-                  ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+                  ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['Ctrl']) : false;
                 } catch (err) {
                   ctrlV = false;
                 }
@@ -6811,7 +6955,7 @@ export struct ChatPage {
               if (event.keyCode === 2054 && event.type === KeyType.Down) { // KEY_ENTER=2054 实锤
                 let shift = false;
                 try {
-                  shift = event.getModifierKeyState ? event.getModifierKeyState(['shift']) : false;
+                  shift = event.getModifierKeyState ? event.getModifierKeyState(['Shift']) : false;
                 } catch (err) {
                   shift = false;
                 }
@@ -7008,9 +7152,24 @@ export struct ChatPage {
         .onClick(() => {
           this.getUIContext().getFocusController().clearFocus();
           // ★ 0.195.0：点空白处同时收起划词悬浮栏——原仅点其他文本触发 onDisappear 取消，
-          //   点空白自研菜单滞留不关（用户实测）；closeSelectionMenu 主动关闭 + 状态清理
+          // 点空白自研菜单滞留不关（用户实测）；closeSelectionMenu 主动关闭 + 状态清理
           this.closeActiveSelectionMenu();
           this.clearSelectionState();
+        })
+        // ★ 0.285.2（华为官方 AI 答复范式）：页面级复制快捷键 Ctrl+Shift+C——keyboardShortcut
+        //   「组件未获焦、只要窗口获焦即响应」，覆盖「划选气泡文本后焦点不在输入框」场景（华为实锤
+        //   Ctrl+C 属系统保留键不可绑，非保留组合才可自绑）；华为二轮 Q5：空选中给轻提示，
+        //   区分「快捷键没响应」与「无划选」；非空走统一复制链（延迟重试+toast）。
+        //   ★ 0.285.3：气泡 Text 已加 textSelectable(SELECTABLE_FOCUSABLE)——系统默认 Ctrl+C
+        //   直接生效（主链），本快捷键+右键菜单「复制」为双补充入口。
+        .keyboardShortcut('c', [ModifierKey.CTRL, ModifierKey.SHIFT], (): void => {
+          // ★ 0.285.5：粘性兜底——表格跨格拖选丢选区（selText 被 onDisappear 清空）时仍可复制
+          const text = this.effectiveSelText();
+          if (text.length > 0) {
+            this.copyTextToClipboard(text);
+          } else {
+            this.showToastSafe('请先划选文字');
+          }
         })
 
         // ★ 0.146：知识库卡片编辑弹窗（AI 生成草稿 → 用户二次编辑 → 保存入库）
@@ -7942,6 +8101,61 @@ export struct ChatPage {
           .alignContent(Alignment.Center)
         }
 
+        // ★ 0.286.0：AI 内容举报确认弹窗（上架合规 G.3.8——确认后拉起邮件，复刻 deleteConfirm 弹窗样式）
+        if (this.reportConfirmVisible) {
+          Stack() {
+            // 遮罩：点击关闭弹窗（不举报）
+            Column() {
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .backgroundColor(this.theme.overlayLight)
+            .onClick(() => {
+              this.reportConfirmVisible = false;
+            })
+
+            // 弹窗主体：提示文案 → 取消/举报按钮
+            Column() {
+              Text('举报本条 AI 内容？')
+                .fontSize(18)
+                .fontWeight(600)
+                .fontColor(this.theme.textPrimary)
+                .margin({ bottom: 8 })
+
+              Text('将拉起邮件应用向开发者举报该内容，举报内容不包含你的其他数据')
+                .fontSize(13)
+                .fontColor(this.theme.textTertiary)
+                .margin({ bottom: 16 })
+
+              Row() {
+                Button('取消')
+                  .layoutWeight(1)
+                  .backgroundColor(this.theme.surfaceHover)
+                  .fontColor(this.theme.textSecondary)
+                  .margin({ right: 8 })
+                  .onClick(() => {
+                    this.reportConfirmVisible = false;
+                  })
+                Button('举报')
+                  .layoutWeight(1)
+                  .backgroundColor(this.theme.brandPrimary)
+                  .fontColor(this.theme.textPrimary)
+                  .onClick(() => {
+                    this.confirmReportMessage();
+                  })
+              }
+            }
+            .width('70%')
+            .padding(20)
+            .borderRadius(RADIUS_NAV)
+            .backgroundColor(this.theme.surfaceNode)
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+        }
+
         // ★ 0.153：代码块放大弹窗（左上角「放大」按钮打开，全屏查看 + 换行/横向滚动切换）
         if (this.codeZoomVisible) {
           Stack() {
@@ -8023,6 +8237,8 @@ export struct ChatPage {
                     .borderRadius(RADIUS_CONTROL)
                     .width('100%')
                     .copyOption(CopyOptions.LocalDevice)
+                    .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                    .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                     .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                       onAppear: () => {
                         this.selKey = 'cz|w';
@@ -8063,6 +8279,8 @@ export struct ChatPage {
                       .backgroundColor(this.theme.bgCanvas)
                       .borderRadius(RADIUS_CONTROL)
                       .copyOption(CopyOptions.LocalDevice)
+                      .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                      .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                       .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                         onAppear: () => {
                           this.selKey = 'cz|s';
@@ -8143,6 +8361,34 @@ export struct ChatPage {
 
                 Blank()
 
+                // ★ 0.285.5：复制整表——Markdown 源格式（贴回对话/文档/AI 输入框保留表格结构）；
+                //   格子架构选区不跨组件，整表拿走走本入口（复制链带延迟重试+成败 toast）
+                Text('复制整表')
+                  .fontSize(12)
+                  .fontColor(this.theme.textPrimary)
+                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                  .borderRadius(4)
+                  .backgroundColor(this.theme.surfaceHover)
+                  .border({ width: 0.5, color: this.theme.strokeBrand })
+                  .onClick(() => {
+                    this.copyTextToClipboard(buildTableMarkdown(this.tableZoomHeader, this.tableZoomRows));
+                  })
+
+                // ★ 0.285.5：文本模式切换——整表渲染为一个 Text 可整体划词（翻译/入知识库/引用/
+                //   复制/系统 Ctrl+C 全链路）；选中态紫底白字与模式标签同规格
+                Text('文本模式')
+                  .fontSize(12)
+                  .fontWeight(500)
+                  .fontColor(this.tableZoomTextMode ? Color.White : this.theme.textPrimary)
+                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                  .margin({ left: 8 })
+                  .borderRadius(4)
+                  .backgroundColor(this.tableZoomTextMode ? this.theme.brandPrimary : this.theme.surfaceHover)
+                  .border({ width: 0.5, color: this.tableZoomTextMode ? this.theme.brandPrimary : this.theme.strokeBrand })
+                  .onClick(() => {
+                    this.tableZoomTextMode = !this.tableZoomTextMode;
+                  })
+
                 // 换行切换按钮：不换行=单行+横向滚动，换行=固定列宽内折行
                 // ★ 0.191.0：字符→wrap/nowrap.svg 矢量图标（全局 icon 统一），框样式保留；★ 缩小 20×18/图标14
                 Row() {
@@ -8157,6 +8403,7 @@ export struct ChatPage {
                 .borderRadius(4)
                 .backgroundColor(this.theme.surfaceHover)
                 .border({ width: 0.5, color: this.theme.strokeBrand })
+                .margin({ left: 8 }) // ★ 0.285.5：新增两按钮后与左侧按钮留间距
                 .onClick(() => {
                   this.tableZoomWrap = !this.tableZoomWrap;
                 })
@@ -8173,8 +8420,47 @@ export struct ChatPage {
               .width('100%')
               .margin({ bottom: 10 })
 
-              // 表格内容：纵向滚动（外层）+ 横向滚动（内层）+ 固定列宽对齐
+              // 表格内容：纵向滚动（外层）；★ 0.285.5 文本模式=整表一个 Text 可整体划词（跨格/
+              //   整表划选唯一落点——格子架构选区不跨组件），格子模式=横向滚动（内层）+固定列宽对齐
               Scroll() {
+                if (this.tableZoomTextMode) {
+                  // ★ 0.285.5：整表 Text（划词五件套 key 'tzt'，无 | 分隔——书签/删除按放大弹窗
+                  //   key 族防御忽略，翻译/入知识库/引用/复制/全选/系统 Ctrl+C 全链路可用）
+                  Text(buildTablePlainText(this.tableZoomHeader, this.tableZoomRows),
+                    { controller: this.getOrCreateTextController('tzt') })
+                    .fontSize(14)
+                    .lineHeight(24)
+                    .fontColor(this.theme.textPrimary)
+                    .padding(12)
+                    .textAlign(TextAlign.LEFT)
+                    .copyOption(CopyOptions.LocalDevice)
+                    .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                    .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
+                    .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
+                      onAppear: () => {
+                        this.selKey = 'tzt';
+                      },
+                      onDisappear: () => {
+                        this.clearSelectionState();
+                      }
+                    })
+                    .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, TextResponseType.LONG_PRESS, {
+                      onAppear: () => {
+                        this.selKey = 'tzt';
+                      },
+                      onDisappear: () => {
+                        this.clearSelectionState();
+                      }
+                    })
+                    .onTextSelectionChange((start: number, end: number) => {
+                      this.handleSelectionChange('tzt',
+                        buildTablePlainText(this.tableZoomHeader, this.tableZoomRows), start, end);
+                    })
+                    .selection(
+                      this.selectAllKey.startsWith('tzt|') ? 0 : 1,
+                      this.selectAllKey.startsWith('tzt|') ? buildTablePlainText(this.tableZoomHeader, this.tableZoomRows).length : 0
+                    )
+                } else {
                 Scroll() {
                   Column() {
                     // 表头行
@@ -8191,6 +8477,8 @@ export struct ChatPage {
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .textAlign(TextAlign.Center)
                           .copyOption(CopyOptions.LocalDevice)
+                          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                          .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                           .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                             onAppear: () => {
                               this.selKey = `tzh${ci}`;
@@ -8231,6 +8519,8 @@ export struct ChatPage {
                             .textOverflow({ overflow: TextOverflow.Ellipsis })
                             .textAlign(TextAlign.Center)
                             .copyOption(CopyOptions.LocalDevice)
+                            .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE) // ★ 0.285.3：可获焦模式（华为二轮正解）——Text 默认 UNFOCUSABLE 划选后不获焦、系统 Ctrl+C 派发给错误组件；本模式点击/划选即入获焦链，系统默认复制直接生效
+                            .focusOnTouch(true) // ★ 0.285.4：拖选起手 press 即申请焦点——textSelectable 只给获焦能力、拖选本身不改焦点归属（华为 Q2），获焦后系统 Ctrl+C 才作用于其选区
                             .bindSelectionMenu(TextSpanType.TEXT, this.SelectionToolbar, this.isPcDevice() ? TextResponseType.RIGHT_CLICK : TextResponseType.SELECT, {
                               onAppear: () => {
                                 this.selKey = `tzr${ri}c${ci}`;
@@ -8261,6 +8551,7 @@ export struct ChatPage {
                 }
                 .scrollable(ScrollDirection.Horizontal)
                 .scrollBar(BarState.Auto)
+                }
               }
               .scrollable(ScrollDirection.Vertical)
               .scrollBar(BarState.Auto)

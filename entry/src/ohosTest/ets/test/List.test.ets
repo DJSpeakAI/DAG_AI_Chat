@@ -8,6 +8,7 @@ import aiRerankTest from './AiRerank.test'; // ★ 0.268.0：AI 智慧排序（�
 import thinkingScoreTest from './ThinkingScore.test'; // ★ 0.271.0：深度思考（计分矩阵/策略矩阵/降级窄门/归一）断言
 import spCostOfTokensTest from './SpCostOfTokens.test'; // ★ 0.272.0：SP 公式公共化等价断言（新旧对拍/钳位/常量锚定）
 import spImplicitCostTest from './SpImplicitCost.test'; // ★ 0.273.0：隐式扣费纯核心+IAP 成交价换算断言
+import webFetchTest from './WebFetch.test'; // ★ 0.286.0：AI 读网页（URL 检测/正文抽取/注入块拼装）纯函数断言
 
 export default function testsuite() {
   abilityTest();
@@ -20,4 +21,5 @@ export default function testsuite() {
   thinkingScoreTest();
   spCostOfTokensTest();
   spImplicitCostTest();
+  webFetchTest();
 }

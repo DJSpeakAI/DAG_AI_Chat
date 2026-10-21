@@ -1328,7 +1328,7 @@ export struct KnowledgeBankPage {
             if (event.keyCode === 2038 && event.type === KeyType.Down) {
               let ctrlV = false;
               try {
-                ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+                ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['Ctrl']) : false;
               } catch (err) {
                 ctrlV = false;
               }
@@ -1415,7 +1415,7 @@ export struct KnowledgeBankPage {
             if (event.keyCode === 2038 && event.type === KeyType.Down) {
               let ctrlV = false;
               try {
-                ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+                ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['Ctrl']) : false;
               } catch (err) {
                 ctrlV = false;
               }

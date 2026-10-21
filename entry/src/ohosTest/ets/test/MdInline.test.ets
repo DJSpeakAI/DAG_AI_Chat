@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, BREATH_POOL, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock } from '../../../main/ets/utils/MdInline';
+import { parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, BREATH_POOL, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, MdBlock, buildTableMarkdown, buildTablePlainText } from '../../../main/ets/utils/MdInline';
 
 // ★ 0.231.0：Markdown 行内/块级解析器单元断言（project_rule §12.13 测试覆盖军令——
 //   新功能必须带测试项；纯函数模块=ChatPage 渲染与本断言双消费）
@@ -420,6 +420,25 @@ export default function mdInlineTest() {
       expect(set3!.size).assertEqual(2);
       // 2 节：null（不折叠）
       expect(initExpandedSet(mkSections(2))).assertNull();
+    })
+
+    // ---- 0.285.5：表格整表工具（放大弹窗复制整表/文本模式共用） ----
+    it('table_markdown_full', 0, () => {
+      const md = buildTableMarkdown(['列A', '列B'], [['1', '2'], ['3', '4']]);
+      expect(md).assertEqual('| 列A | 列B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |');
+    })
+    it('table_markdown_pipe_escaped_and_row_normalized', 0, () => {
+      // 单元格内半角竖线转全角（防破坏列结构）；少格行补空、多格行截断（按表头列数归一）
+      const md = buildTableMarkdown(['a', 'b'], [['x|y'], ['1', '2', '3']]);
+      const lines = md.split('\n');
+      expect(lines.length).assertEqual(4);
+      expect(lines[0]).assertEqual('| a | b |');
+      expect(lines[2]).assertEqual('| x｜y |  |');
+      expect(lines[3]).assertEqual('| 1 | 2 |');
+    })
+    it('table_plain_text_layout', 0, () => {
+      const pt = buildTablePlainText(['h1', 'h2'], [['v1', 'v2']]);
+      expect(pt).assertEqual('h1 | h2\nv1 | v2');
     })
   })
 }

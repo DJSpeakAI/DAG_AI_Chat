@@ -1086,3 +1086,43 @@ export function mergeHooksIntoContent(hooks: HookSpec[], content: string): strin
   }
   return out.join('\n');
 }
+
+// ★ 0.285.5：表格整表工具（用户需求「表格整体划选/整体拿走」——格子架构选区不跨组件，
+//   放大弹窗提供整表入口）——buildTableMarkdown=复制整表（Markdown 源格式，贴回对话/
+//   文档/AI 输入框保留表格结构）；单元格内半角竖线转全角防破坏列结构；数据行按表头列数
+//   归一（parseTableRow 尾格容错同族防御——AI 偶发多格/少格行不炸格式）
+export function buildTableMarkdown(header: string[], rows: string[][]): string {
+  const esc = (s: string): string => s.replace(/\|/g, '｜');
+  const line = (cells: string[]): string => '| ' + cells.map(esc).join(' | ') + ' |';
+  const colCount = header.length;
+  const sepCells: string[] = [];
+  for (let i = 0; i < colCount; i++) {
+    sepCells.push('---');
+  }
+  const out: string[] = [line(header), line(sepCells)];
+  for (const row of rows) {
+    const norm: string[] = [];
+    for (let ci = 0; ci < colCount; ci++) {
+      norm.push(ci < row.length ? row[ci] : '');
+    }
+    out.push(line(norm));
+  }
+  return out.join('\n');
+}
+
+// ★ 0.285.5：文本模式展示文本——行间 \n、格间 ' | '（无围栏竖线，阅读友好）；放大弹窗
+//   「文本模式」整表一个 Text 渲染，可整体划词（翻译/入知识库/引用/复制/系统 Ctrl+C 全链路）
+export function buildTablePlainText(header: string[], rows: string[][]): string {
+  const esc = (s: string): string => s.replace(/\|/g, '｜');
+  const line = (cells: string[]): string => cells.map(esc).join(' | ');
+  const colCount = header.length;
+  const out: string[] = [line(header)];
+  for (const row of rows) {
+    const norm: string[] = [];
+    for (let ci = 0; ci < colCount; ci++) {
+      norm.push(ci < row.length ? row[ci] : '');
+    }
+    out.push(line(norm));
+  }
+  return out.join('\n');
+}
