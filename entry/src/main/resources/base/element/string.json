@@ -28,6 +28,10 @@
       "value": "用于在您登录同一华为账号的多台设备间同步对话数据"
     },
     {
+      "name": "read_pasteboard_reason",
+      "value": "用于在对话与知识卡片制作中粘贴您截图或复制的图片"
+    },
+    {
       "name": "EntryFormAbility_label",
       "value": "复习卡片"
     },

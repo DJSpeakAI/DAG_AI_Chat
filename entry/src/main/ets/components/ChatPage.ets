@@ -23,7 +23,7 @@
 // ============================================================
 
 import { AppStorageV2, PersistenceV2, curves, window, KeyboardAvoidMode } from '@kit.ArkUI'; // ★ 0.131：收键盘改用 UIContext.getFocusController()（focusControl 不从 @kit.ArkUI 导出）；★ 0.152：截图改走 UIContext.getComponentSnapshot()（APP 内组件快照截屏，无需系统截屏权限，且避开已废弃的 componentSnapshot.get）；★ 0.234.0：curves（onDone 收拢 springMotion 弹簧曲线——华为物理动效血统）
-import { common } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext（★ 0.275.0：abilityAccessCtrl 随 9568289 回退移除；hilog 诊断埋点随拖拽验证通过删除）
+import { common, abilityAccessCtrl } from '@kit.AbilityKit'; // 0.206.0 埋点 getHostContext（★ 0.283.0：abilityAccessCtrl 复入——READ_PASTEBOARD user_grant 运行时授权，随新 Profile ACL 资格第三次申报落地；hilog 诊断埋点随拖拽验证通过删除）
 import { track, trackUidAuto } from '../utils/TrackUtil'; // 0.206.0 埋点；★ 0.260.0：trackUidAuto（sp_consume）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
@@ -2946,14 +2946,47 @@ export struct ChatPage {
     }
   }
 
-  // Ctrl+V 贴图读取（PasteButton 安全控件点击授权后调用——SUCCESS=本次临时授权，免 READ_PASTEBOARD 声明）：
-  //   pixelMap 优先（截图场景）、uri 次之（图库/文件管理器复制的图片）；无图静默
-  async pasteImageFromClipboard(): Promise<void> {
+  // ★ 0.283.0：READ_PASTEBOARD 运行时授权链（user_grant 级——装机 grantStatus=-1，首次读取前
+  //   须弹窗一次；requestPermissionsFromUser 对已授权权限直接返回不重复弹窗）。
+  //   被拒分支=toast 手动路径说明 + requestPermissionOnSetting 直达权限面板（0.259.2 同款模式：
+  //   专治「用户拒绝过系统不再弹窗」，用户在面板开了权限当场继续贴图）
+  async ensurePastePermission(): Promise<boolean> {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    try {
+      const atm = abilityAccessCtrl.createAtManager();
+      const result = await atm.requestPermissionsFromUser(ctx, ['ohos.permission.READ_PASTEBOARD']);
+      if (result.authResults.length > 0 &&
+        result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+        return true;
+      }
+      // 被拒：toast 说明 + 直达权限面板（面板上开了→本次贴图不中断，下次 Ctrl+V 生效）
+      this.showToastSafe('未授权：请在系统「设置→应用→DAG AI Chat→权限」允许「剪贴板」');
+      try {
+        const panelResult = await atm.requestPermissionOnSetting(ctx, ['ohos.permission.READ_PASTEBOARD']);
+        return panelResult.length > 0 &&
+          panelResult[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      } catch (_e) {
+        return false;
+      }
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  // Ctrl+V 贴图读取（★ 0.283.0 恢复纯 Ctrl+V 方案——新调试 Profile ACL 已授权 READ_PASTEBOARD，
+  //   module.json5 已声明，装机即具申请资格；0.275.0 注释的 PasteButton 通道不再需要）：
+  //   pixelMap 优先（截图场景）、uri 次之（图库/文件管理器复制的图片）；无图分寸=silent 时静默
+  //   （Ctrl+V 旁路调用=纯文本粘贴场景，弹「没有图片」会骚扰正常粘贴）
+  async pasteImageFromClipboard(silent: boolean = false): Promise<void> {
     if (this.ctrlVPasting) {
       return;
     }
     this.ctrlVPasting = true;
     try {
+      const granted = await this.ensurePastePermission();
+      if (!granted) {
+        return; // 未授权：ensurePastePermission 已 toast+拉面板，此处静默退出
+      }
       const data = await pasteboard.getSystemPasteboard().getData();
       const count = data.getRecordCount();
       for (let i = 0; i < count; i++) {
@@ -2970,7 +3003,9 @@ export struct ChatPage {
           return;
         }
       }
-      this.showToastSafe('剪贴板中没有图片');
+      if (!silent) {
+        this.showToastSafe('剪贴板中没有图片');
+      }
     } catch (err) {
       this.showToastSafe('图片粘贴失败，请重试');
     } finally {
@@ -6669,6 +6704,23 @@ export struct ChatPage {
                 if (ctrl && !hasInputSel && this.selText.length > 0) {
                   this.onToolbarCopy();
                   return true; // 消费——本次 Ctrl+C 语义=复制划词文本
+                }
+                return false;
+              }
+              // ★ 0.283.0：Ctrl+V 贴图（PC 需求——截图存剪贴板后键盘直达贴入待发区）。
+              //   KEYCODE_V=2038 实锤（keyCode 枚举）；READ_PASTEBOARD 已声明+新 Profile ACL 授权。
+              //   拦截策略=放行（return false）：文本粘贴归 TextArea 原生行为（截图场景剪贴板无文本=
+              //   系统粘贴零动作，互不打架）；图片走旁路异步贴入（silent=true 无图不弹提示）；
+              //   图文混合记录两者都发生=期望行为。异步期间重复按键由 ctrlVPasting 防重入兜底。
+              if (event.keyCode === 2038 && event.type === KeyType.Down) {
+                let ctrlV = false;
+                try {
+                  ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+                } catch (err) {
+                  ctrlV = false;
+                }
+                if (ctrlV) {
+                  this.pasteImageFromClipboard(true);
                 }
                 return false;
               }

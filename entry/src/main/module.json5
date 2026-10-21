@@ -123,10 +123,22 @@
           ],
           "when": "always"
         }
+      },
+      // ★ 0.283.0：READ_PASTEBOARD（Ctrl+V 贴图）第三次申报——0.164.7/0.275.0 两次均因调试 Profile
+      //   无该 ACL 受限授权装机 9568289 回退；2026-10-21 用户在 AGC 重新申请调试 Profile 并勾选
+      //   READ_PASTEBOARD（5 分钟人工审批通过，新 p7b allowed-acls 实锤含此权限）→ 恢复纯 Ctrl+V
+      //   方案（onKeyPreIme V 键旁路读剪贴板，ChatPage 对话输入框 + KnowledgeBankPage 卡片编辑弹窗）。
+      //   user_grant 级（reason+usedScene 必填+装机授予依赖 Profile 的 ACL 资格；授权后读取免弹窗）；写剪贴板仍零权限。
+      {
+        "name": "ohos.permission.READ_PASTEBOARD",
+        "reason": "$string:read_pasteboard_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
-      // ★ 0.275.0：READ_PASTEBOARD（Ctrl+V 贴图）装机 9568289 实锤回退——调试 Profile 无该 ACL
-      //   受限授权（0.164.7 同款死法二踩）。改走 PasteButton 安全控件（点击=临时授权读取，免权限声明）；
-      //   拖拽 onDrop 走 UDMF 通道本就免此权限。若未来 AGC Profile 可勾选该 ACL 再恢复纯 Ctrl+V 方案。
     ]
   }
 }

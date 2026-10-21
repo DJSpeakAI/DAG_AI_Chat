@@ -33,6 +33,8 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor i
 import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64；★ 0.207.0 picker：文档选/存（批量导入 CSV/TXT、导出 CSV）
 import { image } from '@kit.ImageKit'; // ★ 0.211.1：选图压缩（9 张原图 base64 直接持久化=手机保存崩溃根因）
 import { buffer } from '@kit.ArkTS'; // ★ 0.160: ArrayBuffer → base64
+import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.283.0：卡片编辑弹窗 Ctrl+V 贴图（读剪贴板，READ_PASTEBOARD 已声明+Profile ACL 授权）
+import { common, abilityAccessCtrl } from '@kit.AbilityKit'; // ★ 0.283.0：READ_PASTEBOARD user_grant 运行时授权（弹窗+被拒直达权限面板）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 // ★ 0.183.0：UI 收敛到 DesignTokens（UI_GUIDELINES 唯一真相源；v0.166.3 锁暗色后 isDark 三元为死代码，全部清除）
 import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_SCREEN_TITLE } from '../common/DesignTokens';
@@ -536,6 +538,108 @@ export struct KnowledgeBankPage {
       this.editorImages = [...this.editorImages]; // 触发数组状态更新
     } catch (err) {
       // 选图取消/读取失败静默忽略（防崩溃）
+    }
+  }
+
+  // ★ 0.283.0：READ_PASTEBOARD 运行时授权链（ChatPage.ensurePastePermission 同款：user_grant 级
+  //   首次弹窗一次；被拒=toast 说明+requestPermissionOnSetting 直达权限面板当场续贴）
+  async ensureEditorPastePermission(): Promise<boolean> {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    try {
+      const atm = abilityAccessCtrl.createAtManager();
+      const result = await atm.requestPermissionsFromUser(ctx, ['ohos.permission.READ_PASTEBOARD']);
+      if (result.authResults.length > 0 &&
+        result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+        return true;
+      }
+      this.showToast('未授权：请在系统「设置→应用→DAG AI Chat→权限」允许「剪贴板」');
+      try {
+        const panelResult = await atm.requestPermissionOnSetting(ctx, ['ohos.permission.READ_PASTEBOARD']);
+        return panelResult.length > 0 &&
+          panelResult[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      } catch (_e) {
+        return false;
+      }
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  // ★ 0.283.0：卡片编辑弹窗 Ctrl+V 贴图（PC 需求——截图后键盘直达贴图；复刻 ChatPage
+  //   0.275.0/0.283.0 同款管线）：pixelMap 优先（截图）打包 JPEG q80（对齐 0.211.1 压缩档）；
+  //   uri 次之（图库复制）走 compressEditorImage 同链路；无图静默（纯文本粘贴归
+  //   TextInput/TextArea 原生行为不打扰）。editorPasting 防重入（异步期间重复按键忽略）。
+  //   ★ 0.283.1 双目标区：isTitle=true 贴入标题图区 editorTitleImages（标题框聚焦时 Ctrl+V）、
+  //   false 贴入内容图区 editorImages（内容框聚焦时 Ctrl+V）——数组分支直写不做引用别名
+  //   （@Local 刷新安全）
+  editorPasting: boolean = false;
+  async pasteEditorImageFromClipboard(isTitle: boolean = false): Promise<void> {
+    if (this.editorPasting) {
+      return;
+    }
+    this.editorPasting = true;
+    try {
+      const granted = await this.ensureEditorPastePermission();
+      if (!granted) {
+        return; // 未授权：授权链已 toast+拉面板，此处静默退出
+      }
+      const data = await pasteboard.getSystemPasteboard().getData();
+      const count = data.getRecordCount();
+      for (let i = 0; i < count; i++) {
+        const rec = data.getRecordAt(i);
+        if (rec.pixelMap !== undefined && rec.pixelMap !== null) {
+          if (isTitle) {
+            if (this.editorTitleImages.length >= 9) {
+              this.showToast('标题图片最多 9 张');
+              return;
+            }
+            const packer = image.createImagePacker();
+            const packed = await packer.packToData(rec.pixelMap, { format: 'image/jpeg', quality: 80 });
+            packer.release();
+            this.editorTitleImages.push(`data:image/jpeg;base64,${buffer.from(packed).toString('base64')}`);
+            this.editorTitleImages = [...this.editorTitleImages]; // 触发数组状态更新
+          } else {
+            if (this.editorImages.length >= 9) {
+              this.showToast('最多添加 9 张图片');
+              return;
+            }
+            const packer = image.createImagePacker();
+            const packed = await packer.packToData(rec.pixelMap, { format: 'image/jpeg', quality: 80 });
+            packer.release();
+            this.editorImages.push(`data:image/jpeg;base64,${buffer.from(packed).toString('base64')}`);
+            this.editorImages = [...this.editorImages]; // 触发数组状态更新
+          }
+          this.showToast('已粘贴图片');
+          return;
+        }
+        if (rec.uri !== undefined && rec.uri !== null && rec.uri.length > 0) {
+          const dataUri = await this.compressEditorImage(rec.uri);
+          if (dataUri.length > 0) {
+            if (isTitle) {
+              if (this.editorTitleImages.length >= 9) {
+                this.showToast('标题图片最多 9 张');
+                return;
+              }
+              this.editorTitleImages.push(dataUri);
+              this.editorTitleImages = [...this.editorTitleImages];
+            } else {
+              if (this.editorImages.length >= 9) {
+                this.showToast('最多添加 9 张图片');
+                return;
+              }
+              this.editorImages.push(dataUri);
+              this.editorImages = [...this.editorImages];
+            }
+            this.showToast('已粘贴图片');
+          }
+          return;
+        }
+      }
+      // 无图记录：静默——Ctrl+V 粘贴文本归 TextInput/TextArea 原生行为
+    } catch (err) {
+      this.showToast('图片粘贴失败，请重试');
+    } finally {
+      this.editorPasting = false;
     }
   }
 
@@ -1218,6 +1322,22 @@ export struct KnowledgeBankPage {
           .onChange((value: string) => {
             this.editorTitle = value;
           })
+          // ★ 0.283.1：标题框 Ctrl+V 贴图（用户需求——标题图区也要能贴：标题框聚焦时 Ctrl+V
+          //   直贴 editorTitleImages；文本粘贴归 TextInput 原生行为恒放行，同内容框策略）
+          .onKeyPreIme((event: KeyEvent): boolean => {
+            if (event.keyCode === 2038 && event.type === KeyType.Down) {
+              let ctrlV = false;
+              try {
+                ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+              } catch (err) {
+                ctrlV = false;
+              }
+              if (ctrlV) {
+                this.pasteEditorImageFromClipboard(true); // isTitle=true → 标题图区
+              }
+            }
+            return false; // 恒放行：文本粘贴归 TextInput 原生行为，贴图走旁路
+          })
         // ── ★ 0.210.0：标题图区（Anki 图对图——题面插图；结构同下方内容图区，紧凑一号）──
         Column() {
           if (this.editorTitleImages.length > 0) {
@@ -1288,6 +1408,22 @@ export struct KnowledgeBankPage {
           .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorDefinition = value;
+          })
+          // ★ 0.283.0：Ctrl+V 贴图（PC 需求——知识卡片制作弹窗直贴截图，KEYCODE_V=2038 实锤；
+          //   ChatPage 主输入框同款旁路策略：放行文本粘贴，图片异步贴入内容图区，防重入兜底）
+          .onKeyPreIme((event: KeyEvent): boolean => {
+            if (event.keyCode === 2038 && event.type === KeyType.Down) {
+              let ctrlV = false;
+              try {
+                ctrlV = event.getModifierKeyState ? event.getModifierKeyState(['ctrl']) : false;
+              } catch (err) {
+                ctrlV = false;
+              }
+              if (ctrlV) {
+                this.pasteEditorImageFromClipboard();
+              }
+            }
+            return false; // 恒放行：文本粘贴归 TextArea 原生行为，贴图走旁路
           })
         // ── ★ 0.202.2：标签区 chip 化（用户拍板：弃逗号输入——大小写/分隔符心智负担；同提炼页交互）──
         Column() {

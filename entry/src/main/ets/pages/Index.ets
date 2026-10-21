@@ -778,7 +778,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-          Text('v0.282.0') // ★ 0.282.0：回复模式两档（深度思考开关）+ 播客入口下线 + 输入区工具行重构；更早历史见 MEMORY.md 版本表
+          Text('v0.283.1') // ★ 0.283.1：PC Ctrl+V 贴图三区齐（对话页+卡片标题图+卡片内容图）+ 新调试证书；更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
