@@ -28,7 +28,8 @@
 import { KnowledgeCard, KnowledgeBankStore, CardImportStore, connectCardImport, navBackToCanvas, parseTags, getCardImages, getTitleImages, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.200.0：卡片导入气泡；★ 0.202.0：parseTags；★ 0.202.1：getCardImages（多图兼容读取）
 import { connectKnowledgeBank, addKnowledgeCard, removeKnowledgeCard, updateKnowledgeCard, removeCardsByIds } from '../utils/KnowledgeStoreUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.188.0：下次复习时间标签（记忆算法·知识库复刻）
-import { KnowledgeCountStore, connectKnowledgeCount } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)
+import { KnowledgeCountStore, connectKnowledgeCount, noteBankMutation } from '../common/ChatModel'; // ★ 0.161.2: knowledge-card count settings (same PersistenceV2 instance as ChatPage review areas)；★ 0.287.0：noteBankMutation（撤销放回 folders 后触发云上行）
+import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（删除卡片/级联删除/移动/重命名入栈）
 import { photoAccessHelper } from '@kit.MediaLibraryKit'; // ★ 0.160: editor image picking
 import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.160: read picked photo into base64；★ 0.207.0 picker：文档选/存（批量导入 CSV/TXT、导出 CSV）
 import { image } from '@kit.ImageKit'; // ★ 0.211.1：选图压缩（9 张原图 base64 直接持久化=手机保存崩溃根因）
@@ -75,6 +76,24 @@ export struct KnowledgeBankPage {
   @Param pathStack: NavPathStack = new NavPathStack();
   @Local sidebarVisible: boolean = false; // ★ 0.222.0 手机知识库页边栏抽屉开关
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // isolated PersistenceV2 instance
+  undoStack: UndoStore = connectUndoStack(); // ★ 0.287.0：撤销栈（删除卡片/级联删除/移动/重命名入栈；Ctrl+Z 全局键在 Index 层消费）
+
+  // ★ 0.287.0：收集文件夹子树全集 id（含自身）——级联删除撤销快照用（与 deleteFolderCascade 同遍历口径）
+  collectSubtreeIds(fid: string): string[] {
+    const ids: string[] = [fid];
+    let guard = 0;
+    for (let i = 0; i < ids.length && guard < 1000; i++) {
+      const pid = ids[i];
+      const children = this.knowledgeBank.folders.filter((f: KFolder): boolean => f.parentId === pid);
+      for (let j = 0; j < children.length; j++) {
+        if (!ids.includes(children[j].id)) {
+          ids.push(children[j].id);
+        }
+      }
+      guard++;
+    }
+    return ids;
+  }
 
   // ── ★ 0.200.0：知识卡片导入气泡（入口 A 列表 / 入口 B 编辑弹窗）──
   cardImport: CardImportStore = connectCardImport(); // 跨页共享 store（画布/ChatPage 消费）
@@ -744,7 +763,7 @@ export struct KnowledgeBankPage {
 
   requestDeleteCard(c: KnowledgeCard): void {
     if (this.skipDeleteConfirm) {
-      removeKnowledgeCard(this.knowledgeBank, c.id);
+      this.deleteCardWithUndo(c);
       return;
     }
     this.pendingDeleteId = c.id;
@@ -753,11 +772,31 @@ export struct KnowledgeBankPage {
   }
 
   confirmDeleteCard(): void {
-    removeKnowledgeCard(this.knowledgeBank, this.pendingDeleteId);
+    // ★ 0.287.0：撤销快照——删前取对象引用（confirm 链只有 id；skip 链直接有 c）
+    const target = this.knowledgeBank.cards.find((c: KnowledgeCard): boolean => c.id === this.pendingDeleteId);
+    if (target !== undefined) {
+      this.deleteCardWithUndo(target);
+    }
     if (this.deleteConfirmNoRemind) {
       this.skipDeleteConfirm = true; // session-level only, never persisted
     }
     this.deleteConfirmVisible = false;
+  }
+
+  // ★ 0.287.0：删除卡片统一入口（入撤销栈）——undo 复用 addKnowledgeCard 原对象放回（原 id/记忆字段
+  //   全保留，noteBankMutation 云上行自动触发行恢复）；redo 复用 removeKnowledgeCard（墓碑链原样）
+  deleteCardWithUndo(c: KnowledgeCard): void {
+    const store = this.knowledgeBank;
+    removeKnowledgeCard(store, c.id);
+    this.undoStack.push('删除卡片',
+      (): void => {
+        if (!store.cards.some((x: KnowledgeCard): boolean => x.id === c.id)) {
+          addKnowledgeCard(store, c);
+        }
+      },
+      (): void => {
+        removeKnowledgeCard(store, c.id);
+      });
   }
 
   // ---- multi-select (batch delete only) ----
@@ -1322,6 +1361,9 @@ export struct KnowledgeBankPage {
           .onChange((value: string) => {
             this.editorTitle = value;
           })
+          .onSubmit(() => {
+            this.saveEditor(); // ★ 0.287.0 P1：回车=保存（标题框单行；内容多行框 Enter=换行不触发）
+          })
           // ★ 0.283.1：标题框 Ctrl+V 贴图（用户需求——标题图区也要能贴：标题框聚焦时 Ctrl+V
           //   直贴 editorTitleImages；文本粘贴归 TextInput 原生行为恒放行，同内容框策略）
           .onKeyPreIme((event: KeyEvent): boolean => {
@@ -1834,7 +1876,7 @@ export struct KnowledgeBankPage {
       return;
     }
     if (this.folderDialogIsRename) {
-      renameFolder(this.knowledgeBank, this.folderDialogTargetId, nm);
+      this.renameFolderWithUndo(this.folderDialogTargetId, nm); // ★ 0.287.0：入撤销栈（与边栏重命名同链）
     } else {
       addFolder(this.knowledgeBank, nm, this.folderNav.folderId);
       const tp: Record<string, string> = {};
@@ -1913,9 +1955,13 @@ export struct KnowledgeBankPage {
       this.pickerCollapsedFolderIds = [...this.pickerCollapsedFolderIds, folderId];
     }
   }
-  /** ★ 0.221.0：确认级联删除文件夹 */
+  /** ★ 0.221.0：确认级联删除文件夹（★ 0.287.0 入撤销栈——子树 folders+cards 全集快照放回） */
   confirmFolderDelete(): void {
     const fid = this.folderNav.folderActionId;
+    // ★ 0.287.0：撤销快照——删除前收集子树 folders+cards 对象引用（含记忆字段全保留）
+    const subtreeIds = this.collectSubtreeIds(fid);
+    const removedFolders: KFolder[] = this.knowledgeBank.folders.filter((f: KFolder): boolean => subtreeIds.includes(f.id));
+    const removedCards: KnowledgeCard[] = this.knowledgeBank.cards.filter((c: KnowledgeCard): boolean => subtreeIds.includes(c.folderId));
     const deleted = deleteFolderCascade(this.knowledgeBank, fid);
     if (this.folderNav.folderId === fid) {
       this.folderNav.folderId = this.folderParentId();
@@ -1923,6 +1969,25 @@ export struct KnowledgeBankPage {
     this.folderNav.folderAction = '';
     this.folderNav.folderActionId = '';
     this.showToast(`已删除文件夹及 ${deleted} 张卡片`);
+    // ★ 0.287.0：级联删除入撤销栈——undo 放回 folders（直接数组并回+云钩）+cards（addKnowledgeCard
+    //   原对象原 id 逐张放回，上行恢复）；redo 复用 deleteFolderCascade（墓碑链原样）
+    const store = this.knowledgeBank;
+    this.undoStack.push('删除文件夹',
+      (): void => {
+        const missingFolders = removedFolders.filter((f: KFolder): boolean => !store.folders.some((x: KFolder): boolean => x.id === f.id));
+        if (missingFolders.length > 0) {
+          store.folders = [...missingFolders, ...store.folders];
+          noteBankMutation();
+        }
+        for (let i = removedCards.length - 1; i >= 0; i--) {
+          if (!store.cards.some((x: KnowledgeCard): boolean => x.id === removedCards[i].id)) {
+            addKnowledgeCard(store, removedCards[i]);
+          }
+        }
+      },
+      (): void => {
+        deleteFolderCascade(store, fid);
+      });
   }
 
   // ★ 0.222.13: 清空根目录（全部卡片+全部文件夹；根目录「全部卡片」入口保留）（边栏根目录右键/长按「删除」引发）
@@ -1941,17 +2006,35 @@ export struct KnowledgeBankPage {
     this.folderNav.folderActionName = '';
   }
 
-  /** ★ 0.221.0：确认重命名文件夹（边栏树触发） */
+  /** ★ 0.221.0：确认重命名文件夹（边栏树触发；★ 0.287.0 入撤销栈——旧名快照） */
   confirmFolderRename(): void {
     const nm = this.folderNav.folderActionName.trim();
     if (nm.length === 0) {
       this.showToast('名称不能为空');
       return;
     }
-    renameFolder(this.knowledgeBank, this.folderNav.folderActionId, nm);
+    this.renameFolderWithUndo(this.folderNav.folderActionId, nm);
     this.folderNav.folderAction = '';
     this.folderNav.folderActionId = '';
     this.folderNav.folderActionName = '';
+  }
+
+  // ★ 0.287.0：文件夹重命名统一入口（入撤销栈）——值不变不入栈
+  renameFolderWithUndo(fid: string, nm: string): void {
+    const f = this.knowledgeBank.folders.find((x: KFolder): boolean => x.id === fid);
+    const oldName = f !== undefined ? f.name : '';
+    renameFolder(this.knowledgeBank, fid, nm);
+    if (f !== undefined && oldName !== f.name) {
+      const store = this.knowledgeBank;
+      const newName = f.name;
+      this.undoStack.push('重命名文件夹',
+        (): void => {
+          renameFolder(store, fid, oldName);
+        },
+        (): void => {
+          renameFolder(store, fid, newName);
+        });
+    }
   }  /** 移动/复制确认（folderPicker 行点击） */
   confirmFolderTarget(folderId: string): void {
 
@@ -1975,6 +2058,9 @@ export struct KnowledgeBankPage {
           this.showToast(`已复制文件夹（含 ${n} 张卡片）`);
         }
       } else {
+        // ★ 0.287.0：移动入撤销栈——旧父快照（undo=moveFolder 移回旧父，防环校验天然复用）
+        const movedFolder = this.knowledgeBank.folders.find((x: KFolder): boolean => x.id === fid);
+        const oldParent = movedFolder !== undefined ? movedFolder.parentId : '';
         const ok = moveFolder(this.knowledgeBank, fid, folderId);
         if (!ok) {
           this.showToast('不能移动到自身或其子文件夹');
@@ -1982,6 +2068,16 @@ export struct KnowledgeBankPage {
           this.folderNav.folderActionId = '';
           this.folderPickerVisible = false;
           return;
+        }
+        if (movedFolder !== undefined && oldParent !== folderId) {
+          const store = this.knowledgeBank;
+          this.undoStack.push('移动文件夹',
+            (): void => {
+              moveFolder(store, fid, oldParent);
+            },
+            (): void => {
+              moveFolder(store, fid, folderId);
+            });
         }
         this.showToast('已移动文件夹');
       }
@@ -2439,6 +2535,9 @@ export struct KnowledgeBankPage {
           .onChange((v: string) => {
             this.folderDialogName = v;
           })
+          .onSubmit(() => {
+            this.confirmFolderDialog(); // ★ 0.287.0 P1：回车=确定（物理/软键盘回车同链）
+          })
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
@@ -2537,6 +2636,9 @@ export struct KnowledgeBankPage {
           .borderRadius(8)
           .onChange((v: string) => {
             this.folderNav.folderActionName = v;
+          })
+          .onSubmit(() => {
+            this.confirmFolderRename(); // ★ 0.287.0 P1：回车=确定
           })
         Row({ space: 10 }) {
           Button('取消')

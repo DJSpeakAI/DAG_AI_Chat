@@ -15,7 +15,7 @@ import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { MemoryItem, MemoryRating, pickReviewWords, pickReviewCards, applyRating, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm';
 import { streamChat } from '../utils/ApiClient';
-import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
+import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
 import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
 import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
 
@@ -434,7 +434,7 @@ export struct ReviewPage {
             Text((this.currentItem() as WordItem).usPhonetic)
               .fontSize(14)
               .fontColor(this.theme.textTertiary)
-            Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+            Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
               .width(14)
               .height(14)
               .objectFit(ImageFit.Contain)
@@ -445,7 +445,7 @@ export struct ReviewPage {
           }
         } else {
           // 无音标：喇叭独立一行（发音永远可用）
-          Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+          Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
             .width(16)
             .height(16)
             .objectFit(ImageFit.Contain)

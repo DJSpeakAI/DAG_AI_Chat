@@ -43,10 +43,10 @@ import { ContentFilter, FilterHit } from '../utils/ContentFilter'; // ★ 0.250.
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, orderedReviewWords, orderedReviewCards, rotateSlice, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）；★ 0.237.3：换一批（orderedReviewWords/Cards 全序视图 + rotateSlice 环绕轮换）
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：司忆区跟随全局卡面模式（单面/双面）
-import { noteBankMutation } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）
+  import { noteBankMutation, saveBubbleTreePools } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）；★ 0.287.0：saveBubbleTreePools 分池保存公共函数（saveTree 消重+撤销栈闭包安全）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
-import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
+import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
   import { MdSpan, MdBlock, parseInlineMd, parseBlockMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, HookSpec, parseHookJsonResponse, scanBlockSpans, mergeHooksIntoContent, buildTableMarkdown, buildTablePlainText } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染（# 标题/**粗**/列表/引用/分割线/链接——纯函数模块，ohosTest 双消费）；★ 0.232.0：mdToSpeakableText（朗读文本清洗——**/#/代码块不进 TTS）；★ 0.234.0：注意力锚点+分章折叠全家桶（标记解析/清洗/breath 保底/章节切分/默认展开集）；★ 0.237.1：blockRenderedText（划词取词基准=渲染态文本）；★ 0.269.0：两段式钩子合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）；★ 0.285.5：表格整表工具两件（复制整表 MD/文本模式展示）
@@ -69,7 +69,9 @@ import { ProfileStore, connectProfileObservations, buildCardView, updateProfileF
   MemoryInjectStatsStore, connectMemoryInjectStats, recordMemoryInjectStats,
   connectMemoryPref, isMemoryOn } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎一期（画像观察行+分支摘要头+注入埋点）
 import { triggerAiRerank, getRerankWordIds, getRerankCardIds, rerankDisplayBatch } from '../utils/AiRerank'; // ★ 0.268.0：司忆区 AI 智慧排序（发送时预触发+渲染时消费 AI 序，失败静默兜底本地序）
-import { fetchWebContextForMessage, detectWebUrls, WebFetchSummary } from '../utils/WebFetchUtil'; // ★ 0.286.0：AI 读网页一期（纯客户端抓取——消息含链接时抽正文一次性注入本次请求，失败不阻断）
+import { fetchWebContextForMessage, detectWebUrls, WebFetchSummary } from '../utils/WebFetchUtil'; // ★ 0.286.0：AI 读网页一期（纯客户端抓取——消息含链接时抽正文一次性注入本次请求，失败不阻断）；★ 0.286.1 壳页走隐藏 Web 组件渲染重取
+import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（删除消息入栈；Ctrl+Z 全局键在 Index 层消费）
+import { webview } from '@kit.ArkWeb'; // ★ 0.286.1：AI 读网页渲染通道（SPA 文档站静态抓只有壳——Web 组件真渲染后注入脚本取 innerText）
 
 // ★ 0.237.0 术语荧光底回退开关（任务书 §5.2 实验性——先全量加底试观感，观感太花一键关掉回退纯加粗）
 const glowHighlight: boolean = true;
@@ -620,6 +622,9 @@ export struct ChatPage {
   canvasModeStore: CanvasModeStore = connectCanvasMode(); // ★ 0.151：画布模式（'flat'/'tabs'，独立 key 'canvas-mode-v1'）
   tabForest: TabForestStore = connectTabForest();         // ★ 0.151：Tab 池（tabsJson + activeTabId，独立 key 'tab-forest-v1'）
   @Local inputText: string = '';
+  // ★ 0.287.2：输入法组词态（拼音/语音预编辑未上屏）——自绘占位必须让位，否则与输入法文字叠在一起；
+  //   信号来自 TextArea onChange 的 previewText 第二参（API 12+，组词中 value 非空、上屏后清空）
+  @Local imeComposing: boolean = false;
   @Local isLoading: boolean = false;
   // ★ 0.162：分支切换过渡动画状态——addBubble 切换气泡时消息区先淡出再淡入（约 440ms），
   // 让用户明确感知「跳到了新的空白消息页」（原瞬间清空重载刷屏过快、空页面时无感知）
@@ -693,6 +698,20 @@ export struct ChatPage {
    // ★ 0.286.0：AI 内容举报（华为上架合规 G.3.8——AI 对话模块需显著举报入口）：flag 按钮 → 本地确认弹窗 → mailto
    @Local reportConfirmVisible: boolean = false; // 举报确认弹窗可见
    @Local reportTargetModel: string = '';        // 被举报消息的模型 ID（邮件正文自动附，便于追溯）
+   undoStack: UndoStore = connectUndoStack(); // ★ 0.287.0：撤销栈（删除消息入栈）
+   // ★ 0.286.1：AI 读网页渲染通道——SPA 文档站静态抓取只有壳（用户实测「文档中心」四字），
+   //   按需挂载 1×1 隐形 Web 组件真渲染（javaScript+domStorage 全开），onPageEnd 后轮询注入脚本
+   //   取 document.body.innerText（800ms×最多 5 轮等 SPA 异步出正文，整页 15s 超时兜底）；
+   //   串行队列（一次渲染一页，最多 2 页），队列空即卸载组件（不常驻占内存）
+   @Local webRenderActive: boolean = false;      // Web 组件挂载开关（if 控制挂/卸——挂载时恒 true，非 0.160 隐藏雷）
+   webRenderController: webview.WebviewController = new webview.WebviewController();
+   webRenderControllerReady: boolean = false;    // onControllerAttached 信号（attached 前 loadUrl 会抛异常）
+   webRenderQueueUrls: string[] = [];            // 待渲染 URL 串行队列
+   webRenderQueueResolvers: Array<(v: string) => void> = []; // 队列配套 resolve
+   webRenderCurrentUrl: string = '';             // 正在渲染的 URL（空=空闲）
+   webRenderTimeoutId: number = -1;              // 整页超时定时器句柄
+   webRenderPollCount: number = 0;               // onPageEnd 后取文轮询计数
+   webRenderPolling: boolean = false;            // 轮询进行中（防重入）
   // ★ 0.247.1：PC 判定——true=停用消息滑动删除（PC 鼠标按下拖动是划词手势，被 swipe 抢走）。
   //   ★ 0.247.2 改设备形态判定：deviceInfo.deviceType==='2in1'（Matebook=2in1）——弃 inputDevice
   //   sources 探测（Pad/手机外接触控板/蓝牙鼠标或系统虚拟设备即误报 true → 滑动删除被误停）；
@@ -783,6 +802,16 @@ export struct ChatPage {
   // ★ 0.150：全局设置弹窗状态（顶栏 ⚙ 唤起；遮罩不关闭，✕/返回键走弹窗内未保存确认）
       // ★ 0.133：语音朗读状态（全局单播放源，驱动喇叭图标三态）
   @Local playingMessageId: string = '';    // 正在播放的消息 ID（🔊 态）
+  // ★ 0.287.6：消息朗读态驱动喇叭动画——loading/playing 任一非空即登记动画源，双空注销
+  // （@Monitor 覆盖所有清空路径：点击停止/删除消息/播完回调，比在 startTTS/stopTTS 插调用更稳）
+  @Monitor('playingMessageId', 'ttsLoadingMessageId')
+  onTtsAnimStateChange(): void {
+    if (this.playingMessageId.length > 0 || this.ttsLoadingMessageId.length > 0) {
+      speakerPulse.begin('msg');
+    } else {
+      speakerPulse.end('msg');
+    }
+  }
   @Local ttsLoadingMessageId: string = ''; // TTS 请求/等待中的消息 ID（⏳ 态，防重复点击）
   // ★ 0.195.0：大屏断点（≥600vp）——返回箭头大屏专属（小屏侧滑返回）
   // ★ 0.196.4：改读窗口宽度共享真相源（WindowMode）——分屏/悬浮窗实时切手机布局
@@ -2088,6 +2117,7 @@ export struct ChatPage {
     this.currentBubble.messages = [...this.currentBubble.messages, userMsg, aiMsg];
     this.saveTree(); // ★ 0.151：按模式分池保存
     this.inputText = '';
+    this.imeComposing = false; // ★ 0.287.2：发送清空后占位恢复显示
     this.pendingImages = [];
     // ★ 0.214.2：发送即清本气泡草稿（内容已入消息流，草稿使命完成）
     const sb = this.currentBubble;
@@ -2133,10 +2163,12 @@ export struct ChatPage {
     //   失败不阻断发送（块内列明失败原因，模型不瞎编）；正文已过 ContentFilter、截断 6000 字符、
     //   最多 2 个链接（WebFetchUtil 内双闸，防 token 爆炸多扣 SP）
     if (detectWebUrls(userMsg.content).length > 0) {
-      this.streamPhase = 4; // 抓取期间独立等待态（最多 2 页 × 12s）
+      this.streamPhase = 4; // 抓取期间独立等待态（最多 2 页 × 15s——壳页走 Web 渲染更长）
       let webSummary: WebFetchSummary;
       try {
-        webSummary = await fetchWebContextForMessage(userMsg.content);
+        // ★ 0.286.1：传渲染通道——静态抓到壳（<300 字，SPA 文档站）时隐形 Web 组件真渲染重取
+        webSummary = await fetchWebContextForMessage(userMsg.content,
+          (url: string): Promise<string> => this.renderUrlViaWeb(url));
       } catch (_we) {
         webSummary = { block: '', okCount: 0, failCount: 0 }; // 全链兜底：异常不阻断发送
       } finally {
@@ -2872,6 +2904,7 @@ export struct ChatPage {
     const draftBubble = this.currentBubble;
     if (draftBubble) {
       this.inputText = draftBubble.draftText;
+      this.imeComposing = false; // ★ 0.287.2：切气泡载草稿后按是否为空重新判定占位（组词态不跨气泡）
       if (draftBubble.draftImages.length > 0) {
         try {
           const draftArr = JSON.parse(draftBubble.draftImages) as string[];
@@ -2915,6 +2948,7 @@ export struct ChatPage {
     }
     this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
     this.stopExtractTimer(); // ★ 0.153：组件销毁清除提炼计时器，防内存泄漏
+    this.cleanupWebRender(); // ★ 0.286.1：渲染通道清理（清超时定时器+resolve 挂起 Promise+卸载隐形 Web，防泄漏）
     // ★ 0.249.3：查看器延迟关闭计时器随缩放/双击判定一起回滚删除，此处不再清理
   }
 
@@ -3149,8 +3183,39 @@ export struct ChatPage {
     if (this.playingMessageId === messageId || this.ttsLoadingMessageId === messageId) {
       this.stopTTS();
     }
+    // ★ 0.287.0：撤销快照（删除消息入栈——闭包只捕获应用级单例+数据，不捕获页面 this；
+    //   undo 按 nodeID 回 nodeList 找 live 对象（0.244 流式写穿同款防御——云同步 reconcile 整体
+    //   替换 store.nodeList 后旧引用写入=孤儿失效），气泡没了=放弃撤销无害）
+    const delNodeId = this.currentBubble.nodeID;
+    const delIdx = this.currentBubble.messages.findIndex((m: ChatMessage): boolean => m.messageId === messageId);
+    const delMsg = delIdx >= 0 ? this.currentBubble.messages[delIdx] : null;
     this.currentBubble.messages = this.currentBubble.messages.filter(m => m.messageId !== messageId);
     this.saveTree(); // ★ 0.151：按模式分池保存
+    if (delIdx >= 0 && delMsg !== null) {
+      const store = this.store;
+      const cms = this.canvasModeStore;
+      const tf = this.tabForest;
+      const pd = this.persistData;
+      this.undoStack.push('删除消息',
+        (): void => {
+          const live = store.nodeList.find((n: BubbleNode): boolean => n.nodeID === delNodeId);
+          if (live === undefined) {
+            return;
+          }
+          const arr = [...live.messages];
+          arr.splice(Math.min(delIdx, arr.length), 0, delMsg);
+          live.messages = arr;
+          saveBubbleTreePools(store, cms, tf, pd, upsertCloudData);
+        },
+        (): void => {
+          const live = store.nodeList.find((n: BubbleNode): boolean => n.nodeID === delNodeId);
+          if (live === undefined) {
+            return;
+          }
+          live.messages = live.messages.filter((m: ChatMessage): boolean => m.messageId !== messageId);
+          saveBubbleTreePools(store, cms, tf, pd, upsertCloudData);
+        });
+    }
   }
 
   // ============================================================
@@ -3198,6 +3263,148 @@ export struct ChatPage {
     } catch (_e2) {
       this.showToastSafe('复制失败，请手动记录邮箱');
     }
+  }
+
+  // ============================================================
+  // ★ 0.286.1：AI 读网页渲染通道（WebFetchUtil 壳判定的 webRenderer 实现——
+  //   隐形 Web 组件真渲染 SPA 文档站，注入脚本取 innerText；串行队列+15s 超时+轮询等渲染）
+  // ============================================================
+
+  // 对外入口：渲染一页取正文文本（失败 reject 中文 Error；组件按需挂载，队列空卸载）
+  renderUrlViaWeb(url: string): Promise<string> {
+    return new Promise<string>((resolve: (v: string) => void, reject: (e: Error) => void) => {
+      this.webRenderQueueUrls.push(url);
+      // 包一层：渲染失败走 reject（resolve 仅成功出文）——超时/异常统一收口 finishWebRender
+      this.webRenderQueueResolvers.push((v: string) => {
+        if (v.length > 0) {
+          resolve(v);
+        } else {
+          reject(new Error('网页渲染读取失败'));
+        }
+      });
+      this.webRenderActive = true; // 触发挂载（已挂载时无副作用）
+      this.tryStartNextWebRender();
+    });
+  }
+
+  // 空闲且队列有货 → 起下一页（controller 未 attached 时等 onControllerAttached 回调再起）
+  tryStartNextWebRender(): void {
+    if (this.webRenderCurrentUrl.length > 0 || this.webRenderQueueUrls.length === 0) {
+      return;
+    }
+    if (!this.webRenderControllerReady) {
+      return; // 等 Web 组件 onControllerAttached
+    }
+    this.webRenderCurrentUrl = this.webRenderQueueUrls.shift() as string;
+    this.webRenderPollCount = 0;
+    // 整页超时兜底（含加载+渲染轮询全程）：到点取已有内容（短也用）否则失败
+    this.webRenderTimeoutId = setTimeout(() => {
+      this.finishWebRender('');
+    }, 15000);
+    try {
+      this.webRenderController.loadUrl(this.webRenderCurrentUrl);
+    } catch (_le) {
+      this.finishWebRender(''); // loadUrl 异常（组件异常态）直接失败收口
+    }
+  }
+
+  // onPageEnd → 轮询取文（SPA 数据异步到——首轮延 800ms 再取，不足 300 字再等）
+  onWebRenderPageEnd(): void {
+    if (this.webRenderCurrentUrl.length === 0 || this.webRenderPolling) {
+      return;
+    }
+    this.pollWebRenderText();
+  }
+
+  pollWebRenderText(): void {
+    this.webRenderPolling = true;
+    setTimeout(() => {
+      this.webRenderPolling = false;
+      if (this.webRenderCurrentUrl.length === 0) {
+        return; // 已被超时/外部收口
+      }
+      this.runWebRenderScript();
+    }, this.webRenderPollCount === 0 ? 800 : 1000);
+  }
+
+  // 注入脚本取 title+innerText（runJavaScript 回调结果为 JSON 字符串）
+  runWebRenderScript(): void {
+    const script = '(function(){var t=document.title||"";var b=(document.body&&document.body.innerText)?document.body.innerText:"";return JSON.stringify(t+"\\n"+b);})()';
+    try {
+      this.webRenderController.runJavaScript(script)
+        .then((result: string) => {
+          if (this.webRenderCurrentUrl.length === 0) {
+            return;
+          }
+          let text = '';
+          try {
+            text = JSON.parse(result) as string;
+          } catch (_pe) {
+            text = result; // 非 JSON 包装（理论不至）——原样兜底
+          }
+          const bodyPart = text.length > 0 ? text : '';
+          if (bodyPart.trim().length >= 300) {
+            this.finishWebRender(bodyPart); // 正文足量——收工
+          } else if (this.webRenderPollCount < 5) {
+            this.webRenderPollCount += 1;
+            this.pollWebRenderText(); // SPA 还在出文——再等一轮
+          } else {
+            // 轮询用尽：有字给字（总比没有好），没字失败
+            this.finishWebRender(bodyPart.trim().length > 0 ? bodyPart : '');
+          }
+        })
+        .catch(() => {
+          if (this.webRenderCurrentUrl.length === 0) {
+            return;
+          }
+          if (this.webRenderPollCount < 5) {
+            this.webRenderPollCount += 1;
+            this.pollWebRenderText();
+          } else {
+            this.finishWebRender('');
+          }
+        });
+    } catch (_re) {
+      this.finishWebRender('');
+    }
+  }
+
+  // 单页收口：出队 resolve、清超时、空闲则起下一页或卸载组件
+  finishWebRender(text: string): void {
+    if (this.webRenderTimeoutId >= 0) {
+      clearTimeout(this.webRenderTimeoutId);
+      this.webRenderTimeoutId = -1;
+    }
+    const resolve = this.webRenderQueueResolvers.shift();
+    this.webRenderCurrentUrl = '';
+    this.webRenderPollCount = 0;
+    if (resolve !== undefined) {
+      resolve(text);
+    }
+    if (this.webRenderQueueUrls.length > 0) {
+      this.tryStartNextWebRender();
+    } else {
+      this.webRenderActive = false; // 队列空——卸载 Web 组件（不常驻占内存）
+      this.webRenderControllerReady = false; // 卸载后 controller 失效——重挂载等 onControllerAttached 再置位
+    }
+  }
+
+  // 页面销毁兜底：清定时器、resolve 挂起 Promise（防泄漏——组件销毁后回调不再可靠）
+  cleanupWebRender(): void {
+    if (this.webRenderTimeoutId >= 0) {
+      clearTimeout(this.webRenderTimeoutId);
+      this.webRenderTimeoutId = -1;
+    }
+    while (this.webRenderQueueResolvers.length > 0) {
+      const r = this.webRenderQueueResolvers.shift();
+      if (r !== undefined) {
+        r('');
+      }
+    }
+    this.webRenderQueueUrls = [];
+    this.webRenderCurrentUrl = '';
+    this.webRenderActive = false;
+    this.webRenderControllerReady = false;
   }
 
   // ============================================================
@@ -5106,6 +5313,7 @@ export struct ChatPage {
         this.currentBubbleStore.bubbleX = newBubble.x;
         this.currentBubbleStore.bubbleY = newBubble.y;
         this.inputText = carryText;  // ★ 0.184.0：携带补充要求带入新气泡（圈注「创建子气泡」）；默认空串 = 原清空行为不变
+        this.imeComposing = false; // ★ 0.287.2：新气泡输入区按携带文本是否为空重新判定占位
         // ★ 0.166.1：携带图片带入新气泡（圈注「创建子气泡」的标注图）；默认空数组 = 原清空行为不变
         this.pendingImages = carryImages;
         // ★ 0.235.0：划词引用随「引用为新子气泡」带入新输入区；默认空串 = 切气泡即清（一次性会话态，不进草稿）
@@ -5348,24 +5556,8 @@ export struct ChatPage {
   //       若写平铺池会把空树覆盖平铺池真实数据（用户实测丢树根因：切 tabs 后点 ➕，
   //       addTab 先走 saveTree 兜底、把空工作区写进 bubbleTreeJson，平铺池被清空）
   saveTree(): void {
-    if (this.canvasModeStore.mode === 'tabs') {
-      const tabs = parseTabs(this.tabForest.tabsJson);
-      const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabForest.activeTabId);
-      if (idx >= 0) {
-        tabs[idx].treeJson = serializeBubbleTree(this.store);
-        // ★ 0.151-bugfix2：Tab 名同步为树根显示名（聊天后根的第一条消息变化，Tab 名跟随根气泡）
-        const root = this.store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
-        if (root !== undefined) {
-          tabs[idx].name = getRootDisplayName(root);
-        }
-        this.tabForest.tabsJson = serializeTabs(tabs);
-        upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（Tab 池快照上云）
-      }
-      // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
-    } else {
-      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-      upsertCloudData('flat_pool', this.persistData.bubbleTreeJson); // ★ 0.165.1：云同步桥接（平铺池快照上云）
-    }
+    // ★ 0.287.0：重复体收口 ChatModel.saveBubbleTreePools（云上行经参数注入防环）
+    saveBubbleTreePools(this.store, this.canvasModeStore, this.tabForest, this.persistData, upsertCloudData);
   }
 
   // ★ 0.150：AI 偏好 prompt 拼接——按用户设置（全局设置弹窗 Tab2）生成 system 指令，
@@ -5855,7 +6047,7 @@ export struct ChatPage {
                         //   天然互斥（同一时间只读一条），startTTS 对 user 消息无 role 限制
                         Row({ space: 8 }) {
                           Row() {
-                            Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                            Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                               .width(14)
                               .height(14)
                               .objectFit(ImageFit.Contain)
@@ -6110,7 +6302,7 @@ export struct ChatPage {
                                         // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊；点击先停消息朗读（互斥）
                                         // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                                         // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
-                                        Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                                        Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                                           .width(12)
                                           .height(12)
                                           .objectFit(ImageFit.Contain)
@@ -6475,7 +6667,7 @@ export struct ChatPage {
                             // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态：
                             //   cone=空闲 / dots=合成中 / waves=播放中（★ 0.237.3 从行尾挪最前）
                             Row() {
-                              Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                              Image(this.ttsLoadingMessageId === msg.messageId ? $r('app.media.speaker_loading') : (this.playingMessageId === msg.messageId ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                                 .width(14)
                                 .height(14)
                                 .objectFit(ImageFit.Contain)
@@ -6840,26 +7032,29 @@ export struct ChatPage {
           //   Stack 高度由 TextArea 撑开（尺寸确定，区别于 0.279.16 overlay 未定容器=0 高的翻车）；
           // ★ 0.281.5：占位改「与正文同轴同位」——顶部对齐 + 与 TextArea 完全相同的 padding(8/8/5/5)；
           Stack({ alignContent: Alignment.Start }) {
-            if (this.inputText.length === 0) {
+            if (this.inputText.length === 0 && !this.imeComposing) {
               Row() {
                 Text('试一试小艺输入法的')
-                  .fontSize(13)
+                  .fontSize(this.isInputFocused ? 16 : 13) // ★ 0.287.3：聚焦态放大到 16＝与 TextArea 正文字号完全一致（用户「字体能放大一点」+ 三次指认不齐的真因：13 号字比 16 号正文小一档，视觉天然不齐）；未聚焦态两侧图标占宽，保持 13 保单行
                   .fontColor(this.theme.textTertiary)
                   .maxLines(1)
                 Image($r('app.media.mic'))
-                  .width(14)
-                  .height(14)
+                  .width(this.isInputFocused ? 16 : 14)
+                  .height(this.isInputFocused ? 16 : 14)
                   .objectFit(ImageFit.Contain)
                   .margin({ left: 1, right: 1 })
                   .opacity(0.85)
                 Text('语音转文本功能？')
-                  .fontSize(13)
+                  .fontSize(this.isInputFocused ? 16 : 13)
                   .fontColor(this.theme.textTertiary)
                   .maxLines(1)
               }
               .width('100%')
-              .height(this.isInputFocused ? 56 : 33) // ★ 0.279.19：不能用 100%（Stack 内百分比高会反向把 Stack 撑满整屏、消息区被挤没）——与 TextArea 自适应高一致：非聚焦 33（行高17+上下8×2）、聚焦 56
-              .padding({ top: 8, bottom: 8, left: 5, right: 5 }) // ★ 0.281.5：与 TextArea 内 padding 同值——提示与正文首行同轴同位
+              .height(this.isInputFocused ? 36 : 33) // ★ 0.279.19：不能用 100%（Stack 内百分比高会反向把 Stack 撑满整屏、消息区被挤没）；★ 0.287.5：聚焦 40→36（16 号行高 22 + 上下 9/5，用户「大框高度再矮一点」）
+              .padding(this.isInputFocused
+                ? { top: 9, bottom: 5, left: 12, right: 8 } // ★ 0.287.5：上下 9/5 让提示与光标一起下沉 2vp（用户「竖条加试一试再往下去一点」）；left 8→12=聚焦时提示比光标多缩进 4vp，等于「第一个试字前打一个空格」（只在进入输入模式生效，光标不动）
+                : { top: 7, bottom: 7, left: 8, right: 8 }) // ★ 0.281.5/0.287.4：非聚焦态保持原值——必须与 TextArea 内非聚焦 padding 一致，否则又错位
+              .margin({ left: 2, right: 2 }) // ★ 0.287.2：必须与 TextArea 的 margin 2 同值——否则提示起点 5vp、光标起点 7vp，水平差 2vp（用户实机指认「试一试和竖线没对齐」）；盒模型逐项同值才真正同轴
               .alignItems(VerticalAlign.Top) // ★ 0.281.5：顶部对齐（原 Center 在聚焦态 56 高时把提示压到正文下方约 11vp，用户实机指认与光标不在一行）
               .hitTestBehavior(HitTestMode.None)
             }
@@ -6867,8 +7062,11 @@ export struct ChatPage {
 
           TextArea({ text: $$this.inputText, placeholder: '' }) // ★ 0.278.4：加话筒 icon（placeholder 纯文本不支持组件混排，用 emoji 实现）) // ★ 0.278.3：恢复 0.270.1 原文案（用户强拍板不许改写——引导小艺输入法话筒 icon 语音转文本）+字号调小保一行；上一版 0.270.1 文案「试一试小艺输入法的语音转文本功能？」；★ 0.131：去掉 controller 参数（TextAreaController 已移除）
             .key('chatInputField') // ★ 0.216.2：PC 发送后 requestFocus('chatInputField') 重聚焦（连续打字免鼠标回点）
-            .onChange((value: string) => {
+            .onChange((value: string, previewText?: PreviewText) => {
               this.inputText = value;
+              // ★ 0.287.2：输入法组词/语音预编辑（未上屏）也视为「已开始输入」——previewText 非空即让位自绘占位；
+              //   此前只看已上屏 value，手机输入法打出字未上屏时「试一试」仍显示并与其叠字（用户实机指认）
+              this.imeComposing = !!previewText && previewText.value.length > 0;
               this.saveDraft(); // ★ 0.214.2：输入实时写回本气泡草稿（退出再回来继续编）
             })
             .width('100%') // ★ 0.279.18：原 layoutWeight(1) 移到外层 Stack（TextArea 在 Stack 内铺满）
@@ -6896,12 +7094,14 @@ export struct ChatPage {
             })
             // ★ 0.270.0 高度档位（用户拍板「聚焦即展开」）：默认 40 单行紧凑态不变；聚焦展开 76（约两行高）
             //   ——TextArea 随内容自撑语义不变（minHeight 只抬下限不截内容），失焦收回 40（有草稿时随内容自然高）
-            .constraintSize({ minHeight: this.isInputFocused ? 56 : 30, maxHeight: 136 }) // ★ 0.279.15：非聚焦 32→30、聚焦 60→56（用户「整体高度再降一点」）
+            .constraintSize({ minHeight: this.isInputFocused ? 36 : 30, maxHeight: 136 }) // ★ 0.279.15：非聚焦 32→30；★ 0.287.5：聚焦 40→36（与占位行同步）
             .animation({ duration: 200, curve: Curve.EaseInOut }) // 高度档位过渡（对齐项目 200ms 动效档）
             // ★ 0.246.0：对称上下 padding——空态单行时占位符「输入问题...」垂直居中（用户截图指认偏上）；
             //   9/9 首轮仍偏上（TextArea 空态渲染高度大于 minHeight 40、内容顶部对齐致下空隙偏大），
             //   12/12 补偿顶对齐偏移；多行增高时对称 padding 不干扰布局
-            .padding({ top: 8, bottom: 8, left: 5, right: 5 }) // ★ 0.279.17：上下 10→8（卡外 top 6→10 补偿总高；上下对称保垂直居中）
+            .padding(this.isInputFocused
+              ? { top: 9, bottom: 5, left: 8, right: 8 } // ★ 0.287.5：与占位行上下同值（光标同步下沉 2vp）；left 保持 8——提示多出的 4vp 只属于「空格」，光标不前移
+              : { top: 7, bottom: 7, left: 8, right: 8 }) // 非聚焦态与占位行一致
             .backgroundColor(Color.Transparent) // ★ 0.278.2：去 TextArea 自带默认灰底（用户截图实锤=孤立小气泡，图标被留在外面）——容器底色由外层卡统一承担
             .placeholderColor(this.theme.textTertiary) // ★ 0.278.2：占位提示字调浅（用户拍板「太亮了」——提示语低调、与正文区隔）
             .placeholderFont({ size: 13 }) // ★ 0.279.17：恢复原生占位字号 13（0.279.16 自绘 overlay 真机整行不可见已回退；overlay 内 height 100% 相对未定尺寸容器致 0 高）
@@ -7000,51 +7200,50 @@ export struct ChatPage {
           // ★ 0.282.0：发送键迁至输入卡下层工具行右下角（参考 DeepSeek 布局，行内旧位置退役）
         }
         .width('100%')
-        .padding({ left: 4, right: 4, top: 3, bottom: 3 }) // ★ 0.279.15：上下 5→3（卡内再压 2vp，高度让给上下留白）
+        .padding({ left: 4, right: 4, top: 2, bottom: 2 }) // ★ 0.279.15：上下 5→3；★ 0.287.5：3→2（高度再压 2vp，上下对称让内容在卡内居中）
         .opacity(this.importArrived) // ★ 0.200.0：导入落地渐显（L3 末拍 0→1 300ms；常态恒 1 不影响日常输入/截图）
           if (this.isInputFocused) { // ★ 0.282.0：工具行仅聚焦态弹出（默认态保持 左树杈/中间提示/右圈注 三件）
-          // ★ 0.282.0 输入区工具行重构（用户拍板，参考 DeepSeek 布局）——
-          //   播客模式入口、短/中/长三档标签整体下线：短回复并入中回复（prompt 内按问题类型自适应）；
-          //   深度思考=唯一模式开关（关=中回复 / 开=长回复）；左侧加号=添加图片；右下角=发送。
+          // ★ 0.282.0 输入区工具行重构（用户拍板，参考 DeepSeek 布局）；
+          // ★ 0.287.3 二次重排（用户对照参考图拍板）：①「深度思考」更名「司枢模式」（司=掌管、枢=中枢，
+          //   指在 DeepSeek 深度思考之上再加钩子层的那套模式，避免与 DS 原生「深度思考」混淆）；
+          //   ②加号从行首移到发送键左侧（右侧成组，参考图右组=＋+发送）；③左右各内缩 10vp，按钮不再贴卡内缘。
           Row() {
-            // 左：＋ 添加图片（相册多选 → base64 挂到输入区，原链路不变）
-            Row() {
-              Image($r('app.media.plus'))
-                .width(16)
-                .height(16)
-                .objectFit(ImageFit.Contain)
-            }
-            .width(28)
-            .height(28)
-            .borderRadius(14)
-            .justifyContent(FlexAlign.Center)
-            .backgroundColor(this.theme.surfaceHover)
-            .onClick(() => {
-              this.selectImages();
-            })
-
-            // 左：深度思考开关——关=中回复（默认）/ 开=长回复（恒深度思考+锚点+分节+伴读）
+            // 左：司枢模式开关——关=中回复（默认）/ 开=长回复（恒深度思考+锚点+分节+伴读）
             Row({ space: 4 }) {
               Image($r('app.media.timer'))
-                .width(13)
-                .height(13)
+                .width(14)
+                .height(14)
                 .objectFit(ImageFit.Contain)
-              Text('深度思考')
-                .fontSize(11)
+              Text('司枢模式')
+                .fontSize(12) // ★ 0.287.4：11→12（用户「左下角司枢模式大一点」）
                 .fontColor(this.replyLengthMode === 'long' ? Color.White : this.theme.textSecondary)
                 .maxLines(1)
             }
-            .height(26)
-            .padding({ left: 8, right: 10 })
-            .borderRadius(13)
+            .height(28) // ★ 0.287.4：26→28 随字号抬一档
+            .padding({ left: 9, right: 11 })
+            .borderRadius(14)
             .backgroundColor(this.replyLengthMode === 'long' ? this.theme.brandPrimary : Color.Transparent)
             .border({ width: 0.5, color: this.replyLengthMode === 'long' ? Color.Transparent : this.theme.strokeCard })
-            .margin({ left: 6 })
             .onClick(() => {
               this.replyLengthMode = this.replyLengthMode === 'long' ? 'medium' : 'long';
             })
 
             Blank()
+
+            // 右组：＋ 添加图片（相册多选 → base64 挂到输入区，原链路不变）——紧跟发送键左侧
+            Row() {
+              Image($r('app.media.plus'))
+                .width(18)
+                .height(18)
+                .objectFit(ImageFit.Contain)
+            }
+            .width(28)
+            .height(28)
+            .justifyContent(FlexAlign.Center)
+            .margin({ right: 8 }) // ★ 0.287.4：去掉圆底（用户「+ 号取消外面的圆圈」）——裸图标+保留 28 热区，图标 16→18 补足视觉分量
+            .onClick(() => {
+              this.selectImages();
+            })
 
             // 右：发送（圆形向上箭头，右下角；isLoading 半透明置灰并屏蔽点击）
             Row() {
@@ -7066,7 +7265,7 @@ export struct ChatPage {
             })
           }
           .width('100%')
-          .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+          .padding({ left: 10, right: 10, top: 0, bottom: 0 }) // ★ 0.287.3：左右 4→10（按钮不贴边）；★ 0.287.4：上下 2→0（用户「里面上下两层往中间靠一点」）
           }
 
           // ★ 0.278.0：0.270.0 聚焦工具栏整块移除（用户拍板图2——聚焦态唯一入口「屏幕圈住」删除；
@@ -7359,7 +7558,7 @@ export struct ChatPage {
                            })
                         // 发音按钮（与气泡复习区同款三态；缩略词播全称）
                         // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
-                        Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                        Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                           .width(12)
                           .height(12)
                           .objectFit(ImageFit.Contain)
@@ -7782,7 +7981,7 @@ export struct ChatPage {
                     // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行，Text 无默认高度、行距还原
                     // ★ 0.155：发音文本统一走 wordPopupSpeakText()——中译英播英文译文、原路径播全称/原文
                     // ★ 0.195.0：喇叭三态 emoji 换单色 svg（cone 空闲/dots 合成中/waves 播放中）
-                    Image(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                    Image(wordSpeaker.loadingWord === this.wordPopupSpeakText() ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === this.wordPopupSpeakText() ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                       .width(14)
                       .height(14)
                       .objectFit(ImageFit.Contain)
@@ -7869,7 +8068,7 @@ export struct ChatPage {
                                 this.stopTTS();
                                 wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
                               })
-                            Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                            Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                               .width(12)
                               .height(12)
                               .objectFit(ImageFit.Contain)
@@ -8024,6 +8223,28 @@ export struct ChatPage {
         // ★ 0.235.0：划词引用二选一弹窗（渲染在翻译浮窗/文件夹弹窗之后=同层后绘制在上）
         if (this.quotePickerVisible) {
           this.quotePickerDialog()
+        }
+
+        // ★ 0.286.1：AI 读网页渲染通道——按需挂载的 1×1 隐形 Web 组件（SPA 文档站静态抓只有壳，
+        //   真渲染后注入脚本取 innerText）。挂载恒 if(true)（0.160 铁律针对「挂载着但初始隐藏」，
+        //   此处按需挂/卸干净）；javaScript+domStorage 全开（SPA 依赖）；1×1+近全透明+不参与命中。
+        //   渲染期间页面上可能有页面切换音效/网络活动——组件不可见不获焦，用户零感知
+        if (this.webRenderActive) {
+          Web({ src: 'about:blank', controller: this.webRenderController })
+            .onControllerAttached(() => {
+              this.webRenderControllerReady = true;
+              this.tryStartNextWebRender(); // 首挂载时 controller 才可用——补发起排队的渲染
+            })
+            .onPageEnd(() => {
+              this.onWebRenderPageEnd();
+            })
+            .javaScriptAccess(true)
+            .domStorageAccess(true)
+            .onlineImageAccess(true)
+            .width(1)
+            .height(1)
+            .opacity(0.01)
+            .hitTestBehavior(HitTestMode.None)
         }
 
         // ★ 0.150：删除确认弹窗（防误触）——首次点 × 弹出；勾选「此次对话不再提示」后本次会话内直接删；

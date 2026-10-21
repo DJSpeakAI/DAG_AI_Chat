@@ -15,6 +15,8 @@ import { ContentFilter } from './ContentFilter';
 export const WEB_MAX_URLS: number = 2;
 // 单页正文截断上限（字符）
 export const WEB_MAX_CONTENT_CHARS: number = 6000;
+// ★ 0.286.1 壳判定线：静态抽取正文低于此字数 = 疑似前端渲染壳（SPA 文档站），触发 Web 组件渲染重取
+export const WEB_RENDER_TRIGGER_CHARS: number = 300;
 
 // 抓取结果条目（一条 URL 一个）
 export interface WebFetchItem {
@@ -132,11 +134,11 @@ export function extractReadableText(html: string): ReadablePage {
   return { title: title, text: body };
 }
 
-// 抓取单页（GET + UA 伪装 + 超时；2xx 且文本类才收；错误全中文）
-export function fetchWebPageText(url: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
+// 抓取单页静态 HTML → 抽正文（GET + UA 伪装 + 超时；2xx 且文本类才收；错误全中文）
+export function fetchWebPageReadable(url: string): Promise<ReadablePage> {
+  return new Promise<ReadablePage>((resolve, reject) => {
     const req = http.createHttp();
-    const finish = (val: string | Error): void => {
+    const finish = (val: ReadablePage | Error): void => {
       req.destroy();
       if (val instanceof Error) {
         reject(val);
@@ -173,8 +175,7 @@ export function fetchWebPageText(url: string): Promise<string> {
         return;
       }
       const page = extractReadableText(html);
-      const head = page.title.length > 0 ? `标题：${page.title}\n` : '';
-      finish(`${head}正文：\n${page.text}`);
+      finish(page);
     }).catch((err: BusinessError) => {
       const msg = `${err.message}`;
       if (msg.indexOf('timeout') >= 0 || msg.indexOf('2300028') >= 0 || err.code === 2300028) {
@@ -186,6 +187,22 @@ export function fetchWebPageText(url: string): Promise<string> {
       }
     });
   });
+}
+
+// ReadablePage → 注入块用文本（标题行 + 正文行）
+export function formatReadablePage(page: ReadablePage): string {
+  const head = page.title.length > 0 ? `标题：${page.title}\n` : '';
+  return `${head}正文：\n${page.text}`;
+}
+
+// 任意纯文本 → 压空白 + 截断 6000（Web 组件渲染结果复用同一闸）
+export function clampWebText(raw: string): string {
+  let text = raw.replace(/\r/g, '');
+  text = squeezeWhitespace(text);
+  if (text.length > WEB_MAX_CONTENT_CHARS) {
+    text = `${text.substring(0, WEB_MAX_CONTENT_CHARS)}\n（网页内容过长，已截断）`;
+  }
+  return text;
 }
 
 // 拼 system 注入块（成功正文 + 失败原因均列出——模型不瞎编；敏感词块标注跳过）
@@ -208,8 +225,11 @@ export function buildWebContextBlock(items: WebFetchItem[]): string {
   return parts.join('\n');
 }
 
-// 全链入口：检测 → 抓取 → 敏感词过滤 → 拼块（单页失败静默记录，不阻断）
-export async function fetchWebContextForMessage(text: string): Promise<WebFetchSummary> {
+// 全链入口：检测 → 两级瀑布抓取（静态/壳→Web 渲染）→ 敏感词过滤 → 拼块（单页失败静默记录，不阻断）
+// ★ 0.286.1 webRenderer：壳页/静态失败页的渲染通道（ChatPage 隐形 Web 组件取 innerText），
+//   可缺省——不传时行为与 0.286.0 纯静态链一致（ohosTest/独立调用方兼容）
+export async function fetchWebContextForMessage(text: string,
+  webRenderer?: (url: string) => Promise<string>): Promise<WebFetchSummary> {
   const urls = detectWebUrls(text);
   const summary: WebFetchSummary = { block: '', okCount: 0, failCount: 0 };
   if (urls.length === 0) {
@@ -218,19 +238,65 @@ export async function fetchWebContextForMessage(text: string): Promise<WebFetchS
   const items: WebFetchItem[] = [];
   for (let i = 0; i < urls.length; i++) {
     const item: WebFetchItem = { url: urls[i], ok: false, content: '' };
+    // ★ 0.286.1 两级瀑布：静态抓（快 1~2s）→ 正文 < 300 字判定壳 → Web 组件渲染重取（真渲染）
+    let fetchedText = '';
     try {
-      const fetched = await fetchWebPageText(urls[i]);
-      const hit = ContentFilter.checkInput(fetched);
+      const page = await fetchWebPageReadable(urls[i]);
+      if (page.text.length >= WEB_RENDER_TRIGGER_CHARS || webRenderer === undefined) {
+        // 正文足量（普通网页快通道）或无渲染器（保持旧链路行为）——静态结果直接用
+        fetchedText = formatReadablePage(page);
+      } else {
+        // 壳（SPA/文档站静态 HTML 只有框架）→ Web 组件渲染取 innerText
+        try {
+          const rendered = await webRenderer(urls[i]);
+          if (rendered.trim().length >= WEB_RENDER_TRIGGER_CHARS) {
+            fetchedText = clampWebText(rendered);
+          } else if (page.text.trim().length > 0) {
+            // 渲染了但仍短：静态短正文兜底（有总比没有好）
+            fetchedText = `${formatReadablePage(page)}\n（网页可能未完全加载，内容不完整）`;
+          } else {
+            item.ok = false;
+            item.content = '网页需要浏览器渲染，渲染后仍未取得有效正文';
+          }
+        } catch (we) {
+          // 渲染失败：静态短正文兜底，否则报失败
+          if (page.text.trim().length > 0) {
+            fetchedText = `${formatReadablePage(page)}\n（网页可能未完全加载，内容不完整）`;
+          } else {
+            item.ok = false;
+            item.content = we instanceof Error ? we.message : '网页渲染读取失败';
+          }
+        }
+      }
+    } catch (e) {
+      // 静态抓本身失败（超时/HTTP 错）→ 有渲染器再试渲染通道
+      if (webRenderer !== undefined) {
+        try {
+          const rendered = await webRenderer(urls[i]);
+          if (rendered.trim().length > 0) {
+            fetchedText = clampWebText(rendered);
+          } else {
+            item.ok = false;
+            item.content = '网页内容为空';
+          }
+        } catch (we2) {
+          item.ok = false;
+          item.content = e instanceof Error ? e.message : '网页读取失败';
+        }
+      } else {
+        item.ok = false;
+        item.content = e instanceof Error ? e.message : '网页读取失败';
+      }
+    }
+    if (fetchedText.length > 0) {
+      const hit = ContentFilter.checkInput(fetchedText);
       if (hit !== null) {
         item.ok = false;
         item.content = '内容未通过本地安全检查，已跳过';
       } else {
         item.ok = true;
-        item.content = fetched;
+        item.content = fetchedText;
       }
-    } catch (e) {
-      item.ok = false;
-      item.content = e instanceof Error ? e.message : '网页读取失败';
     }
     if (item.ok) {
       summary.okCount += 1;

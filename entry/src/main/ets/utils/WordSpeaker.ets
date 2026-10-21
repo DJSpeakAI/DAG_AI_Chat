@@ -16,6 +16,36 @@ import { localTts, EnVoiceStatus } from './LocalTtsEngine';
 import { connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.189.1：音标口音设置（british: false=美式默认）
 import { UIContext } from '@kit.ArkUI'; // ★ 0.189.2：口音提示弹窗（UIContext.showAlertDialog）
 
+// ★ 0.287.6：喇叭播放动画脉冲（全局单例 speakerPulse）——播放中喇叭波纹双帧交替（playing↔wave1）
+//   「动起来」的单一真相源：各播放源（消息朗读/单词发音/设置页试听）begin/end 登记，活跃源非空即翻帧；
+//   归零即停表（定时器不常开，符合生命周期纪律）
+@ObservedV2
+export class SpeakerPulse {
+  @Trace wave: boolean = true; // true=双波帧（speaker_playing）/ false=单波帧（speaker_wave1）
+  private timer: number = -1;
+  private active: Set<string> = new Set<string>();
+
+  begin(id: string): void {
+    this.active.add(id);
+    if (this.timer < 0) {
+      this.wave = true;
+      this.timer = setInterval((): void => {
+        this.wave = !this.wave;
+      }, 320);
+    }
+  }
+
+  end(id: string): void {
+    this.active.delete(id);
+    if (this.active.size === 0 && this.timer >= 0) {
+      clearInterval(this.timer);
+      this.timer = -1;
+      this.wave = true;
+    }
+  }
+}
+export const speakerPulse = new SpeakerPulse();
+
 // ★ 0.189.1：发音提示回调（调用方 toast；均为每会话一次，WordSpeaker 内部去重）
 export interface WordSpeakHooks {
   onEngineUnavailable?: () => void; // 本地引擎不可用（旧固件/语音包缺失）
@@ -51,6 +81,7 @@ export class WordSpeaker {
     this.stop(); // 顶替其他会话（含消息朗读的引擎占用）
     this.speakingWord = word;
     this.loadingWord = word;
+    speakerPulse.begin('word'); // ★ 0.287.6：发音会话活跃——喇叭动画翻帧
     // ★ 0.189.1：口音联动——先查 Laura 状态（缓存），再决定引擎与提示
     localTts.queryEnVoiceStatus().then((status: EnVoiceStatus) => {
       // 提示（每会话一次；先提示后播报，不打断发音节奏）
@@ -98,6 +129,7 @@ export class WordSpeaker {
   private resetState(): void {
     this.speakingWord = '';
     this.loadingWord = '';
+    speakerPulse.end('word'); // ★ 0.287.6：发音会话结束——动画源注销（幂等）
   }
 }
 

@@ -198,6 +198,32 @@ export function serializeBubbleTree(tree: BubbleTree): string {
   return JSON.stringify(data);
 }
 
+// ★ 0.287.0：按模式分池保存（公共函数）——ChatPage/BBTreeCanvas 两处 saveTree 逐字重复体收口，
+//   同时供撤销栈闭包使用（参数全为应用级单例，闭包安全——页面销毁后仍可调用）。
+//   ⚠️ 防环红线：ChatModel 禁 import CloudSyncUtil——云上行经 cloudUpsert 参数注入（调用方传 upsertCloudData）
+export function saveBubbleTreePools(store: BubbleTree, canvasModeStore: CanvasModeStore,
+  tabForest: TabForestStore, persistData: PersistData,
+  cloudUpsert: (key: string, value: string) => void): void {
+  if (canvasModeStore.mode === 'tabs') {
+    const tabs = parseTabs(tabForest.tabsJson);
+    const idx = tabs.findIndex((t: TabMeta): boolean => t.id === tabForest.activeTabId);
+    if (idx >= 0) {
+      tabs[idx].treeJson = serializeBubbleTree(store);
+      // ★ 0.151-bugfix2：Tab 名同步为树根显示名（聊天/改标题后 Tab 名跟随）
+      const root = store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
+      if (root !== undefined) {
+        tabs[idx].name = getRootDisplayName(root);
+      }
+      tabForest.tabsJson = serializeTabs(tabs);
+      cloudUpsert('tabs_pool', tabForest.tabsJson); // ★ 0.165.1：云同步桥接（注入）
+    }
+    // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
+  } else {
+    persistData.bubbleTreeJson = serializeBubbleTree(store);
+    cloudUpsert('flat_pool', persistData.bubbleTreeJson); // ★ 0.165.1：云同步桥接（注入）
+  }
+}
+
 // 反序列化 JSON → BubbleTree
 export function deserializeBubbleTree(json: string): BubbleTree | null {
   if (!json || json.length === 0) {
@@ -1469,6 +1495,21 @@ export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string
   _sg['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', _sg);
   return total;
+}
+
+// ★ 0.288.0：嘉奖 SP 发放统一收口（性格测试等一次性奖励场景；签到仍走 doSignIn 不改）——
+//   发放入 bonusSp 嘉奖池 + 云上行防抖（cfg:siyi-points）+ sp_grant 埋点，与 doSignIn 同款三件套
+export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string): void {
+  if (amount <= 0) {
+    return;
+  }
+  siyi.bonusSp += amount;
+  scheduleRowFlush();
+  const p: Record<string, string> = {};
+  p['src'] = src;
+  p['sp'] = `${amount}`;
+  p['bal'] = `${siyiTotalSp(siyi)}`;
+  trackUidAuto('sp_grant', p);
 }
 
 // 首登签到引导判定（丙方案）：从未引导过 && 从未签过 && 登录态已建立 → 弹一次并打标志。

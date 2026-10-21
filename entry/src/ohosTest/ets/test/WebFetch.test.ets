@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { detectWebUrls, extractReadableText, buildWebContextBlock, WEB_MAX_URLS, WEB_MAX_CONTENT_CHARS,
+import { detectWebUrls, extractReadableText, buildWebContextBlock, clampWebText, WEB_MAX_URLS, WEB_MAX_CONTENT_CHARS,
   WebFetchItem } from '../../../main/ets/utils/WebFetchUtil';
 
 // ★ 0.286.0：AI 读网页一期纯函数断言（project_rule §12.13 测试覆盖军令——
@@ -71,6 +71,18 @@ export default function webFetchTest() {
     })
     it('block_empty_items', 0, () => {
       expect(buildWebContextBlock([])).assertEqual('');
+    })
+
+    // ---- 0.286.1 渲染通道文本钳制：压空白 + 截断 ----
+    it('clamp_web_text_squeezes_and_truncates', 0, () => {
+      expect(clampWebText('  A  \n\n\n  B  \r\n  C ')).assertEqual('A\nB\nC');
+      const long: string[] = [];
+      for (let i = 0; i < 2000; i++) {
+        long.push('很长很长的渲染正文');
+      }
+      const clamped = clampWebText(long.join(''));
+      expect(clamped.length <= WEB_MAX_CONTENT_CHARS + 20).assertTrue();
+      expect(clamped.indexOf('已截断') >= 0).assertTrue();
     })
   })
 }

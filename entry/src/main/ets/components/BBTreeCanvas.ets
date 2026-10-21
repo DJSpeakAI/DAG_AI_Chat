@@ -16,14 +16,17 @@
 
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.196.4：display 移除（isTablet 改读 WindowMode）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局） ★ 0.168：display 屏宽断点（平板/手机边栏形态）
-import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat, recordNodeTomb, recordTabTomb } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.230.1：recordNodeTomb/recordTabTomb（节点/Tab 显式墓碑——自动差集墓碑已废）
+import { BubbleNode, BubbleTree, CurrentBubble, PersistData, serializeBubbleTree, deserializeBubbleTree, generateNodeId, CanvasMode, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, layoutFlatForest, applyCanvasModeSwitch, StatisticsStore, connectStatistics, recordStat, recordNodeTomb, recordTabTomb, saveBubbleTreePools } from '../common/ChatModel'; // ★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.230.1：recordNodeTomb/recordTabTomb（节点/Tab 显式墓碑——自动差集墓碑已废）；★ 0.287.0：saveBubbleTreePools（saveTree 消重+撤销栈闭包安全）
 import { RADIUS_NAV, RADIUS_NODE, RADIUS_CANVAS, RADIUS_CONTROL, RADIUS_LOGO, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_NAV_LABEL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_META, NODE_W, NODE_H, NODE_ICON, FONT_SIZE_LABEL } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（画布 ⚙ 唤起，与 ChatPage 共用同一持久化实例）
 import { AppSideBar } from './AppSideBar'; // ★ 0.195.0：共享边栏组件（手机抽屉用；平板常驻边栏已升 Index 级）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
+import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（删除气泡/重命名入栈）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
 import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.200.0：知识卡片导入气泡（跨页 store：知识库/复习页写入 → 画布选择模式消费）
+import { PersonalityQuizStore, connectPersonalityQuiz } from '../common/PersonalityQuiz'; // ★ 0.288.0：性格测试进度（done=信号灯消失）
+import { PersonalityQuizDialog } from './PersonalityQuizDialog'; // ★ 0.288.0：性格测试弹窗（信号灯唤起）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -54,6 +57,10 @@ export struct BBTreeCanvas {
   @Local titleEditVisible: boolean = false;
   @Local titleEditNodeId: string = '';
   @Local titleEditText: string = '';
+  // ★ 0.287.1：删除气泡确认弹窗（自绘暗紫——原系统灰 AlertDialog 用户实测风格不符）状态
+  @Local deleteBubbleConfirmVisible: boolean = false;
+  deleteBubbleTarget: BubbleNode | null = null; // 待删节点引用（非渲染状态；执行后清空）
+  undoStack: UndoStore = connectUndoStack(); // ★ 0.287.0：撤销栈（删除气泡子树/重命名入栈；Ctrl+Z 全局键在 Index 层消费）
 
   // ★ 0.150：全局设置弹窗状态（画布右上角 ⚙ 唤起；与 ChatPage 顶栏 ⚙ 共用同一持久化实例，修改一处两处同步）
   // ★ 0.230.0：设置弹窗开态/关闭请求升共享真相源（跨页返回键拦截，见 GlobalSettingsDialog.ets）
@@ -99,7 +106,19 @@ export struct BBTreeCanvas {
   @Local importBounceScale: number = 1;   // 弹跳 scale（★ 0.200.1：keyframe 1→1.14→0.98→1 四段回弹；锚点保持左上+负 translate 补偿=原地弹跳）
   @Local importFlyRotate: number = 0;     // ★ 0.200.1：飞行卡片微旋转（-6°→4°→0°，弧线飞行质感）
   @Local importGlow: number = 0;          // ★ 0.200.1：到达发光强度 0~1 连续渐入（替代原 boolean 瞬切——瞬切生硬是动画翻车主因之一）
-  @Local importDim: number = 0;           // 变暗层透明度（0→0.4 淡入；hitTest 穿透保留拖拽缩放）
+  @Local importDim: number = 0;         // 变暗层透明度（0→0.4 淡入；hitTest 穿透保留拖拽缩放）
+
+  // ── ★ 0.288.0：性格测试（画布左下角「信号灯」呼吸圆点入口；做完消失）──
+  quizStore: PersonalityQuizStore = connectPersonalityQuiz();
+  @Local quizVisible: boolean = false;  // 测试弹窗开关（退出保留进度，下次续做）
+  @Local quizBreath: number = 0;        // 信号灯呼吸动画值 0~1（放大+光晕呼吸）
+
+  /** ★ 0.288.0：信号灯呼吸动画（0↔1 无限往复——品牌紫光点低频呼吸微光；隐藏态组件不渲染、帧负载趋零） */
+  startQuizBreath(): void {
+    animateTo({ duration: 1500, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate }, () => {
+      this.quizBreath = 1;
+    });
+  }
 
   /** ★ 0.200.0：进入选择模式（onShown 检测——action 非空 = 知识库/复习页刚发起导入） */
   enterImportSelecting(): void {
@@ -410,33 +429,43 @@ export struct BBTreeCanvas {
   // tabs：工作区 = 当前 Tab 树 → 存回该 Tab 的 treeJson；
   //       无 activeTab 时【不写任何池】——此时工作区必为空（applyCanvasModeSwitch 保证），
   //       若写平铺池会把空树覆盖平铺池真实数据（用户实测丢树根因）
-  saveTree(): void {
-    if (this.canvasModeStore.mode === 'tabs') {
-      const tabs = parseTabs(this.tabForest.tabsJson);
-      const idx = tabs.findIndex((t: TabMeta): boolean => t.id === this.tabForest.activeTabId);
-      if (idx >= 0) {
-        tabs[idx].treeJson = serializeBubbleTree(this.store);
-        // ★ 0.151-bugfix2：Tab 名同步为树根显示名（Tab 名与树根绑定——画布改标题/聊天后 Tab 名跟随）
-        const root = this.store.nodeList.find((n: BubbleNode): boolean => n.parentID === null);
-        if (root !== undefined) {
-          tabs[idx].name = getRootDisplayName(root);
-        }
-        this.tabForest.tabsJson = serializeTabs(tabs);
-        upsertCloudData('tabs_pool', this.tabForest.tabsJson); // ★ 0.165.1：云同步桥接（Tab 池快照上云）
-      }
-      // 无 activeTab：无主工作区无可保存内容，直接跳过（不写任何池）
-    } else {
-      this.persistData.bubbleTreeJson = serializeBubbleTree(this.store);
-      upsertCloudData('flat_pool', this.persistData.bubbleTreeJson); // ★ 0.165.1：云同步桥接（平铺池快照上云）
-    }
-  }
+   saveTree(): void {
+     // ★ 0.287.0：重复体收口 ChatModel.saveBubbleTreePools（云上行经参数注入防环）
+     saveBubbleTreePools(this.store, this.canvasModeStore, this.tabForest, this.persistData, upsertCloudData);
+   }
 
   // ★ 0.147：保存手动标题（截 15 字符上限）并持久化；清空保存即恢复自动标题
+  // ★ 0.287.0：重命名入撤销栈（旧名快照——undo 写回）；P1 回车=保存（onSubmit 同链）
   saveNodeTitle(): void {
     const node = this.store.nodeList.find((n: BubbleNode) => n.nodeID === this.titleEditNodeId);
     if (node !== undefined) {
+      const oldTitle = node.nodeTitle;
       node.nodeTitle = this.titleEditText.trim().substring(0, 15);
       this.saveTree(); // ★ 0.151：按模式分池保存
+      // ★ 0.287.0：重命名撤销（值无变化不入栈——防无意义撤销条目）
+      if (oldTitle !== node.nodeTitle) {
+        const store = this.store;
+        const cms = this.canvasModeStore;
+        const tf = this.tabForest;
+        const pd = this.persistData;
+        const nodeId = node.nodeID;
+        const newTitle = node.nodeTitle;
+        this.undoStack.push('重命名气泡',
+          (): void => {
+            const live = store.nodeList.find((n: BubbleNode): boolean => n.nodeID === nodeId);
+            if (live !== undefined) {
+              live.nodeTitle = oldTitle;
+              saveBubbleTreePools(store, cms, tf, pd, upsertCloudData);
+            }
+          },
+          (): void => {
+            const live = store.nodeList.find((n: BubbleNode): boolean => n.nodeID === nodeId);
+            if (live !== undefined) {
+              live.nodeTitle = newTitle;
+              saveBubbleTreePools(store, cms, tf, pd, upsertCloudData);
+            }
+          });
+      }
     }
     this.titleEditVisible = false;
   }
@@ -454,44 +483,80 @@ export struct BBTreeCanvas {
       this.deleteTab(this.tabForest.activeTabId);
       return;
     }
-    this.getUIContext().showAlertDialog({
-      title: isRoot ? '删除树' : '删除节点',
-      message: isRoot ? '确认删除此树（根气泡及其所有子节点）？' : '确认删除此节点及其所有子节点？',
-      primaryButton: {
-        value: '取消',
-        action: () => {}
-      },
-      secondaryButton: {
-        value: '删除',
-        fontColor: '#F44336',
-        action: () => {
-          const idsToDelete: string[] = [bubble.nodeID];
-          let changed = true;
-          while (changed) {
-            changed = false;
-            for (let i = 0; i < this.store.nodeList.length; i++) {
-              const node = this.store.nodeList[i];
-              const pid = node.parentID !== null ? node.parentID : '';
-              if (idsToDelete.includes(pid) && !idsToDelete.includes(node.nodeID)) {
-                idsToDelete.push(node.nodeID);
-                changed = true;
-              }
-            }
+    // ★ 0.287.1：系统灰 AlertDialog（用户实测「灰框与暗紫风格不符+回车不可用」）→ 自绘暗紫确认弹窗
+    this.deleteBubbleTarget = bubble;
+    this.deleteBubbleConfirmVisible = true;
+  }
+
+  // ★ 0.287.1：自绘弹窗「删除」执行体（原 AlertDialog secondaryButton action 原样迁移——含 0.287.0 撤销入栈）
+  executeDeleteBubble(): void {
+    this.deleteBubbleConfirmVisible = false;
+    const bubble = this.deleteBubbleTarget;
+    this.deleteBubbleTarget = null;
+    if (bubble === null) {
+      return;
+    }
+    {
+      const idsToDelete: string[] = [bubble.nodeID];
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let i = 0; i < this.store.nodeList.length; i++) {
+          const node = this.store.nodeList[i];
+          const pid = node.parentID !== null ? node.parentID : '';
+          if (idsToDelete.includes(pid) && !idsToDelete.includes(node.nodeID)) {
+            idsToDelete.push(node.nodeID);
+            changed = true;
           }
-          const newList: BubbleNode[] = [];
-          for (let i = 0; i < this.store.nodeList.length; i++) {
-            if (!idsToDelete.includes(this.store.nodeList[i].nodeID)) {
-              newList.push(this.store.nodeList[i]);
-            }
-          }
-          this.store.nodeList = newList;
-          this.store.rebuildEpoch++; // ★ 0.244.0：nodeList 整体替换——渲染世代 +1（条目重建重捕获）
-          recordNodeTomb(idsToDelete); // ★ 0.230.1：显式墓碑（节点+子树全集——del 行唯一合法出生通道）
-          this.saveTree(); // ★ 0.151：按模式分池保存
-          this.redrawEdges(); // ★ 0.167.2：节点删除后连线重绘（此路径不重排，需手动刷新）
         }
       }
-    });
+      // ★ 0.287.0：撤销快照——被删子树全节点引用+原位置（nodeList 过滤前按 id 收集）
+      const removedNodes: BubbleNode[] = [];
+      const removedIdx: number[] = [];
+      const newList: BubbleNode[] = [];
+      for (let i = 0; i < this.store.nodeList.length; i++) {
+        if (!idsToDelete.includes(this.store.nodeList[i].nodeID)) {
+          newList.push(this.store.nodeList[i]);
+        } else {
+          removedNodes.push(this.store.nodeList[i]);
+          removedIdx.push(i);
+        }
+      }
+      this.store.nodeList = newList;
+      this.store.rebuildEpoch++; // ★ 0.244.0：nodeList 整体替换——渲染世代 +1（条目重建重捕获）
+      recordNodeTomb(idsToDelete); // ★ 0.230.1：显式墓碑（节点+子树全集——del 行唯一合法出生通道）
+      this.saveTree(); // ★ 0.151：按模式分池保存
+      this.redrawEdges(); // ★ 0.167.2：节点删除后连线重绘（此路径不重排，需手动刷新）
+      // ★ 0.287.0：删除气泡（子树）入撤销栈——undo 按 id 回 nodeList 放回原位（按原 idx 升序
+      //   splice 即恢复原序）；闭包只捕获单例+数据；放回后云上行随 saveBubbleTreePools 恢复行
+      const store = this.store;
+      const cms = this.canvasModeStore;
+      const tf = this.tabForest;
+      const pd = this.persistData;
+      const firstIdx = removedIdx.length > 0 ? removedIdx[0] : -1;
+      if (firstIdx >= 0) {
+        this.undoStack.push('删除气泡',
+          (): void => {
+            const live = store.nodeList.find((n: BubbleNode): boolean => n.nodeID === bubble.nodeID);
+            if (live !== undefined) {
+              return; // 已被放回/新建同 id——防重复放回
+            }
+            const arr = [...store.nodeList];
+            for (let k = 0; k < removedNodes.length; k++) {
+              arr.splice(Math.min(firstIdx + k, arr.length), 0, removedNodes[k]);
+            }
+            store.nodeList = arr;
+            store.rebuildEpoch++;
+            saveBubbleTreePools(store, cms, tf, pd, upsertCloudData);
+          },
+          (): void => {
+            const arr = store.nodeList.filter((n: BubbleNode): boolean => !idsToDelete.includes(n.nodeID));
+            store.nodeList = arr;
+            store.rebuildEpoch++;
+            saveBubbleTreePools(store, cms, tf, pd, upsertCloudData);
+          });
+      }
+    }
   }
 
   // ★ 0.173.1：视觉焦点节点——单击选中优先（单选替换语义），无单击时回落「当前对话气泡」
@@ -1570,6 +1635,44 @@ export struct BBTreeCanvas {
             .position({ x: 14, y: this.viewH - 56 - 44 }) // ★ 0.247.5：底部余量 24→56（同右下角缩放控件——系统导航条/dock 遮挡统一上抬）；左缘贴边 14 不变（0.170.1）
           }
 
+          // ★ 0.288.0：性格测试「信号灯」入口（左下角；手机在 ☰ 上方 12vp，平板/PC 占 ☰ 同位贴角）——
+          //   品牌紫光点低频呼吸微光（用户拍板「做个信号灯、闪耀一点」——暗紫毛玻璃风收敛为呼吸光点，
+          //   非高频闪烁）；做完 15 题 done=true 即消失（visibility None）
+          Row() {
+            Column()
+              .width(12)
+              .height(12)
+              .borderRadius(6)
+              .backgroundColor(this.theme.brandPrimary)
+              .opacity(0.7 + this.quizBreath * 0.3)
+              .scale({ x: 1 + this.quizBreath * 0.4, y: 1 + this.quizBreath * 0.4 })
+              .shadow({ radius: 6 + this.quizBreath * 16, color: 'rgba(124,77,255,0.85)', offsetX: 0, offsetY: 0 })
+          }
+          .width(48)
+          .height(48)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(14)
+          .border({ width: 1, color: this.theme.strokeCard })
+          .backgroundColor(this.theme.surfaceNode)
+          .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
+          .onClick(() => {
+            this.quizVisible = true;
+          })
+          .onAppear(() => {
+            this.startQuizBreath();
+          })
+          .visibility(this.viewW > 0 && !this.quizStore.done ? Visibility.Visible : Visibility.None)
+          .position({ x: 14, y: this.viewH - 56 - 44 - (this.isTablet ? 0 : 60) })
+
+          // ★ 0.288.0：性格测试弹窗（全屏遮罩+面板自包含；退出保留进度断点续做）
+          PersonalityQuizDialog({
+            visible: this.quizVisible,
+            onClose: () => {
+              this.quizVisible = false;
+            }
+          })
+
       // ★ 0.167：平铺/选项卡两套自绘标题行（0.151-D）已删除——统一由上方信息条
       //   （分段控件切换模式 + 新建气泡按钮）+ Tab 栏 + 右下角缩放控件承担（UI_GUIDELINES 五/六）
 
@@ -1754,6 +1857,9 @@ export struct BBTreeCanvas {
               .onChange((value: string) => {
                 this.titleEditText = value;
               })
+              .onSubmit(() => {
+                this.saveNodeTitle(); // ★ 0.287.0 P1：回车=确定（物理/软键盘回车同链）
+              })
               .width('100%')
               .height(44)
               .borderRadius(RADIUS_CONTROL)
@@ -1818,6 +1924,9 @@ export struct BBTreeCanvas {
               .onChange((value: string) => {
                 this.tabRenameText = value;
               })
+              .onSubmit(() => {
+                this.saveTabRename(); // ★ 0.287.0 P1：回车=确定（物理/软键盘回车同链）
+              })
               .width('100%')
               .height(44)
               .borderRadius(RADIUS_CONTROL)
@@ -1847,15 +1956,73 @@ export struct BBTreeCanvas {
             }
             .width('100%')
           }
-          .width(this.isTablet ? 400 : '70%') // ★ 0.286.1：断点制（UI_GUIDELINES 12a 定式）——PC/Pad 固定 400（确认弹窗窄档），手机 70% 不动（用户拍板：70% 裸百分比在宽屏超宽）
+           .width(this.isTablet ? 400 : '70%') // ★ 0.286.1：断点制（UI_GUIDELINES 12a 定式）——PC/Pad 固定 400（确认弹窗窄档），手机 70% 不动（用户拍板：70% 裸百分比在宽屏超宽）
+           .padding(20)
+           .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
+           .backgroundColor(this.theme.surfaceNode)
+           .border({ width: 1, color: this.theme.strokeCard })
+           .shadow({ radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 })
+         }
+       }
+
+      // ★ 0.287.1：删除气泡确认弹窗（自绘暗紫——原系统灰 AlertDialog 用户实测「灰框风格不符」；
+      //   样式复刻 titleEdit/tabRename 弹窗定式；destructive 操作不设回车默认焦点（防误触红线 0.287.0）
+      if (this.deleteBubbleConfirmVisible) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor(this.theme.overlay)
+            .onClick(() => {
+              this.deleteBubbleConfirmVisible = false;
+            })
+          Column() {
+            Text(this.deleteBubbleTarget !== null && this.deleteBubbleTarget.parentID === null
+              ? '删除树' : '删除节点')
+              .fontSize(FONT_SIZE_SCREEN_TITLE)
+              .fontWeight(600)
+              .fontFamily(FONT_INTER_SEMIBOLD)
+              .fontColor(this.theme.textPrimary)
+              .margin({ bottom: 12 })
+            Text(this.deleteBubbleTarget !== null && this.deleteBubbleTarget.parentID === null
+              ? '确认删除此树（根气泡及其所有子节点）？删除后可 Ctrl+Z 撤销'
+              : '确认删除此节点及其所有子节点？删除后可 Ctrl+Z 撤销')
+              .fontSize(FONT_SIZE_BODY)
+              .fontColor(this.theme.textSecondary)
+              .margin({ bottom: 16 })
+            Row({ space: 12 }) {
+              Button('取消')
+                .fontSize(FONT_SIZE_CARD_TITLE_SM)
+                .fontFamily(FONT_INTER)
+                .height(38)
+                .layoutWeight(1)
+                .backgroundColor(this.theme.surfaceHover)
+                .fontColor(this.theme.textPrimary)
+                .onClick(() => {
+                  this.deleteBubbleConfirmVisible = false;
+                })
+              Button('删除')
+                .fontSize(FONT_SIZE_CARD_TITLE_SM)
+                .fontFamily(FONT_INTER)
+                .height(38)
+                .layoutWeight(1)
+                .backgroundColor(this.theme.danger)
+                .fontColor(this.theme.textPrimary)
+                .onClick(() => {
+                  this.executeDeleteBubble();
+                })
+            }
+            .width('100%')
+          }
+          .width(this.isTablet ? 400 : '70%') // ★ 0.286.1 断点制定式
           .padding(20)
-          .borderRadius(12) // 弹窗浮层圆角（UI_GUIDELINES 无弹窗规格，沿用 12）
+          .borderRadius(12)
           .backgroundColor(this.theme.surfaceNode)
           .border({ width: 1, color: this.theme.strokeCard })
           .shadow({ radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 })
         }
       }
-        }
+         }
         // ★ 0.167：画布容器属性（UI_GUIDELINES 五-平板：margin 24 / 圆角 24 / this.theme.bgCanvas）
         .width('100%')
         .layoutWeight(1) // ★ 0.215.3：父 Scroll 已拆（等高内容滚轮零触发三轮判死）——恢复 0.213 原结构

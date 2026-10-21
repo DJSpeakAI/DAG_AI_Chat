@@ -35,6 +35,7 @@ import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
 import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）；★ 0.230.0：加共享开态 store
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
+import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（Ctrl+Z/Ctrl+Shift+Z 全局键——Index 根挂载覆盖全部子页）
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
 import { clearAllLocalUserData } from '../utils/DataWipeUtil'; // ★ 0.263.0：退出登录「同时清空本机数据」（借给他人前场景）
@@ -93,6 +94,7 @@ struct Index {
   isPcDevice: boolean = deviceInfo.deviceType !== 'phone' && deviceInfo.deviceType !== 'tablet' &&
     deviceInfo.deviceType !== 'tv' && deviceInfo.deviceType !== 'car' && deviceInfo.deviceType !== 'wearable'; // ★ 与 ChatPage/WordBankPage 既有 PC 档判定同口径（非移动设备全算 PC）
   @Local winWidth: number = 0; // 窗口实宽（vp，onAreaChange 写入；PC 窄窗边栏收窄依据）
+  undoStack: UndoStore = connectUndoStack(); // ★ 0.287.0：操作撤销栈（Ctrl+Z/Ctrl+Shift+Z 全局键消费；会话级不落盘）
   @Computed get isTablet(): boolean {
     return this.windowMode.isTablet;
   }
@@ -778,7 +780,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-          Text('v0.286.1') // ★ 0.286.1：气泡标题/选项卡重命名弹窗宽度断点制；更早历史见 MEMORY.md 版本表
+          Text('v0.288.0') // ★ 0.288.0：性格测试（信号灯入口+15 题+画像引擎灌入）；更早历史见 MEMORY.md 版本表
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -1012,8 +1014,24 @@ struct Index {
     .height('100%')
     .backgroundColor(this.theme.bgApp) // ★ 0.174.1：全局兜底底色（各页背景未铺到的安全区露暗紫不露黑）
     .expandSafeArea([SafeAreaType.SYSTEM]) // ★ 0.174.1：背景延伸进状态栏/导航条安全区——满屏
+    // ★ 0.287.0：全局撤销/重做键（P2 撤销栈）——Index 根挂载覆盖全部子页；keyboardShortcut
+    //   「窗口获焦即响应不依赖组件焦点」（0.285.2 先例）；toast 反馈对应操作 label；
+    //   空栈静默（不弹「无可撤销」防打扰）。⚠️ Ctrl+Z 若被系统文本框架保留不响应，真机
+    //   验证后改绑 Ctrl+Alt+Z（备选已记迭代文档）
+    .keyboardShortcut('z', [ModifierKey.CTRL], (): void => {
+      const label = this.undoStack.undo();
+      if (label.length > 0) {
+        this.getUIContext().getPromptAction().showToast({ message: `已撤销：${label}`, duration: 1500 });
+      }
+    })
+    .keyboardShortcut('z', [ModifierKey.CTRL, ModifierKey.SHIFT], (): void => {
+      const label = this.undoStack.redo();
+      if (label.length > 0) {
+        this.getUIContext().getPromptAction().showToast({ message: `已重做：${label}`, duration: 1500 });
+      }
+    })
     // ★ 0.196.4：窗口实宽写入共享模式——根 Stack 满窗，onAreaChange 在分屏/悬浮窗 resize 时
-    //   实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）
+    // 实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）
     .onAreaChange((oldVal: Area, newVal: Area) => {
       const w = newVal.width as number;
       // ★ 0.279.6：窗口实宽记录 + PC 恒平板布局（窄窗保留边栏）；手机恒手机布局；Pad 维持 600vp 断点

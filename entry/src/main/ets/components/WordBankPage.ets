@@ -25,7 +25,8 @@
 // ============================================================
 
 import { WordItem, WordBankStore, WordFolder, WordFolderNavStore, connectWordFolderNav, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.222.19：单词库文件夹体系（对标知识库）
-import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置
+import { ApiConfig, connectApiConfig, LearnCountStore, connectLearnCount, PhoneticAccentStore, connectPhoneticAccent, noteBankMutation } from '../common/ChatModel'; // ★ 0.149：pronunciation TTS config (same PersistenceV2 instance as ChatPage)；★ 0.161：学习数量设置（同 PersistenceV2 实例，ChatPage 复习区共用）；★ 0.185.0：音标口音设置；★ 0.287.0：noteBankMutation（撤销放回 folders 后触发云上行）
+import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（删除单词/级联删除/移动/重命名入栈）
 import { connectWordBank, addWordToBank, removeWordFromBank, updateWordInBank, removeWordsByIds, genWordId, clearAllPhonetics, addWordFolder, renameWordFolder, deleteWordFolder, moveWords, copyWords, wordFolderChain, moveWordFolder, copyWordFolder, deleteWordFolderCascade, copyRootWordFolder, clearRootWordFolder } from '../utils/WordStoreUtil'; // ★ 0.185.0：clearAllPhonetics（切换口音清空音标）；★ 0.222.19：单词库文件夹 CRUD + 单词移动/复制
 // ★ 0.208.0：单词库 DagPack 导入导出（只走 DagPack——用户拍板不做 Anki/表格）；★ 0.249.1：随包带文件夹结构 + 导入勾选树
 import { DagPack, buildWordPack, packToJson, parseDagPack, PackWord, PackFolder, packFolderPath, packSubtreeRefs, packWordCount } from '../utils/PackUtil';
@@ -36,7 +37,7 @@ import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.219.2：视图模式 store�
 import { track } from '../utils/TrackUtil';
 import { formatNextReviewLabel } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：下次复习时间标签（记忆算法）
 import { localTts, EnVoiceStatus } from '../utils/LocalTtsEngine'; // ★ 0.189.1：发音语音包管理（listVoices 状态查询 + downloadVoice 应用内下载）
-import { wordSpeaker, showAccentDialogs } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
+import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.149：word pronunciation singleton；★ 0.189.2：口音提示弹窗工厂共用
 import intl from '@ohos.intl'; // ★ 0.195.0：字母排序 Collator（zh：英文 A-Z + 中文按拼音统一比较；本 SDK 的 @kit.ArkTS 未导出 intl，走 @ohos.intl——measure 同款坑）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.218.8：设备类型三档（PC 窄窗保持网格的 deviceType 判定，复刻 ChatPage isPcDevice 先例）
@@ -65,6 +66,24 @@ export struct WordBankPage {
   theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
   wordBank: WordBankStore = connectWordBank(); // isolated PersistenceV2 instance
+  undoStack: UndoStore = connectUndoStack(); // ★ 0.287.0：撤销栈（删除单词/级联删除/移动/重命名入栈）
+
+  // ★ 0.287.0：收集文件夹子树全集 id（与 deleteWordFolderCascade 同遍历口径）——级联删除撤销快照用
+  collectSubtreeIds(fid: string): string[] {
+    const ids: string[] = [fid];
+    let guard = 0;
+    for (let i = 0; i < ids.length && guard < 1000; i++) {
+      const pid = ids[i];
+      const children = this.wordBank.folders.filter((f: WordFolder): boolean => f.parentId === pid);
+      for (let j = 0; j < children.length; j++) {
+        if (!ids.includes(children[j].id)) {
+          ids.push(children[j].id);
+        }
+      }
+      guard++;
+    }
+    return ids;
+  }
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.149：TTS config for pronunciation
   viewMode: WordViewModeStore = connectWordViewMode(); // ★ 0.219.2：视图模式跨页面记忆
   // ── ★ 0.222.19：文件夹体系（对标知识库 anything）状态 ──
@@ -746,7 +765,7 @@ export struct WordBankPage {
       return;
     }
     if (this.folderDialogIsRename) {
-      renameWordFolder(this.wordBank, this.folderDialogTargetId, nm);
+      this.renameFolderWithUndo(this.folderDialogTargetId, nm); // ★ 0.287.0：入撤销栈（与边栏重命名同链）
     } else {
       addWordFolder(this.wordBank, nm, this.wbFolderNav.folderId);
       const tp: Record<string, string> = {};
@@ -825,9 +844,13 @@ export struct WordBankPage {
     }
   }
 
-  /** 确认级联删除文件夹 */
+  /** 确认级联删除文件夹（★ 0.287.0 入撤销栈——子树 folders+words 全集快照放回） */
   confirmFolderDelete(): void {
     const fid = this.wbFolderNav.folderActionId;
+    // ★ 0.287.0：撤销快照——删除前收集子树 folders+words 对象引用（含记忆字段全保留）
+    const subtreeIds = this.collectSubtreeIds(fid);
+    const removedFolders: WordFolder[] = this.wordBank.folders.filter((f: WordFolder): boolean => subtreeIds.includes(f.id));
+    const removedWords: WordItem[] = this.wordBank.words.filter((w: WordItem): boolean => subtreeIds.includes(w.folderId));
     const deleted = deleteWordFolderCascade(this.wordBank, fid);
     if (this.wbFolderNav.folderId === fid) {
       this.wbFolderNav.folderId = this.folderParentId();
@@ -835,6 +858,23 @@ export struct WordBankPage {
     this.wbFolderNav.folderAction = '';
     this.wbFolderNav.folderActionId = '';
     this.showToast(`已删除文件夹及 ${deleted} 个单词`);
+    const store = this.wordBank;
+    this.undoStack.push('删除文件夹',
+      (): void => {
+        const missingFolders = removedFolders.filter((f: WordFolder): boolean => !store.folders.some((x: WordFolder): boolean => x.id === f.id));
+        if (missingFolders.length > 0) {
+          store.folders = [...missingFolders, ...store.folders];
+          noteBankMutation();
+        }
+        for (let i = removedWords.length - 1; i >= 0; i--) {
+          if (!store.words.some((x: WordItem): boolean => x.id === removedWords[i].id)) {
+            addWordToBank(store, removedWords[i]);
+          }
+        }
+      },
+      (): void => {
+        deleteWordFolderCascade(store, fid);
+      });
   }
 
   /** 清空根目录（全部单词+全部文件夹；根目录「全部单词」入口保留） */
@@ -853,17 +893,35 @@ export struct WordBankPage {
     this.wbFolderNav.folderActionName = '';
   }
 
-  /** 确认重命名文件夹（边栏树触发） */
+  /** 确认重命名文件夹（边栏树触发；★ 0.287.0 入撤销栈） */
   confirmFolderRename(): void {
     const nm = this.wbFolderNav.folderActionName.trim();
     if (nm.length === 0) {
       this.showToast('名称不能为空');
       return;
     }
-    renameWordFolder(this.wordBank, this.wbFolderNav.folderActionId, nm);
+    this.renameFolderWithUndo(this.wbFolderNav.folderActionId, nm);
     this.wbFolderNav.folderAction = '';
     this.wbFolderNav.folderActionId = '';
     this.wbFolderNav.folderActionName = '';
+  }
+
+  // ★ 0.287.0：文件夹重命名统一入口（入撤销栈）——值不变不入栈
+  renameFolderWithUndo(fid: string, nm: string): void {
+    const f = this.wordBank.folders.find((x: WordFolder): boolean => x.id === fid);
+    const oldName = f !== undefined ? f.name : '';
+    renameWordFolder(this.wordBank, fid, nm);
+    if (f !== undefined && oldName !== f.name) {
+      const store = this.wordBank;
+      const newName = f.name;
+      this.undoStack.push('重命名文件夹',
+        (): void => {
+          renameWordFolder(store, fid, oldName);
+        },
+        (): void => {
+          renameWordFolder(store, fid, newName);
+        });
+    }
   }
 
   /** 移动/复制确认（folderPicker 行点击） */
@@ -888,6 +946,9 @@ export struct WordBankPage {
           this.showToast(`已复制文件夹（含 ${n} 个单词）`);
         }
       } else {
+        // ★ 0.287.0：移动入撤销栈——旧父快照（undo=moveWordFolder 移回旧父，防环校验天然复用）
+        const movedFolder = this.wordBank.folders.find((x: WordFolder): boolean => x.id === fid);
+        const oldParent = movedFolder !== undefined ? movedFolder.parentId : '';
         const ok = moveWordFolder(this.wordBank, fid, folderId);
         if (!ok) {
           this.showToast('不能移动到自身或其子文件夹');
@@ -895,6 +956,16 @@ export struct WordBankPage {
           this.wbFolderNav.folderActionId = '';
           this.folderPickerVisible = false;
           return;
+        }
+        if (movedFolder !== undefined && oldParent !== folderId) {
+          const store = this.wordBank;
+          this.undoStack.push('移动文件夹',
+            (): void => {
+              moveWordFolder(store, fid, oldParent);
+            },
+            (): void => {
+              moveWordFolder(store, fid, folderId);
+            });
         }
         this.showToast('已移动文件夹');
       }
@@ -1038,7 +1109,7 @@ export struct WordBankPage {
 
   requestDeleteWord(w: WordItem): void {
     if (this.skipDeleteConfirm) {
-      removeWordFromBank(this.wordBank, w.id);
+      this.deleteWordWithUndo(w);
       return;
     }
     this.pendingDeleteId = w.id;
@@ -1047,11 +1118,31 @@ export struct WordBankPage {
   }
 
   confirmDeleteWord(): void {
-    removeWordFromBank(this.wordBank, this.pendingDeleteId);
+    // ★ 0.287.0：撤销快照——删前取对象引用
+    const target = this.wordBank.words.find((w: WordItem): boolean => w.id === this.pendingDeleteId);
+    if (target !== undefined) {
+      this.deleteWordWithUndo(target);
+    }
     if (this.deleteConfirmNoRemind) {
       this.skipDeleteConfirm = true; // session-level only, never persisted
     }
     this.deleteConfirmVisible = false;
+  }
+
+  // ★ 0.287.0：删除单词统一入口（入撤销栈）——undo 复用 addWordToBank 原对象放回（原 id/记忆字段
+  //   全保留+noteBankMutation 上行）；redo 复用 removeWordFromBank（墓碑链原样）
+  deleteWordWithUndo(w: WordItem): void {
+    const store = this.wordBank;
+    removeWordFromBank(store, w.id);
+    this.undoStack.push('删除单词',
+      (): void => {
+        if (!store.words.some((x: WordItem): boolean => x.id === w.id)) {
+          addWordToBank(store, w);
+        }
+      },
+      (): void => {
+        removeWordFromBank(store, w.id);
+      });
   }
 
   // ---- multi-select (batch delete only) ----
@@ -1303,6 +1394,9 @@ export struct WordBankPage {
           .onChange((value: string) => {
             this.editorWord = value;
           })
+          .onSubmit(() => {
+            this.saveEditor(); // ★ 0.287.0 P1：回车=保存（四框任一聚焦回车同链）
+          })
         TextInput({ text: this.editorFullName, placeholder: '全称（缩略词选填，普通单词留空）' })
           .fontSize(14)
           .width('100%')
@@ -1313,6 +1407,9 @@ export struct WordBankPage {
           .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorFullName = value;
+          })
+          .onSubmit(() => {
+            this.saveEditor(); // ★ 0.287.0 P1：回车=保存
           })
         TextInput({ text: this.editorPhonetic, placeholder: '音标（选填，如 /ˈhɑːrməni/）' })
           .fontSize(14)
@@ -1325,6 +1422,9 @@ export struct WordBankPage {
           .onChange((value: string) => {
             this.editorPhonetic = value;
           })
+          .onSubmit(() => {
+            this.saveEditor(); // ★ 0.287.0 P1：回车=保存
+          })
         TextInput({ text: this.editorExplain, placeholder: '释义（选填）' })
           .fontSize(14)
           .width('100%')
@@ -1335,6 +1435,9 @@ export struct WordBankPage {
           .backgroundColor(this.theme.surfaceSoft)
           .onChange((value: string) => {
             this.editorExplain = value;
+          })
+          .onSubmit(() => {
+            this.saveEditor(); // ★ 0.287.0 P1：回车=保存
           })
         Row({ space: 12 }) { // ★ 0.230.0：等宽铁律姿势（0.197.3——margin 参与 layoutWeight 分配会把保存挤窄 12vp，审计实锤差 29px；间隙一律 Row space）
           Button('取消')
@@ -1802,6 +1905,9 @@ export struct WordBankPage {
           .onChange((v: string) => {
             this.folderDialogName = v;
           })
+          .onSubmit(() => {
+            this.confirmFolderDialog(); // ★ 0.287.0 P1：回车=确定
+          })
         Row({ space: 10 }) {
           Button('取消')
             .layoutWeight(1)
@@ -1899,6 +2005,9 @@ export struct WordBankPage {
           .borderRadius(8)
           .onChange((v: string) => {
             this.wbFolderNav.folderActionName = v;
+          })
+          .onSubmit(() => {
+            this.confirmFolderRename(); // ★ 0.287.0 P1：回车=确定
           })
         Row({ space: 10 }) {
           Button('取消')
@@ -2403,7 +2512,7 @@ export struct WordBankPage {
                           // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
                           // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行（用户指出单词本行距变大），Text 无默认高度、行距还原
                           // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
-                          Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_playing') : $r('app.media.speaker')))
+                          Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                             .width(13)
                             .height(13)
                             .objectFit(ImageFit.Contain)

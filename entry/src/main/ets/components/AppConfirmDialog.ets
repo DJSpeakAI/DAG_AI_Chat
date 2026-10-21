@@ -81,7 +81,9 @@ export struct AppConfirmDialog {
       })
   }
 
-  // 确认钮（主紫；★ 0.263.0：勾选态且有替换文案时切换按钮文字，明确高危动作）
+  // 确认钮（主紫；★ 0.263.0：勾选态且有替换文案时切换按钮文字，明确高危动作；
+  //   ★ 0.287.0 P1：defaultFocus 申请默认焦点——弹窗打开 Enter 经系统焦点链直接触发确认，
+  //   「有确定按钮的弹窗回车=确定」；本组件场景均为询问/引导类，确认即用户意图）
   @Builder
   confirmButtonBuilder() {
     Button(this.checkboxLabel !== '' && this.checkboxChecked && this.checkedConfirmText !== ''
@@ -93,6 +95,7 @@ export struct AppConfirmDialog {
       .backgroundColor(this.theme.brandPrimary)
       .fontColor(this.theme.textPrimary)
       .borderRadius(RADIUS_CONTROL)
+      .defaultFocus(this.visible)
       .onClick(() => {
         if (this.checkboxLabel !== '') {
           this.onConfirmChecked(this.checkboxChecked);

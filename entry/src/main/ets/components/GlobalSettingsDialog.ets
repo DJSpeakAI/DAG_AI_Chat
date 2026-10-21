@@ -56,6 +56,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.2
 import { qianwenTts, fetchQwenVoiceList, QwenVoiceItem } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（试听 speakWithParams + 复刻音色列表拉取）
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.236.1：火山/自定义档试听（speakWithParams 显式传参）
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.272.0：本机语音档试听（TTS 1.0 默认档——设备内置引擎零配置）
+import { speakerPulse } from '../utils/WordSpeaker'; // ★ 0.287.6：试听喇叭播放动画脉冲
 import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流式轻量 POST，零侵入 streamChat 主链路）
 
 import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME, isPrivacySensitiveSection } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回；★ 0.264.0：隐私敏感条款判定（华为审核独立项）
@@ -196,7 +197,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.286.1'; // ★ 0.286.1：气泡标题/选项卡重命名弹窗宽度断点制；更早历史见 MEMORY.md 版本表
+const APP_VERSION: string = 'v0.288.0'; // ★ 0.288.0：性格测试（信号灯入口+15 题+画像引擎灌入）；更早历史见 MEMORY.md 版本表
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -323,6 +324,15 @@ export struct GlobalSettingsDialog {
   @Local isTtsEmotionDropdownOpen: boolean = false; // 情感下拉面板展开
   // ★ 0.236.0：千问档试听（以当前表单值走引擎完整链路——出声=配置即验）
   @Local ttsPreviewing: boolean = false;
+  // ★ 0.287.6：试听态驱动喇叭动画（begin/end 幂等，@Monitor 覆盖播完自动复位路径）
+  @Monitor('ttsPreviewing')
+  onTtsPreviewAnimChange(): void {
+    if (this.ttsPreviewing) {
+      speakerPulse.begin('preview');
+    } else {
+      speakerPulse.end('preview');
+    }
+  }
   // ★ 0.236.0：三档会话级缓存（切档快照恢复——取代 0.232.2 火山双字段缓存）
   ttsTabCaches: Map<string, TtsTabCache> = new Map();
   // ★ 0.232.2：TTS 区折叠态（默认收起——低频功能不占屏，用户拍板：一行提示+小三角点击展开）
@@ -1756,7 +1766,7 @@ export struct GlobalSettingsDialog {
       Button() {
         Row({ space: 6 }) {
           // ★ 0.267.0：图标/文字双色——常态=恒白版 speaker_brand（紫底）；试听中=speaker_playing（跟随主题墨色，surfaceHover 底）
-          Image(this.ttsPreviewing ? $r('app.media.speaker_playing') : $r('app.media.speaker_brand'))
+          Image(this.ttsPreviewing ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker_brand'))
             .width(14)
             .height(14)
             .objectFit(ImageFit.Contain)

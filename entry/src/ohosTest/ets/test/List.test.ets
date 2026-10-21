@@ -9,6 +9,8 @@ import thinkingScoreTest from './ThinkingScore.test'; // ★ 0.271.0：深度思
 import spCostOfTokensTest from './SpCostOfTokens.test'; // ★ 0.272.0：SP 公式公共化等价断言（新旧对拍/钳位/常量锚定）
 import spImplicitCostTest from './SpImplicitCost.test'; // ★ 0.273.0：隐式扣费纯核心+IAP 成交价换算断言
 import webFetchTest from './WebFetch.test'; // ★ 0.286.0：AI 读网页（URL 检测/正文抽取/注入块拼装）纯函数断言
+import undoStackTest from './UndoStack.test'; // ★ 0.287.0：撤销栈（push/undo/redo/分支截断/上限裁头/清空）断言
+import personalityQuizTest from './PersonalityQuiz.test'; // ★ 0.288.0：性格测试（SP 节点阶梯/画像转译/交叉验证优先级/锚点综合/题库穿插）断言
 
 export default function testsuite() {
   abilityTest();
@@ -22,4 +24,6 @@ export default function testsuite() {
   spCostOfTokensTest();
   spImplicitCostTest();
   webFetchTest();
+  undoStackTest();
+  personalityQuizTest();
 }

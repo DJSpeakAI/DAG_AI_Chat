@@ -410,6 +410,9 @@ export struct BillingPage {
                       this.redeemInput = v;
                       this.redeemResult = '';
                     })
+                    .onSubmit(() => {
+                      this.doRedeem(); // ★ 0.287.0 P1：回车=兑换
+                    })
                   Button('兑换')
                     .fontSize(FONT_SIZE_BODY)
                     .height(42)
