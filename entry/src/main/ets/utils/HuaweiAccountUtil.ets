@@ -17,8 +17,118 @@ import { authentication } from '@kit.AccountKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { PersistenceV2 } from '@kit.ArkUI';
+import { preferences } from '@kit.ArkData';
+import { fileIo } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.248.3：登录引导弹窗桥（Index 根 Stack 消费；AppConfirmDialog 无反向依赖不成环）
+
+// ── ★ 0.299.2 登录态影子持久化（bug5 根治）──
+// 病灶（0.299.1 Pad 三时点诊断实锤）：P2 'huawei-account' 水合**永久失败**——盘值 isLoggedIn=true
+// 完好、同文件其他 key（siyi-points/arbiter 等）3 秒内水合成功、唯此 key 运行时恒 factory（false），
+// 华为 P2 引擎单 key 黑盒故障。修复=登录态双写 preferences 影子通道（agreement_store 同款实测可靠），
+// 启动最早同步点恢复回写 P2 实例（@Trace 赋值 UI 即时刷新；赋值触发 P2 写盘=盘值本 true 无害）。
+// ★ 老用户一次性迁移：影子空而 P2 盘值有登录态（水合读不出）→ 直接读 persistent_storage 文件原文
+//   抽 huawei-account 条目回填影子（app 自有 filesDir 可读；此后冷启全走影子快路）。
+let accountShadow: preferences.Preferences | null = null;
+
+// onCreate 最早同步点调用（initAgreementPrefs 同款纪律——此后任意时刻读到的即磁盘真值）
+export function initAccountShadow(context: common.Context): void {
+  if (accountShadow === null) {
+    accountShadow = preferences.getPreferencesSync(context, { name: 'account_shadow' });
+    migrateShadowFromP2File(context); // 影子空→从 P2 盘值文件一次性迁移（老用户救活）
+  }
+}
+
+function writeAccountShadow(store: HuaweiAccountStore): void {
+  if (accountShadow === null) {
+    return;
+  }
+  try {
+    const data: Record<string, Object> = {
+      'isLoggedIn': store.isLoggedIn,
+      'nickName': store.nickName,
+      'avatarUri': store.avatarUri,
+      'openID': store.openID,
+      'unionID': store.unionID,
+      'lastAccountMark': store.lastAccountMark
+    };
+    accountShadow.putSync('account', JSON.stringify(data));
+    accountShadow.flushSync();
+  } catch (_e) {
+    // 影子写失败静默（P2 主通道仍在；下次登录/退出再写）
+  }
+}
+
+// 启动恢复：影子有登录态而 P2 实例仍 factory（水合失败态）→ 全字段回写救活。
+// shadow 无值/未登录态不动作（新装/退出后正常走 factory）。UI 消费全部经 P2 实例（零改动）。
+export function restoreAccountFromShadow(): void {
+  if (accountShadow === null) {
+    return;
+  }
+  try {
+    const raw = accountShadow.getSync('account', '') as string;
+    if (raw === '') {
+      return;
+    }
+    const d = JSON.parse(raw) as Record<string, Object>;
+    const shadowLoggedIn = d['isLoggedIn'] === true;
+    const store = connectHuaweiAccount();
+    if (shadowLoggedIn && !store.isLoggedIn) {
+      store.isLoggedIn = true;
+      store.nickName = `${d['nickName'] ?? ''}`;
+      store.avatarUri = `${d['avatarUri'] ?? ''}`;
+      store.openID = `${d['openID'] ?? ''}`;
+      store.unionID = `${d['unionID'] ?? ''}`;
+      store.lastAccountMark = `${d['lastAccountMark'] ?? ''}`;
+    }
+  } catch (_e) {
+    // 影子损坏静默（走正常未登录态，用户重新登录即重建影子）
+  }
+}
+
+// ★ 一次性迁移：影子空→读 P2 盘值文件（persistent_storage，XML 转义格式）抽 huawei-account 条目。
+//   P2 水合黑盒读不出但文件本身完好（4MB 文本，一次读可接受；只在影子空时跑一次）。
+function migrateShadowFromP2File(context: common.Context): void {
+  try {
+    const raw = accountShadow!.getSync('account', '') as string;
+    if (raw !== '') {
+      return; // 影子已有数据（新登录/迁移过）——无需迁移
+    }
+    const path = `${context.filesDir}/persistent_storage`;
+    const text = fileIo.readTextSync(path); // 不存在直接抛→外层 catch（accessSync 新 API 返 void 不可作布尔判断）
+    const tag = '"huawei-account">&quot;';
+    const i = text.indexOf(tag);
+    if (i < 0) {
+      return; // 盘上无登录记录
+    }
+    const start = i + tag.length;
+    const end = text.indexOf('&quot;</string>', start);
+    if (end <= start) {
+      return; // 条目截断异常
+    }
+    const seg = text.substring(start, end);
+    // 双重转义还原：XML 层 &quot;/&amp; → 第一层 JSON.parse（unescaped 本就是合法字符串体，\" 转义完好）
+    // → 第二层 JSON.parse（对象）
+    const unescaped = seg.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    const objStr = JSON.parse(`"${unescaped}"`) as string;
+    const d = JSON.parse(objStr) as Record<string, Object>;
+    if (d['isLoggedIn'] !== true) {
+      return; // 盘值本就是登出态
+    }
+    const store = connectHuaweiAccount();
+    if (!store.isLoggedIn) {
+      store.isLoggedIn = true;
+      store.nickName = `${d['nickName'] ?? ''}`;
+      store.avatarUri = `${d['avatarUri'] ?? ''}`;
+      store.openID = `${d['openID'] ?? ''}`;
+      store.unionID = `${d['unionID'] ?? ''}`;
+      store.lastAccountMark = `${d['lastAccountMark'] ?? ''}`;
+      writeAccountShadow(store); // 回填影子——此后冷启走影子快路，不再读 4MB 文件
+    }
+  } catch (_e) {
+    // 迁移失败静默（用户重新登录即重建影子）
+  }
+}
 
 // ── 登录态持久化：昵称/头像/UnionID/OpenID ──
 @ObservedV2
@@ -112,6 +222,7 @@ export function loginWithHuaweiID(context: common.Context): Promise<string> {
         store.avatarUri = credential.avatarUri || '';
         store.openID = credential.openID || '';
         store.unionID = credential.unionID || '';
+        writeAccountShadow(store); // ★ 0.299.2：影子通道双写（P2 水合黑盒防断粮）
         resolve('');
       }).catch((error: BusinessError) => {
         resolve(errorToTip(error));
@@ -136,6 +247,7 @@ export function logoutHuaweiID(context: common.Context): Promise<string> {
       store.avatarUri = '';
       store.openID = '';
       store.unionID = '';
+      writeAccountShadow(store); // ★ 0.299.2：影子同步清（防旧影子把退出态救活）
     };
     try {
       const controller = new authentication.AuthenticationController(context);

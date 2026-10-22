@@ -199,7 +199,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.299.1'; // ★ 0.299.1：签到引导弹窗前置云服务门卫；上一版 0.299.0 每日复习提醒（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.299.2'; // ★ 0.299.2：登录态影子持久化根治冷启动丢登录；上一版 0.299.1 签到引导门卫（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

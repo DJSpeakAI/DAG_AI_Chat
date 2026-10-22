@@ -33,6 +33,7 @@ import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
 import { initAgreementPrefs } from '../utils/Agreement'; // ★ 0.279.5：协议同意态 preferences 同步初始化（onCreate 最早同步点——此后任意时刻读到的即磁盘真值）
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
+import { initAccountShadow, restoreAccountFromShadow } from '../utils/HuaweiAccountUtil'; // ★ 0.299.2：登录态影子持久化（P2 'huawei-account' 水合黑盒根治——bug5）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -54,6 +55,10 @@ export class AppLifecycleStore {
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     initAgreementPrefs(this.context); // ★ 0.279.5：preferences 同步初始化（getPreferencesSync 返回即完成载入——协议门禁自此零水合竞态）
+    // ★ 0.299.2：登录态影子通道同步初始化+恢复（bug5 根治——P2 'huawei-account' 水合永久失败，
+    //   影子 preferences 实测可靠；恢复先于任何 UI 读取，侧边栏首屏即正确登录态）
+    initAccountShadow(this.context);
+    restoreAccountFromShadow();
     // ★ 0.279.5：过渡期持久化异常排查（华为官方建议）——知识库卡 base64 图或触发 API<23 单 key
     //   8KB 配额静默失败（quota）或序列化失败（serialization），有日志才能定位「写不进去」类表象
     try {

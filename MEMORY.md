@@ -28,10 +28,12 @@
 - 测试台交互双轨：用户自用=双击桌面「启动测试台.sh」全自动；AI 驱动=对话里说跑什么，AI 全自动起查盯报；唯一人工=华为授权弹窗
 
 ## PENDING 待办与待验收
-**★ 0.299.1 五 bug 排查链（bug1/3/4/5 待现场采集——用户复现时 AI 同步 hilog 抓日志）**：
-- **bug1 SP 不同步**（181 主账号：一台 SP=0 另一台可领首日签到=账本分裂）+**bug5 登录态每次冷启动丢**（所有设备侧边栏显示未登录）：两 bug 疑同源。已排除：logout 外无人清 isLoggedIn/EntryAbility 冷启链无 loadContent 前 connect/卡片进程 import 链完全隔离。采集=复现时 `hdc -t <dev> shell hilog | grep -iE 'persistence error|DagChat'`（notifyOnError 有日志钩子）。剩余嫌疑：水合竞态/云下行覆盖。
-- **bug3 登录新账号云端下两个幽灵根气泡、删除无效**：删除链代码正常（recordNodeTomb 显式墓碑+tombstonedIds 防复活 0.230.1 已修）；未找到默认根补种逻辑；需看气泡实际内容+云端行。与旧 PENDING「僵尸气泡清污」疑同族。
-- **bug4 桌面卡片「继续复习」pill 点了完全没反应**（用户确认=widget 非 app 完成页；词库/知识库两模式同坏）：卡片端 sendContinue/gate（500ms 防抖）正常；handleWidgetContinue 逻辑正常；断点疑在 call 通道中段（系统 form_event_adapter 拉起主进程/EntryAbility Callee 投递）。已排除：KEEP_BACKGROUND_RUNNING 在位、Profile ACL（0.255 时同 ACL call 正常）、0.299.x 改动未触 call 链。采集=点 pill 时 `hdc shell hilog | grep -iE 'form|widgetContinue|FormMgr'`。
+**★ 0.299.2 bug1/3/4 收尾（bug5 已修，三台已装 0.299.2 待用户验证）**：
+- **bug1 SP 不同步**：大概率=bug5 连带（登录态丢→gate 永不 ready→云 SP 行不拉）。用户多端登录验证：各端 SP 是否一致、gate 是否 ready（云同步状态卡）。若仍分裂再挖 RDB 行链。
+- **bug4 桌面卡片「继续复习」pill 完全没反应**（用户确认=widget 非 app 完成页）：卡片端 sendContinue/gate 正常、handleWidgetContinue 逻辑正常、断点疑在 call 通道中段。**待采集**：点 pill 时 `hdc shell hilog | grep -iE 'form|widgetContinue'`。
+- **bug3 登录新账号云端下两个幽灵根气泡、删除无效**：删除链正常；需用户发气泡内容截图定性。
+- **bug5 修复验证清单**：三台各冷启 2 次看侧边栏登录态保持；退出账号重登后影子重建。
+
 
 **软著遗留**：提交版锁定 0.235.0（versionCode 1000260，commit be9669d）；git 快照分支 v0.235（⚠️ 推 GitHub 失败 publickey，待用户手动 `git push origin v0.235`）；生成脚本可复用 `/data/storage/el2/base/temp/deveco/pdfwork/`。
 **★ 0.293.0 SiyiGate 待装机验收（四场景）**：①一端签到→三端均显示已签；②手机卸载重装登录 181→首拉后 SP=云端值不重发 200w 不弹礼包；③关系统云空间开关→发消息弹引导；④新账号→首拉后弹「新用户礼包」仪式感。三台已装 0.293.0。
@@ -50,6 +52,7 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.299.2|✅**bug5 根治：登录态影子持久化**（用户报「每次冷启动要重新登录」全设备）。★重大发现：**P2 'huawei-account' key 水合永久失败**——盘值 isLoggedIn=true 完好、同文件 siyi-points/arbiter 等 key 3 秒内水合成功、唯此 key 运行时恒 factory（华为 P2 引擎单 key 黑盒，非我方代码问题；三时点诊断法实锤）。修复=HuaweiAccountUtil 影子通道：登录/退出双写 preferences 'account_shadow'（agreement_store 同款可靠通道）+onCreate 最早同步点 initAccountShadow/restoreAccountFromShadow 恢复回写 P2 实例+**老用户一次性迁移**（影子空→直读 persistent_storage 文件抽 huawei-account 条目，双重转义两段 parse）。Pad 实测冷启显示昵称 DJ ✓ 三台已装。**S 坑：fileIo.accessSync 新 API 返 void 禁作布尔判断（不存在抛异常）**；**bug1（SP 分裂）大概率=bug5 连带**（登录态丢→gate 永不 ready→云 SP 行不拉显示 0），待用户多端验证；bug3/bug4 未修见 PENDING|
 |0.299.1|✅五 bug 首轮修复（bug2 实锤已修：maybeShowSignInGuide 加 siyiGateReady 守卫——0.293.0 SP 铁律第4条补漏，云同步未就绪不再弹签到引导；弹窗职责由 maybeAutoShowSignIn 每日机制兜底不丢功能）；⚠️bug1/3/4/5 待现场采集（见 PENDING 排查链）|
 |0.299.0|✅每日复习提醒预埋（后台代理提醒，app 被杀也每天按时响）：新 utils/ReminderUtil.ets（refreshReviewReminder 单入口=cancel 旧+publish 新周期闹钟 daysOfWeek 全选永续；文案双态=未完成「约N条待复习」/当日完成「好习惯+1」；1700002 全链静默）+common/ReviewReminderStore.ets（key 'review-reminder-v1'：on/hour/minute/reminderId/lastDoneDate）+ReviewPage ⚙ 新增开关+19~22 时段段选+两处 finished 挂 markReminderDone+EntryAbility.onBackground 刷新+module.json5 声明 PUBLISH_AGENT_REMINDER（normal+system_grant）。**⚠️权益待用户按桌面《代理提醒权益申请-手把手操作手册》去 AGC 申请（8 工作日；教育类+背单词=官方点名场景）——通过后必须①勾选开关保存②重新生成 Profile+手动签名；代码零改动权益到即生效**（验证=开开关调系统时间至提醒时刻看通知）。取舍：周期闹钟而非华为建议滚动单日（滚动断档违背天天提醒初衷；周期无法单日静默→完成态转正反馈文案，多邻国 streak 同款）。全案 docs/0.165+/0.299.0；key 待补录 redlineKeys|
 |0.296.0|✅首启外观弹窗点选即预览（ThemeChooseDialog 卡片 onClick 即调 applyMode persist=false 所见即所得，落盘+角标仍由主按钮 chooseThemeMode 统一执行防未确认预览落盘；GSD 外观卡本就点选即生效无需改）；版本同步 0.292.1 起两处制（app.json5+GSD）|
@@ -57,7 +60,7 @@
 |0.294.0|✅好奇宝宝新手任务体系（全案 docs/0.165+/好奇宝宝新手任务体系 方案.md）：七任务+完赛 2 万+节点上调 5000×3；SiyiPointStore 尾追 rookieDoneJson/rookieGrantedJson（cfg:siyi-points 并集合并防跨端重发）；grantBonusSp 改返 boolean+claimQuizSp 先发后置 claimed；新 common/RookieTask.ets（幂等+三时机差集补发）+components/RookieTaskDialog.ets；BBTreeCanvas 右上角 sign 入口+角标；ChatPage 六挂点+ReviewPage；签到每日首开自动弹（gate ready 才弹）；project_rule 新增「SP 司忆点云服务铁律」章。⚠️教训：node 补丁脚本 subOnce FAIL 即 exit=该文件已过补丁全部不落盘；GSD 内部无 gsShared 成员、RADIUS_CARD 非 GSD 既有 token|
 |0.293.0|✅SP 云同步门卫 SiyiGate（SP 双向变动全收口；ready=登录∧开关∧权限∧首拉闸门；未就绪弹引导三分支含 Deeplink 跳云空间）+新用户礼包云下行后发放（冷装重领根治）+签到口径统一（isSignedToday 双查本地∪云端）+账号切换资产隔离（闸门重开防 0 值 LWW 压云端）+订阅退役落地；⚠️待装机验收（PENDING 四场景）；autoSyncProgress 云空间满监听需改 CloudSyncUtil（红线）转人工|
 
-- 版本号纪律：当前 **v0.299.0（versionCode 1000436）**；**版本同步实为两处**（app.json5 + GlobalSettingsDialog APP_VERSION——0.292.1 起 Index.ets 无版本点）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
+- 版本号纪律：当前 **v0.299.2（versionCode 1000438）**；**版本同步实为两处**（app.json5 + GlobalSettingsDialog APP_VERSION——0.292.1 起 Index.ets 无版本点）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
 - 迭代文档命名：版本号 变更内容.md（详见 project_rule §7）
 - 真机测试设备（阵容与账号分工定稿）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S（hdc 7HZUN26330G02209）+ 畅享90Pro Max（WiFi 192.168.2.17:38611）**，同测同装机；第四台 Pura X View（192.168.2.4:39421）=用户工作机默认不测不装；**手机+Pad 登 180 测试账户、PC+Pura 登 181 主账号**；设备 IP 会变，连不上先问用户；`param get const.product.model` 验身份
 
