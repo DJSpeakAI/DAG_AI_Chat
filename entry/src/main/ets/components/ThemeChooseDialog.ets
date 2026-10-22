@@ -2,13 +2,15 @@
 // ThemeChooseDialog.ets — ★ 0.262.0 新用户首启主题选择弹窗（三选一）
 // ============================================================
 // 触发链：新用户（needsAgreement()=true）→ 协议同意（markAgreed）→
-//   theme-mode-v1 仍为空（未落盘）→ 弹出本弹窗；选择即确认即落盘，无二次确认。
+//   theme-mode-v1 仍为空（未落盘）→ 弹出本弹窗；主按钮点击即落盘确认，无二次确认。
 // 老用户升级静默落盘深色不弹（Q4 终裁）；卸载重装=协议 key 清零=按新用户走。
+// ★ 0.296.0：点选即预览——点哪张卡全局立即切到对应外观（applyMode persist=false 不落盘，
+//   所见即所得；落盘+角标消除仍由主按钮统一执行）；弹窗自身随 token 即时变色。
 // UI：标题「选择外观」+ 三张卡片（跟随系统默认高亮/深色/浅色），每卡 40vp mini
 //   预览块；选中卡=主紫描边+柔面高亮；底部主按钮「进入 DAG AI Chat」。
 // 宽度断点制：手机 86% / 平板 PC 固定 400（UI_GUIDELINES 六-12a，禁裸百分比）。
-// 弹窗自身在选择落定前一律暗紫渲染（与协议弹窗连贯，防闪烁——新用户此时必为
-//   暂深色态，直接读 theme token 即可）。
+// 弹窗初始（未点选前）暗紫渲染与协议弹窗连贯（新用户此时必为暂深色态，直接读
+//   theme token 即可）；点选后随 applyMode 即时切换深浅（0.296.0）。
 // ============================================================
 
 import { AppTheme, ThemeMode, connectAppTheme, chooseThemeMode } from '../common/AppTheme';
@@ -118,6 +120,8 @@ export struct ThemeChooseDialog {
     .onClick(() => {
       if (mode === 'system' || mode === 'dark' || mode === 'light') {
         this.selected = mode;
+        // ★ 0.296.0：点选即预览——全局立即切到该外观（不落盘；落盘仍由主按钮 chooseThemeMode 统一执行）
+        this.theme.applyMode(mode, this.theme.systemDark, false);
       }
     })
   }

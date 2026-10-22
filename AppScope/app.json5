@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000432, // ★ 0.295.0：ChatPage 结构性拆分三轮（WaitingDots/CodeBlockView/FolderPickerDialogs/ImageViewer 组件化+ChatPageTypes/ChatMdParser 层化，9378→8235 行零业务改动）；上一版 0.294.0 好奇宝宝新手任务
+     "versionCode": 1000433, // ★ 0.296.0：首启外观弹窗点选即预览（applyMode persist=false，落盘仍在主按钮）；上一版 0.295.0 ChatPage 结构性拆分
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
