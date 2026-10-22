@@ -79,6 +79,7 @@ import { WaitingDots } from './WaitingDots';
 import { CodeBlockView } from './CodeBlockView';
 import { MdSegment, ReviewCacheEntry, KnowledgeReviewCacheEntry, RichPlan, RichPlanEntry, PlanCacheEntry, ChatFontScaleStore, connectChatFontScale, PLACEHOLDER_LOADING, PLACEHOLDER_THINKING, TREE_CELL, chatScrollMemory, chatFoldMemory, animOn, glowHighlight, BODY_LINE_HEIGHT_RATIO, PC_SELECTION_MENU_WIDTH } from '../common/ChatPageTypes';
 import { parseMarkdown, buildFoldItems } from '../utils/ChatMdParser';
+import { WordFolderPicker, CardFolderPicker, QuotePicker } from './FolderPickerDialogs';
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
@@ -201,8 +202,6 @@ export struct ChatPage {
    @Local wordExistsTip: boolean = false;      // 「单词已存在」提示（重复添加时显示）
    // ★ 0.222.21：加词目标文件夹选择弹窗（点「加入单词库」弹出；UI 与单词库移动/复制弹窗同款）
    @Local wordFolderPickerVisible: boolean = false;
-   // ★ 0.222.21：选择弹窗折叠态（@Local string[] 替换引用触发重渲染——0.222.2 铁律）
-   @Local wordPickerCollapsedFolderIds: string[] = [];
    // ★ 0.150：删除确认弹窗状态（防误触；「不再提示」仅本次对话会话内生效，重进对话页重置）
   @Local deleteConfirmVisible: boolean = false; // 确认弹窗可见
   @Local deleteConfirmMessageId: string = '';   // 待删除的消息 ID
@@ -268,8 +267,6 @@ export struct ChatPage {
   @Local knowledgeEditSpText: string = '';
    // ★ 0.222.22：知识卡入库目标文件夹选择弹窗（点「保存入库」弹出；UI 与知识库移动/复制弹窗同款）
    @Local cardFolderPickerVisible: boolean = false;
-   // ★ 0.222.22：选择弹窗折叠态（@Local string[] 替换引用触发重渲染——0.222.2 铁律）
-   @Local cardPickerCollapsedFolderIds: string[] = [];
   knowledgeBank: KnowledgeBankStore = connectKnowledgeBank(); // ★ 0.146：知识库（独立 PersistenceV2 key，与气泡树/单词库隔离）
   attention: AttentionStore = connectAttention(); // ★ 0.202.0：注意力标签热度（发消息时提取——艾宾浩斯 2.0）
   private knowledgeQueryController: StreamController | null = null; // 进行中的提炼请求（弹窗关闭时取消）
@@ -3794,229 +3791,6 @@ export struct ChatPage {
     this.wordFolderPickerVisible = false;
   }
 
-  // ★ 0.222.21：加词目标选择器的树形目录（DFS 层级+连接线字段，复刻单词库移动/复制弹窗；加词场景无排除项）
-  wordPickerTreeItems(): WordFolderTreeItem[] {
-    const out: WordFolderTreeItem[] = [];
-    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
-      const kids = this.wordBank.folders
-        .filter((f: WordFolder): boolean => f.parentId === parentId)
-        .sort((a: WordFolder, b: WordFolder): number => b.createdAt - a.createdAt);
-      for (let i = 0; i < kids.length; i++) {
-        const isLast = i === kids.length - 1;
-        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
-        if (!this.isWordPickerCollapsed(kids[i].id)) {
-          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
-        }
-      }
-    };
-    walk('', 0, [], []);
-    return out;
-  }
-
-  // ★ 0.222.21：选择器里文件夹是否有子文件夹
-  wordPickerHasChildren(folderId: string): boolean {
-    for (let i = 0; i < this.wordBank.folders.length; i++) {
-      if (this.wordBank.folders[i].parentId === folderId) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // ★ 0.222.21：选择器文件夹是否折叠
-  isWordPickerCollapsed(folderId: string): boolean {
-    return this.wordPickerCollapsedFolderIds.indexOf(folderId) >= 0;
-  }
-
-  // ★ 0.222.21：切换选择器文件夹折叠（@Local string[] 替换引用触发重渲染）
-  toggleWordPickerCollapse(folderId: string): void {
-    if (this.isWordPickerCollapsed(folderId)) {
-      this.wordPickerCollapsedFolderIds = this.wordPickerCollapsedFolderIds.filter((id: string): boolean => id !== folderId);
-    } else {
-      this.wordPickerCollapsedFolderIds = [...this.wordPickerCollapsedFolderIds, folderId];
-    }
-  }
-
-  // ★ 0.222.21：加词目标文件夹选择弹窗——UI 逐行复刻单词库移动/复制弹窗（树形连接线+折叠三角+
-  // 行高 32/字号 13/RADIUS_NAV+根目录行显示单词总数+取消行），标题「加入单词到…」。
-  // 无参 @Builder 内部直读状态（0.190.1 铁律）；点行=确认入该文件夹、点取消/遮罩=关闭。
-  @Builder
-  wordFolderPickerDialog() {
-    Column() {
-      Column() {
-        Text('加入单词到…')
-          .fontSize(16)
-          .fontWeight(600)
-          .fontColor(this.theme.textPrimary)
-        Scroll() {
-          Column() {
-            Row() {
-              Text('根目录')
-                .fontSize(13)
-                .fontColor(this.theme.textPrimary)
-                .layoutWeight(1)
-              Text(`${this.wordBank.words.length}`)
-                .fontSize(10)
-                .fontColor(this.theme.textTertiary)
-            }
-            .width('100%')
-            .height(32)
-            .padding({ left: 8, right: 8 })
-            .borderRadius(RADIUS_NAV)
-            .onClick(() => {
-              this.confirmAddWordToFolder('');
-            })
-            ForEach(this.wordPickerTreeItems(), (item: WordFolderTreeItem) => {
-              Row({ space: 6 }) {
-                // 静态经典树形连接线（与边栏同款，弹窗无路径高亮）
-                Row() {
-                  ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
-                    Stack({ alignContent: Alignment.Top }) {
-                      if (cont) {
-                        Column()
-                          .width(1)
-                          .height('100%')
-                          .backgroundColor(this.theme.strokeCard)
-                      }
-                    }
-                    .width(TREE_CELL)
-                    .height('100%')
-                  }, (cont: boolean, k: number) => `${k}_${cont}`)
-                  Row() {
-                    Stack({ alignContent: Alignment.TopEnd }) {
-                      Column()
-                        .width(1)
-                        .height(item.isLast ? '50%' : '100%')
-                        .backgroundColor(this.theme.strokeCard)
-                    }
-                    .width('50%')
-                    .height('100%')
-                    Stack({ alignContent: Alignment.Center }) {
-                      Row()
-                        .width('100%')
-                        .height(1)
-                        .backgroundColor(this.theme.strokeCard)
-                    }
-                    .width('50%')
-                    .height('100%')
-                  }
-                  .width(TREE_CELL)
-                  .height('100%')
-                }
-                .height('100%')
-                if (this.wordPickerHasChildren(item.folder.id)) {
-                  FoldChevron({ expanded: !this.isWordPickerCollapsed(item.folder.id) })
-                    .onClick(() => {
-                      this.toggleWordPickerCollapse(item.folder.id);
-                    })
-                } else {
-                  Row().width(12) // 叶子行空占位（同宽对齐——树行文本同轴线）
-                }
-                Text(item.folder.name)
-                  .fontSize(13)
-                  .fontColor(this.theme.textPrimary)
-                  .layoutWeight(1)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .width('100%')
-              .height(32)
-              .padding({ left: 8, right: 8 })
-              .borderRadius(RADIUS_NAV)
-              .onClick(() => {
-                this.confirmAddWordToFolder(item.folder.id);
-              })
-            }, (item: WordFolderTreeItem) => item.folder.id)
-          }
-          .width('100%')
-        }
-        .layoutWeight(1)
-        .margin({ top: 8 })
-        .constraintSize({ maxHeight: 320 })
-        Text('取消')
-          .fontSize(13)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 10 })
-          .onClick(() => {
-            this.wordFolderPickerVisible = false;
-          })
-      }
-      .width(this.isTablet ? 520 : '86%')
-      .constraintSize({ maxHeight: '80%' })
-      .padding(20)
-      .borderRadius(RADIUS_NAV)
-      .backgroundColor(this.theme.surfaceNode)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(this.theme.overlay)
-    .justifyContent(FlexAlign.Center)
-    .onClick(() => {
-      this.wordFolderPickerVisible = false;
-    })
-  }
-
-  // ★ 0.235.0：划词引用二选一弹窗——「引用到本聊天 / 引用为新子气泡」；样式对齐 0.222.21 文件夹选择弹窗
-  //   （暗紫卡片 this.theme.surfaceNode+RADIUS_NAV+遮罩关闭=取消；宽度走确认类 400 断点制）；无参 @Builder 直读状态（0.190.1 铁律）
-  @Builder
-  quotePickerDialog() {
-    Column() {
-      Column() {
-        Text('引用选中内容')
-          .fontSize(16)
-          .fontWeight(600)
-          .fontColor(this.theme.textPrimary)
-        Text(this.quoteShortLabel())
-          .fontSize(12)
-          .fontColor(this.theme.textTertiary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 6, bottom: 14 })
-        Text('引用到本聊天')
-          .fontSize(14)
-          .fontColor(this.theme.brandSecondary)
-          .width('100%')
-          .height(44)
-          .textAlign(TextAlign.Center)
-          .borderRadius(RADIUS_NAV)
-          .backgroundColor(this.theme.surfaceHover)
-          .onClick(() => {
-            this.confirmQuote(false);
-          })
-        Text('引用为新子气泡')
-          .fontSize(14)
-          .fontColor(this.theme.brandSecondary)
-          .width('100%')
-          .height(44)
-          .textAlign(TextAlign.Center)
-          .borderRadius(RADIUS_NAV)
-          .backgroundColor(this.theme.surfaceHover)
-          .margin({ top: 8 })
-          .onClick(() => {
-            this.confirmQuote(true);
-          })
-        Text('取消')
-          .fontSize(13)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 12 })
-          .onClick(() => {
-            this.cancelQuotePicker();
-          })
-      }
-      .width(this.isTablet ? 400 : '86%')
-      .padding(20)
-      .borderRadius(RADIUS_NAV)
-      .backgroundColor(this.theme.surfaceNode)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(this.theme.overlay)
-    .justifyContent(FlexAlign.Center)
-    .onClick(() => {
-      this.cancelQuotePicker();
-    })
-  }
-
   // ★ 0.268.0：AI 序生效判定/映射——rerank 缓存命中且有序（id 接回库对象，被删跳过；
   //   引用不落地=云同步整库重建天然免疫，0.248.6 教训消费端零特殊处理）
   aiOrderedWordObjects(messageId: string): WordItem[] {
@@ -4582,168 +4356,6 @@ export struct ChatPage {
     this.closeKnowledgeEdit();
   }
 
-  // ★ 0.222.22：知识卡入库目标选择器的树形目录（DFS 层级+连接线字段，复刻知识库移动/复制弹窗；
-  // 加卡=新建实体无源文件夹，全文件夹可选——与「移动」排除源自身的唯一区别，其余一致）
-  cardPickerTreeItems(): KFolderTreeItem[] {
-    const out: KFolderTreeItem[] = [];
-    const walk = (parentId: string, depth: number, ancestorIds: string[], ancestorHasNext: boolean[]): void => {
-      const kids = this.knowledgeBank.folders
-        .filter((f: KFolder): boolean => f.parentId === parentId)
-        .sort((a: KFolder, b: KFolder): number => b.createdAt - a.createdAt);
-      for (let i = 0; i < kids.length; i++) {
-        const isLast = i === kids.length - 1;
-        out.push({ folder: kids[i], depth: depth, isLast: isLast, ancestorIds: ancestorIds, ancestorHasNext: ancestorHasNext });
-        if (!this.isCardPickerCollapsed(kids[i].id)) {
-          walk(kids[i].id, depth + 1, [...ancestorIds, kids[i].id], [...ancestorHasNext, !isLast]);
-        }
-      }
-    };
-    walk('', 0, [], []);
-    return out;
-  }
-
-  // ★ 0.222.22：选择器里文件夹是否有子文件夹
-  cardPickerHasChildren(folderId: string): boolean {
-    for (let i = 0; i < this.knowledgeBank.folders.length; i++) {
-      if (this.knowledgeBank.folders[i].parentId === folderId) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // ★ 0.222.22：选择器文件夹是否折叠
-  isCardPickerCollapsed(folderId: string): boolean {
-    return this.cardPickerCollapsedFolderIds.indexOf(folderId) >= 0;
-  }
-
-  // ★ 0.222.22：切换选择器文件夹折叠（@Local string[] 替换引用触发重渲染）
-  toggleCardPickerCollapse(folderId: string): void {
-    if (this.isCardPickerCollapsed(folderId)) {
-      this.cardPickerCollapsedFolderIds = this.cardPickerCollapsedFolderIds.filter((id: string): boolean => id !== folderId);
-    } else {
-      this.cardPickerCollapsedFolderIds = [...this.cardPickerCollapsedFolderIds, folderId];
-    }
-  }
-
-  // ★ 0.222.22：知识卡入库目标文件夹选择弹窗——UI 逐行复刻知识库移动/复制弹窗（树形连接线+
-  // 折叠三角+行高 32/字号 13/RADIUS_NAV+根目录行显示卡片总数+取消行），标题「保存卡片到…」。
-  // 无参 @Builder 内部直读状态（0.190.1 铁律）；点行=确认入该文件夹、点取消/遮罩=回到编辑弹窗（草稿不丢）。
-  @Builder
-  cardFolderPickerDialog() {
-    Column() {
-      Column() {
-        Text('保存卡片到…')
-          .fontSize(16)
-          .fontWeight(600)
-          .fontColor(this.theme.textPrimary)
-        Scroll() {
-          Column() {
-            Row() {
-              Text('根目录')
-                .fontSize(13)
-                .fontColor(this.theme.textPrimary)
-                .layoutWeight(1)
-              Text(`${this.knowledgeBank.cards.length}`)
-                .fontSize(10)
-                .fontColor(this.theme.textTertiary)
-            }
-            .width('100%')
-            .height(32)
-            .padding({ left: 8, right: 8 })
-            .borderRadius(RADIUS_NAV)
-            .onClick(() => {
-              this.confirmSaveKnowledgeCard('');
-            })
-            ForEach(this.cardPickerTreeItems(), (item: KFolderTreeItem) => {
-              Row({ space: 6 }) {
-                // 静态经典树形连接线（与边栏同款，弹窗无路径高亮）
-                Row() {
-                  ForEach(item.ancestorHasNext, (cont: boolean, k: number) => {
-                    Stack({ alignContent: Alignment.Top }) {
-                      if (cont) {
-                        Column()
-                          .width(1)
-                          .height('100%')
-                          .backgroundColor(this.theme.strokeCard)
-                      }
-                    }
-                    .width(TREE_CELL)
-                    .height('100%')
-                  }, (cont: boolean, k: number) => `${k}_${cont}`)
-                  Row() {
-                    Stack({ alignContent: Alignment.TopEnd }) {
-                      Column()
-                        .width(1)
-                        .height(item.isLast ? '50%' : '100%')
-                        .backgroundColor(this.theme.strokeCard)
-                    }
-                    .width('50%')
-                    .height('100%')
-                    Stack({ alignContent: Alignment.Center }) {
-                      Row()
-                        .width('100%')
-                        .height(1)
-                        .backgroundColor(this.theme.strokeCard)
-                    }
-                    .width('50%')
-                    .height('100%')
-                  }
-                  .width(TREE_CELL)
-                  .height('100%')
-                }
-                .height('100%')
-                if (this.cardPickerHasChildren(item.folder.id)) {
-                  FoldChevron({ expanded: !this.isCardPickerCollapsed(item.folder.id) })
-                    .onClick(() => {
-                      this.toggleCardPickerCollapse(item.folder.id);
-                    })
-                } else {
-                  Row().width(12) // 叶子行空占位（同宽对齐——树行文本同轴线）
-                }
-                Text(item.folder.name)
-                  .fontSize(13)
-                  .fontColor(this.theme.textPrimary)
-                  .layoutWeight(1)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .width('100%')
-              .height(32)
-              .padding({ left: 8, right: 8 })
-              .borderRadius(RADIUS_NAV)
-              .onClick(() => {
-                this.confirmSaveKnowledgeCard(item.folder.id);
-              })
-            }, (item: KFolderTreeItem) => item.folder.id)
-          }
-          .width('100%')
-        }
-        .layoutWeight(1)
-        .margin({ top: 8 })
-        .constraintSize({ maxHeight: 320 })
-        Text('取消')
-          .fontSize(13)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 10 })
-          .onClick(() => {
-            this.cardFolderPickerVisible = false;
-          })
-      }
-      .width(this.isTablet ? 520 : '86%')
-      .constraintSize({ maxHeight: '80%' })
-      .padding(20)
-      .borderRadius(RADIUS_NAV)
-      .backgroundColor(this.theme.surfaceNode)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(this.theme.overlay)
-    .justifyContent(FlexAlign.Center)
-    .onClick(() => {
-      this.cardFolderPickerVisible = false;
-    })
-  }
 
   // 选择卡片配图：相册单选 → base64 data URI（跟随图片消息的既有存储模式，重启不丢）
   async selectKnowledgeImage(): Promise<void> {
@@ -7727,7 +7339,15 @@ export struct ChatPage {
         // ★ 0.222.22：知识卡入库目标文件夹选择弹窗（点「保存入库」弹出）——渲染在编辑弹窗之后=
         // 同层后绘制在上；点取消/遮罩回到编辑弹窗（草稿不丢），选完文件夹入库+双弹窗齐关。
         if (this.cardFolderPickerVisible) {
-          this.cardFolderPickerDialog()
+          CardFolderPicker({
+            isTablet: this.isTablet,
+            onPick: (folderId: string): void => {
+              this.confirmSaveKnowledgeCard(folderId);
+            },
+            onClose: (): void => {
+              this.cardFolderPickerVisible = false;
+            }
+          })
         }
 
         // 全屏图片浏览器
@@ -8109,12 +7729,29 @@ export struct ChatPage {
         // ★ 0.222.21：加词目标文件夹选择弹窗（点「加入单词库」弹出）——渲染在翻译浮窗之后=同层后绘制在上，
         // 浮窗保持可见但被遮罩覆盖；选完文件夹浮窗按钮转「已加入」。
         if (this.wordFolderPickerVisible) {
-          this.wordFolderPickerDialog()
+          WordFolderPicker({
+            isTablet: this.isTablet,
+            onPick: (folderId: string): void => {
+              this.confirmAddWordToFolder(folderId);
+            },
+            onClose: (): void => {
+              this.wordFolderPickerVisible = false;
+            }
+          })
         }
 
         // ★ 0.235.0：划词引用二选一弹窗（渲染在翻译浮窗/文件夹弹窗之后=同层后绘制在上）
         if (this.quotePickerVisible) {
-          this.quotePickerDialog()
+          QuotePicker({
+            isTablet: this.isTablet,
+            shortLabel: this.quoteShortLabel(),
+            onQuote: (toNewBubble: boolean): void => {
+              this.confirmQuote(toNewBubble);
+            },
+            onCancel: (): void => {
+              this.cancelQuotePicker();
+            }
+          })
         }
 
         // ★ 0.286.1：AI 读网页渲染通道——按需挂载的 1×1 隐形 Web 组件（SPA 文档站静态抓只有壳，
