@@ -29,6 +29,7 @@ import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNo
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
+import { siyiGateBlockReason, refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（引导弹窗文案/动作分支+权限刷新）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { SignInDialog, LevelUpDialog } from '../components/SignInDialog'; // ★ 0.256.0：签到弹窗+称号升级弹窗（桥驱动，Index 根唯一挂载点）
 import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
@@ -190,18 +191,11 @@ struct Index {
       }
       if (tip === '') {
         if (fromSyncEntry) {
-          // ★ 0.196.11：云同步入口登录——入口即意图，成功直接开（VIP 墙内）；非 VIP 提示订阅
-          if (isVip(this.subscription)) {
-            enableCloudSyncNow(this.getUIContext());
-          } else {
-            try {
-              this.getUIContext().getPromptAction().showToast({ message: '云同步为会员功能，请到边栏「账单」页订阅', duration: 1500 });
-            } catch (_e) {
-              // 静默失败（toast 非关键路径）
-            }
-          }
-        } else if (shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+          // ★ 0.293.0：订阅退役——云同步是 SP 体系强制前提（SiyiGate），不再设 VIP 墙，入口即意图直接开
+          enableCloudSyncNow(this.getUIContext());
+        } else if (shouldPromptCloudSyncAfterLogin(true)) {
           // ★ 0.196.8：普通路径登录成功 → 弹「是否开启云同步」；★ 0.196.9：AppConfirmDialog 暗紫
+          // ★ 0.293.0：订阅退役——恒传 true（不再按 isVip 过滤，全员引导开同步）
           this.confirmDialog.cloudSyncPromptVisible = true;
         }
       }
@@ -257,6 +251,50 @@ struct Index {
       return `ID: ${account.openID.substring(0, 10)}…`;
     }
     return '已登录';
+  }
+
+  // ============================================================
+  // ★ 0.293.0：SP 云同步门卫引导弹窗（SiyiGate——文案与确认动作按阻塞原因分支）
+  // ============================================================
+  syncGateMessage(): string {
+    const r = siyiGateBlockReason();
+    if (r === 1) {
+      return '此功能涉及司忆点（SP），需登录华为账号并开启云同步使账本在云端对齐后使用。点击下方按钮登录。';
+    }
+    if (r === 2) {
+      return '此功能涉及司忆点（SP），需开启云同步使账本在云端对齐后使用（防多端账目不一致）。点击下方按钮一键开启。';
+    }
+    // r === 3：通路未就绪（系统云空间层未开/网络异常/首拉未完成——华为无 API 细分，文案覆盖引导）
+    return '云同步链路尚未就绪：请检查网络，并确认系统「设置 → 华为账号 → 云空间 → 应用数据同步」中已允许本应用同步。点击下方按钮前往云空间检查。';
+  }
+
+  onSyncGateConfirm(): void {
+    this.confirmDialog.syncGatePromptVisible = false;
+    const r = siyiGateBlockReason();
+    if (r === 1) {
+      this.doLogin(true); // 未登录→登录（fromSyncEntry=true 登录后直接开云同步）
+    } else if (r === 2) {
+      enableCloudSyncNow(this.getUIContext()); // app 开关/权限未开→一键开启（含权限弹窗）
+    } else {
+      this.jumpToCloudSpace(); // 通路未就绪→跳系统云空间（Deeplink 官方 uri）
+    }
+  }
+
+  // ★ 0.293.0：跳转系统云空间首页（华为官方 Deeplink——不能精确到本 app 开关页，
+  //   弹窗文案已引导用户找「应用数据同步」下本应用名开开关；失败 toast 兜底）
+  jumpToCloudSpace(): void {
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      context.startAbility({ uri: 'hicloud://cloudDrive/getInfo?path=MainActivity' }).catch(() => {
+        try {
+          this.getUIContext().getPromptAction().showToast({ message: '跳转失败，请手动前往 设置 → 华为账号 → 云空间', duration: 2000 });
+        } catch (_e2) {
+          // 静默
+        }
+      });
+    } catch (_e) {
+      // 静默
+    }
   }
 
   // ★ 0.195.0：到期倒计时提醒——页面显示时检查（冷启动/回前台均触发），每日去重最多弹 1 次
@@ -780,7 +818,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-          Text('v0.292.0') // ★ 0.292.0：联网问答（联网胶囊+AI 自主搜索/读网页）；上一版 0.291.4（版本历史详见 MEMORY.md）
+          Text('v0.293.0') // ★ 0.293.0：SP 云同步门卫（SiyiGate）+签到口径统一+礼包云下行后发放；上一版 0.292.1（版本历史详见 MEMORY.md）
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })
@@ -962,6 +1000,37 @@ struct Index {
       },
       onCancel: () => {
         this.confirmDialog.spRechargePromptVisible = false;
+      }
+    })
+    // ★ 0.293.0：SP 云同步门卫引导（SiyiGate——AI 发送/重生成/划词/圈注/签到/充值在云同步
+    //   未就绪时触发；文案与确认动作按 siyiGateBlockReason 三分支：登录/一键开启/跳系统云空间）
+    AppConfirmDialog({
+      visible: this.confirmDialog.syncGatePromptVisible,
+      title: '开启云同步后可用',
+      message: this.syncGateMessage(),
+      confirmText: '前往开启',
+      cancelText: '取消',
+      confirmOnLeft: true,
+      onConfirm: () => {
+        this.onSyncGateConfirm();
+      },
+      onCancel: () => {
+        this.confirmDialog.syncGatePromptVisible = false;
+      }
+    })
+    // ★ 0.293.0：新用户礼包仪式感弹窗（云首拉完成+云端确认无发放记录才发放——发放即弹窗
+    //   明示赠送，绝不后台默默到账；用户拍板「您是新用户，免费赠送您 200 万 SP」）
+    AppConfirmDialog({
+      visible: this.confirmDialog.welcomeBonusVisible,
+      title: '🎁 新用户礼包',
+      message: `您是新用户，免费赠送您 ${(this.confirmDialog.welcomeBonusAmount / 10000).toLocaleString()} 万 SP，已入账。祝学习愉快！`,
+      confirmText: '开心收下',
+      cancelText: '关闭',
+      onConfirm: () => {
+        this.confirmDialog.welcomeBonusVisible = false;
+      },
+      onCancel: () => {
+        this.confirmDialog.welcomeBonusVisible = false;
       }
     })
     // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）

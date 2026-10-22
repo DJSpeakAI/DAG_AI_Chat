@@ -64,6 +64,7 @@ import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.1
 import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）；★ 0.248.3：圈注/划词守卫
+import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（消耗 SP 的 AI 功能前置闸——账本云端对齐才放行）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.248.2：AI 登录引导弹窗桥（Index 根 Stack 消费）
 import { ProfileStore, connectProfileObservations, buildCardView, updateProfileFromConversation,
   noteInactiveNode, buildSiblingHeadsContext, bindMemoryEngine, memoryTokenEstimate,
@@ -2045,6 +2046,11 @@ export struct ChatPage {
       connectConfirmDialog().aiLoginPromptVisible = true;
       return;
     }
+    // ★ 0.293.0：SP 云同步门卫（SiyiGate——账本云端未对齐禁用 AI：防未开同步设备本地小金库白嫖，
+    //   引导弹窗按阻塞原因分支：登录/一键开启/跳系统云空间）
+    if (!requireSiyiGate()) {
+      return;
+    }
     // ★ 0.248.7：SP 余额闸门（实扣链路上线——余额为 0 拦截发送并引导充能；余额>0 放行，
     //   单次消耗远小于余额不做预估拦截，回复完成按实扣、不足扣到 0 为止）
     //   ★ 0.249.0：Lv8 司忆令「SP 永久免费」豁免（用户拍板真免扣——免扣账号余额 0 照常发送）
@@ -2644,6 +2650,10 @@ export struct ChatPage {
     // ★ 0.248.2：AI 登录守卫（同 sendMessage——重新生成同属 AI 生成内容，合规口径一致）
     if (!connectHuaweiAccount().isLoggedIn) {
       connectConfirmDialog().aiLoginPromptVisible = true;
+      return;
+    }
+    // ★ 0.293.0：SP 云同步门卫（同 sendMessage——重生成同属 AI 调用，gate 口径一致）
+    if (!requireSiyiGate()) {
       return;
     }
     // ★ 0.248.7：SP 余额闸门（同 sendMessage——重生成同属 AI 调用，实扣口径一致；★ 0.249.0：Lv8 免扣豁免）
@@ -4048,6 +4058,10 @@ export struct ChatPage {
     if (!requireLoginForCloud()) {
       return;
     }
+    // ★ 0.293.0：SP 云同步门卫（翻译扣 SP——账本云端对齐才放行）
+    if (!requireSiyiGate()) {
+      return;
+    }
     const text = this.effectiveSelText().trim(); // 先取值——closeSelectionMenu 可能同步触发 onDisappear 清空状态（0.285.5 粘性兜底）
     this.closeActiveSelectionMenu();
     if (text.length === 0) {
@@ -5028,6 +5042,10 @@ export struct ChatPage {
     if (!requireLoginForCloud()) {
       return;
     }
+    // ★ 0.293.0：SP 云同步门卫（AI 提炼扣 SP——账本云端对齐才放行）
+    if (!requireSiyiGate()) {
+      return;
+    }
     // ★ 0.272.0：提炼 SP 余额闸门（D3——余额≤0 且非 Lv8 弹充值引导，事前拦截防白跑 180s）
     if (!this.spFree() && siyiTotalSp(this.siyiStore) <= 0) {
       connectConfirmDialog().spRechargePromptVisible = true;
@@ -5879,6 +5897,10 @@ export struct ChatPage {
   startAnnotation(): void {
     // ★ 0.248.3：圈注守卫（上架合规——屏幕圈选后台走 AI 提炼，未登录拦截）
     if (!requireLoginForCloud()) {
+      return;
+    }
+    // ★ 0.293.0：SP 云同步门卫（圈注 AI 提炼扣 SP——账本云端对齐才放行）
+    if (!requireSiyiGate()) {
       return;
     }
     if (this.annotationPref.notifyShown) {

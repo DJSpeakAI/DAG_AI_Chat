@@ -28,6 +28,9 @@ export class HuaweiAccountStore {
   @Trace avatarUri: string = ''; // 头像 URL（用户更新头像后原链接会失效，仅作展示用）
   @Trace openID: string = ''; // 应用维度用户标识
   @Trace unionID: string = ''; // 开发者维度用户标识（云同步用）
+  // ★ 0.293.0：上次登录账号标识（unionID||openID，Schema 尾部追加默认空串）——账号切换检测
+  //   （同设备换登华为账号时触发 SP/等级/签到等账号级资产隔离重置，见 ChatModel.resetAccountAssetsOnAccountSwitch）
+  @Trace lastAccountMark: string = '';
 }
 
 // 连接持久化单例（key 固定 'huawei-account'，与 PersistData/api-config 同款模式）

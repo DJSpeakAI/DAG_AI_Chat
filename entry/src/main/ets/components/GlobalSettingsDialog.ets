@@ -37,7 +37,8 @@ import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
   import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）
-import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
+import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
+import { SiyiGateStore, connectSiyiGate, refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：permGranted 单一真值源（SiyiGate 共享 store——任意处刷新 GSD 即时可见，0.229.24 根治）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
@@ -197,7 +198,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.292.1'; // ★ 0.292.1：性格测试回归选择题（12 单选+3 多选）；上一版 0.292.0（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.293.0'; // ★ 0.293.0：SP 云同步门卫（SiyiGate）+签到口径统一+礼包云下行发放；上一版 0.292.1（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -358,10 +359,14 @@ export struct GlobalSettingsDialog {
   // ★ 0.267.1：后台回复通知开关状态（true=已开启；默认 true 防未授权用户误显「未开启」闪烁——
   //   查询异步回填；开弹窗/切到 AI 偏好 Tab 时刷新，从系统设置回来状态即时正确）
   @Local notifEnabled: boolean = true;
-  // ★ 0.196.10：云同步状态改响应式——permGranted（系统权限，开弹窗时异步查一次）&&
-  //   cloudSwitch.enabled（应用级开关 @Trace，登录弹窗开启/退出强制关时**实时刷新**状态卡，
-  //   不用重开设置弹窗；原 @Local syncGranted 开弹窗快照一次，开启后状态卡滞留「未开启」）
-  @Local permGranted: boolean = false;
+  // ★ 0.196.10：云同步状态改响应式——permGranted（系统权限）&& cloudSwitch.enabled（应用级开关 @Trace）
+  //   ★ 0.293.0：permGranted 改接 SiyiGate 共享真值源（启动/前台/登录/引导处处刷新，
+  //   GSD 即时响应——0.229.24「面板滞留未开启」根治：不再依赖本弹窗快照）
+  siyiGate: SiyiGateStore = connectSiyiGate();
+  @Computed
+  get permGranted(): boolean {
+    return this.siyiGate.permGranted;
+  }
   cloudSwitch: CloudSyncStore = connectCloudSync();
   private tabScroller: Scroller = new Scroller(); // ★ 0.251.2：Tab 轨道滚动器（选中 Tab 居中）
   @Computed
@@ -552,9 +557,8 @@ export struct GlobalSettingsDialog {
     this.editReviewLearn = this.learnCountStore.learnCount;
     this.editReviewKnowledge = this.knowledgeCountStore.knowledgeCount;
     // ★ 0.196.10：系统权限状态（开弹窗时查一次；开关侧 cloudSwitch.enabled 是 @Trace 实时）
-    isCloudSyncGranted().then((granted: boolean) => {
-      this.permGranted = granted;
-    });
+    // ★ 0.293.0：改走 SiyiGate 共享真值源刷新（写 store 全局即时可见）
+    refreshSiyiGatePerm();
   }
 
 
@@ -947,7 +951,7 @@ export struct GlobalSettingsDialog {
           ['ohos.permission.DISTRIBUTED_DATASYNC']);
         if (result.length > 0 && result[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
           // 用户在权限面板上开了权限：当场激活云同步 + 刷新面板状态
-          this.permGranted = true;
+          connectSiyiGate().permGranted = true; // ★ 0.293.0：写真值源（全局即时可见）
           connectCloudSync().enabled = true;
           activateCloudSync();
           this.showToastSafe('云同步已开启');
@@ -2542,7 +2546,7 @@ export struct GlobalSettingsDialog {
               return;
             }
             requestSyncPermission(context).then((granted: boolean) => {
-              this.permGranted = granted; // ★ 0.196.10：状态卡实时刷新
+              connectSiyiGate().permGranted = granted; // ★ 0.196.10：状态卡实时刷新（★ 0.293.0 写真值源）
               if (granted) {
                 this.showToastSafe('云同步已开启');
                 return;
@@ -2710,11 +2714,9 @@ export struct GlobalSettingsDialog {
       this.refreshBackupSnapshot();
     }
     if (n === 3) {
-      // ★ 0.259.2：切到云同步 Tab 重查系统权限——permGranted 是开弹窗快照，用户绕道
-      //   系统设置手动开权限回来后状态卡不刷新的兜底（0.229.24 登记的同源 UI bug）
-      isCloudSyncGranted().then((granted: boolean) => {
-        this.permGranted = granted;
-      });
+      // ★ 0.259.2：切到云同步 Tab 重查系统权限——用户绕道系统设置手动开权限回来后
+      //   状态卡不刷新的兜底（0.229.24 同源；★ 0.293.0 改走 SiyiGate 真值源刷新）
+      refreshSiyiGatePerm();
     }
     if (n === 1) {
       // ★ 0.267.1：切到 AI 偏好 Tab 重查通知开关——用户从系统通知设置页回来状态即时刷新

@@ -24,6 +24,8 @@ import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, revive
 import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
+ import { siyiGateReady } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
+ import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.293.0：新用户礼包仪式感弹窗桥（AppConfirmDialog 不引 ChatModel 不成环）
 import { trackUidAuto, setDailyLdProvider } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）；★ 0.273.0：setDailyLdProvider（app_daily 日活行的 ld 字段注入位——TrackUtil 禁 import ChatModel，由本模块单向注入）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
@@ -1019,12 +1021,13 @@ export function connectSubscription(): SubscriptionStore {
 // ★ 0.194.0：统一试用打点——已登录且从未记录 → 从当下起算 30 天免费试用
 //   （调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 / BillingPage 登录按钮 / 边栏头像，
 //   四处共用防逻辑漂移）
-// ★ 0.248.0：登录后同步发放新用户礼包（grantSiyiWelcomeBonus 自身幂等——凡登录都调、
-//   welcomeGranted 标记防重发；随 stamp 发放=四入口天然全覆盖）
+// ★ 0.293.0：新用户礼包不再随 stamp 同步直发（「先发后拉」时序洞=冷装重领 200w 根因）——
+//   改挂云首拉完成回调 maybeGrantWelcomeAfterFirstPull（老账号重装由云端 welcomeGranted 拦截）；
+//   本函数新增职责=账号切换检测（资产行隔离入口，见 detectAccountSwitchAndResetAssets）
 export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean {
   const account = connectHuaweiAccount();
   if (account.isLoggedIn) {
-    grantSiyiWelcomeBonus(connectSiyiPoints());
+    detectAccountSwitchAndResetAssets(); // ★ 0.293.0：先于一切发放/同步合并（重置后闸门重开等新账号首拉）
     maybeShowSignInGuide(); // ★ 0.256.0：首登签到引导（挂此=四登录入口全覆盖；guideShown 只弹一次）
   }
   if (account.isLoggedIn && subscription.freeTrialStart === 0) {
@@ -1032,6 +1035,65 @@ export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean 
     return true; // ★ 0.195.0：首次打戳返回 true——调用方据此弹「30 天试用欢迎弹窗」（仅首登 1 次）
   }
   return false;
+}
+
+// ============================================================
+// ★ 0.293.0：多账号切换资产行隔离（用户拍板：SP/充值包/等级/签到=账号级资产跟账号走，
+//   绝不跟设备走；内容数据默认合并不动——华为实锤系统不做本地隔离，本地遗留会随
+//   云同步合并上行带入新账号云端，资产行必须应用层自行隔离）
+//   链路：stamp 检测 lastAccountMark 变化 → store 全量重置默认值（不改 key 不碰 Schema）
+//   + RDB 资产行本地删除（deleteRowLocal 不传播）+ rowCache 清（防 flush diff 误判）
+//   + 首拉闸门重开（防重置 0 值 LWW 压掉新账号云端资产）→ 等新账号云端下行对齐
+// ============================================================
+function detectAccountSwitchAndResetAssets(): void {
+  const account = connectHuaweiAccount();
+  const mark = account.unionID !== '' ? account.unionID : account.openID;
+  if (mark === '' || account.lastAccountMark === mark) {
+    if (mark !== '') {
+      account.lastAccountMark = mark; // 首次登录（新装）落标记
+    }
+    return;
+  }
+  account.lastAccountMark = mark; // 换登新账号——落新标记后重置
+  resetAccountAssetsOnAccountSwitch();
+}
+
+function resetAccountAssetsOnAccountSwitch(): void {
+  const siyi = connectSiyiPoints();
+  siyi.permanentSp = 0;
+  siyi.bonusSp = 0;
+  siyi.giftSp = 0;
+  siyi.giftSpExpireAt = 0;
+  siyi.welcomeGranted = false;
+  siyi.consumedGiftSp = 0;
+  siyi.consumedBonusSp = 0;
+  siyi.consumedPermanentSp = 0;
+  siyi.signedDates = '[]';
+  siyi.milestoneStreakGranted = 0;
+  siyi.iapPackages = '[]';
+  connectStatistics().raw = '{"days":[]}';
+  const signIn = connectSignIn();
+  signIn.signDates = [];
+  signIn.lastSignDate = '';
+  signIn.streak = 0;
+  signIn.maxStreak = 0;
+  signIn.guideShown = false;
+  signIn.makeupVouchers = 0;
+  signIn.makeupGrantedLevel = 0;
+  signIn.makeupDates = [];
+  // RDB 资产行本地删除（仅本地——物理删行不传播云端）+ diff-cache 清
+  deleteRowLocal('cfg:siyi-points');
+  deleteRowLocal('cfg:stat-days');
+  rowCache.delete('cfg:siyi-points');
+  rowCache.delete('cfg:stat-days');
+  // 首拉闸门重开：新账号云端下行 reconcile 完成前禁一切行上行（防重置 0 值 LWW 压掉新账号云端资产）
+  connectCloudSyncArbiter().rowInitDone = false;
+  // 等级桥复位（检测基线随新账号重建）
+  const bridge = connectLevelUpBridge();
+  bridge.lastLevel = 0;
+  bridge.pendingLevel = 0;
+  bridge.pendingMakeupGrant = 0;
+  welcomeCheckDone = false; // 新账号重新走礼包判定（其云端无发放记录=其自己是新用户）
 }
 
 // ★ 0.194.0：VIP 判断——免费期内 或 权益期内（到期只锁云同步，其他功能全开放）
@@ -1272,6 +1334,9 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
   if (amount <= 0) {
     return true;
   }
+  if (!siyiGateReady()) {
+    return false; // ★ 0.293.0 gate 防御：云同步未就绪禁扣（UI 层 requireSiyiGate 已引导，此处兜底）
+  }
   let remain = Math.min(amount, siyiTotalSp(store));
   if (remain <= 0) {
     return false;
@@ -1499,11 +1564,16 @@ export const SIYI_WELCOME_FIRST_MONTH: number = 2000000;
 export const SIYI_WELCOME_NORMAL: number = 1000000;
 
 
-// 新用户礼包发放（一次性）：首次登录华为账号时调（与 stampFreeTrialOnLogin 同链路——三入口登录
-// 后处理都过 stamp，礼包随戳发放=天然全覆盖；0.217.2 教训：多入口登录新增入口最易漏一环）
-export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
+// 新用户礼包发放（一次性）：★ 0.293.0 改「云下行后发放」——唯一合法触发点=首拉完成回调
+//   maybeGrantWelcomeAfterFirstPull（云端 cfg:siyi-points 行已对齐：老账号重装由云端
+//   welcomeGranted=true 拦截不重发；云端无行/无标记=真新用户此刻才发）。
+//   返回发放额（0=未发——gate 未就绪/已发过）；发放即由调用方弹仪式感弹窗（用户拍板）。
+export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
+  if (!siyiGateReady()) {
+    return 0; // ★ 0.293.0 gate 防御：云同步未就绪绝不发放（挂起等首拉完成）
+  }
   if (store.welcomeGranted) {
-    return false;
+    return 0;
   }
   store.welcomeGranted = true;
   const amount = Date.now() < SIYI_FIRST_MONTH_END ? SIYI_WELCOME_FIRST_MONTH : SIYI_WELCOME_NORMAL;
@@ -1515,7 +1585,33 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): boolean {
   _gp['sp'] = `${amount}`;
   _gp['bal'] = `${siyiTotalSp(store)}`;
   trackUidAuto('sp_grant', _gp);
-  return true;
+  return amount;
+}
+
+// ★ 0.293.0：新用户礼包首拉判定（挂 reconcileWithRows 闸门开启点——会话级判一次）：
+//   首拉完成=云端账本已对齐，此刻 welcomeGranted 仍 false 即真新用户 → 发放+弹窗仪式感；
+//   未登录保持待判（登录后下轮 reconcile 补判）；老账号重装被云端标记拦截（Bug A 根治本体）
+let welcomeCheckDone: boolean = false;
+function maybeGrantWelcomeAfterFirstPull(): void {
+  if (welcomeCheckDone) {
+    return;
+  }
+  if (!connectHuaweiAccount().isLoggedIn) {
+    return; // 未登录不判不发——登录后的 forceCloudSyncNow→reconcile 会再进本函数
+  }
+  const siyi = connectSiyiPoints();
+  if (siyi.welcomeGranted) {
+    welcomeCheckDone = true; // 云端已置位（老账号）或本会话已发——判定完结
+    return;
+  }
+  welcomeCheckDone = true;
+  const amount = grantSiyiWelcomeBonus(siyi);
+  if (amount <= 0) {
+    return;
+  }
+  const dlg = connectConfirmDialog();
+  dlg.welcomeBonusAmount = amount;
+  dlg.welcomeBonusVisible = true; // 仪式感弹窗：明示赠送，绝不后台默默到账
 }
 
 // ============================================================
@@ -1657,9 +1753,14 @@ export function milestoneBonusSp(streak: number): number {
 }
 
 // 今日是否已签（读取统一走调试偏移）
+// ★ 0.293.0 双查口径统一：本地 signDates ∪ 云端 siyi.signedDates——修复「手机显示可签但点击
+//   无反应」（UI 判定只查本地 vs doSignIn 幂等查本地∪云端口径分裂，跨设备签到 UI 状态相反的根因）
 export function isSignedToday(store: SignInStore): boolean {
   const today = todayStrWithOffset(connectDebugDayOffset().offset);
-  return store.signDates.indexOf(today) >= 0;
+  if (store.signDates.indexOf(today) >= 0) {
+    return true;
+  }
+  return parseSignedDates(connectSiyiPoints().signedDates).indexOf(today) >= 0;
 }
 
 // 签到执行（完整链：防重复→连击→发 SP→云上行；today 由调用方统一走 todayStrWithOffset 传入——
@@ -1668,6 +1769,10 @@ export function isSignedToday(store: SignInStore): boolean {
 //   ★ 0.277.0 多端幂等（任务书方案 B）：幂等/连击/里程碑三处改查云端标记（siyi.signedDates 并集 +
 //   milestoneStreakGranted 档位）——换设备本地清零不再重复发放/重新数连击/重发里程碑
 export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string): number {
+  // ★ 0.293.0 gate 防御：云同步未就绪禁签（签到增发 SP 必须账本云端对齐；UI 层 requireSiyiGate 已引导）
+  if (!siyiGateReady()) {
+    return 0;
+  }
   // 幂等：本地记录 ∪ 云端记录（云端拦跨设备同日重复签到→sp_grant 埋点天然不再多报）
   if (store.signDates.indexOf(today) >= 0
     || parseSignedDates(siyi.signedDates).indexOf(today) >= 0) {
@@ -1710,6 +1815,9 @@ export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string
 export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string): void {
   if (amount <= 0) {
     return;
+  }
+  if (!siyiGateReady()) {
+    return; // ★ 0.293.0 gate 防御：一切 SP 发放口（签到/性格测试/未来做题奖励）未就绪不发
   }
   siyi.bonusSp += amount;
   scheduleRowFlush();
@@ -3392,6 +3500,7 @@ function reconcileWithRows(rows: CloudRow[]): void {
   } else {
     pullNudgeAttempts = 0;
     arb.rowInitDone = true;
+    maybeGrantWelcomeAfterFirstPull(); // ★ 0.293.0：首拉完成=SP 云端账本已对齐→此刻判新用户礼包（云端标记拦老账号重装）
   }
   // 迁移物化：吸收值只存在于内存 map（reconcile 已把它们播进 cache 令 flush 误判「未变」）——
   //   必须显式落行，否则实体行永远不出生、行模式云端为空（实测实锤：仅 cfg 3 行）

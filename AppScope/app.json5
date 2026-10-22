@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000429, // ★ 0.292.1：性格测试 3.0 回归选择题（12 单选+3 多选，开放题撤除）；上一版 0.292.0
+     "versionCode": 1000430, // ★ 0.293.0：SP 云同步门卫（SiyiGate）+签到口径统一+礼包云下行发放+账号切换资产隔离；上一版 0.292.1
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

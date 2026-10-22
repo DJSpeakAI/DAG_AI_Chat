@@ -17,14 +17,14 @@
 - 划词翻译、单词库生词复习、知识库卡片管理、知识复习页（ReviewPage，Anki 式单卡）
 - TTS语音朗读（本地 CoreSpeechKit 双引擎：中文聆小珊+英文Laura，0.189.0 起替代云端），单词发音单例复用，缩略词播全称
 - LaTeX数学公式本地渲染，画布自动排版
-- 全局设置弹窗：API提供商化（华为MaaS/火山方舟/DeepSeek 预设+自定义）、AI偏好、云同步、订阅、关于
+- 全局设置弹窗：API提供商化（华为MaaS/火山方舟/DeepSeek 预设+自定义）、AI偏好、云同步、SP/账单、关于
 - 学习统计页（StatisticsStore 按天聚合，只增不减）
 - 流式渲染：ForEach Key碰撞修复；role映射修复prompt泄漏
 - 生命周期：提炼弹窗180s超时，切后台自动中断请求；页面销毁停止定时器
 - 返回键拦截：弹窗打开时，返回键优先关闭弹窗
 - 华为账号登录（Account Kit 纯客户端授权，AGC 应用 6917618071300773117）
 - 云同步（RDB+cloudSync 快照行模式；与华为账号登录态耦合，同开同关，0.196.8）
-- 订阅体系（¥9.9/月+¥99/年 IAP 占位；到期只锁云同步其他可用，0.194.0）
+- ~~订阅体系~~（★ 2026-10-22 用户拍板**订阅概念整体退役**：商业口径只剩 SP 司忆点消耗，无订阅/免费试用/到期锁概念；SubscriptionStore/freeTrialStart/isVip 等代码尚在=待后续迭代清码，新功能一律不得再引用订阅语义；★同拍板：SP/等级/充值包=账号级资产跟着账号走不跟设备走，多账号切换须隔离——0.293.0 方案落地）
  - UI：暗紫主题锁定暗色（方案A）；Pixso 设计稿 canvas 线已落地；四主页面背景 BG_CANVAS
  - 编译优先级（2026-10-12 用户定稿）：**本地鸿蒙 PC DevEco 优先**（用户常开）；本地失败/不可用才切 Windows 服务器（build-server.ps1）
  - 测试台交互模式（★ 0.229.2 用户重裁定）：**双轨并行**——①用户自用=双击桌面「DAG AI Chat/启动测试台.sh」**全自动**（自动起服务+自动开浏览器+服务自愈）；页面绝不出现「复制命令」「去对话喊 AI」类引导②AI 驱动=对话里说跑什么，AI 全自动起查盯报。唯一人工=华为授权弹窗（系统安全红线）。跑完页面一键「复制问题报告」粘给 AI 排查
@@ -49,7 +49,7 @@
 - Bug 根因（未解决）：ReviewPage.buildQueue 的 isDoneToday 一刀切——当日背完过一轮后再新增的未学习卡被直接拍进完成页（不进队列）；且完成页 hasFutureContent 只认已评分未来卡（新卡 reviewCount=0 不算）→「继续复习」按钮也不渲染（真机铁证：手机完成页 UI 树无该节点）
 - 用户业务铁律：未学习卡当日点复习必须出现；永远不可能没有卡可复习（按钮不隐藏）；继续复习=提前学未来卡+顺延系数大幅下降；当日队列 3+1 穿插（3 到期+1 新卡）；知识库空库→直接弹新建卡片引导
 
-**登录 bug 本体（0.229.24 测试实锤，待独立迭代修）**：云同步设置面板状态不刷新——`syncOn = permGranted && cloudSwitch.enabled`，permGranted 是开弹窗快照、fromSyncEntry 登录开同步时权限后到 → 面板滞留「未开启」（同步本体通，纯 UI）。修复方向：cloudSwitch.enabled 翻 true 时 @Monitor 重查权限。
+**★ 0.293.0 SiyiGate 待装机验收（2026-10-22 四场景）**：①一端签到→三端均显示已签；②手机卸载重装登录 181→首拉后 SP=云端值不重发 200w 不弹礼包；③关系统云空间开关→发消息弹引导；④新账号→首拉后弹「新用户礼包」仪式感。三台已装 0.293.0（PC/Pad/手机全 181）。0.229.24 已随 0.293.0 根治（原条目删除）。
 
 **记忆引擎一期（0.265.0 已完工待装机验收，全案 docs/0.165+/0.265.0）**：五工作包全落地（WP1 画像观察行/WP2 分支摘要头/WP3 SUMMARY_PROMPT 六部分/WP4 注入埋点/WP5 深度记忆总开关）；⏳ 待装机验收=S1/S2 场景脚本与升级回滚测试；画像云同步转人工未动（CloudSyncUtil 红线）；两周后按 P90 决策摘要头裁剪；新 key 三个（`profile-observations-v1` / `memory-pref-v1` / `memory-inject-stats-v1`）+ `personality-quiz-v1`（0.288.0）**均待补录 config.autofix.redlineKeys**。
 
@@ -62,6 +62,7 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.293.0|✅SP 云同步门卫 SiyiGate（用户拍板军令：SP 双向变动——消耗[AI 发送/重生成/划词×2/圈注/IAP 充值]+增加[签到/礼包/grantBonusSp]全收口；ready=登录∧app 开关∧权限∧首拉闸门 rowInitDone；未就绪弹引导三分支[登录/一键开启/Deeplink 跳云空间 hicloud://]）+新用户礼包改**云下行后发放+弹窗仪式感**（挂 reconcile 闸门开启点 maybeGrantWelcomeAfterFirstPull——老账号重装由云端 welcomeGranted 拦截=冷装重领 200w 根治；stamp 链路直发退役）+签到口径统一（isSignedToday 双查本地∪云端 siyi.signedDates——修「手机显示可签点击没反应」UI/执行口径分裂）+账号切换资产隔离（lastAccountMark 尾追华为账号 store；换登重置 SP/统计/签到+RDB 资产行 deleteRowLocal+rowCache 清+**闸门重开防 0 值 LWW 压云端**；内容数据默认合并不动）+订阅概念退役落地（登录订阅墙拆掉/全员引导开同步；SubscriptionStore 清码待后续迭代）+0.229.24 根治（GSD permGranted 接 SiyiGateStore 共享真值源+EntryAbility 启动/前台刷新——华为实锤无权限变化推送 API，onForeground 重查是官方推荐）；⚠️未装机验收（用户自测四场景：签到口径/冷装不重发/门卫引导/新用户仪式感）；autoSyncProgress 云空间满监听需改 CloudSyncUtil（红线）转后续人工审批——华为实锤满时不丢数据仅暂停|
 |0.292.1|✅性格测试 3.0 回归纯选择题（用户拍板「不要开放性题目只能单选/多选」，方案 B：12 单选+3 多选）——PersonalityQuiz.ets 题库封闭化（q3/q11/q15 多选 4~5 选项，题干去开放尾巴，QuizQuestion 加 multi）+choiceAnswers 尾追字段（字母升序拼接串 'ac'；answerTexts 0.292.1 起停写保留兼容）+quizAnswerTotal/buildReviewInputs 三段口径（letters+texts+choices，选择题答案转选项文案顿号拼接喂 AI 评阅+关键词兜底照常命中）；Dialog TextArea→选项列表点选流（单选换选/多选增减+统一确认钮，选项 key 掺题索引+字母防 0.288.2 碰撞雷）；Prompts QUIZ_REVIEW_PROMPT 措辞适配；测试断言同步（题库 multi 完整性/choice 存储续做/三段进度/评阅选择段）；版本 1000429（⚠️Index.ets 已无版本点——并行线把版本显示收口到 GSD 关于页，「三处同步」实为两处）；双模块编译过、三台（PC/手机/Pura）VERSION 实测 1000429、failure=10 持平基线零新增；Pad 离线未装待补；⚠️edit/write 工具本会话全量快照异常——文件改动走 /tmp 中转+cp+md5 验证定式|
 |0.291.4|✅删「查看思维链」入口（用户拍板：司忆区+锚点已覆盖其价值）——ChatPage 思考收起行改纯状态「已深度思考 Ns」+reasoningViewerMsgId 全链退役（半屏弹窗 73 行+返回键分支+复位+声明）；thinkingTraceByMsg 保留（thinking_use 埋点消费）；⚠️教训=删 if 分支须连闭合 } 一起删（漏删孤立括号→全文件级联 2312 错、测试台 /api/build 日志截尾吞详情——完整报错去 .hvigor/report/ 最新 json 捞）；编译过、四台实测 1000427、ARKUI-TEST failure=10 与基线持平|
 |0.291.3|✅文档超长截断计费透明（用户拍板「成本必须赚回来但体验要做好」）——DocParseResult 尾追 truncated 标志（三解析路径置位）+ChatPage showToastLong 10 秒顶格提示「N 个超长已截断至 3 万字，页费仍按全文页数计」；⚠️教训=ChatPage.ets 同文件多 struct 同名方法（340 区子组件与 2850 主 struct 各有 showToastSafe）——grep 方法名定位定义必漏，须按 struct 区段定位（本轮两连编译错根因，曾误判编译器缓存）|
@@ -89,7 +90,7 @@
 |0.292.0|✅联网问答一期（方案 C 混合：AI 自主搜索+工具调用循环）——「联网」胶囊（webMode 会话态）开=FC agentic loop：tools=[search_web(Bing 解析零Key)/open_url(复用 0.286.2 两级瀑布)] 声明→AI tool_calls→客户端执行→回填递归（上限 3 轮）；多轮 token 累加一次性实扣+onError 已耗照扣；400+工具词窄门自动降级纯聊天；联网与司枢/深度思考互斥；重生成不带 tools=一期边界；⚠️ 腾讯云 tools 透传与 Bing 反爬未真机验证（全案 docs/0.165+/0.292.0）|
 |docs-2026.10.22|**✅MEMORY.md 冷热分离治理+project_rule.md 瘦身（2026-10-22 用户拍板方案 C——「每次完成任务消耗 token 偏多」诊断：基线五文档注入 410KB≈12万+ token/会话，MEMORY.md 328KB 占大头，违反 CONTEXT_MANAGEMENT 规则 3）**：①MEMORY.md 拆双层=活规则层（本文件，328KB→~22KB）+docs/MEMORY_HISTORY.md 冷归档（全量纯搬运零删改，AI 默认不读）②project_rule.md §12 测试台 15 条压缩+U+FFFD 乱码两段重写（Schema 铁律/@ObservedV2 序列化铁律），25KB→~16KB③docs/index.md 登记 MEMORY_HISTORY④零代码改动不占 app 版本号。**防复发军令：迭代记录一律一行制（超一行进 docs 全案）；MEMORY.md 超 20KB=下次治理信号**|
 
-- 版本号纪律：首页显示版本号，每次改动编译装机递增末位；当前 **v0.291.3（versionCode 1000426，app.json5 实读 2026-10-22——多 AI 并行定号铁律：定号唯一依据=AppScope/app.json5 实读，记忆/文档预定号不可信）**；版本三处同步=app.json5 / Index.ets / GlobalSettingsDialog APP_VERSION；**⚠️ MEMORY.md 已超 20KB 治理线（28KB+）——下轮会话应做冷热分离二次治理（0.29x 新条目迁 MEMORY_HISTORY）**
+- 版本号纪律：首页显示版本号，每次改动编译装机递增末位；当前 **v0.293.0（versionCode 1000430，app.json5 实读 2026-10-22——多 AI 并行定号铁律：定号唯一依据=AppScope/app.json5 实读，记忆/文档预定号不可信）**；版本三处同步=app.json5 / Index.ets / GlobalSettingsDialog APP_VERSION；**⚠️ MEMORY.md 已超 20KB 治理线（33KB+）——下轮会话应做冷热分离二次治理（0.29x 新条目迁 MEMORY_HISTORY）**
 - 迭代文档命名：版本号 变更内容.md（同功能迭代末位+0.1，验收后新需求次位+1，用户可直接指定版本号；详见 project_rule.md §7）
 - 版本线主文档：docs/0.165+/0.167.md（历史段 0.140-0.152/、0.160-0.164/ 归档，docs/index.md 为总索引）
 - 真机测试设备（★ 2026-10-15 阵容定稿+同日 0.241.0.2 勘误，project_rule §12.14；★ 2026-10-16 IP 勘误：手机 2.14→**2.17**:38611（CHZ-AL00 机型验证）、Pura 2.16→**2.4**:39421，config.json 已同步；★ 2026-10-20 用户定稿**测试账户分工**：手机+Pad 登 **180 测试账户**（+8618051890752）、PC+Pura 登 **181 主账号**（+8618115530752）——两账户分跑便于用户统计各端一周 token 花费；装机/登录流程按此账号落位，勿混登）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S 活力版（平板，数据线 USB 直连，hdc 序列号 7HZUN26330G02209）+ 畅享90Pro Max（手机，常测试设备，WiFi 无线调试 192.168.2.17:38611，三端同测同装机）**；**第四台 Pura X View（192.168.2.4:39421，workMachine:true）=用户工作机，入列仅展示、默认不勾选不测不装（用户手动勾选才参与；动不了就跳过别折腾——用户要在上面工作）**；实测教训：设备 IP 会变勿搞反（0.241.0.1 就搞反过一轮：把 2.16:39421 误记为畅享地址），`param get const.product.model` 可验身份

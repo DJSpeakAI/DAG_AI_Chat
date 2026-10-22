@@ -17,6 +17,7 @@ import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLog
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
 import { needsAgreement, needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：协议两段门禁（弹窗 Index 根挂载）
 import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases, detectRefundedIapPurchases, pullRefundMarks } from '../utils/IapUtil';
+import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（充值购买前置闸）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
 import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
@@ -89,6 +90,10 @@ export struct BillingPage {
     }
     if (!this.account.isLoggedIn) {
       this.showToastSafe('请先登录华为账号');
+      return;
+    }
+    // ★ 0.293.0：SP 云同步门卫（充值购 SP 也是 SP 变动——账本云端对齐才放行，防离线充值账对不上）
+    if (!requireSiyiGate()) {
       return;
     }
     this.purchasing = productId;

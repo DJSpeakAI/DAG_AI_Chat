@@ -17,6 +17,7 @@ import {
 import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // 宽屏断点（弹窗宽度收敛）
+import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（签到增发 SP 前置闸）
 
 @ComponentV2
 export struct SignInDialog {
@@ -55,9 +56,20 @@ export struct SignInDialog {
   }
 
   onSignClick(): void {
+    // ★ 0.293.0：SP 云同步门卫——签到增发 SP 必须账本云端对齐（未就绪弹引导，Index 根消费）
+    if (!requireSiyiGate()) {
+      return;
+    }
     const got = doSignIn(this.signIn, this.siyi, this.today());
     if (got > 0) {
       this.signedAmount = got;
+    } else if (!this.todaySigned()) {
+      // 防御提示：云端已签标记晚到被幂等拦截（正常路径 todaySigned 双查口径已统一不进此支）
+      try {
+        this.getUIContext().getPromptAction().showToast({ message: '今日已在其他设备签到', duration: 1500 });
+      } catch (_e) {
+        // 静默
+      }
     }
   }
 
