@@ -38,7 +38,7 @@ import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab �
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
   import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）
 import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
-import { SiyiGateStore, connectSiyiGate, refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：permGranted 单一真值源（SiyiGate 共享 store——任意处刷新 GSD 即时可见，0.229.24 根治）
+import { SiyiGateStore, connectSiyiGate, refreshSiyiGatePerm, requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：permGranted 单一真值源（SiyiGate 共享 store——任意处刷新 GSD 即时可见，0.229.24 根治）；★ 0.298.0 requireSiyiGate（重做性格测试=SP 获得前置云同步门卫）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
@@ -199,7 +199,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.297.0'; // ★ 0.297.0：数学证明画板（无限画布+双色笔+撤销/导出）；上一版 0.296.0（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.298.0'; // ★ 0.298.0：性格测试自定义答案+鼓励档回归+SP 门槛前置与奖励弹窗；上一版 0.297.0 数学证明画板（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2222,6 +2222,66 @@ export struct GlobalSettingsDialog {
       .width('100%')
       .margin({ bottom: 24 })
 
+      // ★ 0.298.0 鼓励档三胶囊回归（0.290.0 WP3 误删 UI 补回——store/副本/保存链/消费端一直健在；
+      //   场景：复习完成页+学习统计页 AI 喝彩，off=固定一句话不调 AI）
+      Column() {
+        Text('AI 鼓励档位')
+          .fontSize(14)
+          .fontColor(this.theme.textSecondary)
+          .margin({ bottom: 6 })
+        Row({ space: 8 }) {
+          Text('关闭')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.editEncourageMode === 'off' ? Color.White : this.theme.textSecondary)
+            .layoutWeight(1)
+            .height(36)
+            .textAlign(TextAlign.Center)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.editEncourageMode === 'off' ? this.theme.brandPrimary : this.theme.surfaceSoft)
+            .border({ width: 1, color: this.editEncourageMode === 'off' ? this.theme.brandPrimary : this.theme.strokeCard })
+            .onClick(() => {
+              this.editEncourageMode = 'off';
+            })
+          Text('温和')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.editEncourageMode === 'light' ? Color.White : this.theme.textSecondary)
+            .layoutWeight(1)
+            .height(36)
+            .textAlign(TextAlign.Center)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.editEncourageMode === 'light' ? this.theme.brandPrimary : this.theme.surfaceSoft)
+            .border({ width: 1, color: this.editEncourageMode === 'light' ? this.theme.brandPrimary : this.theme.strokeCard })
+            .onClick(() => {
+              this.editEncourageMode = 'light';
+            })
+          Text('热烈')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.editEncourageMode === 'heavy' ? Color.White : this.theme.textSecondary)
+            .layoutWeight(1)
+            .height(36)
+            .textAlign(TextAlign.Center)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.editEncourageMode === 'heavy' ? this.theme.brandPrimary : this.theme.surfaceSoft)
+            .border({ width: 1, color: this.editEncourageMode === 'heavy' ? this.theme.brandPrimary : this.theme.strokeCard })
+            .onClick(() => {
+              this.editEncourageMode = 'heavy';
+            })
+        }
+        .width('100%')
+
+        Text('💡 温和=1~2 句点到即止；热烈=2~4 句热情夸张；关闭=固定一句话。复习完成与学习统计时生效。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(this.theme.textTertiary)
+          .margin({ top: 6 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
       // ★ 0.294.0：重新做性格测试（用户拍板：给第一遍随便做的人改错机会——重做只为让 AI 更懂你；
       //   仅做过一次的人可见；SP 不再发（claimed 幂等），画像评阅走演变链刷新）
       if (connectPersonalityQuiz().everDone) {
@@ -2246,6 +2306,12 @@ export struct GlobalSettingsDialog {
               .backgroundColor(this.theme.brandPrimary)
               .borderRadius(RADIUS_CONTROL)
               .onClick(() => {
+                // ★ 0.298.0 前置云同步门卫（SP 铁律：答题=SP 获得）：先关 GSD 再弹引导——
+                //   syncGatePrompt 挂 Index 根 Stack，GSD 全屏弹窗在其上层会遮挡
+                if (!requireSiyiGate()) {
+                  this.requestClose();
+                  return;
+                }
                 resetQuizForRetake(connectPersonalityQuiz());
                 this.requestClose(); // 关 GSD——答题弹窗挂画布（层级在 GSD 之下须先收）
                 connectQuizLaunch().visible = true; // 桥唤起答题（从第 1 题重答）

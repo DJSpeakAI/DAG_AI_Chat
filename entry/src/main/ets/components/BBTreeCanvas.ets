@@ -30,6 +30,7 @@ import { PersonalityQuizDialog } from './PersonalityQuizDialog'; // ★ 0.288.0�
 import { RookieTaskDialog, RookieRewardDialog } from './RookieTaskDialog'; // ★ 0.294.0：好奇宝宝任务面板+奖励到账弹窗（右上角入口唤起）
 import { rookieUndoneCount, rookieAllSettled, settleRookieTasks, connectRookieBridge } from '../common/RookieTask'; // ★ 0.294.0：任务角标/入口消失/结算时机/奖励弹窗桥
 import { SiyiPointStore, connectSiyiPoints } from '../common/ChatModel'; // ★ 0.294.0：任务 done/granted 集合真相源（cfg:siyi-points）
+import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.298.0：信号灯入口前置云同步门卫（答题=SP 获得）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -1697,6 +1698,10 @@ export struct BBTreeCanvas {
           .backgroundColor(this.theme.surfaceNode)
           .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
           .onClick(() => {
+            // ★ 0.298.0 前置云同步门卫（SP 铁律：答题=SP 获得，未开通不进答题；弹窗挂 Index 根在画布之上无遮挡）
+            if (!requireSiyiGate()) {
+              return;
+            }
             this.quizLaunch.visible = true; // ★ 0.294.0：桥置位（GSD 重做同款通道）
           })
           .onAppear(() => {

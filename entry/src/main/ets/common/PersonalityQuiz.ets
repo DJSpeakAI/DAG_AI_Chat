@@ -231,6 +231,7 @@ export class PersonalityQuizStore {
   @Trace profileWritten: boolean = false; // ★ 0.290.0 尾部追加：评阅结果已写入画像（幂等第二道闸）
   @Trace choiceAnswers: string = '[]';    // ★ 0.292.1 尾部追加：选择题答案（元素=字母小写升序拼接串，如 'ac'）
   @Trace everDone: boolean = false;       // ★ 0.294.0 尾部追加：曾经完成过一次（信号灯永久消失条件；重做不复活——done 重做会清零而本字段只增不减）
+  @Trace customAnswers: string = '[]';    // ★ 0.298.0 尾部追加——每题自定义补充文本（与 choiceAnswers 逐题同步 push 等长对齐；未自定义=''；纯自定义题 choiceAnswers 对应元素为空串）
 }
 
 export function connectPersonalityQuiz(): PersonalityQuizStore {
@@ -264,6 +265,7 @@ export function markQuizEverDone(store: PersonalityQuizStore): void {
 export function resetQuizForRetake(store: PersonalityQuizStore): void {
   store.answers = '[]';
   store.choiceAnswers = '[]';
+  store.customAnswers = '[]'; // ★ 0.298.0：自定义补充同步清零（与 choiceAnswers 等长纪律）
   store.done = false;
   store.completedAt = 0;
   store.profileWritten = false;
@@ -321,6 +323,27 @@ export function recordQuizChoice(store: PersonalityQuizStore, letters: string): 
   arr.push(letters);
   store.choiceAnswers = JSON.stringify(arr);
   return arr.length;
+}
+
+/** ★ 0.298.0 读取每题自定义补充文本（坏数据兜底空数组；历史数据长度小于 choices 时读侧按下标越界兜底 ''） */
+export function getQuizCustoms(store: PersonalityQuizStore): string[] {
+  try {
+    const arr = JSON.parse(store.customAnswers) as string[];
+    if (arr !== undefined && arr !== null) {
+      return arr;
+    }
+  } catch (_e) {
+    // 坏数据兜底：视同无自定义
+  }
+  return [];
+}
+
+/** ★ 0.298.0 提交一题答案（原子双 push：letters=选中字母升序串，纯自定义=空串；custom=自定义补充文本，未自定义=''） */
+export function recordQuizAnswerEntry(store: PersonalityQuizStore, letters: string, custom: string): void {
+  recordQuizChoice(store, letters);
+  const customs = getQuizCustoms(store);
+  customs.push(custom.trim());
+  store.customAnswers = JSON.stringify(customs);
 }
 
 /** 已答总数（旧字母进度 + 开放题文本进度 + 选择题进度三段相加——老用户从已答处无缝续答） */
@@ -389,6 +412,7 @@ export function buildReviewInputs(store: PersonalityQuizStore): string[] {
   const letters = getQuizAnswers(store);
   const texts = getQuizAnswerTexts(store);
   const choices = getQuizChoices(store);
+  const customs = getQuizCustoms(store); // ★ 0.298.0：自定义补充文本（与 choices 逐题对齐）
   const letterCount = letters.length;
   const textCount = texts.length;
   const out: string[] = [];
@@ -401,7 +425,18 @@ export function buildReviewInputs(store: PersonalityQuizStore): string[] {
       out.push(texts[i - letterCount].trim());
     } else {
       const c = i - letterCount - textCount;
-      out.push(c < choices.length ? choiceToOptionText(c, choices[c]) : ''); // 未答=空串（评阅判无效）
+      if (c < choices.length) {
+        // ★ 0.298.0：选择题文案 + 自定义补充拼接（纯自定义=仅「自定义：xxx」；混合=「选项、；自定义：xxx」）
+        const optText = choiceToOptionText(c, choices[c]);
+        const customText = c < customs.length ? customs[c].trim() : '';
+        if (customText.length > 0) {
+          out.push(optText.length > 0 ? `${optText}；自定义：${customText}` : `自定义：${customText}`);
+        } else {
+          out.push(optText);
+        }
+      } else {
+        out.push(''); // 未答=空串（评阅判无效）
+      }
     }
   }
   return out;

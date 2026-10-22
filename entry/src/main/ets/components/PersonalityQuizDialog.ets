@@ -12,11 +12,12 @@
 import {
   PERSONALITY_QUESTIONS, QUIZ_TOTAL, QUIZ_SP_PER_NODE, QuizQuestion, QuizOption,
   PersonalityQuizStore, QuizProfileLine, connectPersonalityQuiz,
-  recordQuizChoice, quizAnswerTotal, claimQuizSp,
-  writeQuizProfile, quizProfilePreviewLines
+  recordQuizAnswerEntry, quizAnswerTotal, claimQuizSp,
+  writeQuizProfile, quizProfilePreviewLines, isInvalidQuizAnswer
 } from '../common/PersonalityQuiz';
 import { ProfileStore, connectProfileObservations } from '../common/ProfileModel';
 import { connectApiConfig } from '../common/ChatModel';
+import { siyiGateReady } from '../utils/SiyiGate'; // ★ 0.298.0：SP 铁律——答题=SP 获得，弹窗开启防御性闸门检查
 import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_BODY, FONT_SIZE_META, FONT_INTER_SEMIBOLD, FONT_INTER } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode';
@@ -37,6 +38,16 @@ export struct PersonalityQuizDialog {
   @Local answeredTotal: number = 0;    // 已答总数（驱动进度条/SP 提示）
   @Local selectedLetters: string[] = []; // ★ 0.292.1 当前题选中字母草稿（切题清空；单选 1 项/多选 1~选项数）
   @Local finishedView: boolean = false; // 完成视图
+  // ★ 0.298.0 自定义答案态（「以上都不像——我想自己说」）
+  @Local customSelected: boolean = false; // 当前题选中自定义（单选与字母互斥/多选可共存）
+  @Local customText: string = '';         // 自定义补充文本草稿（placeholder 灰提示，输入即隐）
+  // ★ 0.298.0 开场引导页（首次作答讲清「为什么做」；断点续做跳过）
+  @Local started: boolean = false;
+  // ★ 0.298.0 SP 节点奖励弹窗（toast 横幅升级为仪式感弹窗；pendingAdvance=弹窗确认后才推进题号）
+  @Local rewardVisible: boolean = false;
+  @Local rewardAmount: number = 0;
+  @Local rewardIsFinal: boolean = false;
+  @Local pendingAdvance: boolean = false;
   // ★ 0.290.0 完成页评阅态：画像行未到达=进行态（三点动画），到达=列表预览
   @Local previewLines: string[] = [];
   @Local reviewing: boolean = false;
@@ -55,6 +66,12 @@ export struct PersonalityQuizDialog {
   @Monitor('visible')
   onVisibleChange(): void {
     if (this.visible) {
+      // ★ 0.298.0 防御性闸门：答题=SP 获得（SP 铁律），两入口已前置拦截，
+      //   此处兜底中途掉闸（退出登录/关云同步后从后台续进）——未就绪直接收弹窗
+      if (!siyiGateReady() && !this.quiz.done) {
+        this.onClose();
+        return;
+      }
       this.syncState();
     } else {
       this.clearToastTimer();
@@ -70,6 +87,11 @@ export struct PersonalityQuizDialog {
       this.currentIdx = Math.min(this.answeredTotal, QUIZ_TOTAL - 1);
     }
     this.selectedLetters = [];
+    this.customSelected = false; // ★ 0.298.0 自定义草稿随切题/重开清空
+    this.customText = '';
+    this.started = this.answeredTotal > 0 || this.finishedView; // ★ 0.298.0 断点续做跳过开场页
+    this.rewardVisible = false;
+    this.pendingAdvance = false;
     this.toastText = '';
   }
 
@@ -97,7 +119,7 @@ export struct PersonalityQuizDialog {
     return 5 - (this.answeredTotal % 5);
   }
 
-  /** 点击选项：单选=换选（恒 1 项）；多选=增减切换 */
+  /** 点击选项：单选=换选（恒 1 项，与自定义互斥）；多选=增减切换 */
   private toggleOption(label: string): void {
     if (this.finishedView) {
       return;
@@ -112,6 +134,24 @@ export struct PersonalityQuizDialog {
       }
     } else {
       this.selectedLetters = [upper]; // 单选换选（数组整体重赋值——@Local 刷新安全）
+      this.customSelected = false;    // ★ 0.298.0 单选互斥：选字母清自定义
+      this.customText = '';
+    }
+  }
+
+  /** ★ 0.298.0 点击「以上都不像——我想自己说」：单选=与字母互斥；多选=增减切换 */
+  private toggleCustom(): void {
+    if (this.finishedView) {
+      return;
+    }
+    if (this.currentQ().multi) {
+      this.customSelected = !this.customSelected;
+      if (!this.customSelected) {
+        this.customText = ''; // 取消自定义清草稿
+      }
+    } else {
+      this.customSelected = true;
+      this.selectedLetters = []; // 单选互斥：自定义顶掉字母选择
     }
   }
 
@@ -119,24 +159,28 @@ export struct PersonalityQuizDialog {
     return this.selectedLetters.indexOf(label.toLowerCase()) >= 0;
   }
 
-  /** 确认当前题答案（选择题：至少选 1 项；字母升序拼接落盘） */
+  /** 确认当前题答案（至少选 1 项或填自定义；自定义文本须过敷衍判定；字母升序+自定义原子双落盘） */
   private onSubmitAnswer(): void {
     if (this.finishedView) {
       return;
     }
-    if (this.selectedLetters.length === 0) {
+    // ★ 0.298.0 提交拦截三态：全空 / 自定义敷衍 / 正常
+    if (this.selectedLetters.length === 0 && !this.customSelected) {
       this.showToast(this.currentQ().multi ? '至少选一项再继续吧' : '选一个再继续吧');
       return;
     }
+    if (this.customSelected && isInvalidQuizAnswer(this.customText)) {
+      this.showToast('再多写几个字，AI 才能懂你');
+      return;
+    }
     const sorted = this.selectedLetters.slice().sort();
-    recordQuizChoice(this.quiz, sorted.join(''));
+    recordQuizAnswerEntry(this.quiz, sorted.join(''), this.customSelected ? this.customText : '');
+    this.selectedLetters = [];
+    this.customSelected = false;
+    this.customText = '';
     const total = quizAnswerTotal(this.quiz);
     this.answeredTotal = total;
-    this.selectedLetters = [];
     const granted = claimQuizSp(this.quiz);
-    if (granted > 0) {
-      this.showToast(`+${granted} 司忆点已入账`);
-    }
     if (total >= QUIZ_TOTAL) {
       // 15 题答完：done 立即置位 + SP 不阻塞；评阅异步（onResult 刷新完成页预览）
       this.reviewing = true;
@@ -147,8 +191,31 @@ export struct PersonalityQuizDialog {
           this.reviewing = false;
         });
       this.finishedView = true;
+      if (granted > 0) {
+        // ★ 0.298.0 末节点奖励弹窗（叠在完成页上；按钮「完成」只关弹窗——画像后台生成用户无需跳转查看）
+        this.rewardAmount = granted;
+        this.rewardIsFinal = true;
+        this.rewardVisible = true;
+      }
     } else {
-      this.currentIdx = Math.min(total, QUIZ_TOTAL - 1);
+      if (granted > 0) {
+        // ★ 0.298.0 中途节点奖励弹窗：确认「继续答题」才推进题号（仪式感拍板）
+        this.rewardAmount = granted;
+        this.rewardIsFinal = false;
+        this.rewardVisible = true;
+        this.pendingAdvance = true;
+      } else {
+        this.currentIdx = Math.min(total, QUIZ_TOTAL - 1);
+      }
+    }
+  }
+
+  /** ★ 0.298.0 奖励弹窗确认：中途节点=推进下一题；末节点=关弹窗露完成页 */
+  private onRewardConfirm(): void {
+    this.rewardVisible = false;
+    if (this.pendingAdvance) {
+      this.pendingAdvance = false;
+      this.currentIdx = Math.min(this.answeredTotal, QUIZ_TOTAL - 1);
     }
   }
 
@@ -165,6 +232,9 @@ export struct PersonalityQuizDialog {
         Column() {
           if (this.finishedView) {
             this.FinishView()
+          } else if (!this.started) {
+            // ★ 0.298.0 开场引导页（首次作答讲清「为什么做」——建立画像让 AI 更懂你）
+            this.StartView()
           } else {
             this.QuizView()
           }
@@ -176,10 +246,99 @@ export struct PersonalityQuizDialog {
         .backgroundColor(this.theme.surfaceNode)
         .border({ width: 1, color: this.theme.strokeCard })
         .shadow({ radius: 30, color: this.theme.shadowColor, offsetX: 0, offsetY: 12 })
+
+        // ★ 0.298.0 SP 节点奖励弹窗（叠层——遮罩压主面板，居中小卡仪式感）
+        if (this.rewardVisible) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor(this.theme.overlay)
+            .onClick(() => {
+              // 点遮罩不关——仪式感必须经按钮确认（与 RookieRewardDialog 同款纪律）
+            })
+          Column() {
+            Text('恭喜！')
+              .fontSize(FONT_SIZE_SCREEN_TITLE + 2)
+              .fontWeight(600)
+              .fontFamily(FONT_INTER_SEMIBOLD)
+              .fontColor(this.theme.textPrimary)
+            Text(this.rewardIsFinal
+              ? `15 道题全部完成，+${this.rewardAmount} 司忆点已入账`
+              : `已完成前 ${Math.min(this.answeredTotal, QUIZ_TOTAL)} 题，+${this.rewardAmount} 司忆点已入账`)
+              .fontSize(FONT_SIZE_BODY)
+              .lineHeight(20)
+              .fontColor(this.theme.textSecondary)
+              .margin({ top: 10 })
+              .textAlign(TextAlign.Center)
+            Button(this.rewardIsFinal ? '完成' : '继续答题')
+              .width('100%')
+              .height(44)
+              .fontSize(FONT_SIZE_SCREEN_TITLE)
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor(this.theme.brandPrimary)
+              .fontColor(this.theme.textPrimary)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ top: 18 })
+              .onClick(() => {
+                this.onRewardConfirm();
+              })
+          }
+          .width(this.isTablet ? 360 : '80%')
+          .padding(22)
+          .borderRadius(RADIUS_NAV)
+          .backgroundColor(this.theme.surfaceNode)
+          .border({ width: 1, color: this.theme.strokeCard })
+          .shadow({ radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 })
+        }
       }
       .width('100%')
       .height('100%')
     }
+  }
+
+  // ── ★ 0.298.0 开场引导页（为什么做：画像让 AI 更懂你；奖励预期；确认后开始） ──
+  @Builder
+  StartView() {
+    Text('先让 AI 认识真正的你')
+      .fontSize(FONT_SIZE_SCREEN_TITLE + 2)
+      .fontWeight(600)
+      .fontFamily(FONT_INTER_SEMIBOLD)
+      .fontColor(this.theme.textPrimary)
+      .margin({ top: 4 })
+
+    Text('15 道小题，约 3 分钟。答完 AI 会为你生成专属学习画像——之后讲解的深浅、说话的口吻、鼓励的方式，都会更贴近真实的你。遇到不像你的选项，也可以用自己的话补充。')
+      .fontSize(FONT_SIZE_BODY)
+      .lineHeight(21)
+      .fontColor(this.theme.textSecondary)
+      .margin({ top: 12 })
+
+    Text(`全程 3 个节点，共 ${QUIZ_SP_PER_NODE * 3} 司忆点（每答 5 题得 ${QUIZ_SP_PER_NODE}）`)
+      .fontSize(FONT_SIZE_META)
+      .fontColor(this.theme.brandSecondary)
+      .margin({ top: 10 })
+
+    Button('开始答题')
+      .width('100%')
+      .height(46)
+      .fontSize(FONT_SIZE_SCREEN_TITLE)
+      .fontWeight(FontWeight.Medium)
+      .backgroundColor(this.theme.brandPrimary)
+      .fontColor(this.theme.textPrimary)
+      .borderRadius(RADIUS_CONTROL)
+      .margin({ top: 22 })
+      .onClick(() => {
+        this.started = true;
+      })
+
+    Button('下次再说')
+      .fontSize(FONT_SIZE_BODY)
+      .fontColor(this.theme.textTertiary)
+      .backgroundColor(Color.Transparent)
+      .height(36)
+      .margin({ top: 4 })
+      .onClick(() => {
+        this.onClose();
+      })
   }
 
   // ── 答题视图 ──
@@ -296,6 +455,66 @@ export struct PersonalityQuizDialog {
             this.toggleOption(o.label);
           })
         }, (o: QuizOption) => `q${this.currentIdx}-${o.label}`) // ★ 0.288.2：key 掺题索引+字母——跨题复用永不碰撞
+
+        // ★ 0.298.0 自定义答案行「以上都不像——我想自己说」（虚线描边区分常规选项）
+        Column() {
+          Row({ space: 10 }) {
+            Text('…')
+              .fontSize(FONT_SIZE_BODY)
+              .fontFamily(FONT_INTER)
+              .fontColor(this.customSelected ? '#FFFFFF' : this.theme.textSecondary)
+              .width(24)
+              .height(24)
+              .textAlign(TextAlign.Center)
+              .borderRadius(12)
+              .backgroundColor(this.customSelected ? this.theme.brandPrimary : this.theme.surfaceSoft)
+              .border({ width: 1, color: this.customSelected ? this.theme.brandPrimary : this.theme.strokeCard })
+            Text('以上都不像——我想自己说')
+              .fontSize(FONT_SIZE_BODY)
+              .fontColor(this.customSelected ? this.theme.textPrimary : this.theme.textSecondary)
+              .layoutWeight(1)
+              .lineHeight(20)
+            if (this.customSelected) {
+              Text('✓')
+                .fontSize(FONT_SIZE_BODY)
+                .fontColor(this.theme.brandPrimary)
+                .fontWeight(FontWeight.Medium)
+            }
+          }
+          .alignItems(VerticalAlign.Center)
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 11, bottom: 11 })
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(this.customSelected ? this.theme.hookBg : this.theme.surfaceSoft)
+          .border({
+            width: 1,
+            color: this.customSelected ? this.theme.brandPrimary : this.theme.strokeCard,
+            style: this.customSelected ? BorderStyle.Solid : BorderStyle.Dashed // 未选=虚线示意「可以自己写」
+          })
+          .onClick(() => {
+            this.toggleCustom();
+          })
+
+          // 自定义输入框（选中展开；placeholder 灰提示输入即隐）
+          if (this.customSelected) {
+            TextArea({ text: this.customText, placeholder: '用一句话描述你的真实情况' })
+              .onChange((v: string) => {
+                this.customText = v;
+              })
+              .width('100%')
+              .constraintSize({ minHeight: 64 })
+              .fontSize(FONT_SIZE_BODY)
+              .fontColor(this.theme.textPrimary)
+              .placeholderColor(this.theme.textTertiary)
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(this.theme.surfaceSoft)
+              .border({ width: 1, color: this.theme.strokeCard })
+              .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+              .margin({ top: 8 })
+          }
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -401,8 +620,9 @@ export struct PersonalityQuizDialog {
   /** 确认按钮文案：末题=完成答题；多选已选≥2 项时带已选数反馈 */
   private confirmLabel(): string {
     const base = this.answeredTotal >= QUIZ_TOTAL - 1 ? '完成答题' : '确认，下一题';
-    if (this.currentQ().multi && this.selectedLetters.length > 1) {
-      return `${base}（已选 ${this.selectedLetters.length} 项）`;
+    const picked = this.selectedLetters.length + (this.customSelected ? 1 : 0); // ★ 0.298.0 自定义计 1 项
+    if (this.currentQ().multi && picked > 1) {
+      return `${base}（已选 ${picked} 项）`;
     }
     return base;
   }

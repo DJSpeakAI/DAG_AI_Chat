@@ -8,7 +8,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   PERSONALITY_QUESTIONS, QUIZ_TOTAL, QUIZ_SP_PER_NODE,
   PersonalityQuizStore, getQuizAnswers, getQuizAnswerTexts, recordQuizAnswerText,
-  getQuizChoices, recordQuizChoice,
+  getQuizChoices, recordQuizChoice, getQuizCustoms, recordQuizAnswerEntry, resetQuizForRetake,
   quizAnswerTotal, quizNodeReached, buildQuizClaimAmount,
   buildReviewInputs, localReviewQuizTexts, isInvalidQuizAnswer, quizProfilePreviewLines
 } from '../../../main/ets/common/PersonalityQuiz';
@@ -220,6 +220,49 @@ export default function personalityQuizTest() {
       const s = new PersonalityQuizStore();
       s.answers = JSON.stringify(['a', 'b', 'c']);
       expect(getQuizAnswers(s).length).assertEqual(3);
+    })
+    // ── ★ 0.298.0 自定义答案：原子双 push 等长 + 纯自定义空串计数 + 评阅并入 + 重做清空 ──
+    it('quiz_custom_entry_atomic_double_push', 0, () => {
+      const s = new PersonalityQuizStore();
+      expect(getQuizCustoms(s).length).assertEqual(0);
+      // 混合：q1 选 A + 自定义补充
+      recordQuizAnswerEntry(s, 'a', '其实我想两者都要');
+      // 纯自定义：q2 不选字母只写补充
+      recordQuizAnswerEntry(s, '', '看心情，有时深有时浅');
+      expect(getQuizChoices(s).length).assertEqual(2);
+      expect(getQuizCustoms(s).length).assertEqual(2); // 两数组等长对齐
+      expect(getQuizChoices(s)[1]).assertEqual(''); // 纯自定义 letters=空串
+      expect(getQuizCustoms(s)[0]).assertEqual('其实我想两者都要');
+      expect(quizAnswerTotal(s)).assertEqual(2); // 纯自定义照常计一答
+    })
+    it('quiz_custom_bad_json_fallback', 0, () => {
+      const s = new PersonalityQuizStore();
+      s.customAnswers = '{bad json';
+      expect(getQuizCustoms(s).length).assertEqual(0); // 坏数据兜底不崩
+    })
+    it('quiz_custom_review_inputs_merged', 0, () => {
+      const s = new PersonalityQuizStore();
+      recordQuizAnswerEntry(s, 'a', '其实我想两者都要');   // 混合→「A 文案；自定义：xxx」
+      recordQuizAnswerEntry(s, '', '看心情，有时深有时浅'); // 纯自定义→「自定义：xxx」
+      recordQuizAnswerEntry(s, 'b', '');                    // 无自定义→纯选项文案
+      const inputs = buildReviewInputs(s);
+      expect(inputs[0]).assertEqual(`${PERSONALITY_QUESTIONS[0].options[0].text}；自定义：其实我想两者都要`);
+      expect(inputs[1]).assertEqual('自定义：看心情，有时深有时浅');
+      expect(inputs[2]).assertEqual(PERSONALITY_QUESTIONS[2].options[1].text);
+    })
+    it('quiz_custom_history_short_array_safe', 0, () => {
+      // 历史数据 customs 短于 choices（0.298.0 前答的题无 custom 元素）——读侧越界兜底 ''
+      const s = new PersonalityQuizStore();
+      recordQuizChoice(s, 'a');
+      const inputs = buildReviewInputs(s);
+      expect(inputs[0]).assertEqual(PERSONALITY_QUESTIONS[0].options[0].text); // 无 custom 不拼接不崩
+    })
+    it('quiz_custom_reset_for_retake_cleared', 0, () => {
+      const s = new PersonalityQuizStore();
+      recordQuizAnswerEntry(s, 'a', '自定义内容');
+      resetQuizForRetake(s);
+      expect(getQuizChoices(s).length).assertEqual(0);
+      expect(getQuizCustoms(s).length).assertEqual(0); // ★ 0.298.0 自定义同步清零
     })
   })
 }
