@@ -14,6 +14,7 @@
 
 import { localTts, EnVoiceStatus } from './LocalTtsEngine';
 import { connectPhoneticAccent } from '../common/ChatModel'; // ★ 0.189.1：音标口音设置（british: false=美式默认）
+import { WordItem, speakTextFor } from '../common/WordModel'; // ★ 0.288.1：词条级播放文本（speakTextFor 纯函数——勿在此 import ApiClient，会把网络链拖进 hypium 测试进程）
 import { UIContext } from '@kit.ArkUI'; // ★ 0.189.2：口音提示弹窗（UIContext.showAlertDialog）
 
 // ★ 0.287.6：喇叭播放动画脉冲（全局单例 speakerPulse）——播放中喇叭波纹双帧交替（playing↔wave1）
@@ -67,6 +68,12 @@ export class WordSpeaker {
   // plain words speak themselves.
   textFor(word: string, fullName: string): string {
     return fullName.length > 0 ? fullName : word;
+  }
+
+  // ★ 0.288.1：词条级播放文本（用户实机报障：中翻英入库词条 word 存中文，点喇叭无声——
+  //   英文引擎读不了中文）。实现下沉 WordModel.speakTextFor 纯函数（单一真相源），此处薄转发
+  textForItem(item: WordItem): string {
+    return speakTextFor(item);
   }
 
   // Called by UI: toggle speak/stop for the word.

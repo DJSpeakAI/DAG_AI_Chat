@@ -434,24 +434,24 @@ export struct ReviewPage {
             Text((this.currentItem() as WordItem).usPhonetic)
               .fontSize(14)
               .fontColor(this.theme.textTertiary)
-            Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
+            Image(wordSpeaker.loadingWord === wordSpeaker.textForItem(this.currentItem() as WordItem) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textForItem(this.currentItem() as WordItem) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
               .width(14)
               .height(14)
               .objectFit(ImageFit.Contain)
               .onClick(() => {
                 const w = this.currentItem() as WordItem;
-                wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
+                wordSpeaker.speak(wordSpeaker.textForItem(w), showAccentDialogs(this.getUIContext()));
               })
           }
         } else {
           // 无音标：喇叭独立一行（发音永远可用）
-          Image(wordSpeaker.loadingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor((this.currentItem() as WordItem).word, (this.currentItem() as WordItem).fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
+          Image(wordSpeaker.loadingWord === wordSpeaker.textForItem(this.currentItem() as WordItem) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textForItem(this.currentItem() as WordItem) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
             .width(16)
             .height(16)
             .objectFit(ImageFit.Contain)
             .onClick(() => {
               const w = this.currentItem() as WordItem;
-              wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
+              wordSpeaker.speak(wordSpeaker.textForItem(w), showAccentDialogs(this.getUIContext()));
             })
         }
         // ★ 0.209.0：双面模式下释义=反面内容（翻面后才显示；单面恒显=现状不变）

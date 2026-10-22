@@ -149,6 +149,76 @@ function normalizeMathText(text: string): string {
   return out;
 }
 
+function isWs(ch: string): boolean {
+  return ch === ' ' || ch === '\t' || ch === '\r';
+}
+
+// ★ 0.288.3: strip paired math delimiters before command conversion.
+//   Root cause of "formulas not rendering": AI providers wrap formulas in $...$ / $$...$$;
+//   the pipeline converted \cmd/^/_ since 0.151 but NEVER removed the delimiters,
+//   so bubbles showed literal "$E=mc²$" (orphan $$ lines for block math).
+//   Rules (hand-rolled scanner, same style as the rest of this file):
+//   - $$...$$ first (may span lines, content non-empty, cap 2000 chars)
+//   - inline $...$: no newline / no nested $ inside, first char after opening $ non-ws,
+//     last char before closing $ non-ws (kills "$5 和 $6" price false-positives), cap 200
+//   - \$ escaped dollars skipped here (main loop ESCAPE handles them)
+//   - unpaired $ kept verbatim
+function stripMathDelimiters(text: string): string {
+  let out = '';
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const c = text.charAt(i);
+    if (c === '\\') {
+      // keep escape pairs (\$, \n ...) untouched — handled by the main loop
+      out += c;
+      if (i + 1 < n) {
+        out += text.charAt(i + 1);
+        i += 2;
+      } else {
+        i++;
+      }
+      continue;
+    }
+    if (c === '$') {
+      if (i + 1 < n && text.charAt(i + 1) === '$') {
+        // block $$...$$ (may span lines)
+        const close = text.indexOf('$$', i + 2);
+        if (close > i + 2 && close - (i + 2) <= 2000) {
+          out += text.substring(i + 2, close);
+          i = close + 2;
+          continue;
+        }
+        out += c;
+        i++;
+        continue;
+      }
+      // inline $...$
+      if (i + 1 < n && !isWs(text.charAt(i + 1))) {
+        let j = i + 1;
+        while (j < n) {
+          const cj = text.charAt(j);
+          if (cj === '\n' || cj === '$') {
+            break;
+          }
+          j++;
+        }
+        if (j < n && text.charAt(j) === '$' && j > i + 1 && !isWs(text.charAt(j - 1)) && j - (i + 1) <= 200) {
+          out += text.substring(i + 1, j);
+          i = j + 1;
+          continue;
+        }
+      }
+      out += c;
+      i++;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 // Parse a {…} group starting at pos (text[pos] must be '{').
 // Returns null when missing or unbalanced.
 function parseBraceGroup(text: string, pos: number): BracedGroup | null {
@@ -359,7 +429,8 @@ function tryRenderScript(text: string, start: number, isSup: boolean): CmdResult
 // Unrecognized constructs are kept as-is; code blocks never reach this function.
 export function renderMathText(rawText: string): string {
   // ★ 0.152: normalize fullwidth math punctuation & drop zero-width chars first
-  const text = normalizeMathText(rawText);
+  // ★ 0.288.3: strip paired $/$$ delimiters next (before command conversion)
+  const text = stripMathDelimiters(normalizeMathText(rawText));
   // Fast path: nothing that looks like math syntax
   if (text.indexOf('\\') < 0 && text.indexOf('^') < 0 && text.indexOf('_') < 0) {
     return text;

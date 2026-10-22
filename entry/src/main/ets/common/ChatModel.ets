@@ -1083,10 +1083,111 @@ export class SiyiPointStore {
   //   存 String 字段而非数组（与 redeemedCodes 同款模式，规避旧快照缺字段坑——Schema 铁律尾部追加）
   @Trace signedDates: string = '[]';       // 已签到日期并集（JSON 数组 'YYYY-MM-DD'，保留最近 400 天）
   @Trace milestoneStreakGranted: number = 0; // 已发里程碑的最高连击档（max 合并单调递增，防跨端重发）
+  // ★ 0.289.0 充能包账本（用户拍板：按包记账+购买顺序 FIFO 扣+包级退款）——JSON 数组字符串
+  //   （同 signedDates 模式规避旧快照坑，Schema 尾部追加铁律）；池级 permanentSp/consumedPermanentSp
+  //   保留=包级汇总（云同步 max 合并兼容、余额口径不变）；包级才是退款判定的唯一真相（cons===0=可退）
+  @Trace iapPackages: string = '[]';
 }
 
 export function connectSiyiPoints(): SiyiPointStore {
   return PersistenceV2.connect(SiyiPointStore, 'siyi-points-v1', () => new SiyiPointStore()) as SiyiPointStore;
+}
+
+// ============================================================
+// ★ 0.289.0 充能包账本（按包记账/购买顺序 FIFO 扣/包级退款——用户政策三条：
+//   ①嘉奖先扣 ②充能按购买顺序逐包扣 ③整包未消耗 1 点 SP=可退、花过=不可退，退款后台执行）
+// ============================================================
+
+// 充能包（plain class 非 @ObservedV2——@Trace 字段 stringify 不可枚举 0.205.4 铁律绕开）
+export class IapPackage {
+  tok: string = '';   // purchaseToken（新购全量 92 位；迁移包=历史记录截断前 8 位）
+  pid: string = '';   // 商品 ID（dagai_sp200w / dagai_sp400w）
+  amt: number = 0;    // 包额度 SP（200 万=2000000）
+  ts: number = 0;     // 购买时间 epoch ms（迁移包=记录当日 00:00——旧账无几点几秒，如实展示）
+  cons: number = 0;   // 该包累计消耗（FIFO；amt-cons=剩余；cons===0 且未退=可退）
+  ref: number = 0;    // 0=正常 / 1=已退款已核销（剩余作废）
+}
+
+export function parseIapPackages(raw: string): IapPackage[] {
+  const out: IapPackage[] = [];
+  try {
+    const arr = JSON.parse(raw) as Record<string, Object>[];
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      const p = new IapPackage();
+      const tok = r['tok'];
+      const pid = r['pid'];
+      if (typeof tok === 'string') {
+        p.tok = tok;
+      }
+      if (typeof pid === 'string') {
+        p.pid = pid;
+      }
+      p.amt = Number(r['amt'] ?? 0);
+      p.ts = Number(r['ts'] ?? 0);
+      p.cons = Number(r['cons'] ?? 0);
+      p.ref = Number(r['ref'] ?? 0);
+      if (p.tok.length > 0 && p.amt > 0) {
+        out.push(p);
+      }
+    }
+  } catch (_e) {
+    // 坏 JSON 当空账本（发放累计池级字段仍在，余额不受影响）
+  }
+  return out;
+}
+
+// ★ 0.289.1 一次性旧测试充能账清零（用户拍板 2026-10-22：181 账号旧测试充值 600 万清零重新测——
+//   旧账只有日期无几点几秒，不满足新账本口径，直接清）：
+//   触发条件=purchaseHistory 存在旧版充能行（「充能 +」前缀）；动作=池级两字段归零+包账本清空
+//   +history 删充能行；iapConsumedTokens 保留（防同 token 理论回放重复入账）。
+//   ⚠️ 上线前必须删除本函数与全部调用点（stats-test-seed-v1 同款纪律）——正式用户花钱的旧充值账绝不能清！
+//   幂等：清后无充能行+池为 0，条件永不再满足；新购走 grantSiyiSpFromIap 建包（tok 全量 92 位）不受影响
+export function ensureIapPackagesMigrated(subscription: SubscriptionStore, store: SiyiPointStore): void {
+  let history: string[] = [];
+  try {
+    history = JSON.parse(subscription.purchaseHistory) as string[];
+  } catch (_e) {
+    history = [];
+  }
+  const hasLegacy = history.some((line: string): boolean => line.indexOf('充能 +') === 0);
+  if (!hasLegacy) {
+    return;
+  }
+  const kept: string[] = [];
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].indexOf('充能 +') !== 0) {
+      kept.push(history[i]);
+    }
+  }
+  subscription.purchaseHistory = JSON.stringify(kept);
+  store.permanentSp = 0;
+  store.consumedPermanentSp = 0;
+  store.iapPackages = '[]';
+  scheduleRowFlush();
+}
+
+// ★ 0.289.0 退款核销：华为侧已退款的包 → 剩余额度作废（cons 补满=消耗语义，发放累计只增军令不破坏）
+//   + ref=1；池级 consumedPermanentSp 同步 +=（守恒：余额=发放-消耗 自洽）。
+//   返回本轮作废 SP 额（0=token 未命中/已核销过——幂等）
+export function writeOffRefundedPackage(store: SiyiPointStore, token: string): number {
+  const list = parseIapPackages(store.iapPackages);
+  let writtenOff = 0;
+  for (let i = 0; i < list.length; i++) {
+    const pkg = list[i];
+    if (pkg.tok === token && pkg.ref !== 1) {
+      const waste = Math.max(0, pkg.amt - pkg.cons);
+      pkg.cons = pkg.amt;
+      pkg.ref = 1;
+      writtenOff += waste;
+    }
+  }
+  if (writtenOff > 0) {
+    store.consumedPermanentSp += writtenOff;
+    store.iapPackages = JSON.stringify(list);
+    scheduleRowFlush();
+  }
+  return writtenOff;
 }
 
 // 司忆点总余额（三池合计；★ 0.248.5 有效期取消——giftSp 恒计入；
@@ -1115,7 +1216,26 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
   store.consumedBonusSp += b;
   remain -= b;
   const p = Math.min(remain, Math.max(0, store.permanentSp - store.consumedPermanentSp));
-  store.consumedPermanentSp += p;
+  if (p > 0) {
+    store.consumedPermanentSp += p;
+    // ★ 0.289.0 包 FIFO：按购买顺序（ts 升序=数组序）逐包扣、老包先扣（用户政策②）；
+    //   已退款包（ref=1，cons 已补满）自然跳过；池级与包级同步累加守恒。
+    //   包账本为空（迁移未跑）时只扣池级——迁移回放以 consumedPermanentSp 终值统一补包，最终一致
+    const list = parseIapPackages(store.iapPackages);
+    let left = p;
+    for (let i = 0; i < list.length && left > 0; i++) {
+      const pkg = list[i];
+      const avail = Math.max(0, pkg.amt - pkg.cons);
+      const take = Math.min(left, avail);
+      if (take > 0) {
+        pkg.cons += take;
+        left -= take;
+      }
+    }
+    if (list.length > 0) {
+      store.iapPackages = JSON.stringify(list); // 包账本为空（极端：迁移无据）只扣池级不丢账
+    }
+  }
   recordSpUsed(g + b + p); // ★ 0.259.0：SP 消耗统计埋点（单一收口——一切新扣点场景自动带上；实扣额才计）
   scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
   return true;
@@ -1804,6 +1924,17 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   tokens.push(purchaseToken);
   subscription.iapConsumedTokens = JSON.stringify(tokens);
   siyi.permanentSp += amount; // 充能池发放累计，只增不减（数据安全军令）
+  // ★ 0.289.1 新购建包前先清旧测试账（幂等，函数内即 0.289.1 清零语义）——防旧账残留混入新账本
+  ensureIapPackagesMigrated(subscription, siyi);
+  // 建包（token 幂等已挡上，此处必为新包）：ts=Date.now() 精确到秒（账本要求）
+  const pkg = new IapPackage();
+  pkg.tok = purchaseToken;
+  pkg.pid = productId;
+  pkg.amt = amount;
+  pkg.ts = Date.now();
+  const pkgList = parseIapPackages(siyi.iapPackages);
+  pkgList.push(pkg);
+  siyi.iapPackages = JSON.stringify(pkgList);
   let history: string[] = [];
   try {
     history = JSON.parse(subscription.purchaseHistory) as string[];
@@ -3660,6 +3791,7 @@ class SiyiRowPayload {
   consumedPermanentSp: number = 0;
   signedDates: string = '[]';        // ★ 0.277.0：已签日期并集（旧云端行缺字段=undefined 走兜底，零迁移）
   milestoneStreakGranted: number = 0; // ★ 0.277.0：已发里程碑最高档
+  iapPackages: string = '[]';        // ★ 0.289.0：充能包账本（union+包级 max 合并）
 }
 
 function siyiPointsToJson(): string {
@@ -3675,6 +3807,7 @@ function siyiPointsToJson(): string {
   p.consumedPermanentSp = s.consumedPermanentSp;
   p.signedDates = s.signedDates;
   p.milestoneStreakGranted = s.milestoneStreakGranted;
+  p.iapPackages = s.iapPackages;
   return JSON.stringify(p);
 }
 
@@ -3734,6 +3867,37 @@ function mergeSiyiPointsRow(v: string | undefined): void {
   }
   if (cloud.milestoneStreakGranted > s.milestoneStreakGranted) {
     s.milestoneStreakGranted = cloud.milestoneStreakGranted;
+    changed = true;
+  }
+  // ★ 0.289.0 充能包账本下行合并：按 tok 并集 + 每包 cons/ref 取 max（发放幂等=token 唯一，
+  //   consumeSiyiSp 幂等入口挡双建包；cons 单调与池级 consumedPermanentSp 同语义）
+  const localPkgs = parseIapPackages(s.iapPackages);
+  const cloudPkgs = parseIapPackages(cloud.iapPackages);
+  let pkgsChanged = false;
+  for (let ci = 0; ci < cloudPkgs.length; ci++) {
+    const cp = cloudPkgs[ci];
+    let found = false;
+    for (let li = 0; li < localPkgs.length; li++) {
+      if (localPkgs[li].tok === cp.tok) {
+        found = true;
+        if (cp.cons > localPkgs[li].cons) {
+          localPkgs[li].cons = cp.cons;
+          pkgsChanged = true;
+        }
+        if (cp.ref > localPkgs[li].ref) {
+          localPkgs[li].ref = cp.ref;
+          pkgsChanged = true;
+        }
+        break;
+      }
+    }
+    if (!found) {
+      localPkgs.push(cp);
+      pkgsChanged = true;
+    }
+  }
+  if (pkgsChanged) {
+    s.iapPackages = JSON.stringify(localPkgs);
     changed = true;
   }
   if (changed) {

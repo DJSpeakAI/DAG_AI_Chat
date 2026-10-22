@@ -11,6 +11,10 @@ import spImplicitCostTest from './SpImplicitCost.test'; // ★ 0.273.0：隐式�
 import webFetchTest from './WebFetch.test'; // ★ 0.286.0：AI 读网页（URL 检测/正文抽取/注入块拼装）纯函数断言
 import undoStackTest from './UndoStack.test'; // ★ 0.287.0：撤销栈（push/undo/redo/分支截断/上限裁头/清空）断言
 import personalityQuizTest from './PersonalityQuiz.test'; // ★ 0.288.0：性格测试（SP 节点阶梯/画像转译/交叉验证优先级/锚点综合/题库穿插）断言
+import wordSpeakTextTest from './WordSpeakText.test'; // ★ 0.288.1：词条播放文本（中翻英播英文/缩略词全称/兜底）断言
+import mathRenderTest from './MathRender.test'; // ★ 0.288.3：LaTeX 定界符剥离（$$/$ 成对剥/价格不误伤/命令转换回归）断言
+import iapJwsTest from './IapJws.test'; // ★ 0.288.4：IAP 购买数据统一解析（JWS payload/老格式兜底/坏串防御/金额换算）断言
+import iapPackageTest from './IapPackage.test'; // ★ 0.289.0：充能包账本（迁移重建/FIFO 回放/按包扣费/退款核销守恒/grant 建包）断言
 
 export default function testsuite() {
   abilityTest();
@@ -26,4 +30,8 @@ export default function testsuite() {
   webFetchTest();
   undoStackTest();
   personalityQuizTest();
+  wordSpeakTextTest();
+  mathRenderTest();
+  iapJwsTest();
+  iapPackageTest();
 }

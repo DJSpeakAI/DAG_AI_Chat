@@ -10,13 +10,22 @@
 //   环境检查=queryEnvironmentStatus；查商品=queryProducts；购买=createPurchase；
 //   消耗确认=finishPurchase（消耗型发货后必须调用，漏消耗=二次购买报「已拥有」）；
 //   未完成单查询=queryPurchases(UNFINISHED)——补单链路数据源
+// ★ 0.288.4 数据模型真相（官方 iap-data-model 文档实锤，修复 181 账号「存在未完成订单」死锁）：
+//   API11+ 的 createPurchase/queryPurchases 返回 PurchaseData {type, jwsPurchaseOrder,
+//   jwsSubscriptionStatus}——productId/purchaseToken/purchaseOrderId 全在 jwsPurchaseOrder
+//   （JWS = header.payload.signature，payload 为 base64url 编码的 PurchaseOrderPayload JSON），
+//   顶层一个都读不到！0.261~0.288.2 按顶层直读 → 沙盒偶通生产必瞎：主链路凭据缺失/商品不匹配
+//   误拦没到账，补单链路整单跳过 → 挂单永远恢复不了 → 「存在未完成订单，请稍后重试」死循环。
+//   统一入口 parsePurchaseRecord：JWS payload 解码 + 老格式顶层字段兜底，两条链路共用。
 // 依赖方向：IapUtil → ChatModel 单向（grantSiyiSpFromIap 数据层函数在 ChatModel）
 // ============================================================
 
 import { iap } from '@kit.IAPKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { connectSubscription, connectSiyiPoints, grantSiyiSpFromIap, iapSpAmountOf,
+  writeOffRefundedPackage,
   IAP_PRODUCT_SP_200W, IAP_PRODUCT_SP_400W } from '../common/ChatModel';
 
 // ── 错误码常量（值=d.ts IAPErrorCode 实测，非凭记忆）──
@@ -97,10 +106,114 @@ function iapFallbackAmtCny(productId: string): string {
   return productId === IAP_PRODUCT_SP_400W ? '19.00' : '9.90';
 }
 
+// ── 统一购买记录（★ 0.288.4）：新 PurchaseData/JWS 格式与老 InAppPurchaseData 格式归一 ──
+export class PurchaseRecord {
+  productId: string = '';
+  purchaseToken: string = '';
+  purchaseOrderId: string = '';
+  priceFen: number = NaN;       // 成交价（分）；NaN=缺失（amt 走保底）
+  purchaseState: number = 0;    // 默认 0=已购买（新 JWS 格式无此字段——UNFINISHED 查询本身即待发货）
+  revocationTime: number = 0;   // ★ 0.289.0：撤销（退款）时间 epoch ms（JWS payload；>0=已退款）
+  fromJws: boolean = false;     // 诊断：字段是否取自 JWS payload（生产环境预期 true）
+}
+
+// JWS payload 解码：'header.payload.signature' 第 2 段 base64url → utf-8 → JSON
+export function decodeJwsPayload(jws: string): Record<string, Object> | null {
+  const parts = jws.split('.');
+  if (parts.length < 2 || parts[1].length === 0) {
+    return null;
+  }
+  let b = parts[1];
+  const pad = b.length % 4; // JWS 段无 '=' 填充，解码前补齐
+  if (pad === 2) {
+    b += '==';
+  } else if (pad === 3) {
+    b += '=';
+  } else if (pad === 1) {
+    return null; // 非法 base64 长度
+  }
+  try {
+    const bytes = new util.Base64Helper().decodeSync(b, util.Type.BASIC_URL_SAFE);
+    return JSON.parse(util.TextDecoder.create('utf-8').decodeToString(bytes)) as Record<string, Object>;
+  } catch (_e) {
+    return null;
+  }
+}
+
+// 顶层/payload 字符串多键防御读（华为数据模型字段命名文档与实测多次出入——0.288.1/0.288.2 两次实锤）
+function readStr(r: Record<string, Object>, keys: string[]): string {
+  for (let i = 0; i < keys.length; i++) {
+    const v = r[keys[i]];
+    if (typeof v === 'string' && v.length > 0) {
+      return v;
+    }
+  }
+  return '';
+}
+
+// ★ 0.288.4 核心修复：purchaseData/purchaseDataList 每元素统一解析入口。
+//   老格式顶层直读兜底 + 新格式 jwsPurchaseOrder payload 解码，字段缺失互为补位
+//   （顶层 productId/product_Id/product_id、purchaseToken/purchase_token 等命名全部防御）。
+//   返回 null 仅当整串 JSON 解析失败；字段级缺失由调用方按业务语义处理
+export function parsePurchaseRecord(purchaseDataStr: string): PurchaseRecord | null {
+  let top: Record<string, Object>;
+  try {
+    top = JSON.parse(purchaseDataStr) as Record<string, Object>;
+  } catch (_e) {
+    return null;
+  }
+  const rec = new PurchaseRecord();
+  rec.productId = readStr(top, ['productId', 'product_Id', 'product_id']);
+  rec.purchaseToken = readStr(top, ['purchaseToken', 'purchase_token']);
+  rec.purchaseOrderId = readStr(top, ['purchaseOrderId', 'orderId', 'order_id']);
+  const psRaw = top['purchaseState'];
+  if (typeof psRaw === 'number') {
+    rec.purchaseState = psRaw;
+  }
+  const priceRaw = top['price'];
+  if (typeof priceRaw === 'number') {
+    rec.priceFen = priceRaw;
+  }
+  // 新格式（PurchaseData）：订单字段全在 jwsPurchaseOrder 的 JWS payload 里
+  const jwsRaw = top['jwsPurchaseOrder'];
+  if (typeof jwsRaw === 'string' && jwsRaw.length > 0) {
+    const p = decodeJwsPayload(jwsRaw);
+    if (p !== null) {
+      if (rec.productId.length === 0) {
+        rec.productId = readStr(p, ['productId', 'product_Id', 'product_id']);
+      }
+      if (rec.purchaseToken.length === 0) {
+        rec.purchaseToken = readStr(p, ['purchaseToken', 'purchase_token']);
+      }
+      if (rec.purchaseOrderId.length === 0) {
+        rec.purchaseOrderId = readStr(p, ['purchaseOrderId', 'order_id']);
+      }
+      if (isNaN(rec.priceFen)) {
+        const pr = p['price'];
+        if (typeof pr === 'number') {
+          rec.priceFen = pr;
+        }
+      }
+      // ★ 0.289.0：退款感知数据源——PurchaseOrderPayload.revocationTime（>0=订单已撤销/退款）
+      const rt = p['revocationTime'];
+      if (typeof rt === 'number' && rt > 0) {
+        rec.revocationTime = rt;
+      }
+      rec.fromJws = true;
+    }
+  }
+  return rec;
+}
+
 // ★ 0.273.0：InAppPurchaseData.price（单位分，d.ts+官方文档实查）→ 元字符串；
 //   非法/缺失返回保底价（看板充值流水求和容错——NaN 拒收）；导出供 hypium 断言
 export function iapAmtFromPurchaseData(r: Record<string, Object>, productId: string): string {
   const priceFen = Number(r['price'] ?? NaN);
+  return iapAmtFromFen(priceFen, productId);
+}
+
+// ★ 0.288.4：分 → 元字符串（解析后的统一入口——两条链路共用，保底逻辑与 0.273.0 一致）
+export function iapAmtFromFen(priceFen: number, productId: string): string {
   if (isNaN(priceFen) || priceFen <= 0) {
     return iapFallbackAmtCny(productId);
   }
@@ -110,7 +223,10 @@ export function iapAmtFromPurchaseData(r: Record<string, Object>, productId: str
 // ── 未完成订单补单：查 UNFINISHED 消耗型单，逐单幂等到账+消耗确认 ──
 //   场景：支付成功但 finishPurchase 失败（进程被杀等）→ 下次购买报「已拥有」；
 //   本函数恢复：grant 幂等挡双入账（token 已记则只补 finish）
-export async function recoverPendingPurchases(context: common.UIAbilityContext): Promise<void> {
+//   ★ 0.288.2：返回本次补到账 SP 总额（0=无补单）——BillingPage 据此弹「已补入账」提示框，
+//   修复版装机后用户此前被误拦的已付款订单经此链路自动追回到账，无需重新付款
+export async function recoverPendingPurchases(context: common.UIAbilityContext): Promise<number> {
+  let recoveredTotal = 0;
   try {
     const result = await iap.queryPurchases(context, {
       productType: iap.ProductType.CONSUMABLE,
@@ -120,18 +236,21 @@ export async function recoverPendingPurchases(context: common.UIAbilityContext):
     const siyi = connectSiyiPoints();
     for (let i = 0; i < result.purchaseDataList.length; i++) {
       try {
-        const r = JSON.parse(result.purchaseDataList[i]) as Record<string, Object>;
-        const pid = String(r['productId'] ?? '');
-        const token = String(r['purchaseToken'] ?? '');
-        const orderId = String(r['purchaseOrderId'] ?? '');
-        const state = Number(r['purchaseState'] ?? 0);
-        if (iapSpAmountOf(pid) > 0 && token.length > 0 && state === 0) {
-          grantSiyiSpFromIap(subscription, siyi, pid, token, iapAmtFromPurchaseData(r, pid)); // ★ 0.273.0：amt 传参
+        // ★ 0.288.4：统一解析（JWS payload + 老格式兜底）——此前顶层直读在新数据模型下
+        //   productId/purchaseToken 全空 → 整单跳过 → 挂单永不清除（「存在未完成订单」死锁根因）
+        const rec = parsePurchaseRecord(result.purchaseDataList[i]);
+        if (rec !== null && iapSpAmountOf(rec.productId) > 0
+          && rec.purchaseToken.length > 0 && rec.purchaseState === 0) {
+          const granted = grantSiyiSpFromIap(subscription, siyi, rec.productId, rec.purchaseToken,
+            iapAmtFromFen(rec.priceFen, rec.productId)); // ★ 0.273.0：amt 传参（payload price 分→元）
+          if (granted) {
+            recoveredTotal += iapSpAmountOf(rec.productId);
+          }
           try {
             await iap.finishPurchase(context, {
               productType: iap.ProductType.CONSUMABLE,
-              purchaseToken: token,
-              purchaseOrderId: orderId
+              purchaseToken: rec.purchaseToken,
+              purchaseOrderId: rec.purchaseOrderId
             });
           } catch (_e2) {
             // 单条 finish 失败继续下一单（下次补单再试）
@@ -144,6 +263,35 @@ export async function recoverPendingPurchases(context: common.UIAbilityContext):
   } catch (_e) {
     // 静默——未登录/无未完成单/网络异常均为常态
   }
+  return recoveredTotal;
+}
+
+// ── ★ 0.289.0 退款自动感知（用户否决手动核销——app 必须自己发现退款）──
+//   queryPurchaseRecords 返回老模型 QueryPurchasesResult.inAppPurchaseDataList（顶层
+//   purchaseToken/purchaseState，实测编译期实锤）——已退款=purchaseState 2；JWS 新格式
+//   revocationTime 双保险。token 命中本地充能包 → writeOffRefundedPackage 自动核销
+//   （剩余 SP 作废、ref=1，用户零操作）。BillingPage 进场即调；退款到账后用户回账单页自动平账
+export async function detectRefundedIapPurchases(context: common.UIAbilityContext): Promise<number> {
+  let writtenTotal = 0;
+  try {
+    const result = await iap.queryPurchaseRecords(context, {
+      productType: iap.ProductType.CONSUMABLE,
+      queryType: iap.PurchaseQueryType.ALL
+    });
+    const siyi = connectSiyiPoints();
+    for (let i = 0; i < result.inAppPurchaseDataList.length; i++) {
+      const rec = parsePurchaseRecord(result.inAppPurchaseDataList[i]);
+      if (rec === null || rec.purchaseToken.length === 0) {
+        continue;
+      }
+      if (rec.revocationTime > 0 || rec.purchaseState === 2) {
+        writtenTotal += writeOffRefundedPackage(siyi, rec.purchaseToken);
+      }
+    }
+  } catch (_e) {
+    // 静默——未登录/网络异常/无记录均为常态
+  }
+  return writtenTotal;
 }
 
 // ── 完整购买流（核心）：拉起收银台 → 校验 → 幂等到账 → 消耗确认 ──
@@ -172,9 +320,14 @@ export async function purchaseSp(context: common.UIAbilityContext, productId: st
   } catch (e) {
     const err = e as BusinessError;
     if (err.code === ERR_PRODUCT_OWNED) {
-      // 已拥有未消耗单——先自动补单恢复，再引导重试
-      await recoverPendingPurchases(context);
-      out.message = '检测到未完成订单，已自动恢复，请重新购买';
+      // 已拥有未消耗单——先自动补单恢复；★ 0.288.2：补到账则直接按成功收尾（无需用户重买）
+      const recovered = await recoverPendingPurchases(context);
+      if (recovered > 0) {
+        out.state = 'ok';
+        out.spAmount = recovered;
+        return out;
+      }
+      out.message = '存在未完成订单，请稍后重试';
       return out;
     }
     if (err.code === ERR_USER_CANCELED) {
@@ -185,27 +338,31 @@ export async function purchaseSp(context: common.UIAbilityContext, productId: st
     out.message = classifyIapError(err.code);
     return out;
   }
-  // 3. 解析+校验 purchaseData（PurchaseData JSON 串：productID 匹配+purchaseState=0 已购买）
+  // 3. 解析+校验 purchaseData（★ 0.288.4：统一走 parsePurchaseRecord——新 PurchaseData 格式
+  //    订单字段在 jwsPurchaseOrder 的 JWS payload，老格式顶层兜底；商品匹配+purchaseState=0 已购买）
   let purchaseToken = '';
   let purchaseOrderId = '';
   let amountCny = '';
-  try {
-    const r = JSON.parse(purchaseDataStr) as Record<string, Object>;
-    const dataProductId = String(r['productId'] ?? '');
-    purchaseToken = String(r['purchaseToken'] ?? '');
-    purchaseOrderId = String(r['purchaseOrderId'] ?? '');
-    amountCny = iapAmtFromPurchaseData(r, productId); // ★ 0.273.0：实际成交价 ¥（sp_grant iap amt）
-    const state = Number(r['purchaseState'] ?? 0);
-    if (state !== 0) {
-      out.message = '订单状态异常，未到账（如已扣款请联系列表页客服入口）';
-      return out;
-    }
-    if (dataProductId !== productId) {
-      out.message = '订单商品不匹配，未到账';
-      return out;
-    }
-  } catch (_e) {
+  let dataProductId = '';
+  let state = 0;
+  const rec = parsePurchaseRecord(purchaseDataStr);
+  if (rec === null) {
     out.message = '支付结果解析失败，未到账（如已扣款请联系列表页客服入口）';
+    return out;
+  }
+  purchaseToken = rec.purchaseToken;
+  purchaseOrderId = rec.purchaseOrderId;
+  amountCny = iapAmtFromFen(rec.priceFen, productId); // ★ 0.273.0：实际成交价 ¥（sp_grant iap amt）
+  dataProductId = rec.productId;
+  state = rec.purchaseState;
+  if (state !== 0) {
+    out.message = '订单状态异常，未到账（如已扣款请联系列表页客服入口）';
+    return out;
+  }
+  // ★ 0.288.2：缺失不拦截（0.261.0 设计回归）——createPurchase resolve 本身=支付成功，
+  //   商品归属以我方发起购买的商品为准；仅当读到非空且确实不匹配才拦（防串单）
+  if (dataProductId.length > 0 && dataProductId !== productId) {
+    out.message = '订单商品不匹配，未到账';
     return out;
   }
   if (purchaseToken.length === 0) {

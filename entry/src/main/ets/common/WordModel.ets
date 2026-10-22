@@ -17,6 +17,20 @@
 
 import { Type, AppStorageV2 } from '@kit.ArkUI'; // @Type decorator: required by PersistenceV2 nested class arrays；★ 0.222.19：AppStorageV2（文件夹导航/折叠态共享 store）
 
+// ★ 0.288.1：词条播放文本（纯函数，刻意放本文件=零网络链依赖，hypium 可直测）——
+//   修用户实机报障：中翻英入库词条 word 存中文，喇叭走英文引擎读不了中文=无声。
+//   判定=word 首字符中文且 explain 非空 → 播英文译文 explain（首字符判定与 ApiClient.startsWithChinese
+//   同源同规则，两处若改必须同步；此处内联是为不让 WordModel 反向拖入 ApiClient 网络链）
+export function speakTextFor(item: WordItem): string {
+  if (item.word.length > 0 && item.explain.length > 0) {
+    const code = item.word.charCodeAt(0);
+    if (code >= 0x4E00 && code <= 0x9FFF) {
+      return item.explain; // 中翻英词条：播英文译文
+    }
+  }
+  return item.fullName.length > 0 ? item.fullName : item.word; // 英译中原逻辑（缩略词播全称）
+}
+
 // A single word entry stored in the word bank
 @ObservedV2
 export class WordItem {

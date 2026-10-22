@@ -226,11 +226,12 @@ export function markProfileUpdatedToday(store: ProfileStore): void {
 }
 
 // ============================================================
-// WP5：深度记忆总开关（默认开；关闭=不注入不触发、数据保留——记忆系统出 bug 的用户自救开关）
+// WP5：深度记忆总开关（★ 0.290.0 起 UI 隐藏恒开——用户终裁：深度记忆默认开启且不给关闭入口；
+//   MemoryPrefStore 结构与 key 'memory-pref-v1' 保留（Schema 红线），memoryMode 字段不再消费）
 // ============================================================
 @ObservedV2
 export class MemoryPrefStore {
-  @Trace memoryMode: string = 'on'; // 'on' / 'off'
+  @Trace memoryMode: string = 'on'; // 'on' / 'off'（0.290.0 起恒 'on'——GSD 保存时洗白归位）
 }
 
 export function connectMemoryPref(): MemoryPrefStore {
@@ -238,7 +239,7 @@ export function connectMemoryPref(): MemoryPrefStore {
 }
 
 export function isMemoryOn(): boolean {
-  return connectMemoryPref().memoryMode === 'on';
+  return true; // ★ 0.290.0：恒开（WP3 设置简化终裁——画像/摘要头/记忆注入恒生效）
 }
 
 // ============================================================

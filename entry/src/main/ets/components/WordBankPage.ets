@@ -2512,14 +2512,14 @@ export struct WordBankPage {
                           // ★ 0.149：音标旁发音按钮——缩略词播全称（字母谁都会读）、普通词播单词本身（美式）；三态 🔈/⏳/🔊
                           // ★ 0.150：Button→Text——Button 默认高度（≈40vp）会撑高音标行（用户指出单词本行距变大），Text 无默认高度、行距还原
                           // ★ 0.195.0：喇叭三态 emoji（🔈⏳🔊 彩色）换单色 svg——形状即状态（cone 空闲/dots 合成中/waves 播放中）
-                          Image(wordSpeaker.loadingWord === wordSpeaker.textFor(w.word, w.fullName) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textFor(w.word, w.fullName) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
+                          Image(wordSpeaker.loadingWord === wordSpeaker.textForItem(w) ? $r('app.media.speaker_loading') : (wordSpeaker.speakingWord === wordSpeaker.textForItem(w) ? (speakerPulse.wave ? $r('app.media.speaker_playing') : $r('app.media.speaker_wave1')) : $r('app.media.speaker')))
                             .width(13)
                             .height(13)
                             .objectFit(ImageFit.Contain)
                             .margin({ left: 6 })
                             .onClick(() => {
                               // ★ 0.189.2：口音提示改弹窗（英式无包/美式缺包——showAccentDialogs 共用工厂）
-                              wordSpeaker.speak(wordSpeaker.textFor(w.word, w.fullName), showAccentDialogs(this.getUIContext()));
+                              wordSpeaker.speak(wordSpeaker.textForItem(w), showAccentDialogs(this.getUIContext()));
                             })
                         }
                         .margin({ top: 2 })

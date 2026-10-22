@@ -40,7 +40,7 @@ import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳�
 import { requestSyncPermission, isCloudSyncGranted, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
-import { MemoryPrefStore, connectMemoryPref, ProfileStore, connectProfileObservations, clearAllObservations, activeObservationCount } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关+清空画像入口（WP5）
+import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
 import { SubscriptionStore, connectSubscription, isVip, SP_TTS_PER_KCHAR } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）；★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费小字与播报扣点同源常量）
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
@@ -197,7 +197,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.288.0'; // ★ 0.288.0：性格测试（信号灯入口+15 题+画像引擎灌入）；更早历史见 MEMORY.md 版本表
+const APP_VERSION: string = 'v0.290.0'; // ★ 0.290.0：司枢模式2.0（规划器+执笔两段式）；更早历史见 MEMORY.md 版本表
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -343,21 +343,13 @@ export struct GlobalSettingsDialog {
   // ★ 0.150 Tab2 编辑副本（AI 偏好）
   @Local editNickname: string = '';   // 自定义称呼（空 = 不添加称呼）
   @Local editEncourageMode: string = 'light'; // ★ 0.191.0：鼓励三档（off/light/heavy，默认轻度=原开关开）
-  // ★ 0.234.0：注意力锚点编辑副本（锚点卡片开关/密度档/分章折叠开关——保存模式同称呼/鼓励）
-  // ★ 0.269.0：anchorMode 三态（off 关 / smart 智能锚点·默认 / companion 伴读模式）+ 伴读确认会话 flag
-  @Local editAnchorMode: string = 'smart';     // off / smart / companion
-  @Local editAnchorDensity: string = 'standard'; // dense 密 / standard 中（默认）/ sparse 疏
-  @Local editFoldMode: string = 'on';         // off / on（默认开=折叠模式）
-  // ★ 0.271.0：深度思考三态（auto 跟随模式=短关/中计分/长 high / always 每次思考 / off 全关；默认 auto）
-  @Local editThinkingMode: string = 'auto';   // auto / always / off
-  @Local companionConfirmed: boolean = false; // ★ 0.269.0：伴读二次确认会话 flag（确认一次本会话不再弹——Q5「一次点完永久生效」精神，切走再切回重弹=知情提示无害）
-  @Local companionConfirmVisible: boolean = false; // ★ 0.269.0：伴读确认弹窗开态（AppConfirmDialog 暗紫双键——系统灰弹窗 0.196.9 起弃用）
-  // ★ 0.265.0 记忆引擎一期 WP5：深度记忆总开关编辑副本（默认开；关闭=不注入画像卡/摘要头、
-  //   不触发画像更新与失活摘要——记忆系统出 bug 时的用户自救开关，数据保留）+ 清空画像确认弹窗态
-  @Local editMemoryMode: string = 'on';       // off / on（默认开）
-  @Local clearProfileVisible: boolean = false; // 清空画像二次确认（AppConfirmDialog）
+  // ★ 0.290.0（WP3 设置简化）：锚点与伴读三态/密度档/深度思考三态/分章折叠/深度记忆开关
+  //   五项编辑副本全部退役——AI 偏好区只保留用户一眼能懂项（称呼/鼓励）；store 与 key 不动
+  //   （红线），保存时恒写定值（anchorMode=companion/anchorDensity=sparse/foldMode=on/
+  //   thinkingMode=auto/memoryMode=on——老用户旧值保存任意设置时洗白归位）。
+  //   清空画像入口同版删除（用户终裁：退出华为账号已有「同时清空本机全部数据」=合规清空入口，
+  //   画像不再单独给清空入口——clearAllObservations 能力保留代码层不触发）。
   memoryPref: MemoryPrefStore = connectMemoryPref();
-  profileStore: ProfileStore = connectProfileObservations();
   // ★ 0.267.1：后台回复通知开关状态（true=已开启；默认 true 防未授权用户误显「未开启」闪烁——
   //   查询异步回填；开弹窗/切到 AI 偏好 Tab 时刷新，从系统设置回来状态即时正确）
   @Local notifEnabled: boolean = true;
@@ -492,15 +484,7 @@ export struct GlobalSettingsDialog {
     // ★ 0.150：Tab2 AI 偏好编辑副本
     this.editNickname = this.aiPreference.aiNickname;
     this.editEncourageMode = this.aiPreference.encourageMode;
-    this.editMemoryMode = this.memoryPref.memoryMode; // ★ 0.265.0：深度记忆开关编辑副本
-    // ★ 0.234.0：注意力锚点编辑副本回显；★ 0.237.0 两档制归一——遗留 'standard'（旧中档）归疏，
-    //   不改写已落盘数据（保存时随选择落新值）
-    // ★ 0.269.0：anchorMode 三态归一回显——遗留 'on' 归 'smart'（0.237.0 脏检查坑同源：不改写盘值）
-    this.editAnchorMode = normalizeAnchorMode(this.anchorPref.anchorMode);
-    // ★ 0.271.0：thinkingMode 归一回显（非法值归 'auto'——同款归一纪律）
-    this.editThinkingMode = normalizeThinkingMode(this.anchorPref.thinkingMode);
-    this.editAnchorDensity = this.anchorPref.anchorDensity === 'dense' ? 'dense' : 'sparse';
-    this.editFoldMode = this.anchorPref.foldMode;
+    // ★ 0.290.0（WP3）：锚点/思考/折叠/深度记忆四块编辑副本回显随 UI 隐藏退役（保存恒写定值）
     // ★ 0.232.0：TTS 配置回显（提供商从端点推导——含 bytedance.com=火山预设）
     // ★ 0.232.1：模型改下拉预设回显（icl/tts 两预设 + 清单外手填落「自定义模型」）
     // ★ 0.236.0：三档化——editTtsProvider 从 apiConfig.ttsProvider 直读（非法值→端点推导兜底）；
@@ -863,13 +847,6 @@ export struct GlobalSettingsDialog {
 
   // ★ 0.150：保存——两 Tab 全部修改一次写入持久化 + toast 提示，不关弹窗（用户自己 ✕）
   saveAll(): void {
-    // ★ 0.269.0（Q5 裁决）：首次切「伴读模式」二次确认——知情扣费（SP 军令文化）+ 预估量级给足预期；
-    //   确认一次本会话不再弹；「暂不」=锚点档回跳当前实际值、其余修改照常保存
-    if (this.editAnchorMode === 'companion' &&
-      normalizeAnchorMode(this.anchorPref.anchorMode) !== 'companion' && !this.companionConfirmed) {
-      this.companionConfirmVisible = true;
-      return;
-    }
     // ★ 0.190.0：Tab1 提供商化写入（预设端点强制回内置值，防旧数据残留）
     this.apiConfig.provider = this.editProvider;
     this.apiConfig.apiKey = this.editKey.trim();
@@ -879,14 +856,14 @@ export struct GlobalSettingsDialog {
     // Tab2：AI 偏好写入持久化（★ 0.150）
     this.aiPreference.aiNickname = this.editNickname.trim();
     this.aiPreference.encourageMode = this.editEncourageMode;
-    // ★ 0.234.0：注意力锚点写入（独立 key anchor-pref-v1 即时落盘；ChatPage 读 @Trace 即时生效）
-    this.anchorPref.anchorMode = this.editAnchorMode;
-    this.anchorPref.anchorDensity = this.editAnchorDensity;
-    this.anchorPref.foldMode = this.editFoldMode;
-    // ★ 0.271.0：深度思考三态写入（AnchorPref 同 store 尾部字段——保存即落盘，下一条消息即时生效）
-    this.anchorPref.thinkingMode = this.editThinkingMode;
-    // ★ 0.265.0：深度记忆总开关写入（独立 key memory-pref-v1 即时落盘）
-    this.memoryPref.memoryMode = this.editMemoryMode;
+    // ★ 0.290.0（WP3 设置简化）：四块开关 UI 已隐藏——保存恒写定值（司枢 2.0 架构定档：
+    //   锚点伴读恒 companion+疏档（WP2 后钩子由框架规划）、思考恒 auto（司枢开=长回复恒思考）、
+    //   折叠恒开、深度记忆恒开（用户 0.290.0 终裁）；老用户旧值随本次保存洗白归位，store/key 不动）
+    this.anchorPref.anchorMode = 'companion';
+    this.anchorPref.anchorDensity = 'sparse';
+    this.anchorPref.foldMode = 'on';
+    this.anchorPref.thinkingMode = 'auto';
+    this.memoryPref.memoryMode = 'on';
     // ★ 0.197.2：Tab5 复习显示写入（编辑副本→store，PersistenceV2 即时落盘，两处复习区即时生效）
     this.learnCountStore.learnCount = this.editReviewLearn;
     this.knowledgeCountStore.knowledgeCount = this.editReviewKnowledge;
@@ -2142,309 +2119,6 @@ export struct GlobalSettingsDialog {
           .margin({ top: 4 })
       }
       .width('100%')
-      .margin({ bottom: 24 })
-
-      // ★ 0.234.0 ②：注意力锚点（钩子模式）——三态分段 + 密度档 + 提示小字（任务书 §6.3）
-      // ★ 0.269.0：单开关扩三态（Q5 裁决：关 / 智能锚点·默认 / 伴读模式·两段式，首切伴读二次确认）
-      Column() {
-        Column({ space: 2 }) {
-          Text('锚点与伴读')
-            .fontSize(14)
-            .fontColor(this.theme.textPrimary)
-          Text('深度思考（长回复）中插入注意力钩子；伴读模式额外编排阅读节奏')
-            .fontSize(11)
-            .lineHeight(18)
-            .fontColor(this.theme.textTertiary)
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Start)
-
-        // 三态分段控件（关 / 智能锚点 / 伴读模式——this.theme.segmentedTrack 轨道+激活段主紫，
-        //   与密度档同款样式）
-        Row() {
-          Text('关')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editAnchorMode === 'off' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editAnchorMode === 'off' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editAnchorMode = 'off';
-            })
-          Text('智能锚点')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editAnchorMode === 'smart' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editAnchorMode === 'smart' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editAnchorMode = 'smart';
-            })
-          Text('伴读模式')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editAnchorMode === 'companion' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editAnchorMode === 'companion' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editAnchorMode = 'companion';
-            })
-        }
-        .width('100%')
-        .padding(4)
-        .margin({ top: 10 })
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.theme.segmentedTrack)
-
-        // 密度分段控件（★ 0.237.0 两档制——用户拍板去掉「中」：密 400 / 疏 800 字，默认疏；
-        //   疏档 AI 全文 2~3 个锚点、密档 3~5 个；this.theme.segmentedTrack 轨道+激活段主紫）
-        Row() {
-          Text('密')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editAnchorDensity === 'dense' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editAnchorDensity === 'dense' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editAnchorDensity = 'dense';
-            })
-          Text('疏')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editAnchorDensity === 'sparse' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editAnchorDensity === 'sparse' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editAnchorDensity = 'sparse';
-            })
-        }
-        .width('100%')
-        .padding(4)
-        .margin({ top: 10 })
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.theme.segmentedTrack)
-
-        Text('💡 智能锚点：中/长回复中插入考考你、前方高能、换个说法等钩子，读长文时轻轻拉回注意力。伴读模式：长回复生成后由 AI 二次编排阅读节奏（喘息/进度/简单说/文末延伸），额外消耗少量 SP，文末「延伸」可点击拉分支深挖。密档钩子更频繁、疏档更克制。关闭后 AI 按原文回复。未开启深度思考的回复不插入。')
-          .fontSize(11)
-          .lineHeight(18)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 24 })
-
-      // ★ 0.271.0：深度思考三态开关（任务书 §3.7——「AI 偏好」Tab 新卡；锚点三态同款分段控件）
-      Column() {
-        Column({ space: 2 }) {
-          Text('深度思考')
-            .fontSize(14)
-            .fontColor(this.theme.textPrimary)
-          Text('AI 回复前先深度思考再作答，质量更高但更慢、消耗更多 SP')
-            .fontSize(11)
-            .lineHeight(18)
-            .fontColor(this.theme.textTertiary)
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Start)
-
-        // 三态分段控件（跟随模式 / 每次思考 / 关闭——this.theme.segmentedTrack 轨道+激活段主紫，
-        //   与锚点三态同款样式）
-        Row() {
-          Text('跟随模式')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editThinkingMode === 'auto' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editThinkingMode === 'auto' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editThinkingMode = 'auto';
-            })
-          Text('每次思考')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editThinkingMode === 'always' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editThinkingMode === 'always' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editThinkingMode = 'always';
-            })
-          Text('关闭')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editThinkingMode === 'off' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editThinkingMode === 'off' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editThinkingMode = 'off';
-            })
-        }
-        .width('100%')
-        .padding(4)
-        .margin({ top: 10 })
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.theme.segmentedTrack)
-
-        // ★ 0.271.0：成本提示（P0-3 实测基线——同题输出 token：普通 105 / 思考档 278~440，约 2.6~4.2 倍）
-        Text('💡 跟随模式：中回复按问题难度自动判断是否思考（追问越深越容易触发）；开启深度思考（长回复）默认思考。每次思考：除听播外全部思考。深度思考的回复约多消耗 2~4 倍 SP，思考过程可在气泡底部查看。听播模式永远不思考（首字延迟高于一切）。')
-          .fontSize(11)
-          .lineHeight(18)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 24 })
-
-      // ★ 0.234.0 ③：长文分章折叠（折叠模式）——开关 + 提示小字（与锚点卡片互相独立，可分别开关）
-      Column() {
-        Row({ space: 10 }) {
-          Column({ space: 2 }) {
-            Text('分章折叠')
-              .fontSize(14)
-              .fontColor(this.theme.textPrimary)
-            Text('开启深度思考的回复生成完毕后自动按章节折叠呈现')
-              .fontSize(11)
-              .lineHeight(18)
-              .fontColor(this.theme.textTertiary)
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.editFoldMode === 'on' })
-            .selectedColor(this.theme.brandPrimary)
-            .onChange((on: boolean) => {
-              this.editFoldMode = on ? 'on' : 'off';
-            })
-        }
-        .width('100%')
-
-        Text('💡 开启深度思考的回复生成完毕后自动按章节折叠（默认展开前 1/3，其余收起），点章节行展开继续读；生成过程中仍为流式直显。与锚点卡片互相独立，可分别开关。')
-          .fontSize(11)
-          .lineHeight(18)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 24 })
-
-      // ★ 0.234.0 ④：自动鼓励（移到第四位，三档控件不动，仅改说明小字——只在学习统计页/复习完成页出现）
-      Column() {
-        Text('自动鼓励')
-          .fontSize(14)
-          .fontColor(this.theme.textSecondary)
-          .margin({ bottom: 8 })
-
-        // 三档分段控件（this.theme.segmentedTrack 轨道 + 激活段 this.theme.brandPrimary，对齐 UI_GUIDELINES 六-8 分段规格）
-        Row() {
-          Text('关闭')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editEncourageMode === 'off' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editEncourageMode === 'off' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editEncourageMode = 'off';
-            })
-          Text('轻度')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editEncourageMode === 'light' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editEncourageMode === 'light' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editEncourageMode = 'light';
-            })
-          Text('重度')
-            .fontSize(13)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .padding({ top: 7, bottom: 7 })
-            .borderRadius(RADIUS_CONTROL - 2)
-            .fontColor(this.editEncourageMode === 'heavy' ? this.theme.textPrimary : this.theme.textSecondary)
-            .backgroundColor(this.editEncourageMode === 'heavy' ? this.theme.brandPrimary : Color.Transparent)
-            .onClick(() => {
-              this.editEncourageMode = 'heavy';
-            })
-        }
-        .width('100%')
-        .padding(4)
-        .borderRadius(RADIUS_CONTROL)
-        .backgroundColor(this.theme.segmentedTrack)
-
-        Text('💡 轻度：1~2 句温和鼓励；重度：2~4 句热情喝彩；关闭：不生成。仅在学习统计页与复习完成页出现，不插入 AI 回复。') // ★ 0.234.0：改口——鼓励不再进 AI 回复
-          .fontSize(11)
-          .lineHeight(18) // ★ 0.175.0：小字行间距规则（同上）
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .margin({ bottom: 24 })
-
-      // ★ 0.265.0 记忆引擎一期 WP5：深度记忆总开关（画像卡+相关分支背景注入；关闭=回到纯父链模式，
-      //   记忆系统出 bug 时的用户自救开关，数据保留）+ 清空画像入口（隐私区——用户数据主权，二次确认）
-      Column() {
-        Row({ space: 10 }) {
-          Column({ space: 2 }) {
-            Text('深度记忆')
-              .fontSize(14)
-              .fontColor(this.theme.textPrimary)
-            Text('AI 记住你的身份、目标与偏好，并在分支间关联相关背景')
-              .fontSize(11)
-              .lineHeight(18)
-              .fontColor(this.theme.textTertiary)
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.editMemoryMode === 'on' })
-            .selectedColor(this.theme.brandPrimary)
-            .onChange((on: boolean) => {
-              this.editMemoryMode = on ? 'on' : 'off';
-            })
-        }
-        .width('100%')
-
-        Text('💡 开启后 AI 会从对话中静默提炼用户画像（身份/目标/偏好），并在提问时自动关联兄弟分支聊过的内容——聊得越久越懂你；关闭后立即回到纯净模式，画像数据保留可随时再开。画像观察为隐式调用，暂不消耗司忆点。')
-          .fontSize(11)
-          .lineHeight(18)
-          .fontColor(this.theme.textTertiary)
-          .margin({ top: 4 })
-
-        // 清空画像入口（隐私区——推断性个人信息默认最小化；二次确认防误触）
-        Button(`清空画像数据（当前 ${activeObservationCount(this.profileStore)} 条观察）`)
-          .fontSize(13)
-          .fontColor(this.theme.textSecondary)
-          .backgroundColor(this.theme.surfaceSoft)
-          .borderRadius(RADIUS_CONTROL)
-          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-          .margin({ top: 10 })
-          .onClick(() => {
-            this.clearProfileVisible = true;
-          })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 24 })
 
       // ★ 0.267.1：后台回复通知卡（用户需求「把 TA 自动打开」——系统红线应用无法静默开启，
@@ -4020,22 +3694,8 @@ export struct GlobalSettingsDialog {
         .border({ width: 1, color: this.theme.strokeCard })
       }
 
-      // ★ 0.265.0：清空画像二次确认（AppConfirmDialog 自带遮罩，叠设置面板顶层；确认=清空观察行，已取代演变链一并清除）
-      AppConfirmDialog({
-        visible: this.clearProfileVisible,
-        title: '清空画像数据',
-        message: '将删除全部用户画像观察记录（含已被取代的历史观察），AI 将不再记得你的身份、目标与偏好。此操作不可恢复，确定清空吗？',
-        confirmText: '清空',
-        cancelText: '取消',
-        onConfirm: () => {
-          this.clearProfileVisible = false;
-          clearAllObservations(this.profileStore);
-          this.getUIContext().getPromptAction().showToast({ message: '画像数据已清空', duration: 1500 });
-        },
-        onCancel: () => {
-          this.clearProfileVisible = false;
-        }
-      })
+      // ★ 0.290.0：清空画像/伴读开启两个 AppConfirmDialog 已随 WP3 设置简化删除
+      //   （清空画像入口=退出华为账号「同时清空本机全部数据」；伴读档恒开无确认场景）
 
       // ★ 0.266.0：撤回同意二次确认（方案 A——确认后四连动作见 revokeAgreementNow）
       AppConfirmDialog({
@@ -4047,35 +3707,16 @@ export struct GlobalSettingsDialog {
         onConfirm: () => {
           this.revokeAgreementNow();
         },
-        onCancel: () => {
-          this.revokeConfirmVisible = false;
-        }
-      })
-
-      // ★ 0.269.0：首次切「伴读模式」二次确认（Q5 裁决——知情扣费+预估量级；确认续走保存、暂不回跳档位照存其余）
-      AppConfirmDialog({
-        visible: this.companionConfirmVisible,
-        title: '开启伴读模式？',
-        message: '开启后，长回复会额外消耗少量司忆点 SP，为你编排阅读节奏（第二次 AI 处理，插入喘息、进度、简单说、文末延伸等钩子）。\n量级参考：一篇 2000 字长回复的伴读编排约多消耗 600 SP；Lv8 司忆令账号免费。编排失败或取消只扣内容生成部分。',
-        confirmText: '开启',
-        cancelText: '暂不',
-        onConfirm: () => {
-          this.companionConfirmVisible = false;
-          this.companionConfirmed = true;
-          this.saveAll();
-        },
-        onCancel: () => {
-          this.companionConfirmVisible = false;
-          this.editAnchorMode = normalizeAnchorMode(this.anchorPref.anchorMode); // 分段控件回跳当前实际值
-          this.saveAll();
-        }
-      })
-    }
-    .width('100%')
-    .height('100%')
-    .alignContent(Alignment.Center)
-  }
-}
+         onCancel: () => {
+           this.revokeConfirmVisible = false;
+         }
+       })
+     }
+     .width('100%')
+     .height('100%')
+     .alignContent(Alignment.Center)
+   }
+ }
 
 
 
