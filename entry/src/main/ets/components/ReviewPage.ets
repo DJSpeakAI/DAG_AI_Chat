@@ -16,7 +16,7 @@ import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { MemoryItem, MemoryRating, pickReviewWords, pickReviewCards, applyRating, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm';
 import { streamChat } from '../utils/ApiClient';
 import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.196.2：单词卡喇叭发音（同单词库）
-import { WaitingDots } from './ChatPage'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）
+import { WaitingDots } from './WaitingDots'; // ★ 0.196.2：完成页「总结正在生成」三点动画（0.190.5 组件复用）；★ 拆分：迁出 ChatPage 独立件
 import { buildWidgetState, mergeWidgetPending } from '../utils/WidgetHostBridge'; // ★ 0.204.0：桌面卡片双队列快照（构建+pending 回放）
 
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
