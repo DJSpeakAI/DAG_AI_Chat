@@ -4,7 +4,7 @@
 // 承载：Markdown 解析段模型、复习缓存条目、渲染计划（RichPlan 族）、
 //       字号缩放持久化 store、页面级常量与会话级内存 Map。
 // 注意：PLACEHOLDER_LOADING 字面值与历史持久化数据一致，不可改动（旧数据的过滤判断依赖它）。
-import { PersistenceV2 } from '@kit.ArkUI';
+import { PersistenceV2, AppStorageV2 } from '@kit.ArkUI';
 import { MdBlock, FoldSection } from '../utils/MdInline';
 import { WordItem } from './WordModel';
 import { KnowledgeCard } from './KnowledgeModel';
@@ -106,4 +106,17 @@ export class ChatFontScaleStore {
 
 export function connectChatFontScale(): ChatFontScaleStore {
   return PersistenceV2.connect(ChatFontScaleStore, 'chat-font-scale-v1', () => new ChatFontScaleStore()) as ChatFontScaleStore;
+}
+
+// ★ 全屏图片浏览器共享态（拆分自 ChatPage @Local 三件；AppStorageV2 应用级不落盘——
+//   宿主页写 store、ImageViewer 组件 connect 同一实例渲染；if 挂载制=每次打开菜单态天然重置）
+@ObservedV2
+export class ImageViewerStore {
+  @Trace visible: boolean = false;
+  @Trace index: number = 0;
+  @Trace images: string[] = [];
+}
+
+export function connectImageViewer(): ImageViewerStore {
+  return AppStorageV2.connect(ImageViewerStore, 'image-viewer', () => new ImageViewerStore()) as ImageViewerStore;
 }

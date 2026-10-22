@@ -77,9 +77,10 @@ import { webview } from '@kit.ArkWeb'; // ★ 0.286.1：AI 读网页渲染通道
 // ★ 拆分重构（自 ChatPage 原文内区块迁出）：WaitingDots/CodeBlockView 独立组件件、ChatPageTypes 类型常量层、ChatMdParser 解析纯函数层
 import { WaitingDots } from './WaitingDots';
 import { CodeBlockView } from './CodeBlockView';
-import { MdSegment, ReviewCacheEntry, KnowledgeReviewCacheEntry, RichPlan, RichPlanEntry, PlanCacheEntry, ChatFontScaleStore, connectChatFontScale, PLACEHOLDER_LOADING, PLACEHOLDER_THINKING, TREE_CELL, chatScrollMemory, chatFoldMemory, animOn, glowHighlight, BODY_LINE_HEIGHT_RATIO, PC_SELECTION_MENU_WIDTH } from '../common/ChatPageTypes';
+import { MdSegment, ReviewCacheEntry, KnowledgeReviewCacheEntry, RichPlan, RichPlanEntry, PlanCacheEntry, ChatFontScaleStore, connectChatFontScale, ImageViewerStore, connectImageViewer, PLACEHOLDER_LOADING, PLACEHOLDER_THINKING, TREE_CELL, chatScrollMemory, chatFoldMemory, animOn, glowHighlight, BODY_LINE_HEIGHT_RATIO, PC_SELECTION_MENU_WIDTH } from '../common/ChatPageTypes';
 import { parseMarkdown, buildFoldItems } from '../utils/ChatMdParser';
 import { WordFolderPicker, CardFolderPicker, QuotePicker } from './FolderPickerDialogs';
+import { ImageViewer } from './ImageViewer';
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
@@ -145,18 +146,6 @@ export struct ChatPage {
   // ★ 0.291.2：文档计费首次告知标记（冷启后首次带文档发送弹一次告知；会话级不落盘——
   //   避免新增持久化 key，每次冷启首弹一次可接受）
   docBillingNotified: boolean = false;
-  // 全屏图片浏览器状态
-  @Local imageViewerVisible: boolean = false;
-  @Local imageViewerIndex: number = 0;
-  @Local imageViewerImages: string[] = [];
-  @Local viewerMenuVisible: boolean = false; // ★ 0.247.1：触摸长按保存菜单开态（PC 右键走 bindContextMenu 原样）
-  // ★ 0.249.3：缩放回滚后仅重置菜单态；每次打开查看器菜单不开（防上次残留）
-  @Monitor('imageViewerVisible')
-  onViewerVisibleChange(): void {
-    if (this.imageViewerVisible) {
-      this.viewerMenuVisible = false;
-    }
-  }
   // ★ 0.145：划词翻译状态（替代原长按菜单/文本预览/删除确认——旧二级弹窗整体移除）
    @Local selText: string = '';            // 当前选中文本（onTextSelectionChange 时从对应 Text 内容截取）
    @Local selStart: number = -1;           // ★ 0.191.0：选中起始偏移（划词级书签用；-1=无有效选中）
@@ -237,6 +226,7 @@ export struct ChatPage {
   @Local tokenInfoHookLine: string = ''; // ★ 0.269.0：伴读编排拆分行（空串=不渲染——非伴读消息/免扣/②段未成功；Q9 明细弹层拆分）
   @Local tokenInfoCacheHit: boolean = false; // ★ 0.248.7：缓存行命中态（true=品牌紫省钱行 / false=普通色未命中行）
   wordBank: WordBankStore = connectWordBank(); // ★ 0.145：单词库（独立 PersistenceV2 key，与气泡树持久化隔离）
+  imgViewer: ImageViewerStore = connectImageViewer(); // 全屏图片浏览器共享态（ImageViewer 组件消费）
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.161：学习数量（单词库 ⚙ 设置，默认 2；驱动气泡复习区+提炼弹窗复习区词条数）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.161.2：知识卡片数量（知识库 ⚙ 设置，默认 1 保持现状；驱动气泡复习区+提炼弹窗复习区卡片数）
   private textControllers: Map<string, TextController> = new Map(); // 每个 Text 独立 controller（关闭选择菜单用）
@@ -4382,77 +4372,9 @@ export struct ChatPage {
     if (this.knowledgeImageUri.length === 0) {
       return;
     }
-    this.imageViewerImages = [this.knowledgeImageUri];
-    this.imageViewerIndex = 0;
-    this.imageViewerVisible = true;
-  }
-
-  // ★ 0.246.0：保存当前查看图片（免权限走 DocumentViewPicker 系统保存对话框 + fileIo 写入；
-  //   data URI 解 base64，file:// 沙箱路径直读；三端统一入口——PC 右键 / 触摸长按都进这一条链）
-  async saveViewerImage(): Promise<void> {
-    const src = this.imageViewerImages[this.imageViewerIndex] ?? '';
-    if (src.length === 0) {
-      return;
-    }
-    try {
-      let data: ArrayBuffer;
-      if (src.startsWith('data:image')) {
-        const b64 = src.substring(src.indexOf(',') + 1);
-        data = buffer.from(b64, 'base64').buffer;
-      } else {
-        const file = fileIo.openSync(src, fileIo.OpenMode.READ_ONLY);
-        const stat = fileIo.statSync(file.fd);
-        data = new ArrayBuffer(stat.size);
-        fileIo.readSync(file.fd, data);
-        fileIo.closeSync(file);
-      }
-      const opt = new picker.DocumentSaveOptions();
-      opt.newFileNames = [`DAGAI_${Date.now()}.jpg`];
-      const res = await new picker.DocumentViewPicker().save(opt);
-      if (res.length > 0) {
-        const out = fileIo.openSync(res[0], fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
-        fileIo.writeSync(out.fd, data);
-        fileIo.closeSync(out);
-        this.showToastSafe('图片已保存');
-      }
-    } catch (err) {
-      this.showToastSafe('保存取消或失败');
-    }
-  }
-
-  // ★ 0.247.1：查看器保存菜单卡（PC 右键 viewerSaveMenu / 触摸长按浮层同款）——深色卡+品牌紫竖条+白字
-  //   +阴影，替换 0.246.0 素底紫字丑版（用户拍板「右击保存按钮很难看」）；点击保存并收起
-  @Builder
-  viewerMenuCard() {
-    Row({ space: 8 }) {
-      Column() {
-        Blank()
-      }
-      .width(4)
-      .height(18)
-      .borderRadius(2)
-      .backgroundColor(this.theme.brandPrimary)
-      Text('保存图片')
-        .fontSize(15)
-        .fontColor(this.theme.textPrimary)
-        .fontFamily(FONT_INTER)
-    }
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: 14, right: 20, top: 12, bottom: 12 })
-    .backgroundColor(this.theme.surfaceNode)
-    .borderRadius(RADIUS_CONTROL)
-    .border({ width: 1, color: this.theme.strokeCard })
-    .shadow({ radius: 16, color: this.theme.shadowColor, offsetX: 0, offsetY: 4 })
-    .onClick(() => {
-      this.viewerMenuVisible = false;
-      this.saveViewerImage();
-    })
-  }
-
-  // ★ 0.247.1：查看器保存菜单（bindContextMenu RightClick——PC 右键触发；卡样式与触摸长按浮层同款）
-  @Builder
-  viewerSaveMenu() {
-    this.viewerMenuCard()
+    this.imgViewer.images = [this.knowledgeImageUri];
+    this.imgViewer.index = 0;
+    this.imgViewer.visible = true;
   }
 
 
@@ -4797,9 +4719,9 @@ export struct ChatPage {
       return;
     }
     const idx = allImages.indexOf(clickedUrl);
-    this.imageViewerImages = allImages;
-    this.imageViewerIndex = idx >= 0 ? idx : 0;
-    this.imageViewerVisible = true;
+    this.imgViewer.images = allImages;
+    this.imgViewer.index = idx >= 0 ? idx : 0;
+    this.imgViewer.visible = true;
   }
 
   addBubble(carryImages: string[] = [], carryText: string = '', carryQuote: string = ''): void {
@@ -5254,8 +5176,8 @@ export struct ChatPage {
   // ★ 0.159：返回逻辑统一入口——顶栏自定义返回按钮与系统返回手势（onBackPressed）共用；
   // 有弹窗打开时逐个关闭并返回 true（消费返回事件），全关时返回 false（由调用方执行导航）
   handleBack(): boolean {
-    if (this.imageViewerVisible) {
-      this.imageViewerVisible = false; // 图片预览（0.120）
+    if (this.imgViewer.visible) {
+      this.imgViewer.visible = false; // 图片预览（0.120）
       return true;
     }
     if (this.wordFolderPickerVisible) {
@@ -5877,9 +5799,9 @@ export struct ChatPage {
                                              .objectFit(ImageFit.Contain)
                                              .margin({ right: 4 })
                                              .onClick(() => {
-                                               this.imageViewerImages = getTitleImages(card);
-                                               this.imageViewerIndex = 0;
-                                               this.imageViewerVisible = true;
+                                               this.imgViewer.images = getTitleImages(card);
+                                               this.imgViewer.index = 0;
+                                               this.imgViewer.visible = true;
                                              })
                                          }
                                          Scroll() {
@@ -5935,9 +5857,9 @@ export struct ChatPage {
                                               .objectFit(ImageFit.Contain)
                                               .margin({ right: 4 })
                                               .onClick(() => {
-                                                this.imageViewerImages = getCardImages(card);
-                                                this.imageViewerIndex = 0;
-                                                this.imageViewerVisible = true;
+                                                this.imgViewer.images = getCardImages(card);
+                                                this.imgViewer.index = 0;
+                                                this.imgViewer.visible = true;
                                               })
                                           }
                                           Scroll() {
@@ -6369,9 +6291,9 @@ export struct ChatPage {
                   //   openImageViewer 只收集已发送消息的图，待发图走它=静默 return 没反应；
                   //   改为直接以 pendingImages 开查看器（同 openKnowledgeImagePreview 模式）
                   .onClick(() => {
-                    this.imageViewerImages = [...this.pendingImages];
-                    this.imageViewerIndex = index;
-                    this.imageViewerVisible = true;
+                    this.imgViewer.images = [...this.pendingImages];
+                    this.imgViewer.index = index;
+                    this.imgViewer.visible = true;
                   })
                 // ★ 0.246.0：删除钮对齐 UI_GUIDELINES 统一删除控件（用户拍板「红 × 太难看」）——
                 //   品牌紫圆钮+白色 trash.svg 回收站图标（同知识库/单词库滑出删除面板设计语言），
@@ -7150,9 +7072,9 @@ export struct ChatPage {
                             .objectFit(ImageFit.Contain)
                             .margin({ right: 4 })
                             .onClick(() => {
-                              this.imageViewerImages = getTitleImages(card);
-                              this.imageViewerIndex = 0;
-                              this.imageViewerVisible = true;
+                              this.imgViewer.images = getTitleImages(card);
+                              this.imgViewer.index = 0;
+                              this.imgViewer.visible = true;
                             })
                         }
                        Scroll() {
@@ -7184,9 +7106,9 @@ export struct ChatPage {
                               .objectFit(ImageFit.Contain)
                               .margin({ right: 4 })
                               .onClick(() => {
-                                this.imageViewerImages = getCardImages(card);
-                                this.imageViewerIndex = 0;
-                                this.imageViewerVisible = true;
+                                this.imgViewer.images = getCardImages(card);
+                                this.imgViewer.index = 0;
+                                this.imgViewer.visible = true;
                               })
                           }
                           Scroll() {
@@ -7350,89 +7272,10 @@ export struct ChatPage {
           })
         }
 
-        // 全屏图片浏览器
-        // ★ 0.246.0 曾升级缩放查看器（捏合/双击/滚轮/放大平移，后续 0.247.1/0.247.4/0.249.2 三轮调参）
-        //   ——★ 0.249.3 用户拍板整体回滚：放大体验不佳、使用场景少，回归 Swiper+× 原始形态；
-        //   保留保存能力（PC 右键菜单 / 手机+Pad 触摸长按菜单），并修「触摸长按菜单跳不出来」：
-        //   ①缩放手势全删后 Image 手势只剩长按+单击（捏合/平移/轴事件识别竞争全部消失）
-        //   ②补 draggable(false)——Image 默认可拖拽，系统拖拽识别器会抢触摸长按（嫌疑源）
-        if (this.imageViewerVisible) {
-          Stack() {
-            Swiper() {
-              ForEach(this.imageViewerImages, (url: string) => {
-                Image(url)
-                  .objectFit(ImageFit.Contain)
-                  .width('100%')
-                  .height('100%')
-                  .draggable(false)
-                  .gesture(
-                    // ★ 0.247.1：触摸长按 500ms 弹保存菜单（手机/Pad）；★ 0.249.3 缩放回滚后无手势竞争
-                    LongPressGesture({ duration: 500 })
-                      .onAction(() => {
-                        this.viewerMenuVisible = true;
-                      })
-                  )
-                  .gesture(
-                    // ★ 0.249.3：单击即关（双击缩放已回滚，无需 320ms 延迟判定）；菜单开着=先收菜单
-                    TapGesture({ count: 1 })
-                      .onAction(() => {
-                        if (this.viewerMenuVisible) {
-                          this.viewerMenuVisible = false; // 菜单开着点图=收菜单，不关查看器
-                          return;
-                        }
-                        this.imageViewerVisible = false;
-                      })
-                  )
-                  .bindContextMenu(this.viewerSaveMenu, ResponseType.RightClick)
-              }, (url: string) => url)
-            }
-            .index(this.imageViewerIndex)
-            .indicator(true)
-            .backgroundColor(Color.Black)
 
-            Button('×')
-              .fontSize(24)
-              .fontColor(this.theme.textPrimary)
-              .backgroundColor(Color.Transparent)
-              .position({ x: 20, y: 20 })
-              .onClick(() => {
-                this.imageViewerVisible = false;
-              })
-
-            // ★ 0.247.1：触摸长按菜单浮层（与 PC 右键 viewerSaveMenu 同款卡）——底部居中弹出，点外收起
-            if (this.viewerMenuVisible) {
-              Column() {
-                Column() {
-                  Blank()
-                }
-                .width('100%')
-                .layoutWeight(1)
-                this.viewerMenuCard()
-              }
-              .width('100%')
-              .height('100%')
-              .alignItems(HorizontalAlign.Center)
-              .padding({ bottom: 140 })
-              .onClick(() => {
-                this.viewerMenuVisible = false;
-              })
-            }
-          }
-          .width('100%')
-          .height('100%')
-          .backgroundColor(Color.Black)
-          .onClick(() => {
-            this.imageViewerVisible = false;
-          })
-          // ★ 新增：右滑手势关闭图片预览（0.120）
-          .gesture(
-            PanGesture({ direction: PanDirection.Horizontal })
-              .onActionEnd((event: PanGestureEvent) => {
-                if (event.offsetX > 30) { // 右滑超过30vp关闭预览
-                  this.imageViewerVisible = false;
-                }
-              })
-          )
+        // 全屏图片浏览器（★ 拆分：独立 ImageViewer 组件——store 共享态驱动，右键/长按保存菜单内聚）
+        if (this.imgViewer.visible) {
+          ImageViewer()
         }
 
         // ★ 0.145：翻译浮窗（替代原长按菜单/删除确认/文本预览三个二级弹窗）
@@ -7654,9 +7497,9 @@ export struct ChatPage {
                             .objectFit(ImageFit.Contain)
                             .margin({ right: 4 })
                             .onClick(() => {
-                              this.imageViewerImages = getTitleImages(card);
-                              this.imageViewerIndex = 0;
-                              this.imageViewerVisible = true;
+                              this.imgViewer.images = getTitleImages(card);
+                              this.imgViewer.index = 0;
+                              this.imgViewer.visible = true;
                             })
                         }
                        Scroll() {
@@ -7686,9 +7529,9 @@ export struct ChatPage {
                             .objectFit(ImageFit.Contain)
                             .margin({ right: 4 })
                             .onClick(() => {
-                              this.imageViewerImages = getCardImages(card);
-                              this.imageViewerIndex = 0;
-                              this.imageViewerVisible = true;
+                              this.imgViewer.images = getCardImages(card);
+                              this.imgViewer.index = 0;
+                              this.imgViewer.visible = true;
                             })
                         }
                         Scroll() {
