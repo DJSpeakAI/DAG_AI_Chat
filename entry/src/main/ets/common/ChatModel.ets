@@ -1858,6 +1858,9 @@ export function maybeAutoShowSignIn(): void {
 // 首登签到引导判定（丙方案）：从未引导过 && 从未签过 && 登录态已建立 → 弹一次并打标志。
 //   卸载重装清 PersistenceV2 沙箱 → guideShown 清零 → 重装后首次登录必弹（验收标准）。
 //   挂 stampFreeTrialOnLogin 内=四登录入口全覆盖（Index.doLogin/Index 补查/BillingPage/边栏头像，0.217.2 铁律）
+// ★ 0.299.1：前置云服务门卫（0.293.0 SP 铁律第 4 条——签到类弹窗只在云服务已开通时弹，用户实测报
+//   「云同步还没就绪签到就弹出来了」）；gate 未就绪不置 guideShown（不消耗唯一机会）——gate ready 后
+//   由 maybeAutoShowSignIn 每日首开机制兜底补弹（今日未签+今日未弹过 → 必弹 SignInDialog），功能不丢。
 function maybeShowSignInGuide(): void {
   const store = connectSignIn();
   if (store.guideShown || store.signDates.length > 0) {
@@ -1866,6 +1869,9 @@ function maybeShowSignInGuide(): void {
   const account = connectHuaweiAccount();
   if (!account.isLoggedIn) {
     return;
+  }
+  if (!siyiGateReady()) {
+    return; // ★ 0.299.1：云服务未就绪不弹（含未登录/开关未开/权限未授/首拉未完成——防账本未对齐时发 SP）
   }
   store.guideShown = true; // 弹即置标志——只弹一次
   connectSignInDialog().visible = true;

@@ -28,6 +28,11 @@
 - 测试台交互双轨：用户自用=双击桌面「启动测试台.sh」全自动；AI 驱动=对话里说跑什么，AI 全自动起查盯报；唯一人工=华为授权弹窗
 
 ## PENDING 待办与待验收
+**★ 0.299.1 五 bug 排查链（bug1/3/4/5 待现场采集——用户复现时 AI 同步 hilog 抓日志）**：
+- **bug1 SP 不同步**（181 主账号：一台 SP=0 另一台可领首日签到=账本分裂）+**bug5 登录态每次冷启动丢**（所有设备侧边栏显示未登录）：两 bug 疑同源。已排除：logout 外无人清 isLoggedIn/EntryAbility 冷启链无 loadContent 前 connect/卡片进程 import 链完全隔离。采集=复现时 `hdc -t <dev> shell hilog | grep -iE 'persistence error|DagChat'`（notifyOnError 有日志钩子）。剩余嫌疑：水合竞态/云下行覆盖。
+- **bug3 登录新账号云端下两个幽灵根气泡、删除无效**：删除链代码正常（recordNodeTomb 显式墓碑+tombstonedIds 防复活 0.230.1 已修）；未找到默认根补种逻辑；需看气泡实际内容+云端行。与旧 PENDING「僵尸气泡清污」疑同族。
+- **bug4 桌面卡片「继续复习」pill 点了完全没反应**（用户确认=widget 非 app 完成页；词库/知识库两模式同坏）：卡片端 sendContinue/gate（500ms 防抖）正常；handleWidgetContinue 逻辑正常；断点疑在 call 通道中段（系统 form_event_adapter 拉起主进程/EntryAbility Callee 投递）。已排除：KEEP_BACKGROUND_RUNNING 在位、Profile ACL（0.255 时同 ACL call 正常）、0.299.x 改动未触 call 链。采集=点 pill 时 `hdc shell hilog | grep -iE 'form|widgetContinue|FormMgr'`。
+
 **软著遗留**：提交版锁定 0.235.0（versionCode 1000260，commit be9669d）；git 快照分支 v0.235（⚠️ 推 GitHub 失败 publickey，待用户手动 `git push origin v0.235`）；生成脚本可复用 `/data/storage/el2/base/temp/deveco/pdfwork/`。
 **★ 0.293.0 SiyiGate 待装机验收（四场景）**：①一端签到→三端均显示已签；②手机卸载重装登录 181→首拉后 SP=云端值不重发 200w 不弹礼包；③关系统云空间开关→发消息弹引导；④新账号→首拉后弹「新用户礼包」仪式感。三台已装 0.293.0。
 **★ IAP 退款对账云函数方案（上架前必做）**：AGC 云函数收 REFUND_TRANSACTION→Cloud DB 记退款单→客户端三时机拉退款标记自动核销；云函数须立即返 200+幂等；配套服务端七年 refunded 对账 API。详见 MEMORY_HISTORY 0.291.0/0.290.1 行。
@@ -45,6 +50,7 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.299.1|✅五 bug 首轮修复（bug2 实锤已修：maybeShowSignInGuide 加 siyiGateReady 守卫——0.293.0 SP 铁律第4条补漏，云同步未就绪不再弹签到引导；弹窗职责由 maybeAutoShowSignIn 每日机制兜底不丢功能）；⚠️bug1/3/4/5 待现场采集（见 PENDING 排查链）|
 |0.299.0|✅每日复习提醒预埋（后台代理提醒，app 被杀也每天按时响）：新 utils/ReminderUtil.ets（refreshReviewReminder 单入口=cancel 旧+publish 新周期闹钟 daysOfWeek 全选永续；文案双态=未完成「约N条待复习」/当日完成「好习惯+1」；1700002 全链静默）+common/ReviewReminderStore.ets（key 'review-reminder-v1'：on/hour/minute/reminderId/lastDoneDate）+ReviewPage ⚙ 新增开关+19~22 时段段选+两处 finished 挂 markReminderDone+EntryAbility.onBackground 刷新+module.json5 声明 PUBLISH_AGENT_REMINDER（normal+system_grant）。**⚠️权益待用户按桌面《代理提醒权益申请-手把手操作手册》去 AGC 申请（8 工作日；教育类+背单词=官方点名场景）——通过后必须①勾选开关保存②重新生成 Profile+手动签名；代码零改动权益到即生效**（验证=开开关调系统时间至提醒时刻看通知）。取舍：周期闹钟而非华为建议滚动单日（滚动断档违背天天提醒初衷；周期无法单日静默→完成态转正反馈文案，多邻国 streak 同款）。全案 docs/0.165+/0.299.0；key 待补录 redlineKeys|
 |0.296.0|✅首启外观弹窗点选即预览（ThemeChooseDialog 卡片 onClick 即调 applyMode persist=false 所见即所得，落盘+角标仍由主按钮 chooseThemeMode 统一执行防未确认预览落盘；GSD 外观卡本就点选即生效无需改）；版本同步 0.292.1 起两处制（app.json5+GSD）|
 |0.295.0|✅ChatPage 结构性拆分三轮重构（用户拍板方案 B 垂直拆分"让后面 AI 更好 coding"，9378→8235 行零业务改动）：R1 类型常量层 ChatPageTypes+解析纯函数层 ChatMdParser+WaitingDots/CodeBlockView 独立件；R2 FolderPickerDialogs（Word/Card/Quote 三弹窗 @ComponentV2+@Event 桥接=0.156 模式）；R3 ImageViewer（AppStorageV2 store 桥=GlobalSettingsSharedStore 模式）。⚠️教训：sed 删块边界差一行→孤立括号全文件级联错（0.221.6 前科）；放大弹窗（codeZoom/tableZoom）深耦划词 SelectionToolbar 体系（0.285.x 敏感区）本轮判定不拆；**深水区遗留（新会话+装机回归配合）：build 内 @Builder 消息渲染链/TTS 状态机/知识卡编辑弹窗（提炼链交叉）/GSD 3860/KnowledgeBankPage 3812**|
@@ -77,3 +83,4 @@
 ## 全局约束增补（2026-10-22 后新增条目续编于此）
 
 18. **★ AGC 对话式 API 通道（2026-10-22 建，凭证+私钥均在工程根不入 git）**：skill `hmos-connect-api-cli-skill`（`~/.local/share/deveco/skills/`，内嵌 CLI 免 npm）+`.env`（AGC_AUTH_MODE=service_account + AGC_SA_CREDENTIALS 指向**开发者级**私钥 `1194703931792684689779private.json`——项目级凭证 403 不够用，connect API 须开发者级；应用级 OAuth 凭证是应用侧另一套）。调用：`node <skill>/scripts/connect-api-cli.js <命令>`（project list / provision cert-list / provision profile-list -a 6917618685526149144 等，详见 skill references/）。现资产：debug 证书+调试 Profile（4 设备+READ_PASTEBOARD ACL）2027-10-10 到期；release 证书+发布 Profile 2029-10-22。**代理提醒权益批下来后用本通道重建 Profile**（skill 无「开放能力管理」申请接口——权益申请只能用户网页提交，桌面手册在）。
+19. **本机 grep 为 busybox 版：交替匹配必须 -E "a|b"，\\| 语法静默失效零匹配**（0.299.1 排查时三度误判"函数消失"教训——零匹配先怀疑 grep 语法再看代码）。
