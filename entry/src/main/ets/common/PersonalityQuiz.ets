@@ -1,6 +1,8 @@
 // ============================================================
 // PersonalityQuiz.ets — ★ 0.288.0 性格测试（15 题混合穿插）
 //   ★ 0.290.0 性格测试 2.0：封闭三选一 → 开放题 + AI 评阅画像（WP1）。
+//   ★ 0.292.1 性格测试 3.0（用户拍板）：开放题全部撤除，回归纯选择题——
+//   12 单选 + 3 多选（q3/q11/q15），零文本输入；AI 评阅链路保留（输入=所选选项文案拼接）。
 //   产品定位：显式性格底色 → 转译成画像行灌入记忆引擎（ProfileModel 管道），
 //   与隐式画像观察互补（测试=底色先验/冷启动解药，观察=日常动态修正）。
 //   入口：气泡树画布左下角「信号灯」呼吸圆点（做完消失）；断点续做；
@@ -9,8 +11,9 @@
 // 存储（PersistenceV2 key 'personality-quiz-v1'，发布后禁改；Schema 铁律只许尾部追加）：
 //   - answers：旧封闭题字母 JSON 数组（'a'|'b'|'c'）——★ 0.290.0 起只读不写（老用户兼容评阅映射源）
 //   - claimed / done / completedAt：SP 节点与完成标记
-//   - answerTexts：★ 0.290.0 尾部追加——开放题答案文本 JSON 数组（按题序，Q2 审批裁决：不动 answers）
+//   - answerTexts：★ 0.290.0 尾部追加——开放题答案文本 JSON 数组（★ 0.292.1 起停止写入，已答数据保留兼容评阅）
 //   - profileWritten：★ 0.290.0 尾部追加——评阅结果已写入画像标记（幂等第二道闸，done 后仍防重写）
+//   - choiceAnswers：★ 0.292.1 尾部追加——选择题答案 JSON 数组（元素=选中字母小写升序拼接串，如 'a'/'ac'/'ace'，按题序）
 //
 // 评阅链路（0.290.0）：15 题答完 → 全部答案一次性送轻模型隐式评阅（implicit:true
 //   不扣用户 SP）→ 12 维画像行 → appendObservation 管道写入；失败/超时 25s → 本地
@@ -32,19 +35,20 @@ import { QUIZ_REVIEW_PROMPT } from './Prompts';
 
 // ------------------------------------------------------------
 // 题目数据（15 题，题型穿插：相邻两题永不同型）
-// ★ 0.290.0：题干开放化（WP1 任务书 2.1）——options 保留（老用户字母答案评阅映射 +
-//   本地兜底文案源），新答题流一律走 answerTexts 自由文本。
+// ★ 0.292.1 性格测试 3.0：全部封闭式选择题（12 单选 + 3 多选 multi:true），
+//   题干零开放表述、答案零文本输入；options 同为老用户字母映射与本地兜底文案源。
 // ------------------------------------------------------------
 export interface QuizOption {
-  label: string; // 'A' / 'B' / 'C'
+  label: string; // 'A' / 'B' / 'C' / 'D' / 'E'
   text: string;
 }
 
 export interface QuizQuestion {
   index: number;   // 1~15
-  tag: string;     // 题型徽章（情境题/自评题/二选一/反应题/追问题/场景题）
+  tag: string;     // 题型徽章（情境题/自评题/多选题/反应题/频率题/行为追问题）
   question: string;
   options: QuizOption[];
+  multi: boolean;  // ★ 0.292.1：true=多选（可选项≥4，至少选 1 项）；false=单选
 }
 
 export const QUIZ_TOTAL: number = 15;
@@ -59,6 +63,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 1, tag: '情境题',
     question: '刚学完一个新概念，你接下来通常会做什么？',
+    multi: false,
     options: [
       opt('A', '马上找道题试试手'),
       opt('B', '再琢磨琢磨它为什么成立'),
@@ -68,6 +73,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 2, tag: '自评题',
     question: '看长文章或长视频时，你的习惯是什么？',
+    multi: false,
     options: [
       opt('A', '讲得越深越爽，细节都想看'),
       opt('B', '先看结论，感兴趣的再深挖'),
@@ -75,17 +81,21 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
     ]
   },
   {
-    index: 3, tag: '二选一开放',
-    question: '如果只能跟一个老师学，你希望 TA 怎么讲课？',
+    index: 3, tag: '多选题',
+    question: '你希望老师或 AI 讲课时，多用哪些方式帮你理解？（可多选）',
+    multi: true,
     options: [
-      opt('A', '满课例子和故事，原理自己悟'),
-      opt('B', '满课原理和推导，例子自己找'),
-      opt('C', '看心情，谁讲得好跟谁')
+      opt('A', '例子和故事'),
+      opt('B', '原理和推导'),
+      opt('C', '大白话类比打比方'),
+      opt('D', '考考我的小问题'),
+      opt('E', '动手练习')
     ]
   },
   {
     index: 4, tag: '情境题',
     question: '一道题做错了，你心里第一反应是什么？',
+    multi: false,
     options: [
       opt('A', '有意思，错在哪了？'),
       opt('B', '有点烦，但能接着来'),
@@ -94,7 +104,8 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   },
   {
     index: 5, tag: '频率题',
-    question: '定了学习计划之后，你一般执行得怎样？为什么？',
+    question: '定了学习计划之后，你一般执行得怎样？',
+    multi: false,
     options: [
       opt('A', '说几点就几点，很稳'),
       opt('B', '大体跟上，偶尔飘'),
@@ -104,6 +115,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 6, tag: '反应题',
     question: '读长文时中途插入一个「考考你」小问题，你的真实感受是？',
+    multi: false,
     options: [
       opt('A', '来劲，正好检验自己'),
       opt('B', '还行，会停下来想想'),
@@ -113,6 +125,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 7, tag: '自评题',
     question: '刷到反常识的说法（比如「努力反而有害」），你通常会怎么做？',
+    multi: false,
     options: [
       opt('A', '眼睛一亮，想弄清楚怎么回事'),
       opt('B', '有点好奇，看心情深究'),
@@ -122,6 +135,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 8, tag: '情境题',
     question: '同样 3000 字的长文，什么样的写法最让你受不了？',
+    multi: false,
     options: [
       opt('A', '废话多，绕来绕去不到重点'),
       opt('B', '太干太密，没有喘气的地方'),
@@ -129,8 +143,9 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
     ]
   },
   {
-    index: 9, tag: '情境题',
+    index: 9, tag: '自评题',
     question: '面对完全陌生的硬核领域，你觉得自己能学到什么程度？',
+    multi: false,
     options: [
       opt('A', '给我时间就能啃下来'),
       opt('B', '能懂个大概吧'),
@@ -140,6 +155,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 10, tag: '反应题',
     question: '文中出现「简单说：响应式=看到你走近，我换一套站姿」这种大白话翻译，你什么感受？',
+    multi: false,
     options: [
       opt('A', '很棒，帮我消化'),
       opt('B', '偶尔来一次挺好'),
@@ -147,17 +163,20 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
     ]
   },
   {
-    index: 11, tag: '自评题',
-    question: '学有所成的时候，你最想干什么？',
+    index: 11, tag: '多选题',
+    question: '学有所成的时候，你通常会做什么？（可多选）',
+    multi: true,
     options: [
       opt('A', '找人分享出去，嘚瑟一下'),
       opt('B', '自己心里默默爽'),
-      opt('C', '无感，学完就完了')
+      opt('C', '记录下来，看看成长足迹'),
+      opt('D', '无感，直接开下一个')
     ]
   },
   {
     index: 12, tag: '行为追问题',
     question: 'AI 给了你一个能用但「知其然」的答案，你会怎么办？',
+    multi: false,
     options: [
       opt('A', '追问到底，非要搞懂为什么'),
       opt('B', '时间够就深挖，不够就算'),
@@ -166,7 +185,8 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   },
   {
     index: 13, tag: '情境题',
-    question: '深夜独自学习卡壳了，你更希望听到什么话？为什么？',
+    question: '深夜独自学习卡壳了，你更希望听到什么话？',
+    multi: false,
     options: [
       opt('A', '「这题确实难，慢慢来」——懂我的学长'),
       opt('B', '「你可以的，冲！」——打气的教练'),
@@ -176,6 +196,7 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
   {
     index: 14, tag: '行为追问题',
     question: '连续三次复习都记不住同一个知识点，你会怎么想？',
+    multi: false,
     options: [
       opt('A', '正常，再来一遍就是了'),
       opt('B', '有点泄气，换个方法再试'),
@@ -183,12 +204,15 @@ export const PERSONALITY_QUESTIONS: QuizQuestion[] = [
     ]
   },
   {
-    index: 15, tag: '场景题',
-    question: '描述一下你理想中一次高质量学习的过程。',
+    index: 15, tag: '多选题',
+    question: '你理想中一次高质量的学习，是什么样的？（可多选）',
+    multi: true,
     options: [
       opt('A', '一头扎进去，两小时不出来'),
       opt('B', '半小时一段，中间起来走走'),
-      opt('C', '碎片时间刷几条，积少成多')
+      opt('C', '碎片时间刷几条，积少成多'),
+      opt('D', '边学边做题练手'),
+      opt('E', '学完讲给别人听')
     ]
   }
 ];
@@ -202,8 +226,9 @@ export class PersonalityQuizStore {
   @Trace claimed: number = 0;    // 已领取 SP 奖励节点数 0~3（幂等防重发）
   @Trace done: boolean = false;  // 15 题全部完成（信号灯消失条件；0.290.0 起不等评阅——评阅异步）
   @Trace completedAt: number = 0;
-  @Trace answerTexts: string = '[]';      // ★ 0.290.0 尾部追加：开放题答案文本 JSON 数组（按题序）
+  @Trace answerTexts: string = '[]';      // ★ 0.290.0 尾部追加：开放题答案文本（0.292.1 起停写，已答保留兼容）
   @Trace profileWritten: boolean = false; // ★ 0.290.0 尾部追加：评阅结果已写入画像（幂等第二道闸）
+  @Trace choiceAnswers: string = '[]';    // ★ 0.292.1 尾部追加：选择题答案（元素=字母小写升序拼接串，如 'ac'）
 }
 
 export function connectPersonalityQuiz(): PersonalityQuizStore {
@@ -236,7 +261,7 @@ export function getQuizAnswerTexts(store: PersonalityQuizStore): string[] {
   return [];
 }
 
-/** 追加一题开放题答案文本，返回追加后已答总数 */
+/** 追加一题开放题答案文本，返回追加后已答总数（0.292.1 起仅兼容旧数据路径，新答题流不走此函数） */
 export function recordQuizAnswerText(store: PersonalityQuizStore, text: string): number {
   const arr = getQuizAnswerTexts(store);
   arr.push(text.trim());
@@ -244,9 +269,30 @@ export function recordQuizAnswerText(store: PersonalityQuizStore, text: string):
   return arr.length;
 }
 
-/** 已答总数（旧字母进度 + 新开放题文本进度相加——老用户从 letters.length 题起续答开放题） */
+/** 读取选择题答案（坏数据兜底空数组） */
+export function getQuizChoices(store: PersonalityQuizStore): string[] {
+  try {
+    const arr = JSON.parse(store.choiceAnswers) as string[];
+    if (arr !== undefined && arr !== null) {
+      return arr;
+    }
+  } catch (_e) {
+    // 坏数据兜底：视同未答
+  }
+  return [];
+}
+
+/** 追加一题选择题答案（letters=选中字母小写升序拼接串，如 'a'/'ac'），返回追加后选择题已答数 */
+export function recordQuizChoice(store: PersonalityQuizStore, letters: string): number {
+  const arr = getQuizChoices(store);
+  arr.push(letters);
+  store.choiceAnswers = JSON.stringify(arr);
+  return arr.length;
+}
+
+/** 已答总数（旧字母进度 + 开放题文本进度 + 选择题进度三段相加——老用户从已答处无缝续答） */
 export function quizAnswerTotal(store: PersonalityQuizStore): number {
-  return getQuizAnswers(store).length + getQuizAnswerTexts(store).length;
+  return getQuizAnswers(store).length + getQuizAnswerTexts(store).length + getQuizChoices(store).length;
 }
 
 /** 纯函数：已答 total 题对应的应领节点数（5 题=1 / 10 题=2 / 15 题=3，上限 3） */
@@ -273,7 +319,8 @@ export function claimQuizSp(store: PersonalityQuizStore): number {
 }
 
 // ------------------------------------------------------------
-// ★ 0.290.0 评阅输入组装：15 题答案（answerTexts 优先，老用户字母映射回三选一文案补位）
+// ★ 0.292.1 评阅输入组装（三段拼接）：前段=老字母题映射文案；中段=0.290.x 开放题
+//   文本原文；尾段=选择题选中项文案拼接（多选顿号连接）。未答=空串（评阅判无效）。
 // ------------------------------------------------------------
 function letterToOptionText(qIdx0: number, letter: string): string {
   if (qIdx0 < 0 || qIdx0 >= PERSONALITY_QUESTIONS.length) {
@@ -285,18 +332,39 @@ function letterToOptionText(qIdx0: number, letter: string): string {
   return '';
 }
 
+/** 选择题答案串（'ac'）→ 该题选中项文案拼接（顿号连接；越界字母忽略） */
+function choiceToOptionText(qIdx0: number, joined: string): string {
+  if (qIdx0 < 0 || qIdx0 >= PERSONALITY_QUESTIONS.length) {
+    return '';
+  }
+  const opts = PERSONALITY_QUESTIONS[qIdx0].options;
+  const parts: string[] = [];
+  for (let i = 0; i < joined.length; i++) {
+    const code = joined.charCodeAt(i) - 97; // 'a'=0
+    if (code >= 0 && code < opts.length) {
+      parts.push(opts[code].text);
+    }
+  }
+  return parts.join('、');
+}
+
 export function buildReviewInputs(store: PersonalityQuizStore): string[] {
-  const texts = getQuizAnswerTexts(store);
   const letters = getQuizAnswers(store);
+  const texts = getQuizAnswerTexts(store);
+  const choices = getQuizChoices(store);
   const letterCount = letters.length;
+  const textCount = texts.length;
   const out: string[] = [];
   for (let i = 0; i < QUIZ_TOTAL; i++) {
     if (i < letterCount) {
-      // 老用户字母题：映射回三选一文案参与评阅（Q2 审批裁决的兼容路径）
+      // 老用户字母题：映射回选项文案参与评阅（Q2 审批裁决的兼容路径）
       out.push(letterToOptionText(i, letters[i]));
+    } else if (i - letterCount < textCount) {
+      // 0.290.x 开放题文本：原文参与评阅（已答数据保留兼容）
+      out.push(texts[i - letterCount].trim());
     } else {
-      const t = i - letterCount < texts.length ? texts[i - letterCount].trim() : '';
-      out.push(t); // 未答=空串（评阅 prompt 判无效）
+      const c = i - letterCount - textCount;
+      out.push(c < choices.length ? choiceToOptionText(c, choices[c]) : ''); // 未答=空串（评阅判无效）
     }
   }
   return out;

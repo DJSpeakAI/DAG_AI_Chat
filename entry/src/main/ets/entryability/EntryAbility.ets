@@ -23,6 +23,7 @@ import { connectWordBank } from '../utils/WordStoreUtil';
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil';
 import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核心（云函数通道前置）
 import { flushTrackQueue, initTrackContext } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报；★ 0.260.0：模块级 context 注入（ChatModel 发放/消耗收口埋点用）
+import { pullRefundMarks } from '../utils/IapUtil'; // ★ 0.291.0：退款标记云端拉取（启动/回前台静默核销）
 import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
 import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：退后台短时任务续跑摘要头 flush
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
@@ -63,6 +64,9 @@ export default class EntryAbility extends UIAbility {
     this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
     initTrackContext(this.context); // ★ 0.260.0：埋点模块级 context 注入（trackAuto/trackUidAuto/trackFirstAuto）
     initAiStreamGuard(this.context); // ★ 0.251.0：AI 后台保活守卫初始化（长时任务/通知需 UIAbilityContext）
+    // ★ 0.291.0：启动即拉云端退款标记（无包账本=零请求；AGC 未初始化完成/失败均静默，
+    //   onForeground 是主拉取点——冷启动极早期这次碰运气，成则赚到）
+    pullRefundMarks();
     // ★ 0.230.1：0.228.4 临时清洗钩子 wipeCloudRows 已删除（伪墓碑止血改由 initCloudDb 内
     //   一次性幂等清洗接管——正本 server 同步；此入口曾是全量 del 行写入口，数据毁灭地雷拆除）
   }
@@ -341,6 +345,9 @@ export default class EntryAbility extends UIAbility {
     } catch (_e) {
       // 静默（未激活/网络未就绪——下次前台再试）
     }
+    // ★ 0.291.0：回前台拉云端退款标记（**主拉取点**——退款核销白嫖闭环论证：用 SP 必开 app，
+    //   开 app 即拉取核销先于扣费生效；静默无提示，核销结果进账单页时展示）
+    pullRefundMarks();
   }
 
   onBackground(): void {

@@ -24,8 +24,9 @@ import { iap } from '@kit.IAPKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import cloud, { FunctionOptions } from '@hw-agconnect/cloud';
 import { connectSubscription, connectSiyiPoints, grantSiyiSpFromIap, iapSpAmountOf,
-  writeOffRefundedPackage,
+  writeOffRefundedPackage, parseIapPackages,
   IAP_PRODUCT_SP_200W, IAP_PRODUCT_SP_400W } from '../common/ChatModel';
 
 // ── 错误码常量（值=d.ts IAPErrorCode 实测，非凭记忆）──
@@ -266,21 +267,22 @@ export async function recoverPendingPurchases(context: common.UIAbilityContext):
   return recoveredTotal;
 }
 
-// ── ★ 0.289.0 退款自动感知（用户否决手动核销——app 必须自己发现退款）──
-//   queryPurchaseRecords 返回老模型 QueryPurchasesResult.inAppPurchaseDataList（顶层
-//   purchaseToken/purchaseState，实测编译期实锤）——已退款=purchaseState 2；JWS 新格式
-//   revocationTime 双保险。token 命中本地充能包 → writeOffRefundedPackage 自动核销
-//   （剩余 SP 作废、ref=1，用户零操作）。BillingPage 进场即调；退款到账后用户回账单页自动平账
+// ── ★ 0.289.0 退款自动感知 / ★ 0.289.2 按华为官方答复修正 ──
+//   真相（2026-10-22 华为 AI 答复实锤）：①queryPurchaseRecords 已废弃，替代=queryPurchases
+//   ②退款以 JWS payload 的 revocationTime 表达（非 purchaseState=2，那是废弃老模型字段）
+//   ③**已 finishPurchase 发货的消耗型订单不在 queryPurchases 返回范围——纯客户端退款感知
+//   本质不可靠**（官方不承诺），本函数只能兜「未发货即退款」极端场景+沙盒验证；
+//   可靠方案=AGC 云函数收 REFUND_TRANSACTION 通知+服务端七年 refunded 对账（PENDING 上架前实施）
 export async function detectRefundedIapPurchases(context: common.UIAbilityContext): Promise<number> {
   let writtenTotal = 0;
   try {
-    const result = await iap.queryPurchaseRecords(context, {
+    const result = await iap.queryPurchases(context, {
       productType: iap.ProductType.CONSUMABLE,
       queryType: iap.PurchaseQueryType.ALL
     });
     const siyi = connectSiyiPoints();
-    for (let i = 0; i < result.inAppPurchaseDataList.length; i++) {
-      const rec = parsePurchaseRecord(result.inAppPurchaseDataList[i]);
+    for (let i = 0; i < result.purchaseDataList.length; i++) {
+      const rec = parsePurchaseRecord(result.purchaseDataList[i]);
       if (rec === null || rec.purchaseToken.length === 0) {
         continue;
       }
@@ -290,6 +292,78 @@ export async function detectRefundedIapPurchases(context: common.UIAbilityContex
     }
   } catch (_e) {
     // 静默——未登录/网络异常/无记录均为常态
+  }
+  return writtenTotal;
+}
+
+// ── ★ 0.291.0 云端退款标记拉取（可靠退款感知主链路）──
+//   架构（用户拍板 2026-10-22）：华为退款完成 → AGC 云函数 refund-events（HTTP 触发器收
+//   REFUND_TRANSACTION 通知）→ Cloud DB refunds 表（objectId=purchaseToken 幂等）→
+//   **本函数三时机拉取：启动/回前台/进账单页**——用户零操作自动核销（修正初版「用户下拉」傻逼设计）；
+//   白嫖闭环论证：用 SP 必开 app → 开 app 即拉取（1~2s 后台完成）→ 核销先于扣费生效。
+//   云函数未部署/无网=静默 0（不阻塞；detectRefundedIapPurchases 本地查询并存兜底沙盒/未发货场景）。
+//   返回本轮核销作废 SP 总额（>0 时调用方弹「退款已核销」提示）
+const REFUND_FN_NAME = 'refund-events'; // AGC 云函数名（小写中划线——track-events 同款命名铁律）
+
+export async function pullRefundMarks(): Promise<number> {
+  let writtenTotal = 0;
+  try {
+    const siyi = connectSiyiPoints();
+    const pkgs = parseIapPackages(siyi.iapPackages);
+    if (pkgs.length === 0) {
+      return 0; // 无包账本=无充能历史，零请求省配额
+    }
+    const toks: string[] = [];
+    for (let i = 0; i < pkgs.length; i++) {
+      if (pkgs[i].ref !== 1) {
+        toks.push(pkgs[i].tok);
+      }
+    }
+    if (toks.length === 0) {
+      return 0; // 全部已核销，零请求
+    }
+    const payload: Record<string, Object> = {};
+    payload['action'] = 'query';
+    payload['tokens'] = JSON.stringify(toks); // 基础类型传参（track-events 同款铁律）
+    const resp = await cloud.callFunction({ name: REFUND_FN_NAME, params: payload } as FunctionOptions);
+    // getValue() 签名返回 any（SDK d.ts 实锤，ESObject 接住仍被 arkts-no-any-unknown 拍）——
+    // 绕法=stringify 整个响应（responseBody 是运行时自有属性会被序列化），双路径读 refunded
+    // （顶层直读 + responseBody 嵌套读互为兜底；字段防御=0.288 系列多键定式）
+    const raw = JSON.stringify(resp);
+    let refundedRaw = '';
+    if (typeof raw === 'string' && raw.length > 0) {
+      try {
+        const obj = JSON.parse(raw) as Record<string, Object>;
+        const top = obj['refunded'];
+        if (typeof top === 'string') {
+          refundedRaw = top;
+        } else {
+          const nested = obj['responseBody'];
+          if (nested !== undefined && typeof nested === 'object' && nested !== null) {
+            const inner = (nested as Record<string, Object>)['refunded'];
+            if (typeof inner === 'string') {
+              refundedRaw = inner;
+            }
+          }
+        }
+      } catch (_e) {
+        return 0;
+      }
+    }
+    if (refundedRaw.length === 0) {
+      return 0;
+    }
+    let refunded: string[] = [];
+    try {
+      refunded = JSON.parse(refundedRaw) as string[];
+    } catch (_e) {
+      return 0;
+    }
+    for (let i = 0; i < refunded.length; i++) {
+      writtenTotal += writeOffRefundedPackage(siyi, refunded[i]);
+    }
+  } catch (_e) {
+    // 静默——云函数未部署（-1 资源不存在）/未初始化/无网均为常态，不阻塞业务
   }
   return writtenTotal;
 }

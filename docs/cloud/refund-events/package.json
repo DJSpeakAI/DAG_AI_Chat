@@ -1,0 +1,9 @@
+{
+  "name": "refund-events",
+  "version": "1.0.0",
+  "description": "DAG AI Chat IAP refund event receiver + query (0.291.0)",
+  "main": "handler.js",
+  "dependencies": {
+    "@hw-agconnect/cloud-server": "1.0.5"
+  }
+}

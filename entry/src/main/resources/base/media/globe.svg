@@ -1,0 +1,5 @@
+<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none">
+	<circle cx="9" cy="9" r="6.5" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-width="1.5"/>
+	<ellipse cx="9" cy="9" rx="3" ry="6.5" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-width="1.5"/>
+	<path d="M2.5 9h13" stroke="rgb(29,18,48)" stroke-opacity="0.650980413" stroke-linecap="round" stroke-width="1.5"/>
+</svg>

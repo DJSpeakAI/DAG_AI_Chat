@@ -225,9 +225,78 @@ export function buildWebContextBlock(items: WebFetchItem[]): string {
   return parts.join('\n');
 }
 
+// ★ 0.292.0：单 URL 两级瀑布抓取（0.286.1 fetchWebContextForMessage 循环体原样抽出共用——
+//   消息预抓与 FC 工具 open_url 两入口同链路）；ok=false 时 content=中文失败原因
+export async function fetchSingleUrlReadable(url: string,
+  webRenderer?: (url: string) => Promise<string>): Promise<WebFetchItem> {
+  const item: WebFetchItem = { url: url, ok: false, content: '' };
+  // ★ 0.286.1 两级瀑布：静态抓（快 1~2s）→ 正文 < 300 字判定壳 → Web 组件渲染重取（真渲染）
+  let fetchedText = '';
+  try {
+    const page = await fetchWebPageReadable(url);
+    if (page.text.length >= WEB_RENDER_TRIGGER_CHARS || webRenderer === undefined) {
+      // 正文足量（普通网页快通道）或无渲染器（保持旧链路行为）——静态结果直接用
+      fetchedText = formatReadablePage(page);
+    } else {
+      // 壳（SPA/文档站静态 HTML 只有框架）→ Web 组件渲染取 innerText
+      try {
+        const rendered = await webRenderer(url);
+        if (rendered.trim().length >= WEB_RENDER_TRIGGER_CHARS) {
+          fetchedText = clampWebText(rendered);
+        } else if (page.text.trim().length > 0) {
+          // 渲染了但仍短：静态短正文兜底（有总比没有好）
+          fetchedText = `${formatReadablePage(page)}\n（网页可能未完全加载，内容不完整）`;
+        } else {
+          item.ok = false;
+          item.content = '网页需要浏览器渲染，渲染后仍未取得有效正文';
+        }
+      } catch (we) {
+        // 渲染失败：静态短正文兜底，否则报失败
+        if (page.text.trim().length > 0) {
+          fetchedText = `${formatReadablePage(page)}\n（网页可能未完全加载，内容不完整）`;
+        } else {
+          item.ok = false;
+          item.content = we instanceof Error ? we.message : '网页渲染读取失败';
+        }
+      }
+    }
+  } catch (e) {
+    // 静态抓本身失败（超时/HTTP 错）→ 有渲染器再试渲染通道
+    if (webRenderer !== undefined) {
+      try {
+        const rendered = await webRenderer(url);
+        if (rendered.trim().length > 0) {
+          fetchedText = clampWebText(rendered);
+        } else {
+          item.ok = false;
+          item.content = '网页内容为空';
+        }
+      } catch (we2) {
+        item.ok = false;
+        item.content = e instanceof Error ? e.message : '网页读取失败';
+      }
+    } else {
+      item.ok = false;
+      item.content = e instanceof Error ? e.message : '网页读取失败';
+    }
+  }
+  if (fetchedText.length > 0) {
+    const hit = ContentFilter.checkInput(fetchedText);
+    if (hit !== null) {
+      item.ok = false;
+      item.content = '内容未通过本地安全检查，已跳过';
+    } else {
+      item.ok = true;
+      item.content = fetchedText;
+    }
+  }
+  return item;
+}
+
 // 全链入口：检测 → 两级瀑布抓取（静态/壳→Web 渲染）→ 敏感词过滤 → 拼块（单页失败静默记录，不阻断）
 // ★ 0.286.1 webRenderer：壳页/静态失败页的渲染通道（ChatPage 隐形 Web 组件取 innerText），
 //   可缺省——不传时行为与 0.286.0 纯静态链一致（ohosTest/独立调用方兼容）
+// ★ 0.292.0：抓取体抽出 fetchSingleUrlReadable（本函数只保留检测/汇总编排，行为零变化）
 export async function fetchWebContextForMessage(text: string,
   webRenderer?: (url: string) => Promise<string>): Promise<WebFetchSummary> {
   const urls = detectWebUrls(text);
@@ -237,67 +306,7 @@ export async function fetchWebContextForMessage(text: string,
   }
   const items: WebFetchItem[] = [];
   for (let i = 0; i < urls.length; i++) {
-    const item: WebFetchItem = { url: urls[i], ok: false, content: '' };
-    // ★ 0.286.1 两级瀑布：静态抓（快 1~2s）→ 正文 < 300 字判定壳 → Web 组件渲染重取（真渲染）
-    let fetchedText = '';
-    try {
-      const page = await fetchWebPageReadable(urls[i]);
-      if (page.text.length >= WEB_RENDER_TRIGGER_CHARS || webRenderer === undefined) {
-        // 正文足量（普通网页快通道）或无渲染器（保持旧链路行为）——静态结果直接用
-        fetchedText = formatReadablePage(page);
-      } else {
-        // 壳（SPA/文档站静态 HTML 只有框架）→ Web 组件渲染取 innerText
-        try {
-          const rendered = await webRenderer(urls[i]);
-          if (rendered.trim().length >= WEB_RENDER_TRIGGER_CHARS) {
-            fetchedText = clampWebText(rendered);
-          } else if (page.text.trim().length > 0) {
-            // 渲染了但仍短：静态短正文兜底（有总比没有好）
-            fetchedText = `${formatReadablePage(page)}\n（网页可能未完全加载，内容不完整）`;
-          } else {
-            item.ok = false;
-            item.content = '网页需要浏览器渲染，渲染后仍未取得有效正文';
-          }
-        } catch (we) {
-          // 渲染失败：静态短正文兜底，否则报失败
-          if (page.text.trim().length > 0) {
-            fetchedText = `${formatReadablePage(page)}\n（网页可能未完全加载，内容不完整）`;
-          } else {
-            item.ok = false;
-            item.content = we instanceof Error ? we.message : '网页渲染读取失败';
-          }
-        }
-      }
-    } catch (e) {
-      // 静态抓本身失败（超时/HTTP 错）→ 有渲染器再试渲染通道
-      if (webRenderer !== undefined) {
-        try {
-          const rendered = await webRenderer(urls[i]);
-          if (rendered.trim().length > 0) {
-            fetchedText = clampWebText(rendered);
-          } else {
-            item.ok = false;
-            item.content = '网页内容为空';
-          }
-        } catch (we2) {
-          item.ok = false;
-          item.content = e instanceof Error ? e.message : '网页读取失败';
-        }
-      } else {
-        item.ok = false;
-        item.content = e instanceof Error ? e.message : '网页读取失败';
-      }
-    }
-    if (fetchedText.length > 0) {
-      const hit = ContentFilter.checkInput(fetchedText);
-      if (hit !== null) {
-        item.ok = false;
-        item.content = '内容未通过本地安全检查，已跳过';
-      } else {
-        item.ok = true;
-        item.content = fetchedText;
-      }
-    }
+    const item = await fetchSingleUrlReadable(urls[i], webRenderer);
     if (item.ok) {
       summary.okCount += 1;
     } else {
@@ -307,4 +316,99 @@ export async function fetchWebContextForMessage(text: string,
   }
   summary.block = buildWebContextBlock(items);
   return summary;
+}
+
+// ============================================================
+// ★ 0.292.0：联网搜索（FC 工具 search_web 数据源）——抓 Bing 结果页解析前 N 条
+//   零新增 API Key（用户零配置）；后续可升级专业搜索 API（博查/腾讯混元搜索，独立迭代）
+// ============================================================
+
+// 搜索结果条目
+export interface SearchHit {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+// 单轮 search_web 返回条数上限（防 token 爆炸）
+export const WEB_MAX_SEARCH_HITS: number = 5;
+// FC 工具循环轮数上限（防失控多扣 SP；到上限后不再声明 tools，AI 落笔回答）
+export const WEB_MAX_TOOL_ROUNDS: number = 3;
+
+// 纯函数：解析 Bing 结果 HTML（b_algo 条目：第一个链接=标题行链接，首个 <p>=摘要）
+export function extractSearchResults(html: string): SearchHit[] {
+  const hits: SearchHit[] = [];
+  const blocks = html.split('b_algo');
+  for (let i = 1; i < blocks.length && hits.length < WEB_MAX_SEARCH_HITS; i++) {
+    const seg = blocks[i];
+    const linkMatch = seg.match(/<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (linkMatch === null || linkMatch === undefined) {
+      continue;
+    }
+    const url = linkMatch[1];
+    const title = squeezeWhitespace(decodeEntities(linkMatch[2].replace(/<[^>]+>/g, ' '))).substring(0, 100);
+    if (title.length === 0 || url.length === 0) {
+      continue;
+    }
+    let snippet = '';
+    const pMatch = seg.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+    if (pMatch !== null && pMatch !== undefined) {
+      snippet = squeezeWhitespace(decodeEntities(pMatch[1].replace(/<[^>]+>/g, ' '))).substring(0, 160);
+    }
+    hits.push({ title: title, url: url, snippet: snippet });
+  }
+  return hits;
+}
+
+// 搜索结果 → 给模型读的文本块
+export function formatSearchResults(hits: SearchHit[]): string {
+  if (hits.length === 0) {
+    return '（搜索没有返回结果，可换关键词重试或基于已有知识回答并说明未能联网核实）';
+  }
+  const parts: string[] = [];
+  for (let i = 0; i < hits.length; i++) {
+    const h = hits[i];
+    parts.push(`${i + 1}. ${h.title}\n   链接：${h.url}${h.snippet.length > 0 ? `\n   摘要：${h.snippet}` : ''}`);
+  }
+  return parts.join('\n');
+}
+
+// search_web 执行体：GET Bing 结果页 → 解析条目（失败 reject 中文 Error，上层写进 tool 结果防模型瞎编）
+export function searchWeb(query: string): Promise<SearchHit[]> {
+  return new Promise<SearchHit[]>((resolve, reject) => {
+    const req = http.createHttp();
+    const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-hans&count=10`;
+    req.request(searchUrl, {
+      method: http.RequestMethod.GET,
+      header: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      },
+      expectDataType: http.HttpDataType.STRING,
+      connectTimeout: 8000,
+      readTimeout: 12000,
+      usingCache: false
+    }).then((resp: http.HttpResponse) => {
+      req.destroy();
+      if (resp.responseCode < 200 || resp.responseCode >= 300) {
+        reject(new Error(`搜索服务不可用（HTTP ${resp.responseCode}）`));
+        return;
+      }
+      const html = typeof resp.result === 'string' ? resp.result : '';
+      if (html.length === 0) {
+        reject(new Error('搜索服务返回空内容'));
+        return;
+      }
+      resolve(extractSearchResults(html));
+    }).catch((err: BusinessError) => {
+      req.destroy();
+      const msg = `${err.message}`;
+      if (msg.indexOf('timeout') >= 0 || err.code === 2300028) {
+        reject(new Error('搜索请求超时'));
+      } else {
+        reject(new Error(`搜索失败（${msg.substring(0, 40)}）`));
+      }
+    });
+  });
 }

@@ -780,7 +780,7 @@ struct Index {
         }
 
         // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-          Text('v0.290.0') // ★ 0.290.0：司枢模式2.0（规划器+执笔两段式）；更早历史见 MEMORY.md 版本表
+          Text('v0.292.0') // ★ 0.292.0：联网问答（联网胶囊+AI 自主搜索/读网页）；上一版 0.291.4（版本历史详见 MEMORY.md）
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

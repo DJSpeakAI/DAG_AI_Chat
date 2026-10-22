@@ -11,11 +11,12 @@ import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLog
   SignInStore, connectSignIn, siyiBalanceDisplay,
   IAP_PRODUCT_SP_200W, IAP_PRODUCT_SP_400W,
   IapPackage, parseIapPackages, ensureIapPackagesMigrated,
+  freezePackageUntil, REFUND_FREEZE_MS, frozenAvailableSp,
 
   StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
 import { needsAgreement, needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：协议两段门禁（弹窗 Index 根挂载）
-import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases, detectRefundedIapPurchases } from '../utils/IapUtil';
+import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases, detectRefundedIapPurchases, pullRefundMarks } from '../utils/IapUtil';
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
 import { RADIUS_CONTROL, RADIUS_NAV, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
@@ -71,6 +72,13 @@ export struct BillingPage {
           this.purchaseNotice = `检测到已退款的充能包，已自动核销 ${writtenOff / 10000} 万 SP（退款金额以华为订单为准）`;
         }
       });
+      // ★ 0.291.0 云端退款标记拉取（可靠主链路——本地 queryPurchases 查不到已发货消耗型订单）：
+      // 云函数 refund-events 查询命中 → 核销作废；失败静默（云函数未部署=常态）
+      pullRefundMarks().then((writtenOff: number) => {
+        if (writtenOff > 0) {
+          this.purchaseNotice = `该充能包退款已到账，已自动核销 ${writtenOff / 10000} 万 SP（退款金额以华为订单为准）`;
+        }
+      });
     }
   }
 
@@ -121,9 +129,15 @@ export struct BillingPage {
     if (bonusTotal > 0) {
       lines.push(`嘉奖 SP ${bonusTotal.toLocaleString()}（永久）`);
     }
-    const permTotal = Math.max(0, this.siyi.permanentSp - this.siyi.consumedPermanentSp);
+    // ★ 0.291.0：充能行=可用口径（排除退款申请冻结包额度——与 siyiTotalSp/consumeSiyiSp 三处同源，
+    //   防「展示可用但发消息余额不足」矛盾）；冻结额单列说明行
+    const frozen = frozenAvailableSp(this.siyi);
+    const permTotal = Math.max(0, this.siyi.permanentSp - this.siyi.consumedPermanentSp - frozen);
     if (permTotal > 0) {
       lines.push(`充能 SP ${permTotal.toLocaleString()}（永久）`);
+    }
+    if (frozen > 0) {
+      lines.push(`退款处理中 SP ${frozen.toLocaleString()}（锁定不可用）`);
     }
     if (lines.length === 0) {
       return '暂无余额——通过下方途径获取';
@@ -133,7 +147,7 @@ export struct BillingPage {
 
   // ── ★ 0.289.0 充能包账本 ──
   pkgList(): IapPackage[] {
-    ensureIapPackagesMigrated(this.subscription, this.siyi); // 幂等（首进拆包/已拆跳过）
+    ensureIapPackagesMigrated(this.subscription, this.siyi); // 幂等写销旧测试充能账（★ 0.290.2 唯一触发点；上线前随函数一并删除）
     return parseIapPackages(this.siyi.iapPackages);
   }
 
@@ -384,7 +398,12 @@ export struct BillingPage {
                       .fontWeight(600)
                       .fontColor(this.theme.textPrimary)
                     Blank()
-                    if (pkg.ref === 1) {
+                    if (pkg.frozenUntil > Date.now()) {
+                      // ★ 0.291.0 退款申请锁包中——状态标签（不可重复发起；7 天未成功自动解锁恢复可用）
+                      Text(`退款处理中·剩 ${Math.max(1, Math.ceil((pkg.frozenUntil - Date.now()) / 86400000))} 天`)
+                        .fontSize(FONT_SIZE_CAPTION)
+                        .fontColor(this.theme.textTertiary)
+                    } else if (pkg.ref === 1) {
                       Text('已退款')
                         .fontSize(FONT_SIZE_CAPTION)
                         .fontColor(this.theme.textTertiary)
@@ -419,7 +438,7 @@ export struct BillingPage {
                 .backgroundColor(this.theme.surfaceSoft)
                 .border({ width: 1, color: this.theme.strokeCard })
                 .margin({ bottom: 6 })
-              }, (pkg: IapPackage, idx: number) => `${pkg.tok}_${pkg.cons}_${pkg.ref}_${idx}`)
+              }, (pkg: IapPackage, idx: number) => `${pkg.tok}_${pkg.cons}_${pkg.ref}_${pkg.frozenUntil > Date.now() ? 1 : 0}_${idx}`)
               if (this.pkgList().length === 0) {
                 Text('暂无充能包——上方档位购买后每笔为一独立包，未消耗可整包退款')
                   .fontSize(FONT_SIZE_CAPTION)
@@ -644,12 +663,12 @@ export struct BillingPage {
                 .fontColor(this.theme.textTertiary)
                 .margin({ top: 6 })
             }
-            Text('请前往「华为应用市场 → 我的 → 订单」，按购入时间与金额找到对应订单申请退款（也可通过应用内「设置 → 关于」的邮箱联系我们）。\n退款在华为侧完成后，回到本页将自动核销该包剩余 SP，无需任何手动操作。')
+            Text('① 点击下方按钮后，该包立即锁定（7 天内不可使用），防止申请期间误扣\n② 前往「华为应用市场 → 我的 → 支付与账单」找到对应订单申请退款；无退款入口时拨打华为客服 950180 人工申请（审核约 1~3 天）\n③ 退款成功：款项由华为原路退回，本包 SP 将在您下次打开应用时自动核销作废，无需任何操作\n④ 7 天内未退款成功：该包自动解锁，恢复可用')
               .fontSize(FONT_SIZE_BODY)
               .lineHeight(22)
               .fontColor(this.theme.textSecondary)
               .margin({ top: 10 })
-            Button('知道了')
+            Button('开始申请并锁定该包 7 天')
               .width('100%')
               .height(42)
               .fontSize(FONT_SIZE_BODY)
@@ -658,6 +677,25 @@ export struct BillingPage {
               .fontColor(this.theme.textPrimary)
               .borderRadius(RADIUS_CONTROL)
               .margin({ top: 16 })
+              .onClick(() => {
+                // ★ 0.291.0 确认申请=本地立即锁包（max 续锁随云同步多端一致）；退款本身在华为侧操作
+                if (this.refundTok.length > 0) {
+                  if (freezePackageUntil(this.siyi, this.refundTok, Date.now() + REFUND_FREEZE_MS)) {
+                    this.showToastSafe('已锁定该包，请前往华为应用市场申请退款');
+                  } else {
+                    this.showToastSafe('订单信息异常，请稍后重试');
+                  }
+                }
+                this.refundTok = '';
+              })
+            Button('暂不申请')
+              .width('100%')
+              .height(42)
+              .fontSize(FONT_SIZE_BODY)
+              .backgroundColor(this.theme.surfaceSoft)
+              .fontColor(this.theme.textSecondary)
+              .borderRadius(RADIUS_CONTROL)
+              .margin({ top: 8 })
               .onClick(() => {
                 this.refundTok = '';
               })

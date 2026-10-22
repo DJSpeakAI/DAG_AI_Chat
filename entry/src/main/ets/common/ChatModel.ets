@@ -301,6 +301,11 @@ export class ApiConfig {
   // ★ 0.238.0：模型别名（应用内展示名；空=显示官方模型 ID）——别名是全局单值跟随配置，
   //   消息级不存别名（旧消息 model 与当前配置不同时自然回落官方名，零迁移）
   @Trace modelAlias: string = '';
+  // ★ 0.291.2：文档解析服务（腾讯云 OCR·多模态文档解析）专属凭证——与 chat 的 apiKey
+  //   （TokenHub 体系）相互独立，走用户个人 CAM 密钥（A 模式：用户自配风险自担，与
+  //   DeepSeek/火山 key 同构）；空=未配置（选 docx/pdf 时友好提示）
+  @Trace docSecretId: string = '';
+  @Trace docSecretKey: string = '';
 }
 
 // ★ 0.190.0：由端点推断提供商（v2→v3 迁移用——存量用户只可能是火山默认端点或自定义端点；
@@ -382,6 +387,8 @@ function apiCfgToBackupJson(cfg: ApiConfig): string {
   plain['ttsSpeed'] = cfg.ttsSpeed;
   plain['ttsVolume'] = cfg.ttsVolume;
   plain['modelAlias'] = cfg.modelAlias;
+  plain['docSecretId'] = cfg.docSecretId; // ★ 0.291.2：文档解析服务凭证（尾部追加）
+  plain['docSecretKey'] = cfg.docSecretKey;
   return JSON.stringify(plain);
 }
 
@@ -409,6 +416,8 @@ export function connectApiConfig(): ApiConfig {
       cfg.ttsSpeed = Number(b['ttsSpeed'] ?? cfg.ttsSpeed);
       cfg.ttsVolume = Number(b['ttsVolume'] ?? cfg.ttsVolume);
       cfg.modelAlias = String(b['modelAlias'] ?? '');
+      cfg.docSecretId = String(b['docSecretId'] ?? ''); // ★ 0.291.2：旧快照无此键=空串默认（尾部追加语义）
+      cfg.docSecretKey = String(b['docSecretKey'] ?? '');
       return true;
     } catch (_e) {
       return false; // 坏数据兜底=默认（下次保存重建）
@@ -1106,7 +1115,11 @@ export class IapPackage {
   ts: number = 0;     // 购买时间 epoch ms（迁移包=记录当日 00:00——旧账无几点几秒，如实展示）
   cons: number = 0;   // 该包累计消耗（FIFO；amt-cons=剩余；cons===0 且未退=可退）
   ref: number = 0;    // 0=正常 / 1=已退款已核销（剩余作废）
+  frozenUntil: number = 0; // ★ 0.291.0 退款申请锁包截止 epoch ms（0=未锁；>now=冻结不可用；到期自动解锁=时间戳天然过期；云同步 max 单调自洽——续锁取大值，无解锁回退冲突）
 }
+
+// ★ 0.291.0 退款申请锁包时长（7 天——华为客服退款审核 1~3 天+缓冲；期间该包冻结防「申请中花光 SP」）
+export const REFUND_FREEZE_MS: number = 7 * 24 * 60 * 60 * 1000;
 
 export function parseIapPackages(raw: string): IapPackage[] {
   const out: IapPackage[] = [];
@@ -1127,6 +1140,7 @@ export function parseIapPackages(raw: string): IapPackage[] {
       p.ts = Number(r['ts'] ?? 0);
       p.cons = Number(r['cons'] ?? 0);
       p.ref = Number(r['ref'] ?? 0);
+      p.frozenUntil = Number(r['frozenUntil'] ?? 0); // 旧账本缺字段=0 未锁（Schema 尾部追加默认值铁律）
       if (p.tok.length > 0 && p.amt > 0) {
         out.push(p);
       }
@@ -1137,33 +1151,50 @@ export function parseIapPackages(raw: string): IapPackage[] {
   return out;
 }
 
-// ★ 0.289.1 一次性旧测试充能账清零（用户拍板 2026-10-22：181 账号旧测试充值 600 万清零重新测——
-//   旧账只有日期无几点几秒，不满足新账本口径，直接清）：
-//   触发条件=purchaseHistory 存在旧版充能行（「充能 +」前缀）；动作=池级两字段归零+包账本清空
-//   +history 删充能行；iapConsumedTokens 保留（防同 token 理论回放重复入账）。
-//   ⚠️ 上线前必须删除本函数与全部调用点（stats-test-seed-v1 同款纪律）——正式用户花钱的旧充值账绝不能清！
-//   幂等：清后无充能行+池为 0，条件永不再满足；新购走 grantSiyiSpFromIap 建包（tok 全量 92 位）不受影响
+// ★ 0.290.2 一次性旧测试充能账写销（0.289.1「归零」方案实测失败根因=写减法违反 0.248.7 单调军令，
+//   云同步 mergeSiyiPointsRow 下行 max 直接把云端旧值 600 万复活回本地；且触发条件「history 充能行」
+//   首轮清零已删、purchaseHistory 不云同步永不复活=条件永久失效——181 账号实测 SP 一直 600 万）：
+//   改用写销语义（writeOffRefundedPackage 同族）：permanentSp 不动，consumedPermanentSp 写满至
+//   permanentSp → 余额=0 且发放/消耗双侧单调只增——上行覆盖云端后，任何端旧值顶回（600 万/0）在
+//   max 合并下 600!>600、0!>600 均不覆盖，永不复活；迁移包同步写满 cons=amt（保留展示=已耗尽，
+//   union 复活链上云端 cons 旧值 < 本地 amt，max 收敛到 amt 稳定）。
+//   触发两路：A=包账本存在迁移包（tok<92 位截断=0.289.0 拆包特征）；B=充能池有余额+包账本空+
+//   history 无「华为应用内支付」行（=纯 0.261 时代旧测试账，新购必建包+必留支付行，两路皆不误伤）。
+//   iapConsumedTokens 保留（防同 token 回放重复入账）；purchaseHistory 不再动（账单页已不展示文本卡）。
+//   ⚠️ 上线前必须删除本函数与全部调用点（stats-test-seed-v1 同款纪律）——正式用户花钱的充值账绝不能写销！
 export function ensureIapPackagesMigrated(subscription: SubscriptionStore, store: SiyiPointStore): void {
-  let history: string[] = [];
-  try {
-    history = JSON.parse(subscription.purchaseHistory) as string[];
-  } catch (_e) {
-    history = [];
-  }
-  const hasLegacy = history.some((line: string): boolean => line.indexOf('充能 +') === 0);
-  if (!hasLegacy) {
-    return;
-  }
-  const kept: string[] = [];
-  for (let i = 0; i < history.length; i++) {
-    if (history[i].indexOf('充能 +') !== 0) {
-      kept.push(history[i]);
+  const pkgs = parseIapPackages(store.iapPackages);
+  let hasUnwrittenLegacyPkg = false;
+  for (let i = 0; i < pkgs.length; i++) {
+    if (pkgs[i].tok.length < 92 && pkgs[i].cons < pkgs[i].amt) {
+      hasUnwrittenLegacyPkg = true;
+      break;
     }
   }
-  subscription.purchaseHistory = JSON.stringify(kept);
-  store.permanentSp = 0;
-  store.consumedPermanentSp = 0;
-  store.iapPackages = '[]';
+  let hasNewIapHistory = false;
+  try {
+    const history = JSON.parse(subscription.purchaseHistory) as string[];
+    hasNewIapHistory = history.some((line: string): boolean => line.indexOf('华为应用内支付') >= 0);
+  } catch (_e) {
+    hasNewIapHistory = false;
+  }
+  const hasLegacyBalance = store.permanentSp > store.consumedPermanentSp;
+  const pathA = hasUnwrittenLegacyPkg;
+  const pathB = hasLegacyBalance && pkgs.length === 0 && !hasNewIapHistory;
+  if (!pathA && !pathB) {
+    return;
+  }
+  if (pathA) {
+    for (let i = 0; i < pkgs.length; i++) {
+      if (pkgs[i].tok.length < 92 && pkgs[i].cons < pkgs[i].amt) {
+        pkgs[i].cons = pkgs[i].amt; // 迁移包写满=已耗尽（ref 不动——无真实退款语义）
+      }
+    }
+    store.iapPackages = JSON.stringify(pkgs);
+  }
+  if (store.consumedPermanentSp < store.permanentSp) {
+    store.consumedPermanentSp = store.permanentSp; // 池级写销：余额→0，单调只增军令
+  }
   scheduleRowFlush();
 }
 
@@ -1190,10 +1221,46 @@ export function writeOffRefundedPackage(store: SiyiPointStore, token: string): n
   return writtenOff;
 }
 
+// ★ 0.291.0 退款申请锁包（用户拍板流程：app 内点申请退款 → 本地立即冻结该包 7 天防申请期间花光 SP
+//   → 用户去华为侧申请（自助/客服 1~3 天）→ 成功=云端退款标记拉到后核销作废（writeOff 同族终态）；
+//   失败=无事件推送，7 天到期自动解冻恢复可用（时间戳判过期即解锁，零额外状态）。
+//   幂等：重复申请取更大 frozenUntil（max 语义与云同步合并同构）；tok 未命中返回 false
+export function freezePackageUntil(store: SiyiPointStore, token: string, until: number): boolean {
+  const list = parseIapPackages(store.iapPackages);
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].tok === token && list[i].ref !== 1) {
+      if (until > list[i].frozenUntil) {
+        list[i].frozenUntil = until;
+        store.iapPackages = JSON.stringify(list);
+        scheduleRowFlush();
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+// ★ 0.291.0 冻结包可用额（退款申请中包的账面可用 SP 合计）——可用余额口径的统一扣除项：
+//   siyiTotalSp / 充能池扣费 / BillingPage 资产卡三处同源引用，防「展示可用但发消息余额不足」矛盾
+export function frozenAvailableSp(store: SiyiPointStore): number {
+  const now = Date.now();
+  const list = parseIapPackages(store.iapPackages);
+  let sum = 0;
+  for (let i = 0; i < list.length; i++) {
+    const pkg = list[i];
+    if (pkg.frozenUntil > now && pkg.ref !== 1) {
+      sum += Math.max(0, pkg.amt - pkg.cons);
+    }
+  }
+  return sum;
+}
+
 // 司忆点总余额（三池合计；★ 0.248.5 有效期取消——giftSp 恒计入；
-//   ★ 0.248.7 池语义升级=发放累计，余额=各池发放-各池消耗，clamp 0 防异常负数）
+//   ★ 0.248.7 池语义升级=发放累计，余额=各池发放-各池消耗，clamp 0 防异常负数；
+//   ★ 0.291.0 语义=**可用余额**——充能池扣除冻结包可用额（退款申请中不可用；全部调用方
+//   皆扣费判断/实扣差额/bal 展示口径，无一需要账面总额，改此处即三处同源）
 export function siyiTotalSp(store: SiyiPointStore): number {
-  return Math.max(0, store.permanentSp - store.consumedPermanentSp)
+  return Math.max(0, store.permanentSp - store.consumedPermanentSp - frozenAvailableSp(store))
     + Math.max(0, store.bonusSp - store.consumedBonusSp)
     + Math.max(0, store.giftSp - store.consumedGiftSp);
 }
@@ -1215,16 +1282,22 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
   const b = Math.min(remain, Math.max(0, store.bonusSp - store.consumedBonusSp));
   store.consumedBonusSp += b;
   remain -= b;
-  const p = Math.min(remain, Math.max(0, store.permanentSp - store.consumedPermanentSp));
+  const p = Math.min(remain, Math.max(0, store.permanentSp - store.consumedPermanentSp - frozenAvailableSp(store)));
   if (p > 0) {
     store.consumedPermanentSp += p;
     // ★ 0.289.0 包 FIFO：按购买顺序（ts 升序=数组序）逐包扣、老包先扣（用户政策②）；
     //   已退款包（ref=1，cons 已补满）自然跳过；池级与包级同步累加守恒。
     //   包账本为空（迁移未跑）时只扣池级——迁移回放以 consumedPermanentSp 终值统一补包，最终一致
+    //   ★ 0.291.0：冻结包（frozenUntil>now=退款申请中）跳过 FIFO——冻结期间该包 SP 不可用
+    //   （池级余额照扣不误：池级金额不含冻结包可用额——见 siyiAvailableSp）
+    const now = Date.now();
     const list = parseIapPackages(store.iapPackages);
     let left = p;
     for (let i = 0; i < list.length && left > 0; i++) {
       const pkg = list[i];
+      if (pkg.frozenUntil > now) {
+        continue; // 退款申请冻结中——不可扣
+      }
       const avail = Math.max(0, pkg.amt - pkg.cons);
       const take = Math.min(left, avail);
       if (take > 0) {
@@ -1349,6 +1422,21 @@ export function spCostOfTts(chars: number): number {
     return 0;
   }
   return Math.max(1, Math.ceil(chars / 1000 * SP_TTS_PER_KCHAR));
+}
+
+// ★ 0.291.2：文档解析页费嫁接（用户拍板「成本嫁接到输入 SP」）——腾讯多模态文档解析
+//   0.04 元/页 → 按 DeepSeek 输入价（2 元/百万 token）折算等效 input token：
+//   0.04 ÷ 2 × 1,000,000 = 20,000 token/页；等效 token 并入本次请求 inputTokens 总账，
+//   走 spCostOfTokens 同源公式一次实扣（展示=扣费同源军令天然满足）；解析失败=零页零扣。
+//   调价改此一处（腾讯资源包量大单价更低，保守取 0.04 上限价）。
+export const DOC_TOKENS_PER_PAGE: number = 20000;
+
+// 页数 → 等效 input token（用于发送链 onDone 落账前并入 inputTokens）
+export function docPageTokens(pages: number): number {
+  if (pages <= 0) {
+    return 0;
+  }
+  return Math.round(pages * DOC_TOKENS_PER_PAGE);
 }
 
 // ★ 0.272.0：sp_consume 埋点公共函数（原 ChatPage.trackSpConsume 抽出——chat/regen 之外的
@@ -1924,8 +2012,8 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   tokens.push(purchaseToken);
   subscription.iapConsumedTokens = JSON.stringify(tokens);
   siyi.permanentSp += amount; // 充能池发放累计，只增不减（数据安全军令）
-  // ★ 0.289.1 新购建包前先清旧测试账（幂等，函数内即 0.289.1 清零语义）——防旧账残留混入新账本
-  ensureIapPackagesMigrated(subscription, siyi);
+  // ★ 0.290.2 删除此处清零调用——0.289.1 在新购链路调清零，而新购 history 行同为「充能 +」前缀，
+  //   第二笔购买会把第一笔新购账误清；清零只保留 BillingPage 进场单一触发点
   // 建包（token 幂等已挡上，此处必为新包）：ts=Date.now() 精确到秒（账本要求）
   const pkg = new IapPackage();
   pkg.tok = purchaseToken;
@@ -2726,6 +2814,8 @@ function cfgApiToJson(): string {
   o['audioVoice'] = c.audioVoice;
   o['audioEndpoint'] = c.audioEndpoint;
   o['audioKey'] = c.audioKey;
+  o['docSecretId'] = c.docSecretId; // ★ 0.291.2：云同步行同待遇（与 apiKey 一致上云）
+  o['docSecretKey'] = c.docSecretKey;
   return JSON.stringify(o);
 }
 
@@ -2744,6 +2834,8 @@ function cfgApiApply(v: string): boolean {
     c.audioVoice = g('audioVoice', c.audioVoice);
     c.audioEndpoint = g('audioEndpoint', c.audioEndpoint);
     c.audioKey = g('audioKey', c.audioKey);
+    c.docSecretId = g('docSecretId', c.docSecretId); // ★ 0.291.2：云下行补灌（云端旧值无此键=保留本地）
+    c.docSecretKey = g('docSecretKey', c.docSecretKey);
     // ★ 0.240.2 修正：此处禁 snapshotApiConfig——云下行旧值（保存后上行未及时+云端滞留旧配置）
     //   会被固化到 v5 盘上=「保存→重启被回滚」的帮凶（真机取证实锤：⑤ 回显华为+旧标记后拉盘
     //   v5 已被覆写成云端旧值）。云下行只改内存：每次冷启云同步重放 apply，无需落盘；
@@ -3886,6 +3978,12 @@ function mergeSiyiPointsRow(v: string | undefined): void {
         }
         if (cp.ref > localPkgs[li].ref) {
           localPkgs[li].ref = cp.ref;
+          pkgsChanged = true;
+        }
+        // ★ 0.291.0 锁包状态取 max（frozenUntil 单调大值=续锁；时间戳自然过期=自动解锁，
+        //   解锁无需回退同步——对端到期同样判过期，无乒乓）
+        if (cp.frozenUntil > localPkgs[li].frozenUntil) {
+          localPkgs[li].frozenUntil = cp.frozenUntil;
           pkgsChanged = true;
         }
         break;

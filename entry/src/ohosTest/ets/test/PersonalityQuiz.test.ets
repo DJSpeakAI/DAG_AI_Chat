@@ -2,10 +2,13 @@
 //   ★ 0.290.0 性格测试 2.0 重写：开放题 answerTexts 存储 / 老用户字母+文本混合进度 /
 //   本地关键词兜底（敷衍判定/命中文案/均衡兜底）/ 评阅输入组装（字母映射文案）
 //   SP 节点阶梯断言延续保留。
+//   ★ 0.292.1 性格测试 3.0：回归选择题（12 单选+3 多选）——choiceAnswers 存储 /
+//   三段进度（字母+文本+选择）/ 评阅输入选择段拼接 / 题库 multi 标志完整性。
 import { describe, it, expect } from '@ohos/hypium';
 import {
   PERSONALITY_QUESTIONS, QUIZ_TOTAL, QUIZ_SP_PER_NODE,
   PersonalityQuizStore, getQuizAnswers, getQuizAnswerTexts, recordQuizAnswerText,
+  getQuizChoices, recordQuizChoice,
   quizAnswerTotal, quizNodeReached, buildQuizClaimAmount,
   buildReviewInputs, localReviewQuizTexts, isInvalidQuizAnswer, quizProfilePreviewLines
 } from '../../../main/ets/common/PersonalityQuiz';
@@ -33,7 +36,7 @@ export default function personalityQuizTest() {
       expect(buildQuizClaimAmount(3, 15)).assertEqual(0);  // 全领完
       expect(buildQuizClaimAmount(0, 15)).assertEqual(QUIZ_SP_PER_NODE * 3); // 一次性补三节点
     })
-    // ── 0.290.0 开放题答案追加与续做 ──
+    // ── 0.290.0 开放题答案追加与续做（0.292.1 起为兼容路径，存储行为不变） ──
     it('quiz_answer_text_append_and_resume', 0, () => {
       const s = new PersonalityQuizStore();
       expect(getQuizAnswerTexts(s).length).assertEqual(0);
@@ -47,26 +50,41 @@ export default function personalityQuizTest() {
       s2.answerTexts = s.answerTexts;
       expect(getQuizAnswerTexts(s2).length).assertEqual(2);
     })
-    it('quiz_answer_text_trimmed', 0, () => {
-      const s = new PersonalityQuizStore();
-      recordQuizAnswerText(s, '  带空白的答案  ');
-      expect(getQuizAnswerTexts(s)[0]).assertEqual('带空白的答案'); // 首尾空白即时修剪
-    })
     it('quiz_answer_text_bad_json_fallback', 0, () => {
       const s = new PersonalityQuizStore();
       s.answerTexts = '{bad json';
       expect(getQuizAnswerTexts(s).length).assertEqual(0); // 坏数据兜底不崩
     })
-    // ── 混合进度：老用户字母 + 新开放题文本相加 ──
-    it('quiz_total_letters_plus_texts', 0, () => {
+    // ── ★ 0.292.1 选择题答案追加与续做 ──
+    it('quiz_choice_record_and_resume', 0, () => {
+      const s = new PersonalityQuizStore();
+      expect(getQuizChoices(s).length).assertEqual(0);
+      expect(recordQuizChoice(s, 'a')).assertEqual(1);
+      expect(recordQuizChoice(s, 'ac')).assertEqual(2);
+      const arr = getQuizChoices(s);
+      expect(arr.length).assertEqual(2);
+      expect(arr[1]).assertEqual('ac'); // 多选拼接串原样落盘
+      // 续做：新 store 实例从 choiceAnswers 落盘串恢复
+      const s2 = new PersonalityQuizStore();
+      s2.choiceAnswers = s.choiceAnswers;
+      expect(getQuizChoices(s2).length).assertEqual(2);
+    })
+    it('quiz_choice_bad_json_fallback', 0, () => {
+      const s = new PersonalityQuizStore();
+      s.choiceAnswers = '{bad json';
+      expect(getQuizChoices(s).length).assertEqual(0); // 坏数据兜底不崩
+    })
+    // ── 混合进度：老用户字母 + 开放题文本 + 选择题三段相加 ──
+    it('quiz_total_letters_texts_choices', 0, () => {
       const s = new PersonalityQuizStore();
       s.answers = JSON.stringify(['a', 'b', 'c']);
-      expect(quizAnswerTotal(s)).assertEqual(3);
       recordQuizAnswerText(s, '第四题答案');
-      recordQuizAnswerText(s, '第五题答案');
-      expect(quizAnswerTotal(s)).assertEqual(5); // 3 字母 + 2 文本
+      expect(quizAnswerTotal(s)).assertEqual(4); // 3 字母 + 1 文本
+      recordQuizChoice(s, 'ac');
+      recordQuizChoice(s, 'b');
+      expect(quizAnswerTotal(s)).assertEqual(6); // 3 字母 + 1 文本 + 2 选择
     })
-    // ── 评阅输入组装：字母映射回三选一文案 ──
+    // ── 评阅输入组装：字母映射文案 + 文本 + 选择段拼接 ──
     it('quiz_review_inputs_letter_mapped', 0, () => {
       const s = new PersonalityQuizStore();
       s.answers = JSON.stringify(['a', 'b']);
@@ -77,6 +95,19 @@ export default function personalityQuizTest() {
       expect(inputs[1]).assertEqual(PERSONALITY_QUESTIONS[1].options[1].text); // 'b'→B 选项文案
       expect(inputs[2]).assertEqual('自由文本答案'); // 文本从 letters.length 位接续
       expect(inputs[3]).assertEqual(''); // 未答=空串（评阅判无效）
+    })
+    it('quiz_review_inputs_choice_segment', 0, () => {
+      const s = new PersonalityQuizStore();
+      recordQuizChoice(s, 'a');
+      recordQuizChoice(s, 'ace'); // q3 多选题三选
+      const inputs = buildReviewInputs(s);
+      expect(inputs.length).assertEqual(QUIZ_TOTAL);
+      // 选择段从第 0 位接续（无字母/文本）：'a'→q1 A 文案
+      expect(inputs[0]).assertEqual(PERSONALITY_QUESTIONS[0].options[0].text);
+      // 'ace'→q3（多选题 5 选项）A/C/E 三项文案顿号拼接
+      const q3 = PERSONALITY_QUESTIONS[2];
+      expect(inputs[1]).assertEqual(`${q3.options[0].text}、${q3.options[2].text}、${q3.options[4].text}`);
+      expect(inputs[2]).assertEqual(''); // 未答=空串
     })
     // ── 敷衍答案判定 ──
     it('quiz_invalid_answer_patterns', 0, () => {
@@ -114,11 +145,11 @@ export default function personalityQuizTest() {
       expect(hasGoal).assertTrue();
       expect(hasEmotion).assertTrue();
     })
-    // ── 兜底关键词命中：q3 例子驱动 ──
+    // ── 兜底关键词命中：选择题文案照样命中（q3 例子驱动） ──
     it('quiz_local_review_keyword_hit', 0, () => {
       const texts: string[] = [];
       for (let i = 0; i < QUIZ_TOTAL; i++) {
-        texts.push(i === 2 ? '希望老师多讲例子和故事打比方' : '正常作答的一些内容看看');
+        texts.push(i === 2 ? '例子和故事、大白话类比打比方' : '正常作答的一些内容看看');
       }
       const lines = localReviewQuizTexts(texts);
       let hit = false;
@@ -156,19 +187,33 @@ export default function personalityQuizTest() {
         expect(preview[i].length > 0).assertTrue();
       }
     })
-    // ── 题库完整性（0.290.0 开放题：题干更新+穿插铁律+三选项保留作映射源） ──
+    // ── 题库完整性（★ 0.292.1 选择题 3.0：12 单选+3 多选；单选恰 3 选项、多选≥4） ──
     it('quiz_bank_15_questions_well_formed', 0, () => {
       expect(PERSONALITY_QUESTIONS.length).assertEqual(QUIZ_TOTAL);
       let prevTag = '';
+      let multiCount = 0;
       for (let i = 0; i < PERSONALITY_QUESTIONS.length; i++) {
         const q = PERSONALITY_QUESTIONS[i];
         expect(q.index).assertEqual(i + 1);
-        expect(q.options.length === 3).assertTrue(); // 三选项保留（老用户字母映射+兜底文案源）
+        if (q.multi) {
+          multiCount++;
+          expect(q.options.length >= 4).assertTrue(); // 多选题选项 ≥4
+        } else {
+          expect(q.options.length === 3).assertTrue(); // 单选恰三选项（老用户字母映射+兜底文案源）
+        }
         expect(q.question.length > 0).assertTrue();
         expect(q.tag.length > 0).assertTrue();
         expect(q.tag !== prevTag).assertTrue(); // 穿插铁律：相邻两题题型不同
         prevTag = q.tag;
       }
+      expect(multiCount).assertEqual(3); // 恰 3 道多选（q3/q11/q15）
+    })
+    // ── 多选题位（q3/q11/q15）与选项文案可兜底性 ──
+    it('quiz_bank_multi_positions', 0, () => {
+      expect(PERSONALITY_QUESTIONS[2].multi).assertTrue();  // q3
+      expect(PERSONALITY_QUESTIONS[10].multi).assertTrue(); // q11
+      expect(PERSONALITY_QUESTIONS[14].multi).assertTrue(); // q15
+      expect(PERSONALITY_QUESTIONS[0].multi).assertFalse(); // q1 单选
     })
     // ── 旧 answers 读取兼容（0.288 老用户数据不丢） ──
     it('quiz_legacy_answers_still_readable', 0, () => {

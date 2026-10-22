@@ -197,7 +197,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.290.0'; // ★ 0.290.0：司枢模式2.0（规划器+执笔两段式）；更早历史见 MEMORY.md 版本表
+const APP_VERSION: string = 'v0.292.1'; // ★ 0.292.1：性格测试回归选择题（12 单选+3 多选）；上一版 0.292.0（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -306,6 +306,11 @@ export struct GlobalSettingsDialog {
   // ★ 0.236.0：提供商三档化（volcano / qianwen / custom 三引擎物理互斥——editTtsProvider 从
   //   apiConfig.ttsProvider 直读，端点推导仅作旧数据首迁兜底）
   @Local editTtsProvider: string = 'volcano'; // volcano / qianwen / custom
+  // ★ 0.291.2：文档解析服务编辑副本（Tab1 底部——用户个人 CAM SecretId/Key，A 模式用户自配
+  //   风险自担与对话 key 同构；空=未配置，选 docx/pdf 时 ChatPage 友好提示）
+  @Local editDocSecretId: string = '';
+  @Local editDocSecretKey: string = '';
+  @Local docCollapsed: boolean = true; // 默认收起（低频配置，TTS 区同款纪律）
   @Local editTtsModelSel: number = 0;         // 模型下拉选中（0=声音复刻2.0 默认 / 1=豆包语音合成2.0 / 2=自定义模型（0.237.2 改名））
   @Local editTtsModel: string = '';           // 「自定义模型」模型 ID（手填；sel=2 时生效）
   @Local editTtsKey: string = '';             // API Key（三档各自语义：火山=豆包语音 Key / 千问=sk-ws- Key / 自定义）
@@ -494,6 +499,8 @@ export struct GlobalSettingsDialog {
       savedTtsProvider === 'custom' || savedTtsProvider === TTS_PROVIDER_LOCAL) ? savedTtsProvider :
       (this.apiConfig.audioEndpoint.includes('bytedance.com') ? 'volcano' : 'custom');
     this.editTtsKey = this.apiConfig.audioKey;
+    this.editDocSecretId = this.apiConfig.docSecretId; // ★ 0.291.2：文档解析服务回显
+    this.editDocSecretKey = this.apiConfig.docSecretKey;
     this.editTtsVoice = this.apiConfig.audioVoice;
     // ★ 0.237.2：端点回显不再预填火山地址——自定义档空值露出「如 …」灰提示（用户拍板）；
     //   火山档端点内置不走此值（currentTtsEndpointValue 恒返内置常量）
@@ -874,6 +881,9 @@ export struct GlobalSettingsDialog {
     // ★ 0.272.0：本机语音档只写 ttsProvider——audio* 字段一律不碰（用户已填的云端配置原样保留，
     //   切回云端档配置还在；「档位值域扩不改写旧值」精神）
     this.apiConfig.ttsProvider = this.editTtsProvider;
+    // ★ 0.291.2：文档解析服务凭证写入（snapshotApiConfig 全量落盘+云上行，ChatModel 序列化链已带）
+    this.apiConfig.docSecretId = this.editDocSecretId.trim();
+    this.apiConfig.docSecretKey = this.editDocSecretKey.trim();
     if (this.editTtsProvider !== TTS_PROVIDER_LOCAL) {
       this.apiConfig.audioKey = this.editTtsKey.trim();
       if (this.editTtsProvider === TTS_PROVIDER_QWEN) {
@@ -1187,6 +1197,92 @@ export struct GlobalSettingsDialog {
 
       // ★ 0.232.0：语音朗读（TTS）配置区（API 填写区最下方——用户指定位置）
       this.ttsSectionContent()
+
+      // ★ 0.291.2：文档解析服务配置区（TTS 区下方——docx/PDF 云端解析凭证）
+      this.docParseSectionContent()
+    }
+    .width('100%')
+  }
+
+  // ★ 0.291.2：文档解析服务配置区——腾讯云 OCR·多模态文档解析（用户个人 CAM SecretId/Key）；
+  //   不填=选 docx/PDF 时提示需配置（txt/md/xlsx 本地解析不受影响）；计费约 0.04 元/页
+  //   折算并入输入 SP（发送侧明细展示，解析失败免费）——TTS 区同款折叠纪律
+  @Builder
+  docParseSectionContent() {
+    Column() {
+      Divider()
+        .strokeWidth(0.5)
+        .color(this.theme.strokeCard)
+        .margin({ top: 20, bottom: 14 })
+
+      Row() {
+        FoldChevron({ expanded: !this.docCollapsed })
+        Text('文档解析服务（Word/PDF）')
+          .fontSize(14)
+          .fontColor(this.theme.textSecondary)
+        Blank()
+          .layoutWeight(1)
+        Text(this.editDocSecretId.length > 0 ? '已配置' : '未配置')
+          .fontSize(11)
+          .fontColor(this.editDocSecretId.length > 0 ? this.theme.brandSecondary : this.theme.textTertiary)
+      }
+      .width('100%')
+      .margin({ bottom: 8 })
+      .onClick(() => {
+        this.docCollapsed = !this.docCollapsed;
+      })
+
+      if (this.docCollapsed) {
+        Text('发送 Word/PDF 文档给 AI 分析需配置；txt/md/xlsx 无需配置（本地解析免费）。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(this.theme.textTertiary)
+      }
+
+      if (!this.docCollapsed) {
+        Column() {
+          Text('SecretId')
+            .fontSize(14)
+            .fontColor(this.theme.textSecondary)
+            .margin({ bottom: 6 })
+          TextInput({ text: $$this.editDocSecretId, placeholder: '腾讯云访问密钥 SecretId' })
+            .width('100%')
+            .height(48)
+            .fontSize(14)
+            .fontColor(this.theme.textPrimary)
+            .placeholderColor(this.theme.textTertiary)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.theme.surfaceSoft)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 12 })
+
+        Column() {
+          Text('SecretKey')
+            .fontSize(14)
+            .fontColor(this.theme.textSecondary)
+            .margin({ bottom: 6 })
+          TextInput({ text: $$this.editDocSecretKey, placeholder: '腾讯云访问密钥 SecretKey' })
+            .width('100%')
+            .height(48)
+            .fontSize(14)
+            .fontColor(this.theme.textPrimary)
+            .placeholderColor(this.theme.textTertiary)
+            .borderRadius(RADIUS_CONTROL)
+            .backgroundColor(this.theme.surfaceSoft)
+            .type(InputType.Password)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 12 })
+
+        Text('在腾讯云控制台「访问管理→API 密钥管理」创建；文档解析约 0.04 元/页，折算并入输入 SP 消耗一并展示，解析失败不收费。')
+          .fontSize(11)
+          .lineHeight(18)
+          .fontColor(this.theme.textTertiary)
+          .width('100%')
+      }
     }
     .width('100%')
   }

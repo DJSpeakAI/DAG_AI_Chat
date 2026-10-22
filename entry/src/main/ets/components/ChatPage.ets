@@ -33,12 +33,13 @@ import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除；★ 0.275.0：Ctrl+V 读取剪贴板图片（getData + PasteDataRecord.pixelMap/uri）
 import { unifiedDataChannel } from '@kit.ArkData'; // ★ 0.275.0：onDrop 拖拽图片记录类型（DragEvent.getData → UnifiedData → Image.imageUri）
 
-  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, docPageTokens } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）；★ 0.291.2：docPageTokens（文档页费嫁接——页数折算等效 input token 并账）
+  import { PendingDoc, DocParseResult, ATTACH_SUFFIX_FILTERS, DOC_CONFIRM_BYTES, DOC_MAX_BYTES, docExtOf, isImageExt, isDocExt, needsCloudParse, fmtDocSize, parseDocsForSend, buildDocContextBlock, docListLabel } from '../utils/DocParseUtil'; // ★ 0.291.2：文档加载（+号混选/格式路由/腾讯云解析/system 注入——方案 docs/0.165+/0.291.0）
   import { PODCAST_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, ANCHOR_MEDIUM_PROMPT, PLAN_PROMPT, buildWritePrompt } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）；★ 0.234.0：SECTION/ANCHOR（锚点一期）；★ 0.290.0：PLAN_PROMPT/buildWritePrompt（司枢 2.0 两段式）+ HOOK_SYSTEM_PROMPT/buildAnchorLongPrompt 退役（②段伴读废止、长回复锚点指令并入框架规划）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
-import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）；★ 0.271.0：ThinkingRequest 改从 ChatModel import（类型单一真相源）
+import { streamChat, queryWord, queryKnowledge, queryKnowledgeFromImage, StreamController, startsWithChinese, classifyStreamError, buildWebToolsSchema, buildToolRoundMessages, ToolCallResult } from '../utils/ApiClient'; // ★ 0.145：queryWord（AI 查词）；★ 0.146：queryKnowledge（AI 卡片草稿）；★ 0.152：queryKnowledgeFromImage（圈选截图入知识库·多模态提炼）；★ 0.222.21：startsWithChinese（划词方向首字符检测，替代 containsChinese）；★ 0.190.6：classifyStreamError（错误场景分类）；★ 0.271.0：ThinkingRequest 改从 ChatModel import（类型单一真相源）；★ 0.292.0：联网工具循环（WEB_TOOLS_SCHEMA/buildToolRoundMessages/ToolCallResult）
 import { ContentFilter, FilterHit } from '../utils/ContentFilter'; // ★ 0.250.0：敏感词本地预过滤（上架合规应用侧兜底防线）
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, orderedReviewWords, orderedReviewCards, rotateSlice, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）；★ 0.237.3：换一批（orderedReviewWords/Cards 全序视图 + rotateSlice 环绕轮换）
@@ -69,7 +70,7 @@ import { ProfileStore, connectProfileObservations, buildCardView, updateProfileF
   MemoryInjectStatsStore, connectMemoryInjectStats, recordMemoryInjectStats,
   connectMemoryPref, isMemoryOn } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎一期（画像观察行+分支摘要头+注入埋点）
 import { triggerAiRerank, getRerankWordIds, getRerankCardIds, rerankDisplayBatch } from '../utils/AiRerank'; // ★ 0.268.0：司忆区 AI 智慧排序（发送时预触发+渲染时消费 AI 序，失败静默兜底本地序）
-import { fetchWebContextForMessage, detectWebUrls, WebFetchSummary } from '../utils/WebFetchUtil'; // ★ 0.286.0：AI 读网页一期（纯客户端抓取——消息含链接时抽正文一次性注入本次请求，失败不阻断）；★ 0.286.1 壳页走隐藏 Web 组件渲染重取
+import { fetchWebContextForMessage, detectWebUrls, WebFetchSummary, fetchSingleUrlReadable, searchWeb, formatSearchResults, WEB_MAX_TOOL_ROUNDS } from '../utils/WebFetchUtil'; // ★ 0.286.0：AI 读网页一期（纯客户端抓取——消息含链接时抽正文一次性注入本次请求，失败不阻断）；★ 0.286.1 壳页走隐藏 Web 组件渲染重取；★ 0.292.0：联网工具循环数据源（单URL瀑布/searchWeb/formatSearchResults/轮数上限）
 import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（删除消息入栈；Ctrl+Z 全局键在 Index 层消费）
 import { webview } from '@kit.ArkWeb'; // ★ 0.286.1：AI 读网页渲染通道（SPA 文档站静态抓只有壳——Web 组件真渲染后注入脚本取 innerText）
 
@@ -608,7 +609,6 @@ export struct ChatPage {
   thinkingTraceByMsg: Map<string, string> = new Map(); // 思维链全文暂存（msgId → 文本，单条 5000 字截断；切分支/退会话清空）
   thinkingSecondsByMsg: Map<string, number> = new Map(); // 完成思考的秒数（收起行「已深度思考 Ns」）
   @Local thinkingDoneTick: number = 0;       // 收起行渲染依赖驱动（Map 非 @Trace，用 tick 触发重建）
-  @Local reasoningViewerMsgId: string = '';  // 思维链查看弹窗开态（msgId；空=关）
   @Local thinkingRetryMsgIds: string[] = []; // 思考档失败待手动降级重试的消息 ID（错误气泡「普通模式重试」按钮渲染依据）
   thinkingTimer: number = -1;                // 思考计时器句柄（aboutToDisappear/流结束必清）
   // ★ 0.234.0：折叠展开状态视图（msgId → 展开节 index 集；整体替换触发 V2 刷新——0.222.2 铁律；
@@ -631,6 +631,12 @@ export struct ChatPage {
   @Local msgAreaOpacity: number = 1;       // 消息区透明度（1=不透明；动画期间 0↔1 补间）
   @Local branchAnimating: boolean = false; // 分支切换动画进行中（防抖：播完前忽略重复点击）
   @Local pendingImages: string[] = [];
+  // ★ 0.291.2：待发文档（+号混选）——与 pendingImages 合计上限 9；uri 会话级有效不进草稿
+  //   （picker uri 跨会话可能失效，刷新/退出=文档自然丢弃，图片/文字草稿照旧）
+  @Local pendingDocs: PendingDoc[] = [];
+  // ★ 0.291.2：文档计费首次告知标记（冷启后首次带文档发送弹一次告知；会话级不落盘——
+  //   避免新增持久化 key，每次冷启首弹一次可接受）
+  docBillingNotified: boolean = false;
   // 全屏图片浏览器状态
   @Local imageViewerVisible: boolean = false;
   @Local imageViewerIndex: number = 0;
@@ -785,6 +791,7 @@ export struct ChatPage {
   //   发送恒为正常对话；历史播客消息的 isPodcastMode 字段保留，兼容渲染与重生成。
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
   @Local replyLengthMode: string = 'medium';
+  @Local webMode: boolean = false; // ★ 0.292.0：联网问答开关（FC 工具循环；会话态不持久化，默认关）
   // ★ 0.151-D：⋮ 三点气泡菜单开关（合并原模式下拉 0.133 + 长度下拉 0.144 两个面板为一棵树形菜单）
   // ★ 0.153：代码块放大弹窗状态（代码块左上角「放大」按钮打开，全屏查看 + 换行切换）
   @Local codeZoomVisible: boolean = false;
@@ -1318,12 +1325,13 @@ export struct ChatPage {
 
   // ★ 0.290.0（WP4）：锚点卡纯胶囊形态 A（用户拍板喜欢「标签页」式样）——仅保留紫底白字
   //   胶囊单一视觉元素（徽标+文案合一入胶囊），删除左竖线与 8% 底色层，禁止徽标+描述双行叠加；
-  //   胶囊最长约 40% 宽、超长截断省略（钩子 text 由 PLAN_PROMPT 锚定 ≤15 字，兜底 20 字钳位）；
-  //   breath/digest/quiz 零点击；bait 尾部「→ 拉分支深挖」紫色弱高亮可点（Q8 豁免——创建子气泡
-  //   +预填引子问题待发送）；浮现动画保留（淡入+上移，每卡只播一次）；形态 B（竖线+文字）留档未实施。
+  //   ★ 本轮：胶囊不再单行截断——文案完整展开自动换行（用户拍板「不要点点点」），
+  //   去掉 maxLines(1)/Ellipsis/maxWidth 40%/flexShrink(0) 三连；短文案仍自适应短胶囊、
+  //   长文案撑满行宽自然折行；bait「→ 拉分支深挖」移胶囊下方独立一行（胶囊可占满整行）；
+  //   breath/digest/quiz 零点击；浮现动画保留（淡入+上移，每卡只播一次）；形态 B 留档未实施。
   @Builder
   AnchorCard(blk: MdBlock) {
-    Row({ space: 8 }) {
+    Column({ space: 4 }) {
       Text(`${this.anchorBadge(blk.anchorType)} · ${blk.anchorText}`)
         .fontSize(this.fs(11))
         .fontWeight(FontWeight.Medium)
@@ -1331,10 +1339,6 @@ export struct ChatPage {
         .padding({ left: 10, right: 10, top: 4, bottom: 4 })
         .borderRadius(14)
         .backgroundColor(this.theme.brandPrimary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: '40%' })
-        .flexShrink(0)
       if (blk.anchorType === 'bait') {
         Text('→ 拉分支深挖')
           .fontSize(this.fs(12))
@@ -1347,7 +1351,7 @@ export struct ChatPage {
       }
     }
     .width('100%')
-    .alignItems(VerticalAlign.Center)
+    .alignItems(HorizontalAlign.Start)
     .padding({ left: 2, right: 8, top: 4, bottom: 4 })
     .transition(this.anchorTransition())
   }
@@ -1911,6 +1915,9 @@ export struct ChatPage {
     Row() {
       WaitingDots()
       Text(this.streamPhase === 4 ? '正在读取网页' // ★ 0.286.0：阶段 4——消息含链接时的网页抓取期间（无省略号，遵循 0.191.0 定稿）
+        : this.streamPhase === 7 ? '正在联网搜索' // ★ 0.292.0：阶段 7——联网工具循环 search_web 执行期间
+        : this.streamPhase === 8 ? '正在打开网页' // ★ 0.292.0：阶段 8——联网工具循环 open_url 抓取期间
+        : this.streamPhase === 6 ? '正在解析文档' // ★ 0.291.2：阶段 6——带文档发送时的文档解析期间（本地直读/腾讯云 Submit+轮询）
         : this.streamPhase === 5 ? '正在搭建回答框架' // ★ 0.290.0：阶段 5——司枢 2.0 ①段规划器流式期间（规划卡同气泡展示预览）
         : this.streamPhase === 3 ? '整理历史记忆中' // ★ 0.199.0：阶段 3——上下文压缩摘要生成期间（无省略号，遵循 0.191.0 定稿：三点动画已表达进行中）
         : this.streamPhase === 1 ? (this.thinkingEnabledNow ? '已提交请求 · 深度思考' : '已提交请求') // ★ 0.271.0：思考档生效加后缀（计费透明——SP 预估行任务书 §3.8）
@@ -2045,7 +2052,7 @@ export struct ChatPage {
       connectConfirmDialog().spRechargePromptVisible = true;
       return;
     }
-    if ((!this.inputText.trim() && this.pendingImages.length === 0) || !this.currentBubble || this.isLoading) {
+    if ((!this.inputText.trim() && this.pendingImages.length === 0 && this.pendingDocs.length === 0) || !this.currentBubble || this.isLoading) {
       return;
     }
     // ★ 0.250.0：敏感词本地预过滤（输入侧兜底初筛——命中即本地拦截不出网，主防线=平台侧过滤；
@@ -2067,6 +2074,36 @@ export struct ChatPage {
         return;
       }
     }
+    // ★ 0.291.2：文档双提醒（用户拍板）——①云端格式超 2MB 强确认（页费可能高，取消=待发区保留）；
+    //   ②冷启后首次带文档发送弹计费告知（此后发送即视为同意）。解析失败零扣费在注入块如实列明。
+    if (this.pendingDocs.length > 0) {
+      let bigName = '';
+      for (let i = 0; i < this.pendingDocs.length; i++) {
+        const d = this.pendingDocs[i];
+        if (needsCloudParse(d.ext) && d.size > DOC_CONFIRM_BYTES) {
+          bigName = d.name;
+          break;
+        }
+      }
+      if (bigName.length > 0) {
+        const okBig = await this.confirmBigDocParse(bigName);
+        if (!okBig) {
+          return;
+        }
+      }
+      if (!this.docBillingNotified) {
+        this.docBillingNotified = true;
+        this.getUIContext().showAlertDialog({
+          title: '文档计费说明',
+          message: '发送文档时，docx/PDF 由腾讯云文档解析服务处理（约 0.04 元/页，将折算并入本次输入 SP 消耗一并展示与扣除）；txt/md/xlsx 本地解析不产生解析费。解析失败不收取任何费用。文档内容仅随本次请求发送，不会存入历史。',
+          confirm: {
+            value: '知道了',
+            action: () => {
+            }
+          }
+        });
+      }
+    }
     if (this.streamController) {
       this.streamController.cancel();
     }
@@ -2078,7 +2115,11 @@ export struct ChatPage {
       ? bubbleForThink.messages.filter((m: ChatMessage): boolean => m.role === 'assistant').length : 0;
     const topicForThink = bubbleForThink !== null && bubbleForThink.topicTags.length > 0
       ? bubbleForThink.topicTags.join('、') : '';
-    const thinkingReq: ThinkingRequest = resolveThinkingFor('auto', // ★ 0.290.0：深度思考三态随 GSD UI 隐藏恒 auto（司枢开=长回复恒 high）
+    // ★ 0.292.0：联网模式（FC 工具循环）与深度思考互斥——FC+thinking 网关兼容未验保守恒关；
+    //   联网与司枢两段式亦互斥（web 优先=单段直写+工具循环）
+    const webOn: boolean = this.webMode;
+    const webOffReq: ThinkingRequest = { enabled: false, effort: '' };
+    const thinkingReq: ThinkingRequest = webOn ? webOffReq : resolveThinkingFor('auto', // ★ 0.290.0：深度思考三态随 GSD UI 隐藏恒 auto（司枢开=长回复恒 high）
       this.replyLengthMode, isPodcast, this.inputText, topicForThink, aiCountForThink);
     this.thinkingEnabledNow = thinkingReq.enabled;
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
@@ -2112,6 +2153,8 @@ export struct ChatPage {
     this.inputText = '';
     this.imeComposing = false; // ★ 0.287.2：发送清空后占位恢复显示
     this.pendingImages = [];
+    const docsToSend: PendingDoc[] = [...this.pendingDocs]; // ★ 0.291.2：发送时刻快照（解析在下文注入块消费；此处清待发区）
+    this.pendingDocs = [];
     // ★ 0.214.2：发送即清本气泡草稿（内容已入消息流，草稿使命完成）
     const sb = this.currentBubble;
     if (sb) {
@@ -2177,10 +2220,53 @@ export struct ChatPage {
       }
     }
 
+    // ★ 0.291.2：文档加载注入（复刻 0.286 读网页同款一次性 system 副本——气泡原文/持久化/
+    //   Schema 零改动；重生成/历史不带文档内容=既定先例语义）。解析失败不阻断发送（块内列明
+    //   失败原因，模型不瞎编）；页费嫁接=页数折算等效 input token（ChatModel.docPageTokens），
+    //   onDone 落账并入 inputTokens——展示与扣费同源军令天然满足，失败文档 pages=0 零扣费。
+    let docExtraInTok = 0;
+    if (docsToSend.length > 0) {
+      this.streamPhase = 6; // 解析期间独立等待态（本地毫秒级/云端轮询分钟级）
+      let docResults: DocParseResult[] = [];
+      try {
+        docResults = await parseDocsForSend(docsToSend, this.apiConfig.docSecretId, this.apiConfig.docSecretKey,
+          (this.getUIContext().getHostContext() as common.Context).cacheDir);
+      } catch (_de) {
+        docResults = []; // 全链兜底：异常不阻断发送
+      } finally {
+        this.streamPhase = 1; // 恢复阶段 1（成败都继续，请求即将真正发出）
+      }
+      let docOk = 0;
+      let docTrunc = 0; // ★ 0.291.3：超长截断文档数（计费透明——页费按全文页数计）
+      for (let i = 0; i < docResults.length; i++) {
+        if (docResults[i].ok) {
+          docOk += 1;
+          if (docResults[i].truncated) {
+            docTrunc += 1;
+          }
+        }
+        docExtraInTok += docPageTokens(docResults[i].pages);
+      }
+      const docBlock = buildDocContextBlock(docResults);
+      if (docBlock.length > 0) {
+        messagesToSend.push(new ChatMessage(generateMessageId(), 'system', docBlock));
+      }
+      if (docOk > 0) {
+        const failPart = docResults.length - docOk > 0 ? `，${docResults.length - docOk} 个失败` : '';
+        if (docTrunc > 0) { // ★ 0.291.3：截断=钱相关，10 秒顶格长 toast 必须看清
+          this.showToastLong(`已解析 ${docOk} 个文档${failPart}；${docTrunc} 个超长已截断至 3 万字，页费仍按全文页数计，AI 将结合内容回答`);
+        } else {
+          this.showToastSafe(`已解析 ${docOk} 个文档${failPart}，AI 将结合内容回答`);
+        }
+      } else {
+        this.showToastSafe('文档解析失败，AI 将按消息原文回答');
+      }
+    }
+
     // ★ 0.290.0（司枢 2.0）：长回复（司枢模式开）走框架先行两段式——长度裁定权前移到①段规划器，
     //   不再注入 LONG_REPLY_PROMPT（fallback 直写时动态补注）；中回复单段链路照旧注入 MEDIUM。
     //   prefPrompt 两段式下不进①段（防称呼指令污染框架 JSON）——②段执笔组装时追加。
-    const siyuMode = this.replyLengthMode === 'long' && !isPodcast;
+    const siyuMode = this.replyLengthMode === 'long' && !isPodcast && !webOn; // ★ 0.292.0：联网与司枢互斥（web 优先=单段直写+工具循环）
     const prefPrompt = this.buildPreferencePrompt(isPodcast);
     if (!siyuMode) {
       if (this.replyLengthMode === 'long') {
@@ -2203,13 +2289,96 @@ export struct ChatPage {
     //   extraMsgs=尾部动态追加的 system（fallback=[LONG,SECTION,pref]；②段=[writePrompt,SECTION,pref]）；
     //   planIn/Out/Cached=①段规划 token 暂存（两段累加一次性落账军令）；activeFrame≠null 时
     //   ②段 onDone 渲染期合成钩子（mergeSectionHooks 节号制，Q6 钩子隔离）。
+    // ★ 0.292.0：联网工具循环状态（FC agentic loop；与 planInTok 同级——多轮 token 累加一次性落账军令）
+    let webInTok = 0;
+    let webOutTok = 0;
+    let webCachedTok = 0;
+    let webRound = 0;
+    let webDowngraded = false;
+    let curWebToolsOn = false;
+    const toolAppendixAcc: Object[] = [];
+    const webTools: Object[] = webOn ? buildWebToolsSchema() : []; // 工具定义（每条消息构造一次）
+    const isWebToolParamError = (raw: string): boolean => {
+      const lower = raw.toLowerCase();
+      const toolWord = lower.includes('tool') || lower.includes('function call');
+      const paramWord = lower.includes('400') || lower.includes('invalid') ||
+        lower.includes('not support') || lower.includes('unsupported');
+      return toolWord && paramWord;
+    };
+    // onToolCalls：执行工具（search_web=Bing 解析 / open_url=单 URL 两级瀑布）→ 结果回填 → 递归下一轮；
+    //   到 WEB_MAX_TOOL_ROUNDS 上限后不再声明 tools 强制落笔；用户已取消（isLoading=false）则中断递归
+    const handleToolCalls = (calls: ToolCallResult[], inTok: number, outTok: number, cachedTok: number): void => {
+      webInTok += inTok;
+      webOutTok += outTok;
+      webCachedTok += cachedTok;
+      webRound += 1;
+      const execTools = async (): Promise<void> => {
+        const results: string[] = [];
+        for (let i = 0; i < calls.length; i++) {
+          const c = calls[i];
+          let arg1 = '';
+          try {
+            const args = JSON.parse(c.argumentsJson) as Record<string, Object>;
+            if (c.name === 'search_web') {
+              arg1 = typeof args['query'] === 'string' ? args['query'] as string : '';
+            } else if (c.name === 'open_url') {
+              arg1 = typeof args['url'] === 'string' ? args['url'] as string : '';
+            }
+          } catch (_pe) {
+            arg1 = '';
+          }
+          if (c.name === 'search_web') {
+            this.streamPhase = 7; // 正在联网搜索
+            if (arg1.length === 0) {
+              results.push('（search_web 参数缺失或格式错误，未执行）');
+              continue;
+            }
+            try {
+              const hits = await searchWeb(arg1);
+              results.push(`【联网搜索：${arg1}】\n${formatSearchResults(hits)}`);
+            } catch (se) {
+              const reason = se instanceof Error ? se.message : '未知原因';
+              results.push(`【联网搜索：${arg1}】\n（搜索失败：${reason}。请基于已有资料回答，不要编造搜索结果）`);
+            }
+          } else if (c.name === 'open_url') {
+            this.streamPhase = 8; // 正在打开网页
+            if (arg1.length === 0 || arg1.indexOf('http') !== 0) {
+              results.push('（open_url 参数缺失或不是 http/https 链接，未执行）');
+              continue;
+            }
+            const item = await fetchSingleUrlReadable(arg1,
+              (u: string): Promise<string> => this.renderUrlViaWeb(u));
+            if (item.ok) {
+              results.push(`【已打开网页：${arg1}】\n${item.content}`);
+            } else {
+              results.push(`【已打开网页：${arg1}】\n（读取失败：${item.content}。不要编造该网页内容）`);
+            }
+          } else {
+            results.push(`（未知工具 ${c.name}，未执行）`);
+          }
+        }
+        const roundMsgs: Object[] = buildToolRoundMessages(calls, results);
+        for (let i = 0; i < roundMsgs.length; i++) {
+          toolAppendixAcc.push(roundMsgs[i]);
+        }
+        const limitReached = webRound >= WEB_MAX_TOOL_ROUNDS;
+        this.streamPhase = 1; // 恢复等待态（下一轮流即将发出）
+        if (!this.isLoading) {
+          return; // 用户已取消：不再递归（取消语义与现有链路一致）
+        }
+        startStream(webOffReq, [], toolAppendixAcc, !limitReached);
+      };
+      execTools();
+    };
     let downgraded = false; // 降级防循环锚（降级请求本身 disabled 不可能再触发参数型降级，天然无循环）
     let contentStarted = false; // ★ 0.271.0：乱序防护——phase3（正文已开始）之后到达的 reasoning 分片一律丢弃
     let planInTok = 0;
     let planOutTok = 0;
     let planCachedTok = 0;
     let activeFrame: PlanFrame | null = null;
-    const startStream = (thinkReq: ThinkingRequest, extraMsgs: ChatMessage[]): void => {
+    // ★ 0.292.0：webAppendix=FC 轮次消息；webToolsOn=本轮是否声明工具（onError 降级门读取 curWebToolsOn）
+    const startStream = (thinkReq: ThinkingRequest, extraMsgs: ChatMessage[], webAppendix?: Object[], webToolsOn: boolean = false): void => {
+    curWebToolsOn = webToolsOn;
     const finalMsgs: ChatMessage[] = extraMsgs.length > 0 ? [...messagesToSend, ...extraMsgs] : messagesToSend;
     this.streamController = streamChat(
       finalMsgs,
@@ -2220,7 +2389,7 @@ export struct ChatPage {
         if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
           aiMsg.content = '';
         }
-        // ★ 0.271.0：进入 phase3——思考卡冻结收起为单行「已深度思考 Ns · 查看思维链」（气泡尾部）
+        // ★ 0.271.0：进入 phase3——思考卡冻结收起为单行「已深度思考 Ns」（气泡尾部；★0.291.4「查看思维链」入口已删）
         if (this.thinkingActiveMsgId === aiMsg.messageId) {
           this.finishThinkingTrace(aiMsg.messageId);
         }
@@ -2245,9 +2414,10 @@ export struct ChatPage {
           aiMsg.content = '（AI 未返回文本内容，请重试或更换模型）';
         }
         // ★ 0.290.0：两段 token 累加一次性落账（军令：①规划+②执笔合并计入消息统计，SP 实扣同源）
-        aiMsg.inputTokens = inputTokens + planInTok;
-        aiMsg.outputTokens = outputTokens + planOutTok;
-        aiMsg.cacheHitTokens = cachedTokens + planCachedTok;
+        // ★ 0.291.2：文档页费嫁接并入（页数×等效 token——并入后 spCostOf/明细展示/埋点全链自动带出）
+        aiMsg.inputTokens = inputTokens + planInTok + docExtraInTok + webInTok;
+        aiMsg.outputTokens = outputTokens + planOutTok + webOutTok;
+        aiMsg.cacheHitTokens = cachedTokens + planCachedTok + webCachedTok;
         aiMsg.reasoningTokens = reasoningTokens;
         const mergedIn = aiMsg.inputTokens;
         const mergedOut = aiMsg.outputTokens;
@@ -2291,6 +2461,13 @@ export struct ChatPage {
           startStream({ enabled: false, effort: '' }, extraMsgs);
           return;
         }
+        // ★ 0.292.0：网关不支持 tools 自动降级（400+工具关键词窄门，单次语义同 thinking 降级）
+        if (!webDowngraded && curWebToolsOn && isWebToolParamError(errMsg)) {
+          webDowngraded = true;
+          this.showToastSafe('当前模型通道不支持联网，已切换普通回答');
+          startStream(webOffReq, extraMsgs, undefined, false);
+          return;
+        }
         // onError：解锁 + 日志 + 错误气泡
         this.isLoading = false;
         this.streamController = null;
@@ -2298,10 +2475,10 @@ export struct ChatPage {
         this.streamingMsgId = ''; // ★ 0.234.0：错误态不折叠，恢复平铺显示
         // ★ 0.290.0（司枢 2.0）：②段失败语义=仅扣①段（任务书 §3.5，与 0.269 军令 #3/#4 一致）——
         //   ①段规划 token 已实耗则落账实扣；失败路径零扣费惯例保持（plan 无 usage=零扣）
-        if (planInTok > 0 || planOutTok > 0) {
-          aiMsg.inputTokens = planInTok;
-          aiMsg.outputTokens = planOutTok;
-          aiMsg.cacheHitTokens = planCachedTok;
+        if (planInTok > 0 || planOutTok > 0 || webInTok > 0 || webOutTok > 0) {
+          aiMsg.inputTokens = planInTok + webInTok;
+          aiMsg.outputTokens = planOutTok + webOutTok;
+          aiMsg.cacheHitTokens = planCachedTok + webCachedTok;
           if (!this.spFree()) {
             const bal0 = siyiTotalSp(this.siyiStore);
             consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg));
@@ -2344,7 +2521,10 @@ export struct ChatPage {
       },
       'AI 回复',
       false,
-      thinkReq // ★ 0.271.0：思考档注入
+      thinkReq, // ★ 0.271.0：思考档注入
+      curWebToolsOn ? webTools : undefined, // ★ 0.292.0：联网工具声明（首轮与未达限轮）
+      webAppendix, // ★ 0.292.0：FC 轮次消息（assistant tool_calls+tool 结果，请求副本）
+      curWebToolsOn ? handleToolCalls : undefined // ★ 0.292.0：tool_calls 分流回调（执行工具后递归）
     );
     };
     // ============================================================
@@ -2447,7 +2627,7 @@ export struct ChatPage {
       this.thinkingEnabledNow = false; // 规划期无思考；②段按框架档位重算
       startPlanning();
     } else {
-      startStream(thinkingReq, []);
+      startStream(thinkingReq, [], undefined, webOn); // ★ 0.292.0：联网开=首轮即声明工具
     }
     // 发送消息后自动滚到底部
     this.scroller.scrollEdge(Edge.Bottom);
@@ -2757,6 +2937,17 @@ export struct ChatPage {
   showToastSafe(message: string): void {
     try {
       this.getUIContext().getPromptAction().showToast({ message: message });
+    } catch (e) {
+      // toast 失败静默忽略
+    }
+  }
+
+  // ★ 0.291.3：10 秒顶格长 toast（钱相关提示必须看清——系统只认 1500/10000 两档，GSD 0.259.2 同款；
+  //   ⚠️ 本文件 340 行附近的子组件 struct 另有同名 showToastSafe——同文件多 struct 同名方法，
+  //   定位定义必须按 struct 区段（本轮两连错根因），勿只 grep 方法名）
+  showToastLong(message: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: message, duration: 10000 });
     } catch (e) {
       // toast 失败静默忽略
     }
@@ -3193,25 +3384,122 @@ export struct ChatPage {
     // ★ 0.249.3：查看器延迟关闭计时器随缩放/双击判定一起回滚删除，此处不再清理
   }
 
-  // 选择图片：调用相册多选，转 Base64 存入 pendingImages
-  async selectImages(): Promise<void> {
+  // ★ 0.291.2：选择附件（原 selectImages 升级——用户拍板方案一：+号直接混选图片+文档，
+  //   不加分菜单；DocumentViewPicker 文件管理器视角替代相册九宫格为已知情代价）。
+  //   图片→base64 进 pendingImages（原链路不变）；文档→PendingDoc 进 pendingDocs（不进草稿）。
+  //   合计上限 9（图+文）；云端格式 >6MB 选入即拦截。
+  async selectAttachments(): Promise<void> {
     try {
-      const picker = new photoAccessHelper.PhotoViewPicker();
-      const result = await picker.select({ maxSelectNumber: 9 });
-      for (let i = 0; i < result.photoUris.length; i++) {
-        const uri = result.photoUris[i];
-        const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      const room = 9 - this.pendingImages.length - this.pendingDocs.length;
+      if (room <= 0) {
+        this.showToastSafe('图片与文档合计最多 9 个');
+        return;
+      }
+      const docPicker = new picker.DocumentViewPicker();
+      const uris: Array<string> = await docPicker.select({
+        maxSelectNumber: room,
+        fileSuffixFilters: ATTACH_SUFFIX_FILTERS
+      } as picker.DocumentSelectOptions);
+      let imgsAdded = false;
+      for (let i = 0; i < uris.length; i++) {
+        const uri = uris[i];
+        const name = decodeURIComponent(uri.substring(uri.lastIndexOf('/') + 1));
+        const ext = docExtOf(name);
+        if (isImageExt(ext)) {
+          const dataUri = this.readImageToDataUri(uri);
+          if (dataUri.length > 0) {
+            this.pendingImages = [...this.pendingImages, dataUri];
+            imgsAdded = true;
+          }
+        } else if (isDocExt(ext)) {
+          let size = 0;
+          const f = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+          try {
+            size = fileIo.statSync(f.fd).size;
+          } finally {
+            fileIo.closeSync(f);
+          }
+          if (needsCloudParse(ext) && size > DOC_MAX_BYTES) {
+            this.showToastSafe(`「${name}」超过 6MB，云端解析暂只支持 6MB 内文件，请拆分后再试`);
+            continue;
+          }
+          this.pendingDocs = [...this.pendingDocs, new PendingDoc(name, ext, size, uri)];
+        }
+      }
+      if (imgsAdded) {
+        this.saveDraft(); // 0.214.2 图片变化实时写回草稿（文档 uri 会话级有效不落草稿）
+      }
+    } catch (err) {
+      // 选择取消/读取失败静默忽略（防崩溃，原 selectImages 同策略）
+    }
+  }
+
+  // 从 uri 读图转 data URI（与原 selectImages 内联读法一致——读失败返回空串）
+  readImageToDataUri(uri: string): string {
+    try {
+      const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      try {
         const stat = fileIo.statSync(file.fd);
         const arrayBuffer = new ArrayBuffer(stat.size);
         fileIo.readSync(file.fd, arrayBuffer);
+        return `data:image/jpeg;base64,${buffer.from(arrayBuffer).toString('base64')}`;
+      } finally {
         fileIo.closeSync(file);
-        const base64 = buffer.from(arrayBuffer).toString('base64');
-          this.pendingImages = [...this.pendingImages, `data:image/jpeg;base64,${base64}`];
-      this.saveDraft(); // 0.214.2 图片变化实时写回草稿
       }
-    } catch (err) {
-      // 选图取消/读取失败静默忽略（防崩溃）
+    } catch (_e) {
+      return '';
     }
+  }
+
+  // 删除待发送文档
+  removeDoc(index: number): void {
+    const newList: PendingDoc[] = [];
+    for (let i = 0; i < this.pendingDocs.length; i++) {
+      if (i !== index) {
+        newList.push(this.pendingDocs[i]);
+      }
+    }
+    this.pendingDocs = newList;
+  }
+
+  // ★ 0.291.2：文档后缀徽章缩写（纯 UI 辅助）
+  docBadgeOf(ext: string): string {
+    if (ext === 'pdf') {
+      return 'PDF';
+    }
+    if (ext === 'docx' || ext === 'doc') {
+      return 'DOC';
+    }
+    if (ext === 'xlsx') {
+      return 'XLS';
+    }
+    if (ext === 'md') {
+      return 'MD';
+    }
+    return 'TXT';
+  }
+
+  // ★ 0.291.2：云端文档超 2MB 强确认（Promise 弹窗——复刻 confirmSendImageToTextModel 模式；
+  //   取消=待发区保留文档由用户自行删改）
+  confirmBigDocParse(name: string): Promise<boolean> {
+    return new Promise<boolean>((resolve: (v: boolean) => void) => {
+      this.getUIContext().showAlertDialog({
+        title: '文件较大',
+        message: `「${name}」超过 2MB，页数较多时解析费用较高（约 0.04 元/页，折算并入输入 SP 消耗）。是否继续解析并发送？`,
+        primaryButton: {
+          value: '取消',
+          action: () => {
+            resolve(false);
+          }
+        },
+        secondaryButton: {
+          value: '继续发送',
+          action: () => {
+            resolve(true);
+          }
+        }
+      });
+    });
   }
 
   // 删除待发送图片
@@ -3231,10 +3519,10 @@ export struct ChatPage {
   //   与选图器同链路（图源 → base64 data URI → pendingImages），发送/草稿/预览链零新增改动
   // ============================================================
 
-  // 从 uri 读图入待发区（拖拽 File/Image 记录、剪贴板 uri 记录共用；与 selectImages 同读法）
+  // 从 uri 读图入待发区（拖拽 File/Image 记录、剪贴板 uri 记录共用；与 selectAttachments 同读法）
   async addImageFromUri(uri: string): Promise<boolean> {
-    if (this.pendingImages.length >= 9) {
-      this.showToastSafe('最多添加 9 张图片');
+    if (this.pendingImages.length + this.pendingDocs.length >= 9) { // ★ 0.291.2：图+文合计口径
+      this.showToastSafe('图片与文档合计最多 9 个');
       return false;
     }
     try {
@@ -3255,8 +3543,8 @@ export struct ChatPage {
 
   // 剪贴板 PixelMap（截图场景）打包 JPEG 入待发区（对齐 0.211.1 压缩档：q80 控制落盘体积）
   async addPixelMapImage(pm: image.PixelMap): Promise<void> {
-    if (this.pendingImages.length >= 9) {
-      this.showToastSafe('最多添加 9 张图片');
+    if (this.pendingImages.length + this.pendingDocs.length >= 9) { // ★ 0.291.2：图+文合计口径
+      this.showToastSafe('图片与文档合计最多 9 个');
       return;
     }
     try {
@@ -3359,10 +3647,11 @@ export struct ChatPage {
         this.showToastSafe('仅支持拖入图片');
         return;
       }
-      // ★ 0.275.2 多张拖入（用户拍板：最多 9 张对齐选图器，超出截前 9 张+提示删了再拖）
-      const room = 9 - this.pendingImages.length;
+      // ★ 0.275.2 多张拖入（用户拍板：最多 9 张对齐选图器，超出截前 9 张+提示删了再拖）；
+      //   ★ 0.291.2 合计口径（图+文档共享 9 席）
+      const room = 9 - this.pendingImages.length - this.pendingDocs.length;
       if (room <= 0) {
-        this.showToastSafe('待发区已有 9 张图片，请先删除再拖入');
+        this.showToastSafe('待发区已有 9 个附件，请先删除再拖入');
         return;
       }
       const take = Math.min(uris.length, room);
@@ -5541,7 +5830,6 @@ export struct ChatPage {
     this.thinkingSecondsByMsg.clear();
     this.thinkingActiveMsgId = '';
     this.thinkingHeadText = '';
-    this.reasoningViewerMsgId = '';
     this.thinkingRetryMsgIds = [];
     this.thinkingDoneTick += 1;
     // ★ 0.162 第一段：消息区淡出 140ms（EaseIn 加速消失，模拟「页面关闭」）
@@ -5948,10 +6236,6 @@ export struct ChatPage {
   handleBack(): boolean {
     if (this.imageViewerVisible) {
       this.imageViewerVisible = false; // 图片预览（0.120）
-      return true;
-    }
-    if (this.reasoningViewerMsgId.length > 0) {
-      this.reasoningViewerMsgId = ''; // ★ 0.271.0：思维链查看弹窗——返回键先关弹窗
       return true;
     }
     if (this.wordFolderPickerVisible) {
@@ -6700,7 +6984,7 @@ export struct ChatPage {
                         .alignItems(HorizontalAlign.Start) // ★ 0.145：气泡内段落保持左对齐（阅读习惯），气泡整体位置由外层 alignItems 控制
 
                          // ★ 0.271.0：思考收起行（进入 phase3 后思考卡冻结收起为单行——紫弱高亮，气泡底部；
-                         //   点击「查看思维链」底部半屏弹窗展示全文；thinkingDoneTick 驱动 Map 渲染重建）
+                         //   ★0.291.4 已删「查看思维链」入口（用户拍板：司忆区已覆盖其价值）；thinkingDoneTick 驱动 Map 渲染重建）
                          if (this.thinkingDoneTick >= 0 && this.thinkingSecondsByMsg.has(msg.messageId) &&
                            this.thinkingTraceByMsg.has(msg.messageId)) {
                            Row({ space: 6 }) {
@@ -6708,16 +6992,13 @@ export struct ChatPage {
                                .width(12)
                                .height(12)
                                .objectFit(ImageFit.Contain)
-                             Text(`已深度思考 ${this.thinkingSecondsByMsg.get(msg.messageId)}s · 查看思维链`)
+                             Text(`已深度思考 ${this.thinkingSecondsByMsg.get(msg.messageId)}s`)
                                .fontSize(11)
                                .fontColor(this.theme.brandSecondary)
                                .maxLines(1)
                            }
                            .padding({ left: 10, right: 10 })
                            .margin({ top: 4, bottom: 2 })
-                           .onClick(() => {
-                             this.reasoningViewerMsgId = msg.messageId;
-                           })
                          }
 
                          // ★ 0.271.0：思考档失败手动降级重试（超时类错误专用——§3.6.3 不自动重发，
@@ -7100,6 +7381,53 @@ export struct ChatPage {
           .padding({ left: 12, right: 12, top: 8 })
         }
 
+        // ★ 0.291.2：待发文档条——后缀徽章（品牌紫实底白字缩写，白字铁律合规）+
+        //   文件名 + 大小 + 删除圆钮（trash_brand 与待发图删除同设计语言）
+        if (this.pendingDocs.length > 0) {
+          Column({ space: 6 }) {
+            ForEach(this.pendingDocs, (d: PendingDoc, index: number) => {
+              Row({ space: 8 }) {
+                Text(this.docBadgeOf(d.ext))
+                  .fontSize(10)
+                  .fontColor(Color.White)
+                  .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+                  .borderRadius(6)
+                  .backgroundColor(this.theme.brandPrimary)
+                Text(d.name)
+                  .fontSize(12)
+                  .fontColor(this.theme.textPrimary)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+                Text(fmtDocSize(d.size))
+                  .fontSize(11)
+                  .fontColor(this.theme.textTertiary)
+                Column() {
+                  Image($r('app.media.trash_brand'))
+                    .width(12)
+                    .height(12)
+                }
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                .width(20)
+                .height(20)
+                .borderRadius(10)
+                .backgroundColor(this.theme.brandPrimary)
+                .onClick(() => {
+                  this.removeDoc(index);
+                })
+              }
+              .width('100%')
+              .padding({ left: 8, right: 8, top: 5, bottom: 5 })
+              .borderRadius(RADIUS_CONTROL)
+              .backgroundColor(this.theme.surfaceNode)
+              .border({ width: 0.5, color: this.theme.strokeCard })
+            }, (d: PendingDoc, index: number) => `${d.uri}_${index}`)
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 8 })
+        }
+
         // ★ 0.235.0：引用栏——输入框上方小行（引用：前5字… + × 撤销），纯提示不可点跳转（用户拍板
         //   「创建子气泡后再跳转很傻」）；宽度自适应不写死（Q10：跟随输入区 100% 弹性）
         if (this.quoteText.length > 0) {
@@ -7364,6 +7692,26 @@ export struct ChatPage {
               this.replyLengthMode = this.replyLengthMode === 'long' ? 'medium' : 'long';
             })
 
+            // ★ 0.292.0：联网问答开关——开=AI 可自主搜索/读网页（FC 工具循环，同司枢胶囊视觉语言）
+            Row({ space: 4 }) {
+              Image($r('app.media.globe'))
+                .width(14)
+                .height(14)
+                .objectFit(ImageFit.Contain)
+              Text('联网')
+                .fontSize(12)
+                .fontColor(this.webMode ? Color.White : this.theme.textSecondary)
+                .maxLines(1)
+            }
+            .height(28)
+            .padding({ left: 9, right: 11 })
+            .borderRadius(14)
+            .backgroundColor(this.webMode ? this.theme.brandPrimary : Color.Transparent)
+            .border({ width: 0.5, color: this.webMode ? Color.Transparent : this.theme.strokeCard })
+            .onClick(() => {
+              this.webMode = !this.webMode;
+            })
+
             Blank()
 
             // 右组：＋ 添加图片（相册多选 → base64 挂到输入区，原链路不变）——紧跟发送键左侧
@@ -7378,7 +7726,7 @@ export struct ChatPage {
             .justifyContent(FlexAlign.Center)
             .margin({ right: 8 }) // ★ 0.287.4：去掉圆底（用户「+ 号取消外面的圆圈」）——裸图标+保留 28 热区，图标 16→18 补足视觉分量
             .onClick(() => {
-              this.selectImages();
+              this.selectAttachments(); // ★ 0.291.2：+号混选（图片+文档，合计 9）
             })
 
             // 右：发送（圆形向上箭头，右下角；isLoading 半透明置灰并屏蔽点击）
@@ -8969,79 +9317,6 @@ export struct ChatPage {
           .alignContent(Alignment.Center)
         }
 
-        // ★ 0.271.0：思维链查看弹窗（任务书 §3.4——底部半屏展示完整思维链，可滚动/可复制，
-        //   不嵌入气泡正文；遮罩点击/返回键关闭）
-        if (this.reasoningViewerMsgId.length > 0) {
-          Stack({ alignContent: Alignment.Bottom }) {
-            Column() {
-              Blank()
-            }
-            .width('100%')
-            .height('100%')
-            .backgroundColor(this.theme.overlay)
-            .onClick(() => {
-              this.reasoningViewerMsgId = '';
-            })
-
-            Column() {
-              Row({ space: 12 }) {
-                Text('思维链')
-                  .fontSize(16)
-                  .fontWeight(600)
-                  .fontColor(this.theme.textPrimary)
-                  .layoutWeight(1)
-                Text('复制')
-                  .fontSize(13)
-                  .fontColor(this.theme.brandSecondary)
-                  .onClick(() => {
-                    const trace = this.thinkingTraceByMsg.get(this.reasoningViewerMsgId) ?? '';
-                    if (trace.length === 0) {
-                      return;
-                    }
-                    try {
-                      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, trace);
-                      pasteboard.getSystemPasteboard().setData(data).then(() => {
-                        this.showToastSafe('已复制思维链');
-                      }).catch((err: Error) => {
-                        // 写入失败静默忽略
-                      });
-                    } catch (e) {
-                      // 复制异常静默忽略（防崩溃）
-                    }
-                  })
-                Text('关闭')
-                  .fontSize(13)
-                  .fontColor(this.theme.textTertiary)
-                  .onClick(() => {
-                    this.reasoningViewerMsgId = '';
-                  })
-              }
-              .width('100%')
-              .margin({ bottom: 12 })
-
-              Scroll() {
-                Text(this.thinkingTraceByMsg.get(this.reasoningViewerMsgId) ?? '（无思维链内容）')
-                  .fontSize(13)
-                  .lineHeight(21)
-                  .fontColor(this.theme.textSecondary)
-                  .textAlign(TextAlign.Start)
-                  .width('100%')
-                  .copyOption(CopyOptions.LocalDevice)
-              }
-              .align(Alignment.Start)
-              .scrollBar(BarState.Auto)
-              .layoutWeight(1)
-              .width('100%')
-            }
-            .width('100%')
-            .height('55%')
-            .padding({ left: 20, right: 20, top: 16, bottom: 24 })
-            .borderRadius({ topLeft: RADIUS_NAV, topRight: RADIUS_NAV })
-            .backgroundColor(this.theme.surfaceNode)
-          }
-          .width('100%')
-          .height('100%')
-        }
       }
       .width('100%')
       .height('100%')

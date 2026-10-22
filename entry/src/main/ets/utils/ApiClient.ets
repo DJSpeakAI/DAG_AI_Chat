@@ -56,6 +56,38 @@ interface StreamOptions {
   include_usage: boolean;
 }
 
+// ★ 0.292.0：FC 工具调用（OpenAI 兼容格式）——请求侧 assistant(tool_calls)+tool 消息
+//   与流式 delta 分片（联网工具循环专用；仅存在于发送请求副本内存态，不进气泡树/持久化）
+interface VolcanoToolCallFunction {
+  name: string;
+  arguments: string;
+}
+
+interface VolcanoToolCall {
+  id: string;
+  type: string;
+  function: VolcanoToolCallFunction;
+}
+
+interface VolcanoAssistantToolMessage {
+  role: string;
+  content: string;
+  tool_calls: VolcanoToolCall[];
+}
+
+interface VolcanoToolResultMessage {
+  role: string;
+  tool_call_id: string;
+  content: string;
+}
+
+// ★ 0.292.0：一次完整工具调用（流式分片按 index 拼接后的终态）——onToolCalls 回调载荷
+export interface ToolCallResult {
+  id: string;
+  name: string;
+  argumentsJson: string;
+}
+
 // ★ 0.271.0：思考开关注入位（DeepSeek Thinking Mode——腾讯云 TokenHub 透传，P0-1 实测生效）
 interface ThinkingBody {
   type: string; // 'enabled' | 'disabled'
@@ -63,11 +95,12 @@ interface ThinkingBody {
 
 interface VolcanoRequestBody {
   model: string;
-  messages: VolcanoMessage[];
+  messages: Object[]; // ★ 0.292.0：放宽 Object[]——普通轮 VolcanoMessage[] 与 FC 工具轮消息混排
   stream: boolean;
   stream_options?: StreamOptions;
   thinking?: ThinkingBody; // ★ 0.271.0：思考开关（缺省显式 disabled——P0-2 实锤网关默认开思考，显式关=成本止血必做）
   reasoning_effort?: string; // ★ 0.271.0：思考档位（enabled 时追加 low/high）
+  tools?: Object[]; // ★ 0.292.0：FC 工具定义（OpenAI 格式；缺省=纯聊天零影响）
 }
 
 // 流式控制器：支持手动 cancel 终止请求
@@ -81,16 +114,32 @@ interface SSEResult {
   reasonings: string[]; // ★ 0.132：深度思考内容分片（Seed 系列思考模型 reasoning_content）
   remainder: string;
   usage?: SSEResponseUsage;
+  finishReason: string; // ★ 0.292.0：choices[0].finish_reason（'tool_calls'=AI 请求执行工具）
+  toolCallDeltas: SSEToolCallDelta[]; // ★ 0.292.0：tool_calls 流式分片（按 index 由 streamChat 拼接）
+}
+
+// ★ 0.292.0：tool_calls 流式分片（OpenAI 格式——id/name 首片携带，arguments 多片拼接）
+interface SSEToolCallFunctionDelta {
+  name?: string;
+  arguments?: string;
+}
+
+interface SSEToolCallDelta {
+  index?: number;
+  id?: string;
+  function?: SSEToolCallFunctionDelta;
 }
 
 // SSE 响应 JSON 结构
 interface SSEResponseDelta {
   content?: string;
   reasoning_content?: string; // ★ 0.132：深度思考内容（火山方舟 Seed 系列思考模型）
+  tool_calls?: SSEToolCallDelta[]; // ★ 0.292.0：FC 工具调用分片
 }
 
 interface SSEResponseChoice {
   delta?: SSEResponseDelta;
+  finish_reason?: string; // ★ 0.292.0：'stop' | 'tool_calls' | ...
 }
 
 interface SSEResponse {
@@ -171,6 +220,8 @@ function buildMessages(messages: ChatMessage[]): VolcanoMessage[] {
 function parseSSEChunk(accumulated: string): SSEResult {
   const texts: string[] = [];
   const reasonings: string[] = []; // ★ 0.132
+  const toolDeltas: SSEToolCallDelta[] = []; // ★ 0.292.0
+  let finishReason = ''; // ★ 0.292.0
   let usage: SSEResponseUsage | undefined = undefined;
   const lines = accumulated.split('\n');
   const remainder = lines.pop() || ''; // 最后一段可能不完整，保留
@@ -186,13 +237,28 @@ function parseSSEChunk(accumulated: string): SSEResult {
     }
     try {
       const json = JSON.parse(data) as SSEResponse;
-      if (json.choices && json.choices.length > 0 && json.choices[0].delta) {
-        const delta = json.choices[0].delta!;
-        if (delta.content) {
-          texts.push(delta.content!);
+      if (json.choices && json.choices.length > 0) {
+        const choice = json.choices[0];
+        if (choice.delta) {
+          const delta = choice.delta;
+          if (delta.content) {
+            texts.push(delta.content!);
+          }
+          if (delta.reasoning_content) { // ★ 0.132：思考内容单独收集，不混入正式回答
+            reasonings.push(delta.reasoning_content!);
+          }
+          if (delta.tool_calls) { // ★ 0.292.0：工具调用分片收集（拼接在 streamChat 按index进行）
+            for (let t = 0; t < delta.tool_calls.length; t++) {
+              const d = delta.tool_calls[t];
+              if (d !== null && d !== undefined) {
+                toolDeltas.push(d);
+              }
+            }
+          }
         }
-        if (delta.reasoning_content) { // ★ 0.132：思考内容单独收集，不混入正式回答
-          reasonings.push(delta.reasoning_content!);
+        if (choice.finish_reason !== null && choice.finish_reason !== undefined &&
+          choice.finish_reason.length > 0) {
+          finishReason = choice.finish_reason;
         }
       }
       if (json.usage) {
@@ -202,7 +268,8 @@ function parseSSEChunk(accumulated: string): SSEResult {
       // 单条 JSON 解析失败不中断整个流
     }
   }
-  const result: SSEResult = { texts: texts, reasonings: reasonings, remainder: remainder, usage: usage };
+  const result: SSEResult = { texts: texts, reasonings: reasonings, remainder: remainder, usage: usage,
+    finishReason: finishReason, toolCallDeltas: toolDeltas };
   return result;
 }
 
@@ -351,7 +418,13 @@ export function streamChat(
   implicit: boolean = false,
   // ★ 0.271.0：思考档注入（缺省=显式 disabled 军规——P0-2 实锤网关默认开思考，函数级收口各调用点零负担；
   //   implicit=true 时无视调用方传参强制钳 disabled，防隐式链路暗耗）
-  thinking?: ThinkingRequest
+  thinking?: ThinkingRequest,
+  // ★ 0.292.0：联网工具循环三参（全部可缺省，旧调用点零影响）——
+  //   tools=工具定义（不传=纯聊天）；toolAppendix=FC 轮次消息（追加在历史后，仅请求副本）；
+  //   onToolCalls=finish_reason=tool_calls 时回调（替代 onDone；工具轮 usage 一并透传供上层累加实扣）
+  tools?: Object[],
+  toolAppendix?: Object[],
+  onToolCalls?: (calls: ToolCallResult[], inputTokens: number, outputTokens: number, cachedTokens: number) => void
 ): StreamController {
   // implicit 本期仅作标记传递（计费开关接入前的占位；调用侧已按终案传值）
   // ★ 0.271.0：思考档归一收口——implicit 强制钳 disabled；缺省/undefined 同样显式 disabled
@@ -374,6 +447,33 @@ export function streamChat(
   let trackedUsage: SSEResponseUsage | undefined = undefined;
   let rawPreview: string = ''; // ★ 0.188.0：原始响应体预览（零内容流诊断真实错误用，截断 600 字符）
   let deliveredAny: boolean = false; // ★ 0.188.0：是否交付过任何内容/思考分片
+  // ★ 0.292.0：FC 工具调用拼接（index 即数组下标——OpenAI 并行调用按 0..n 分片流式到达）
+  const toolAcc: ToolCallResult[] = [];
+  let trackedFinishReason = '';
+
+  // 分片并入拼接器（id/name 首片携带可跨片重写，arguments 多片追加）
+  const mergeToolDeltas = (deltas: SSEToolCallDelta[]): void => {
+    for (let i = 0; i < deltas.length; i++) {
+      const d = deltas[i];
+      const idx = d.index !== null && d.index !== undefined ? d.index : 0;
+      while (toolAcc.length <= idx) {
+        const empty: ToolCallResult = { id: '', name: '', argumentsJson: '' };
+        toolAcc.push(empty);
+      }
+      const acc = toolAcc[idx];
+      if (d.id !== null && d.id !== undefined && d.id.length > 0) {
+        acc.id = d.id;
+      }
+      if (d.function !== null && d.function !== undefined) {
+        if (d.function.name !== null && d.function.name !== undefined && d.function.name.length > 0) {
+          acc.name = d.function.name;
+        }
+        if (d.function.arguments !== null && d.function.arguments !== undefined) {
+          acc.argumentsJson += d.function.arguments;
+        }
+      }
+    }
+  };
 
   // 订阅流式数据回调
   httpRequest.on('dataReceive', (data: ArrayBuffer) => {
@@ -413,6 +513,12 @@ export function streamChat(
     sseBuffer = parsed.remainder;
     if (parsed.texts.length > 0 || parsed.reasonings.length > 0) { // ★ 0.188.0
       deliveredAny = true;
+    }
+    if (parsed.toolCallDeltas.length > 0) { // ★ 0.292.0
+      mergeToolDeltas(parsed.toolCallDeltas);
+    }
+    if (parsed.finishReason.length > 0) { // ★ 0.292.0
+      trackedFinishReason = parsed.finishReason;
     }
     // 逐个回调文本分片
     for (let i = 0; i < parsed.texts.length; i++) {
@@ -468,9 +574,37 @@ export function streamChat(
           onReasoning(parsed.reasonings[i]);
         }
       }
+      if (parsed.toolCallDeltas.length > 0) { // ★ 0.292.0
+        mergeToolDeltas(parsed.toolCallDeltas);
+      }
+      if (parsed.finishReason.length > 0) { // ★ 0.292.0
+        trackedFinishReason = parsed.finishReason;
+      }
       if (parsed.usage) {
         trackedUsage = parsed.usage;
       }
+    }
+    // ★ 0.292.0：FC 工具调用分流——AI 请求执行工具（finish_reason=tool_calls）→ onToolCalls
+    //   替代 onDone（上层执行工具后自行再起下一轮流）；usage 一并透传供多轮累加实扣。
+    //   拼接不完整（网关截断等）走 onError，不静默吞。
+    if (trackedFinishReason === 'tool_calls' && toolAcc.length > 0 && onToolCalls !== undefined) {
+      let complete = true;
+      for (let i = 0; i < toolAcc.length; i++) {
+        if (toolAcc[i].id.length === 0 || toolAcc[i].name.length === 0) {
+          complete = false;
+          break;
+        }
+      }
+      notifyAiStreamTerminal(true, sceneLabel);
+      guardFinish();
+      cleanupRequest(httpRequest);
+      if (complete) {
+        onToolCalls(toolAcc, trackedUsage?.prompt_tokens ?? 0, trackedUsage?.completion_tokens ?? 0,
+          trackedUsage?.prompt_tokens_details?.cached_tokens ?? 0);
+      } else {
+        onError('AI 工具调用数据不完整（网关截断），请重试');
+      }
+      return;
     }
     // ★ 0.188.0：零内容流诊断——HTTP 4xx/5xx 的 JSON 错误体（无 data: 前缀）此前被
     // 静默吞掉、统一显示「AI 未返回文本内容」，真实原因（key 失效/模型下线/限流）不可见。
@@ -496,9 +630,13 @@ export function streamChat(
 
   // 构建请求体
   const streamOpts: StreamOptions = { include_usage: true };
+  // ★ 0.292.0：FC 工具轮次消息追加（请求副本内存态；普通轮 undefined 零影响）
+  const baseMsgs: VolcanoMessage[] = buildMessages(messages);
+  const allMsgs: Object[] = (toolAppendix !== undefined && toolAppendix.length > 0)
+    ? (baseMsgs as Object[]).concat(toolAppendix) : baseMsgs as Object[];
   const body: VolcanoRequestBody = {
     model: config.model,
-    messages: buildMessages(messages),
+    messages: allMsgs,
     stream: true,
     stream_options: streamOpts,
     // ★ 0.271.0：思考注入（ArkTS 原生 JSON body 顶层直加，无 extra_body 概念——Python SDK 用法勿照搬）
@@ -506,6 +644,9 @@ export function streamChat(
   };
   if (effThinking.enabled) {
     body.reasoning_effort = effThinking.effort; // 仅 low/high（max 常量开关不暴露——平台约束+成本取舍）
+  }
+  if (tools !== undefined && tools.length > 0) {
+    body.tools = tools; // ★ 0.292.0：工具声明（不传=纯聊天零影响）
   }
 
   // 发起流式请求
@@ -563,6 +704,45 @@ export function streamChat(
 }
 // ★ 删除未使用的 testApiConnection + testApiWithDiagnostics（0.122 清理）
 
+// ============================================================
+// ★ 0.292.0：联网工具循环（FC）——工具定义 + 工具轮次消息构造
+// ============================================================
+
+// 工具定义（OpenAI 格式 JSON Schema）——AI 据此决定何时调用 search_web / open_url。
+// 字符串承载+解析返回（ArkTS 禁无类型嵌套对象字面量——arkts-no-untyped-obj-literals）
+const WEB_TOOLS_SCHEMA_JSON: string =
+  "[{\"type\":\"function\",\"function\":{\"name\":\"search_web\",\"description\":\"联网搜索。当用户的问题涉及最新信息、官方文档、政策要求、论坛帖子等你不确定或超出知识范围的内容时调用。query 用 2~8 个关键词，中文。\",\"parameters\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"搜索关键词\"}},\"required\":[\"query\"]}}}," +
+  "{\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"description\":\"打开网页读取全文。从 search_web 结果里选最相关、最权威（官方域名优先）的链接读取正文。\",\"parameters\":{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"完整的 http/https 链接\"}},\"required\":[\"url\"]}}}}]";
+
+export function buildWebToolsSchema(): Object[] {
+  return JSON.parse(WEB_TOOLS_SCHEMA_JSON) as Object[];
+}
+
+// 工具轮次消息构造：assistant(tool_calls) + 逐个 tool 结果（请求副本专用，不进气泡树/持久化）
+// resultTexts 与 calls 一一对应；某工具执行失败时传中文失败原因文本（模型不瞎编）
+export function buildToolRoundMessages(calls: ToolCallResult[], resultTexts: string[]): Object[] {
+  const out: Object[] = [];
+  const tcs: VolcanoToolCall[] = [];
+  for (let i = 0; i < calls.length; i++) {
+    const fn: VolcanoToolCallFunction = {
+      name: calls[i].name,
+      arguments: calls[i].argumentsJson.length > 0 ? calls[i].argumentsJson : '{}'
+    };
+    const tc: VolcanoToolCall = { id: calls[i].id, type: 'function', function: fn };
+    tcs.push(tc);
+  }
+  const asst: VolcanoAssistantToolMessage = { role: 'assistant', content: '', tool_calls: tcs };
+  out.push(asst);
+  for (let i = 0; i < calls.length && i < resultTexts.length; i++) {
+    const tm: VolcanoToolResultMessage = {
+      role: 'tool',
+      tool_call_id: calls[i].id,
+      content: resultTexts[i].length > 0 ? resultTexts[i] : '（工具执行失败：无结果）'
+    };
+    out.push(tm);
+  }
+  return out;
+}
 // ============================================================
 // ★ 0.145：AI 查词（Word Lookup）— 划词翻译浮窗数据源
 // ============================================================
