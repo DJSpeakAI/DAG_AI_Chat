@@ -45,12 +45,13 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.297.0|✅数学证明画板（全案 docs/0.165+/0.297.0）：新 SketchPage 无限画布（视口 Canvas+世界坐标矢量重放永不糊，骨架复刻 BBTreeCanvas 锚点公式）+双色笔（浅=黑/红 token、深=白/黄 token）+撤销+OffscreenCanvas 包围盒导出 JPEG 走 9 格附件流；ChatPage +号改展开双按钮（图片/文件+画板，满格守卫）；防手掌误触=event.sourceTool（TouchEvent 级属性，非 TouchObject.sourceToolType——文档实锤）+笔活跃 800ms 拒指。⚠️Pen Kit 弃用（只纵向长画布/私有格式/SDK24 工具栏不可定制）；PointPredictor 报点预测预留未接；待用户装机验收（Pad 手写主场景）|
 |0.296.0|✅首启外观弹窗点选即预览（ThemeChooseDialog 卡片 onClick 即调 applyMode persist=false 所见即所得，落盘+角标仍由主按钮 chooseThemeMode 统一执行防未确认预览落盘；GSD 外观卡本就点选即生效无需改）；版本同步 0.292.1 起两处制（app.json5+GSD）|
 |0.295.0|✅ChatPage 结构性拆分三轮重构（用户拍板方案 B 垂直拆分"让后面 AI 更好 coding"，9378→8235 行零业务改动）：R1 类型常量层 ChatPageTypes+解析纯函数层 ChatMdParser+WaitingDots/CodeBlockView 独立件；R2 FolderPickerDialogs（Word/Card/Quote 三弹窗 @ComponentV2+@Event 桥接=0.156 模式）；R3 ImageViewer（AppStorageV2 store 桥=GlobalSettingsSharedStore 模式）。⚠️教训：sed 删块边界差一行→孤立括号全文件级联错（0.221.6 前科）；放大弹窗（codeZoom/tableZoom）深耦划词 SelectionToolbar 体系（0.285.x 敏感区）本轮判定不拆；**深水区遗留（新会话+装机回归配合）：build 内 @Builder 消息渲染链/TTS 状态机/知识卡编辑弹窗（提炼链交叉）/GSD 3860/KnowledgeBankPage 3812**|
 |0.294.0|✅好奇宝宝新手任务体系（全案 docs/0.165+/好奇宝宝新手任务体系 方案.md）：七任务+完赛 2 万+节点上调 5000×3；SiyiPointStore 尾追 rookieDoneJson/rookieGrantedJson（cfg:siyi-points 并集合并防跨端重发）；grantBonusSp 改返 boolean+claimQuizSp 先发后置 claimed；新 common/RookieTask.ets（幂等+三时机差集补发）+components/RookieTaskDialog.ets；BBTreeCanvas 右上角 sign 入口+角标；ChatPage 六挂点+ReviewPage；签到每日首开自动弹（gate ready 才弹）；project_rule 新增「SP 司忆点云服务铁律」章。⚠️教训：node 补丁脚本 subOnce FAIL 即 exit=该文件已过补丁全部不落盘；GSD 内部无 gsShared 成员、RADIUS_CARD 非 GSD 既有 token|
 |0.293.0|✅SP 云同步门卫 SiyiGate（SP 双向变动全收口；ready=登录∧开关∧权限∧首拉闸门；未就绪弹引导三分支含 Deeplink 跳云空间）+新用户礼包云下行后发放（冷装重领根治）+签到口径统一（isSignedToday 双查本地∪云端）+账号切换资产隔离（闸门重开防 0 值 LWW 压云端）+订阅退役落地；⚠️待装机验收（PENDING 四场景）；autoSyncProgress 云空间满监听需改 CloudSyncUtil（红线）转人工|
 
-- 版本号纪律：当前 **v0.296.0（versionCode 1000433）**；**版本同步实为两处**（app.json5 + GlobalSettingsDialog APP_VERSION——0.292.1 起 Index.ets 无版本点）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
+- 版本号纪律：当前 **v0.297.0（versionCode 1000434）**；**版本同步实为两处**（app.json5 + GlobalSettingsDialog APP_VERSION——0.292.1 起 Index.ets 无版本点）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
 - 迭代文档命名：版本号 变更内容.md（详见 project_rule §7）
 - 真机测试设备（阵容与账号分工定稿）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S（hdc 7HZUN26330G02209）+ 畅享90Pro Max（WiFi 192.168.2.17:38611）**，同测同装机；第四台 Pura X View（192.168.2.4:39421）=用户工作机默认不测不装；**手机+Pad 登 180 测试账户、PC+Pura 登 181 主账号**；设备 IP 会变，连不上先问用户；`param get const.product.model` 验身份
 

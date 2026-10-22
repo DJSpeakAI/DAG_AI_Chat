@@ -21,6 +21,7 @@ import { ChatPage } from '../components/ChatPage';
 import { WordBankPage } from '../components/WordBankPage'; // ★ 0.145：单词库页面路由
 import { KnowledgeBankPage } from '../components/KnowledgeBankPage'; // ★ 0.146：知识库页面路由
 import { AnnotationPage } from '../components/AnnotationPage'; // ★ 0.152：屏幕圈选标注页路由
+import { SketchPage } from '../components/SketchPage'; // ★ 0.297.0：数学证明画板页路由
 import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：学习统计页路由
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
@@ -586,6 +587,8 @@ struct Index {
       KnowledgeBankPage({ pathStack: this.pathStack })
     } else if (name === 'AnnotationPage') { // ★ 0.152：屏幕圈选标注页
       AnnotationPage({ pathStack: this.pathStack })
+    } else if (name === 'SketchPage') { // ★ 0.297.0：数学证明画板页（输入区 + 号入口）
+      SketchPage({ pathStack: this.pathStack })
     } else if (name === 'StatisticsPage') { // ★ 0.192.0：学习统计页（边栏「统计」+ 账号行点击）
       StatisticsPage({ pathStack: this.pathStack })
     } else if (name === 'BillingPage') { // ★ 0.194.0：账单/订阅页（边栏「账单」）

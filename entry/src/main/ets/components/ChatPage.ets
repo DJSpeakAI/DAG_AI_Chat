@@ -47,6 +47,7 @@ import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★
   import { noteBankMutation, saveBubbleTreePools } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）；★ 0.287.0：saveBubbleTreePools 分池保存公共函数（saveTree 消重+撤销栈闭包安全）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
+import { SketchResultStore, connectSketchResult } from '../common/SketchModel'; // ★ 0.297.0：数学证明画板（结果回传）
 import { completeRookieTask } from '../common/RookieTask'; // ★ 0.294.0：好奇宝宝新手任务完成信号（六挂点：新建气泡/司枢/圈注/划词翻译/划词入库/司忆区评分）
 import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
@@ -61,7 +62,7 @@ import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折
 import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：通用感叹号信息卡（查词/提炼 SP 透明化；主链路 tokenInfoBuilder 不动防回归）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_CAPTION } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）；★ 0.248.3：圈注/划词守卫
 import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（消耗 SP 的 AI 功能前置闸——账本云端对齐才放行）
@@ -87,6 +88,9 @@ import { ImageViewer } from './ImageViewer';
 export struct ChatPage {
   theme: AppTheme = connectAppTheme();
   @Param pathStack: NavPathStack = new NavPathStack();
+  // ★ 0.297.0：数学证明画板——+号展开菜单态 + 画板结果回传（@Local 接管 connect 实例）
+  @Local plusMenuOpen: boolean = false;
+  @Local sketchResult: SketchResultStore = connectSketchResult();
   gsShared: GlobalSettingsSharedStore = connectGlobalSettingsShared(); // ★ 0.230.0：设置弹窗共享开态（跨页返回键拦截）
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
@@ -2810,6 +2814,34 @@ export struct ChatPage {
     } catch (err) {
       // 选择取消/读取失败静默忽略（防崩溃，原 selectImages 同策略）
     }
+  }
+
+  // ★ 0.297.0：画板回传消费（@Monitor 路径监听嵌套 @Trace 字段）——导出图挂待发区后清 store
+  @Monitor('sketchResult.imageUri')
+  onSketchResult(): void {
+    const uri = this.sketchResult.imageUri;
+    if (uri.length === 0) {
+      return;
+    }
+    if (this.pendingImages.length + this.pendingDocs.length >= 9) {
+      // 防御性满格守卫（画板入口已拦；弹页期间附件被拖满的竞态兜底）
+      this.showToastSafe('待发区已有 9 个附件，请先删除再添加');
+      this.sketchResult.imageUri = '';
+      return;
+    }
+    this.pendingImages = [...this.pendingImages, uri];
+    this.saveDraft(); // 图片变化实时写回草稿（selectAttachments 同策略）
+    this.sketchResult.imageUri = '';
+    this.showToastSafe('已加入待发区');
+  }
+
+  // ★ 0.297.0：进画板（满格守卫——9 格附件流已满时提示先删除）
+  openSketchBoard(): void {
+    if (this.pendingImages.length + this.pendingDocs.length >= 9) {
+      this.showToastSafe('待发区已有 9 个附件，请先删除再添加');
+      return;
+    }
+    this.pathStack.pushPath({ name: 'SketchPage' });
   }
 
   // 从 uri 读图转 data URI（与原 selectImages 内联读法一致——读失败返回空串）
@@ -6656,19 +6688,69 @@ export struct ChatPage {
 
             Blank()
 
-            // 右组：＋ 添加图片（相册多选 → base64 挂到输入区，原链路不变）——紧跟发送键左侧
+            // ★ 0.297.0：+号展开菜单（图片/文件 + 画板）——点 + 切换展开，点按钮收起并执行
+            if (this.plusMenuOpen) {
+              Row({ space: 8 }) {
+                Row({ space: 5 }) {
+                  Image($r('app.media.image'))
+                    .width(15)
+                    .height(15)
+                    .objectFit(ImageFit.Contain)
+                  Image($r('app.media.file'))
+                    .width(15)
+                    .height(15)
+                    .objectFit(ImageFit.Contain)
+                  Text('图片/文件')
+                    .fontSize(FONT_SIZE_CAPTION)
+                    .fontColor(this.theme.textSecondary)
+                    .maxLines(1)
+                }
+                .height(28)
+                .padding({ left: 10, right: 11 })
+                .borderRadius(14)
+                .backgroundColor(this.theme.surfaceSoft)
+                .border({ width: 0.5, color: this.theme.strokeCard })
+                .onClick(() => {
+                  this.plusMenuOpen = false;
+                  this.selectAttachments(); // 原 + 号链路不变（图片+文档混选，合计 9）
+                })
+
+                Row({ space: 5 }) {
+                  Image($r('app.media.sketch'))
+                    .width(15)
+                    .height(15)
+                    .objectFit(ImageFit.Contain)
+                  Text('画板')
+                    .fontSize(FONT_SIZE_CAPTION)
+                    .fontColor(this.theme.textSecondary)
+                    .maxLines(1)
+                }
+                .height(28)
+                .padding({ left: 10, right: 11 })
+                .borderRadius(14)
+                .backgroundColor(this.theme.surfaceSoft)
+                .border({ width: 0.5, color: this.theme.strokeCard })
+                .onClick(() => {
+                  this.plusMenuOpen = false;
+                  this.openSketchBoard(); // 满格守卫 + pushPath 进画板
+                })
+              }
+            }
+
+            // 右组：＋ 添加附件/画板（★ 0.297.0：点按展开双按钮菜单）——紧跟发送键左侧
             Row() {
               Image($r('app.media.plus'))
                 .width(18)
                 .height(18)
                 .objectFit(ImageFit.Contain)
+                .rotate({ angle: this.plusMenuOpen ? 45 : 0 }) // 展开态 + 旋转 45° 变 ×（收起暗示）
             }
             .width(28)
             .height(28)
             .justifyContent(FlexAlign.Center)
             .margin({ right: 8 }) // ★ 0.287.4：去掉圆底（用户「+ 号取消外面的圆圈」）——裸图标+保留 28 热区，图标 16→18 补足视觉分量
             .onClick(() => {
-              this.selectAttachments(); // ★ 0.291.2：+号混选（图片+文档，合计 9）
+              this.plusMenuOpen = !this.plusMenuOpen;
             })
 
             // 右：发送（圆形向上箭头，右下角；isLoading 半透明置灰并屏蔽点击）
