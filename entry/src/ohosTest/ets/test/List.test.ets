@@ -15,6 +15,7 @@ import wordSpeakTextTest from './WordSpeakText.test'; // ★ 0.288.1：词条播
 import mathRenderTest from './MathRender.test'; // ★ 0.288.3：LaTeX 定界符剥离（$$/$ 成对剥/价格不误伤/命令转换回归）断言
 import iapJwsTest from './IapJws.test'; // ★ 0.288.4：IAP 购买数据统一解析（JWS payload/老格式兜底/坏串防御/金额换算）断言
 import iapPackageTest from './IapPackage.test'; // ★ 0.289.0：充能包账本（迁移重建/FIFO 回放/按包扣费/退款核销守恒/grant 建包）断言
+import rookieTaskTest from './RookieTask.test'; // ★ 0.294.0：好奇宝宝新手任务（任务表拍板数额/集合兜底/结清判定/everDone 重做语义）断言
 
 export default function testsuite() {
   abilityTest();
@@ -34,4 +35,5 @@ export default function testsuite() {
   mathRenderTest();
   iapJwsTest();
   iapPackageTest();
+  rookieTaskTest();
 }

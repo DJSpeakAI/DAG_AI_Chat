@@ -25,8 +25,11 @@ import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云�
 import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.0：操作撤销栈（删除气泡/重命名入栈）
 import { HuaweiAccountStore, connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.168：边栏底部账号头像/昵称（华为账号登录态）
 import { CardImportStore, connectCardImport } from '../common/KnowledgeModel'; // ★ 0.200.0：知识卡片导入气泡（跨页 store：知识库/复习页写入 → 画布选择模式消费）
-import { PersonalityQuizStore, connectPersonalityQuiz } from '../common/PersonalityQuiz'; // ★ 0.288.0：性格测试进度（done=信号灯消失）
+import { PersonalityQuizStore, connectPersonalityQuiz, QuizLaunchStore, connectQuizLaunch } from '../common/PersonalityQuiz'; // ★ 0.288.0：性格测试进度；★ 0.294.0：QuizLaunchStore（GSD 重做跨页唤起，桥驱动）
 import { PersonalityQuizDialog } from './PersonalityQuizDialog'; // ★ 0.288.0：性格测试弹窗（信号灯唤起）
+import { RookieTaskDialog, RookieRewardDialog } from './RookieTaskDialog'; // ★ 0.294.0：好奇宝宝任务面板+奖励到账弹窗（右上角入口唤起）
+import { rookieUndoneCount, rookieAllSettled, settleRookieTasks, connectRookieBridge } from '../common/RookieTask'; // ★ 0.294.0：任务角标/入口消失/结算时机/奖励弹窗桥
+import { SiyiPointStore, connectSiyiPoints } from '../common/ChatModel'; // ★ 0.294.0：任务 done/granted 集合真相源（cfg:siyi-points）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -110,7 +113,11 @@ export struct BBTreeCanvas {
 
   // ── ★ 0.288.0：性格测试（画布左下角「信号灯」呼吸圆点入口；做完消失）──
   quizStore: PersonalityQuizStore = connectPersonalityQuiz();
-  @Local quizVisible: boolean = false;  // 测试弹窗开关（退出保留进度，下次续做）
+  quizLaunch: QuizLaunchStore = connectQuizLaunch(); // ★ 0.294.0：测试弹窗开关（桥驱动——GSD「重新做」可跨页唤起；退出保留进度续做）
+  // ── ★ 0.294.0：好奇宝宝新手任务（右上角入口；做完打勾、7 条全完结清后入口消失）──
+  @Local rookieVisible: boolean = false; // 任务面板开关
+  siyiPoints: SiyiPointStore = connectSiyiPoints(); // done/granted 集合（@Trace 驱动角标/入口响应）
+  rookieBridge = connectRookieBridge(); // 奖励弹窗桥（返回键拦截消费）
   @Local quizBreath: number = 0;        // 信号灯呼吸动画值 0~1（放大+光晕呼吸）
 
   /** ★ 0.288.0：信号灯呼吸动画（0↔1 无限往复——品牌紫光点低频呼吸微光；隐藏态组件不渲染、帧负载趋零） */
@@ -1466,6 +1473,39 @@ export struct BBTreeCanvas {
               .layoutWeight(1)
               // 分段控件（★ 0.167.5 用户拍板：全设备放主行 ⚙ 左边——收回 0.167.2 手机挪第二行方案）
               this.SegmentedControl()
+              // ★ 0.294.0：好奇宝宝任务入口（画布右上角；未完成数角标；7 条全完+奖励结清整体消失——信号灯同款先例）
+              Stack({ alignContent: Alignment.TopEnd }) {
+                Row() {
+                  Image($r('app.media.sign'))
+                    .width(16)
+                    .height(16)
+                    .objectFit(ImageFit.Contain)
+                }
+                .width(34)
+                .height(34)
+                .justifyContent(FlexAlign.Center)
+                .borderRadius(10)
+                .border({ width: 1, color: this.theme.strokeCard })
+                .backgroundColor(this.theme.surfaceNode)
+                .onClick(() => {
+                  this.rookieVisible = true;
+                })
+                if (rookieUndoneCount(this.siyiPoints) > 0) {
+                  Text(`${rookieUndoneCount(this.siyiPoints)}`)
+                    .fontSize(9)
+                    .fontWeight(700)
+                    .fontColor(Color.White)
+                    .textAlign(TextAlign.Center)
+                    .width(14)
+                    .height(14)
+                    .borderRadius(7)
+                    .backgroundColor(this.theme.brandPrimary)
+                    .offset({ x: 4, y: -4 })
+                }
+              }
+              .height(40)
+              .margin({ right: 8 })
+              .visibility(this.viewW > 0 && !rookieAllSettled(this.siyiPoints) ? Visibility.Visible : Visibility.None)
               // ★ 0.168：⚙ 设置按钮删除——设置入口移至左侧边栏底部（用户拍板，顺带缓解右上角拥挤）
               // + 新建气泡（UI_GUIDELINES 六-9；行为按模式：平铺=新树 / 选项卡=新 Tab）
               // ★ 0.167.5 用户拍板：恢复双态（收回 0.167.3 统一纯图标）——小屏（viewW<520）
@@ -1657,21 +1697,30 @@ export struct BBTreeCanvas {
           .backgroundColor(this.theme.surfaceNode)
           .shadow({ radius: 20, color: this.theme.shadowColor, offsetX: 0, offsetY: 8 })
           .onClick(() => {
-            this.quizVisible = true;
+            this.quizLaunch.visible = true; // ★ 0.294.0：桥置位（GSD 重做同款通道）
           })
           .onAppear(() => {
             this.startQuizBreath();
           })
-          .visibility(this.viewW > 0 && !this.quizStore.done ? Visibility.Visible : Visibility.None)
+          .visibility(this.viewW > 0 && !this.quizStore.everDone ? Visibility.Visible : Visibility.None) // ★ 0.294.0：done→everDone（重做不复活信号灯）
           .position({ x: 14, y: this.viewH - 56 - 44 - (this.isTablet ? 0 : 60) })
 
           // ★ 0.288.0：性格测试弹窗（全屏遮罩+面板自包含；退出保留进度断点续做）
           PersonalityQuizDialog({
-            visible: this.quizVisible,
+            visible: this.quizLaunch.visible, // ★ 0.294.0：桥驱动（信号灯/GSD 重做两入口）
             onClose: () => {
-              this.quizVisible = false;
+              this.quizLaunch.visible = false;
             }
           })
+
+          // ★ 0.294.0：好奇宝宝任务面板 + 奖励到账弹窗（桥驱动；同一 Stack 层级随信号灯弹窗之后）
+          RookieTaskDialog({
+            visible: this.rookieVisible,
+            onClose: () => {
+              this.rookieVisible = false;
+            }
+          })
+          RookieRewardDialog()
 
       // ★ 0.167：平铺/选项卡两套自绘标题行（0.151-D）已删除——统一由上方信息条
       //   （分段控件切换模式 + 新建气泡按钮）+ Tab 栏 + 右下角缩放控件承担（UI_GUIDELINES 五/六）
@@ -2060,6 +2109,15 @@ export struct BBTreeCanvas {
     .hideTitleBar(true)
     .backgroundColor(this.theme.bgCanvas) // ★ 0.278.12：NavDestination 容器级显式背景（华为官方建议双保险——覆盖默认系统背景，消除黑块嫌疑层）
     .onBackPressed(() => {
+      // ★ 0.294.0：任务面板/奖励弹窗打开时返回键先关（最新弹窗优先；奖励弹窗最顶层）
+      if (this.rookieBridge.rewardVisible) {
+        this.rookieBridge.rewardVisible = false;
+        return true;
+      }
+      if (this.rookieVisible) {
+        this.rookieVisible = false;
+        return true;
+      }
       // ★ 0.200.0：导入选择模式打开时返回键先退出选择模式（清 store 零残留），不直接退应用
       if (this.importSelecting) {
         this.cancelImportSelecting();
@@ -2079,6 +2137,8 @@ export struct BBTreeCanvas {
       return false;
     })
     .onShown(() => {
+      // ★ 0.294.0：好奇宝宝任务结算时机（回画布对账差集——云服务开通后挂账自动补发）
+      settleRookieTasks();
       // ★ 0.200.0：知识库/复习页发起导入回到画布 → 进入选择模式（action 空 = 普通返回，零副作用）
       this.enterImportSelecting();
       // ★ 0.223.0：云端下行兜底消费（@Monitor 失效/画布不在栈时的第二道网——保坐标重绘）

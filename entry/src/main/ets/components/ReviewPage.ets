@@ -33,6 +33,7 @@ import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.248.
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：完成页未登录登录入口（AI 鼓励引导弹窗桥，Index 根 Stack 消费）
 import { FireworksOverlay } from './FireworksOverlay'; // ★ 0.255.1：完成页烟花顶层 Transparent（点击放烟花+透传按钮）；自动高密度 8s 后静默等点击
 import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：结束语 SP 信息卡（免扣照报明细）
+import { completeRookieTask } from '../common/RookieTask'; // ★ 0.294.0：好奇宝宝新手任务（首次复习完成信号——评分落库即算）
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -240,6 +241,7 @@ export struct ReviewPage {
  const _tp1: Record<string, string> = {}; _tp1['rating'] = rating;
     track(this.getUIContext().getHostContext() as common.Context, 'review_rate', _tp1); // 0.206.0 埋点：复习页评分
     applyRating(item, rating, Date.now());
+    completeRookieTask('first_review'); // ★ 0.294.0：新手任务④首次复习——全屏复习页评分即算（与司忆区同挂幂等）
     noteBankMutation(); // ★ 0.223.0：评分=进度变更，3 秒防抖上云（用户拍板）
     if (rating === 'hard') {
       this.ratedHard += 1;

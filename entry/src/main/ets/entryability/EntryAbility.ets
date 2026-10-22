@@ -16,6 +16,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.279.5：持久化�
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flushCloudRowsNow } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
 import { initCloudDb, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
+import { settleRookieTasks } from '../common/RookieTask'; // ★ 0.294.0：新手任务结算（回前台对账差集补发）
+import { maybeAutoShowSignIn } from '../common/ChatModel'; // ★ 0.294.0：每日首开自动弹签到（gate ready 才弹）
 import { refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫——启动/回前台刷新 DISTRIBUTED_DATASYNC 权限缓存（系统设置改权限回来即校正）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue, handleWidgetSpeak } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue; ★ 0.255.0 speak
 import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
@@ -352,6 +354,9 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.293.0：回前台刷新 SP 门卫权限缓存（用户可能刚从系统设置改权限回来——
     //   华为无权限变化推送 API，onForeground 主动重查是官方推荐做法）
     refreshSiyiGatePerm();
+    // ★ 0.294.0：回前台=新手任务结算时机（云服务开通后挂账自动补发）+ 每日首开自动弹签到
+    settleRookieTasks();
+    maybeAutoShowSignIn();
     // ★ 0.291.0：回前台拉云端退款标记（**主拉取点**——退款核销白嫖闭环论证：用 SP 必开 app，
     //   开 app 即拉取核销先于扣费生效；静默无提示，核销结果进账单页时展示）
     pullRefundMarks();

@@ -64,6 +64,7 @@ import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, RADIUS_NODE, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, ThemeBadgeStore, connectAppTheme, connectThemeBadge, chooseThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题（外观卡）
+import { connectPersonalityQuiz, resetQuizForRetake, connectQuizLaunch } from '../common/PersonalityQuiz'; // ★ 0.294.0：重新做性格测试入口（everDone 才显示；重置+关 GSD+桥唤起答题）
 import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.230.0：GlobalSettingsSharedStore（开态跨页共享——返回键拦截）
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.238.0：测试连接 http 异常捕获
 
@@ -198,7 +199,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.293.0'; // ★ 0.293.0：SP 云同步门卫（SiyiGate）+签到口径统一+礼包云下行发放；上一版 0.292.1（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.294.0'; // ★ 0.294.0：好奇宝宝新手任务（七任务挂勾+挂账补发+性格测试可重做+签到每日首开自动弹）；上一版 0.293.0（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2220,6 +2221,45 @@ export struct GlobalSettingsDialog {
       }
       .width('100%')
       .margin({ bottom: 24 })
+
+      // ★ 0.294.0：重新做性格测试（用户拍板：给第一遍随便做的人改错机会——重做只为让 AI 更懂你；
+      //   仅做过一次的人可见；SP 不再发（claimed 幂等），画像评阅走演变链刷新）
+      if (connectPersonalityQuiz().everDone) {
+        Column() {
+          Row({ space: 10 }) {
+            Column({ space: 2 }) {
+              Text('重新做性格测试')
+                .fontSize(14)
+                .fontColor(this.theme.textPrimary)
+              Text('对上次答卷不满意可重答一遍，AI 将按新答案更懂你（奖励只发一次）')
+                .fontSize(11)
+                .lineHeight(18)
+                .fontColor(this.theme.textTertiary)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            Button('重做')
+              .fontSize(12)
+              .height(30)
+              .padding({ left: 14, right: 14 })
+              .fontColor(Color.White)
+              .backgroundColor(this.theme.brandPrimary)
+              .borderRadius(RADIUS_CONTROL)
+              .onClick(() => {
+                resetQuizForRetake(connectPersonalityQuiz());
+                this.requestClose(); // 关 GSD——答题弹窗挂画布（层级在 GSD 之下须先收）
+                connectQuizLaunch().visible = true; // 桥唤起答题（从第 1 题重答）
+              })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.theme.surfaceSoft)
+        .margin({ bottom: 24 })
+      }
 
       // ★ 0.267.1：后台回复通知卡（用户需求「把 TA 自动打开」——系统红线应用无法静默开启，
       //   申请窗仅弹一次（0.251.0 首次 AI 请求场景化申请）；被拒后唯一出路=系统设置页，

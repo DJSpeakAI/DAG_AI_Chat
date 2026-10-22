@@ -47,6 +47,7 @@ import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★
   import { noteBankMutation, saveBubbleTreePools } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）；★ 0.287.0：saveBubbleTreePools 分池保存公共函数（saveTree 消重+撤销栈闭包安全）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
+import { completeRookieTask } from '../common/RookieTask'; // ★ 0.294.0：好奇宝宝新手任务完成信号（六挂点：新建气泡/司枢/圈注/划词翻译/划词入库/司忆区评分）
 import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
 import { renderMathText } from '../utils/MathRender'; // ★ 0.151：LaTeX 数学符号本地渲染（必须在 parse 层转换，保证划词偏移一致）
@@ -2128,6 +2129,9 @@ export struct ChatPage {
     const thinkingReq: ThinkingRequest = webOn ? webOffReq : resolveThinkingFor('auto', // ★ 0.290.0：深度思考三态随 GSD UI 隐藏恒 auto（司枢开=长回复恒 high）
       this.replyLengthMode, isPodcast, this.inputText, topicForThink, aiCountForThink);
     this.thinkingEnabledNow = thinkingReq.enabled;
+    if (thinkingReq.enabled) {
+      completeRookieTask('use_sishu'); // ★ 0.294.0：新手任务①司枢模式——发送时刻思考档生效即算使用一次
+    }
     const userMsg = new ChatMessage(generateMessageId(), 'user', this.inputText, [...this.pendingImages], 0, 0, isPodcast); // ★ 0.133：标记播客模式
     // ★ 0.202.0：注意力提取——消息命中卡标题/标签 → 标签热度+1（纯本地毫秒级；AI 还在流式回复时复习权重已算完）
     updateAttention(this.attention, this.knowledgeBank.cards, userMsg.content);
@@ -4085,6 +4089,7 @@ export struct ChatPage {
       (result: WordQueryResult) => {
         this.wordPopupLoading = false;
         this.wordPopupResult = result;
+        completeRookieTask('word_translate'); // ★ 0.294.0：新手任务②划词翻译——结果到达即算一次
       },
       (error: string) => {
         this.wordPopupLoading = false;
@@ -4925,6 +4930,7 @@ export struct ChatPage {
  const _tp2: Record<string, string> = {}; _tp2['rating'] = rating;
     track(this.getUIContext().getHostContext() as common.Context, 'bubble_rate', _tp2); // 0.206.0 埋点：司忆区评分
     applyRating(w, rating, Date.now());
+    completeRookieTask('first_review'); // ★ 0.294.0：新手任务④首次复习——司忆区评分即算（ReviewPage 同挂）
     noteBankMutation(); // ★ 0.223.0：评分=进度变更，3 秒防抖上云（用户拍板）
     const next = new Map<string, string>(this.reviewRatedMap);
     next.set(key, rating);
@@ -5194,6 +5200,7 @@ export struct ChatPage {
     const card = new KnowledgeCard(generateMessageId(), title, definition, this.knowledgeImageUri,
       Date.now(), 0, 0, 0, 0, this.knowledgeSelectedTags, '', folderId, '');
     addKnowledgeCard(this.knowledgeBank, card);
+    completeRookieTask('word_to_knowledge'); // ★ 0.294.0：新手任务③划词入知识库——卡片入库即算一次
     this.cardFolderPickerVisible = false;
     this.closeKnowledgeEdit();
   }
@@ -5822,6 +5829,7 @@ export struct ChatPage {
     // ★ 0.151-D 需求 3：直接进入新子气泡的对话页（跳过「返回画布 + 双击气泡」两步）——
     // 先建节点入库，再播「淡出→切换→淡入」过渡（★ 0.162：原实现瞬间切换 currentBubbleStore，
     // 消息列表瞬间清空重载刷屏过快，空消息页时用户不知道是否跳转了；现在切换发生在透明态）
+    completeRookieTask('new_bubble'); // ★ 0.294.0：新手任务⑥新建气泡——走到创建即算（防抖/流式/动画闸全过）
     const newBubble = new BubbleNode(
       generateNodeId(),
       this.currentBubbleId,
@@ -6008,6 +6016,7 @@ export struct ChatPage {
     this.annotationResult.action = '';
     this.annotationResult.imageUri = '';
     this.annotationResult.note = '';
+    completeRookieTask('screen_annotate'); // ★ 0.294.0：新手任务⑤屏幕圈注——结果回传即算一次
     if (action === 'import') {
       // ① 当前对话导入：图片挂到输入区（可追加文字后点发送，走现有 sendMessage 链路）；
       //    ★ 0.184.0：补充要求填入输入框（输入框已有草稿时换行追加，不覆盖）

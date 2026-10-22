@@ -26,11 +26,12 @@
 //   - 交叉验证：认知深度 q12 优先于 q2；抗压 q14 优先于 q4（行为题优先于自评题，心理学定论）
 // ============================================================
 
-import { PersistenceV2 } from '@kit.ArkUI';
+import { PersistenceV2, AppStorageV2 } from '@kit.ArkUI';
 import { ProfileStore, ProfileObservation, appendObservation } from './ProfileModel';
 import { generateMessageId, connectSiyiPoints, grantBonusSp, ApiConfig } from './ChatModel';
 import { streamChat } from '../utils/ApiClient';
 import { ChatMessage } from './ChatModel';
+import { completeRookieTask } from './RookieTask'; // ★ 0.294.0：新手任务第 7 条完成信号（writeQuizProfile 内调用）
 import { QUIZ_REVIEW_PROMPT } from './Prompts';
 
 // ------------------------------------------------------------
@@ -52,7 +53,7 @@ export interface QuizQuestion {
 }
 
 export const QUIZ_TOTAL: number = 15;
-export const QUIZ_SP_PER_NODE: number = 2000; // 每节点 2000 司忆点（5 题一节点，共 3 节点）
+export const QUIZ_SP_PER_NODE: number = 5000; // ★ 0.294.0 二轮拍板上调：每节点 5000 司忆点（5 题一节点×3=1.5 万；已领 2000 档的老用户不补差价——claimed 幂等天然防重发，断点续做按新档发）
 const QUIZ_REVIEW_TIMEOUT_MS: number = 25000; // 评阅超时保护（超时走本地兜底写入，AI 晚到丢弃）
 
 function opt(label: string, text: string): QuizOption {
@@ -229,11 +230,43 @@ export class PersonalityQuizStore {
   @Trace answerTexts: string = '[]';      // ★ 0.290.0 尾部追加：开放题答案文本（0.292.1 起停写，已答保留兼容）
   @Trace profileWritten: boolean = false; // ★ 0.290.0 尾部追加：评阅结果已写入画像（幂等第二道闸）
   @Trace choiceAnswers: string = '[]';    // ★ 0.292.1 尾部追加：选择题答案（元素=字母小写升序拼接串，如 'ac'）
+  @Trace everDone: boolean = false;       // ★ 0.294.0 尾部追加：曾经完成过一次（信号灯永久消失条件；重做不复活——done 重做会清零而本字段只增不减）
 }
 
 export function connectPersonalityQuiz(): PersonalityQuizStore {
   return PersistenceV2.connect(PersonalityQuizStore, 'personality-quiz-v1',
     () => new PersonalityQuizStore()) as PersonalityQuizStore;
+}
+
+// ★ 0.294.0 曾完成标记置位（15 题答完那一刻调用——writeQuizProfile 内 done 置位处）
+// ★ 0.294.0 测试弹窗启动桥（AppStorageV2 应用级共享——GSD「重新做」跨页唤起；
+//   原画布内 @Local quizVisible 升级为桥驱动，信号灯/重做入口两处置位）
+@ObservedV2
+export class QuizLaunchStore {
+  @Trace visible: boolean = false;
+}
+
+export function connectQuizLaunch(): QuizLaunchStore {
+  return AppStorageV2.connect(QuizLaunchStore, 'quiz-launch-bridge',
+    () => new QuizLaunchStore()) as QuizLaunchStore;
+}
+
+export function markQuizEverDone(store: PersonalityQuizStore): void {
+  if (!store.everDone) {
+    store.everDone = true;
+  }
+}
+
+// ★ 0.294.0 重做性格测试（用户拍板：给第一遍随便做的人改错机会——重做只为让 AI 更懂你）
+//   语义：答题进度/评阅幂等标记清零重答；everDone 保留（信号灯不复活）；claimed 保留
+//   （quizNodeReached 最高 3 ≤ claimed → 重做 SP 天然不再发，零额外防刷代码）；
+//   全部为字段覆写（Schema 铁律：不删不改既有字段）；profileWritten 清零→评阅重跑走演变链
+export function resetQuizForRetake(store: PersonalityQuizStore): void {
+  store.answers = '[]';
+  store.choiceAnswers = '[]';
+  store.done = false;
+  store.completedAt = 0;
+  store.profileWritten = false;
 }
 
 export function getQuizAnswers(store: PersonalityQuizStore): string[] {
@@ -313,9 +346,13 @@ export function claimQuizSp(store: PersonalityQuizStore): number {
   if (amount <= 0) {
     return 0;
   }
-  store.claimed = quizNodeReached(total);
-  grantBonusSp(connectSiyiPoints(), amount, 'quiz');
-  return amount;
+  // ★ 0.294.0 置位顺序反转：先发放、成功才置 claimed——gate 未就绪时 grantBonusSp 返 false 不置位，
+  //   差额保留、下轮（节点推进/结算钩子）自然补发（0.293.0 丢弃语义下的挂账修复）
+  if (grantBonusSp(connectSiyiPoints(), amount, 'quiz')) {
+    store.claimed = quizNodeReached(total);
+    return amount;
+  }
+  return 0;
 }
 
 // ------------------------------------------------------------
@@ -624,6 +661,8 @@ export function writeQuizProfile(quiz: PersonalityQuizStore, profileStore: Profi
   }
   quiz.done = true;
   quiz.completedAt = Date.now();
+  markQuizEverDone(quiz); // ★ 0.294.0：曾完成标记（信号灯永久消失/新手任务第 7 条判据，重做不复活）
+  completeRookieTask('personality_quiz'); // ★ 0.294.0：好奇宝宝新手任务第 7 条完成信号（幂等）
   reviewQuizProfile(quiz, profileStore, cfg, onResult);
 }
 

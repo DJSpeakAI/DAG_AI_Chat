@@ -1158,6 +1158,11 @@ export class SiyiPointStore {
   //   （同 signedDates 模式规避旧快照坑，Schema 尾部追加铁律）；池级 permanentSp/consumedPermanentSp
   //   保留=包级汇总（云同步 max 合并兼容、余额口径不变）；包级才是退款判定的唯一真相（cons===0=可退）
   @Trace iapPackages: string = '[]';
+  // ★ 0.294.0 好奇宝宝新手任务（尾部追加，同 signedDates 模式规避旧快照坑）：done=已完成任务 id 并集
+  //   （含未开云服务期间挂账完成的）；granted=已发放 SP 的任务 id 并集——两集合随本行（cfg:siyi-points）
+  //   并集合并多端收敛；done−granted 差集=待发放（云服务开通后 settleRookieTasks 自动补发）
+  @Trace rookieDoneJson: string = '[]';
+  @Trace rookieGrantedJson: string = '[]';
 }
 
 export function connectSiyiPoints(): SiyiPointStore {
@@ -1628,6 +1633,7 @@ export class SignInStore {
   @Trace streak: number = 0;          // 当前连击天数
   @Trace maxStreak: number = 0;       // 历史最高连击
   @Trace guideShown: boolean = false; // 首登签到引导弹窗已展示标志（只弹一次）
+  @Trace autoShownDate: string = ''; // ★ 0.294.0 尾部追加：每日首开自动弹签到窗去重标志（'YYYY-MM-DD'，当日已自动弹过不再弹）
   // ★ 0.259.0 补签券（升级奖励制，尾部追加默认值——Schema 铁律合规；本地不同步=与连击本地语义一致）
   @Trace makeupVouchers: number = 0;      // 持有券数
   @Trace makeupGrantedLevel: number = 0;  // 已发券等级基线（防重复发放）
@@ -1812,12 +1818,14 @@ export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string
 
 // ★ 0.288.0：嘉奖 SP 发放统一收口（性格测试等一次性奖励场景；签到仍走 doSignIn 不改）——
 //   发放入 bonusSp 嘉奖池 + 云上行防抖（cfg:siyi-points）+ sp_grant 埋点，与 doSignIn 同款三件套
-export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string): void {
+export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string): boolean {
+  // ★ 0.294.0 起返回 boolean：true=已发放；false=被拦截/零额——调用方（claimQuizSp 等）据此
+  //   决定幂等标记是否置位，gate 未就绪时不置位、后续可自然补发（挂账语义的前提）
   if (amount <= 0) {
-    return;
+    return false;
   }
   if (!siyiGateReady()) {
-    return; // ★ 0.293.0 gate 防御：一切 SP 发放口（签到/性格测试/未来做题奖励）未就绪不发
+    return false; // ★ 0.293.0 gate 防御：一切 SP 发放口（签到/性格测试/未来做题奖励）未就绪不发
   }
   siyi.bonusSp += amount;
   scheduleRowFlush();
@@ -1826,6 +1834,25 @@ export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string):
   p['sp'] = `${amount}`;
   p['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', p);
+  return true;
+}
+
+// ★ 0.294.0 每日首开自动弹签到（用户拍板：自然时间 0 点后第一次打开 app 且今日未签 → 自动弹；
+//   ★ SP 云服务铁律：仅云服务开通（SiyiGate ready）才弹——没网/没云同步一律不弹，不置去重标志）
+export function maybeAutoShowSignIn(): void {
+  if (!siyiGateReady()) {
+    return; // 云服务未就绪：不弹（且不消耗当日去重——开通后同日仍可弹）
+  }
+  const store = connectSignIn();
+  if (isSignedToday(store)) {
+    return; // 今日已签（本地∪云端双查口径）
+  }
+  const today = todayStrWithOffset(connectDebugDayOffset().offset);
+  if (store.autoShownDate === today) {
+    return; // 今日已自动弹过
+  }
+  store.autoShownDate = today; // 弹即置标志（每日最多自动弹一次）
+  connectSignInDialog().visible = true;
 }
 
 // 首登签到引导判定（丙方案）：从未引导过 && 从未签过 && 登录态已建立 → 弹一次并打标志。
@@ -3993,6 +4020,8 @@ class SiyiRowPayload {
   signedDates: string = '[]';        // ★ 0.277.0：已签日期并集（旧云端行缺字段=undefined 走兜底，零迁移）
   milestoneStreakGranted: number = 0; // ★ 0.277.0：已发里程碑最高档
   iapPackages: string = '[]';        // ★ 0.289.0：充能包账本（union+包级 max 合并）
+  rookieDoneJson: string = '[]';     // ★ 0.294.0：新手任务完成 id 并集（并集合并；旧云端行缺字段=undefined 走兜底）
+  rookieGrantedJson: string = '[]';  // ★ 0.294.0：新手任务已发放 id 并集（并集合并防跨端重发）
 }
 
 function siyiPointsToJson(): string {
@@ -4009,7 +4038,19 @@ function siyiPointsToJson(): string {
   p.signedDates = s.signedDates;
   p.milestoneStreakGranted = s.milestoneStreakGranted;
   p.iapPackages = s.iapPackages;
+  p.rookieDoneJson = s.rookieDoneJson;       // ★ 0.294.0：新手任务两集合随行上行
+  p.rookieGrantedJson = s.rookieGrantedJson;
   return JSON.stringify(p);
+}
+
+// ★ 0.294.0：新手任务 id 并集解析（坏 JSON 兜底空数组，与 parseSignedDates 同款防御）
+function parseRookieIds(v: string): string[] {
+  try {
+    const arr = JSON.parse(v) as string[];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_e) {
+    return [];
+  }
 }
 
 // ★ 0.248.4：cfg:siyi-points 下行合并——三池+到期戳各自取 max、welcomeGranted 取或
@@ -4105,6 +4146,33 @@ function mergeSiyiPointsRow(v: string | undefined): void {
   }
   if (pkgsChanged) {
     s.iapPackages = JSON.stringify(localPkgs);
+    changed = true;
+  }
+  // ★ 0.294.0 新手任务两集合下行合并——id 并集（跨端接续/防重发；云端并集更大才落盘防乒乓）
+  const localDone = parseRookieIds(s.rookieDoneJson);
+  const cloudDone = parseRookieIds(cloud.rookieDoneJson);
+  let rookieChanged = false;
+  for (let di = 0; di < cloudDone.length; di++) {
+    if (localDone.indexOf(cloudDone[di]) < 0) {
+      localDone.push(cloudDone[di]);
+      rookieChanged = true;
+    }
+  }
+  if (rookieChanged) {
+    s.rookieDoneJson = JSON.stringify(localDone);
+    changed = true;
+  }
+  const localGranted = parseRookieIds(s.rookieGrantedJson);
+  const cloudGranted = parseRookieIds(cloud.rookieGrantedJson);
+  let grantedChanged = false;
+  for (let gi = 0; gi < cloudGranted.length; gi++) {
+    if (localGranted.indexOf(cloudGranted[gi]) < 0) {
+      localGranted.push(cloudGranted[gi]);
+      grantedChanged = true;
+    }
+  }
+  if (grantedChanged) {
+    s.rookieGrantedJson = JSON.stringify(localGranted);
     changed = true;
   }
   if (changed) {
