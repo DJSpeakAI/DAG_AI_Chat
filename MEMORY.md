@@ -75,3 +75,5 @@
 17. **MEMORY.md 活规则层体积纪律**：目标 ≤20KB；迭代记录一行制（超一行进 docs 全案）；历史流水一律 docs/MEMORY_HISTORY.md；收尾追加前先 wc -c，超 20KB=下次治理信号。
 
 ## 全局约束增补（2026-10-22 后新增条目续编于此）
+
+18. **★ AGC 对话式 API 通道（2026-10-22 建，凭证+私钥均在工程根不入 git）**：skill `hmos-connect-api-cli-skill`（`~/.local/share/deveco/skills/`，内嵌 CLI 免 npm）+`.env`（AGC_AUTH_MODE=service_account + AGC_SA_CREDENTIALS 指向**开发者级**私钥 `1194703931792684689779private.json`——项目级凭证 403 不够用，connect API 须开发者级；应用级 OAuth 凭证是应用侧另一套）。调用：`node <skill>/scripts/connect-api-cli.js <命令>`（project list / provision cert-list / provision profile-list -a 6917618685526149144 等，详见 skill references/）。现资产：debug 证书+调试 Profile（4 设备+READ_PASTEBOARD ACL）2027-10-10 到期；release 证书+发布 Profile 2029-10-22。**代理提醒权益批下来后用本通道重建 Profile**（skill 无「开放能力管理」申请接口——权益申请只能用户网页提交，桌面手册在）。

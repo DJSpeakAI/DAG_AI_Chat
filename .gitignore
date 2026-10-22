@@ -62,3 +62,8 @@ testing/console/.watchdog-skip
 # 0.243.0.2 deveco CLI 运行工件（项目级 .deveco 配置动态挂载+插件 node_modules——防污染 git 打点）
 /.deveco/
 testing/console/keepalive.json
+
+# AGC API 凭证（hmos-connect-api-cli-skill 用；绝不提交——同 rawfile/config.json 纪律）
+.env
+# AGC Service Account 私钥（模式 B 凭证，绝不提交）
+*private.json
