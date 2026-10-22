@@ -199,7 +199,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.294.0'; // ★ 0.294.0：好奇宝宝新手任务（七任务挂勾+挂账补发+性格测试可重做+签到每日首开自动弹）；上一版 0.293.0（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.295.0'; // ★ 0.295.0：ChatPage 结构性拆分三轮（WaitingDots/CodeBlockView/FolderPickerDialogs/ImageViewer 组件化+ChatPageTypes/ChatMdParser 层化，9378→8235 行零业务改动）；上一版 0.294.0（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
