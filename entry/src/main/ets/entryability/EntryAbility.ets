@@ -28,6 +28,7 @@ import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核�
 import { flushTrackQueue, initTrackContext } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报；★ 0.260.0：模块级 context 注入（ChatModel 发放/消耗收口埋点用）
 import { pullRefundMarks } from '../utils/IapUtil'; // ★ 0.291.0：退款标记云端拉取（启动/回前台静默核销）
 import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
+import { refreshReviewReminder } from '../utils/ReminderUtil'; // ★ 0.299.0：每日复习提醒退后台刷新（文案动态化主时机；权益未开通静默）
 import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：退后台短时任务续跑摘要头 flush
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
 import { initAgreementPrefs } from '../utils/Agreement'; // ★ 0.279.5：协议同意态 preferences 同步初始化（onCreate 最早同步点——此后任意时刻读到的即磁盘真值）
@@ -393,5 +394,14 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.206.0 埋点：退后台尝试上报（★ 0.206.2 实证：多被鸿蒙后台网络限制掐掉，失败回滚队列——
     // 真正可靠的补发点是 onForeground 回前台；此处保留碰运气，万一发了就赚）
     flushTrackQueue(this.context);
+    // ★ 0.299.0：每日复习提醒退后台刷新——进程活着算一次待复习数 N 的最后时机
+    //   （代理提醒文案是发布时静态的，用户多日不开 app 期间显示陈旧 N 仍近似准确：
+    //   词库未变只低估不高报）；off 时内部直接 cancel+return 零开销；1700002 权益
+    //   未开通静默降级；IPC 调用不受后台网络限制（0.206.2 教训不适用）
+    try {
+      refreshReviewReminder();
+    } catch (_e) {
+      // 静默（提醒是增强能力，绝不阻断退后台链）
+    }
   }
 }

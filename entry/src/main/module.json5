@@ -138,6 +138,20 @@
           ],
           "when": "inuse"
         }
+      },
+      // ★ 0.299.0：后台代理提醒（每日复习提醒——reminderAgentManager 周期闹钟）。
+      //   normal + system_grant：声明即生效、无需用户弹窗；实际发布还需 AGC「开放
+      //   能力管理」代理提醒权益（手机/平板/PC 管控——教育类+背单词场景为官方点名
+      //   开放场景；未获批时 publishReminder 报 1700002，代码已静默降级权益到即生效）。
+      {
+        "name": "ohos.permission.PUBLISH_AGENT_REMINDER",
+        "reason": "$string:publish_agent_reminder_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ]
   }

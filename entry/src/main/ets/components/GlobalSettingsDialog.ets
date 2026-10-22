@@ -199,7 +199,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.298.0'; // ★ 0.298.0：性格测试自定义答案+鼓励档回归+SP 门槛前置与奖励弹窗；上一版 0.297.0 数学证明画板（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.299.0'; // ★ 0.299.0：每日复习提醒（后台代理提醒预埋——复习页⚙开关+时段；AGC 权益生效前静默）；上一版 0.298.0 性格测试自定义答案（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

@@ -32,6 +32,10 @@
       "value": "用于在对话与知识卡片制作中粘贴您截图或复制的图片"
     },
     {
+      "name": "publish_agent_reminder_reason",
+      "value": "用于在每天固定时间提醒您复习单词与知识卡片"
+    },
+    {
       "name": "EntryFormAbility_label",
       "value": "复习卡片"
     },

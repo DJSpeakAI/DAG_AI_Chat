@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000435, // ★ 0.298.0：性格测试自定义答案「我想自己说」+鼓励档 UI 回归+答题前置云同步门卫+SP 节点奖励弹窗；上一版 0.297.0 数学证明画板
+     "versionCode": 1000436, // ★ 0.299.0：每日复习提醒（后台代理提醒预埋——ReviewPage ⚙ 开关+时段；AGC 权益待申请生效前静默）；上一版 0.298.0 性格测试自定义答案
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

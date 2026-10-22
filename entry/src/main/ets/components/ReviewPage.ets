@@ -34,6 +34,8 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.249.1：完�
 import { FireworksOverlay } from './FireworksOverlay'; // ★ 0.255.1：完成页烟花顶层 Transparent（点击放烟花+透传按钮）；自动高密度 8s 后静默等点击
 import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：结束语 SP 信息卡（免扣照报明细）
 import { completeRookieTask } from '../common/RookieTask'; // ★ 0.294.0：好奇宝宝新手任务（首次复习完成信号——评分落库即算）
+import { ReviewReminderStore, connectReviewReminder } from '../common/ReviewReminderStore'; // ★ 0.299.0：每日复习提醒偏好（代理提醒——外提件纪律照 DailyReviewCountStore）
+import { refreshReviewReminder } from '../utils/ReminderUtil'; // ★ 0.299.0：后台代理提醒刷新（开关/时段/完成/退后台四时机）
 
 // ★ 0.196.2：每日复习完成状态（以天为单位——用户拍板：今天的内容今天复习，明天内容明天复习；
 // 当天完成后再进复习页直接跳完成页重新生成鼓励。同日多次完成（继续复习）累计入当日总量）
@@ -77,6 +79,7 @@ export struct ReviewPage {
   // ★ 0.209.1 修复：普通成员→@Local（@ObservedV2 实例必须挂组件状态，@Computed 依赖才在真机上可靠响应）
   @Local dailyCount: DailyReviewCountStore = connectDailyReviewCount();
   @Local countSettingsVisible: boolean = false; // ⚙ 弹窗开关
+  @Local reminder: ReviewReminderStore = connectReviewReminder(); // ★ 0.299.0：每日复习提醒（⚙ 弹窗开关+时段；权益生效前静默待激活）
   statStore: StatisticsStore = connectStatistics(); // ★ 0.202.3：司忆量埋点
   // ── ★ 0.209.0：卡面模式 + 翻面状态 ──
   @Local faceMode: FaceModeStore = connectFaceMode();
@@ -162,6 +165,7 @@ export struct ReviewPage {
     if (this.queue.length === 0) {
       this.finished = true;
       this.requestEncourage(); // ★ 0.202.0 铁律修复：队列空才完成页（isDoneToday 一刀切已删——新卡必须当日学）
+      this.markReminderDone(); // ★ 0.299.0：当日无可复习=完成语义——提醒转正反馈文案
     } else {
       this.finished = false;
       recordStat(this.statStore, 'siyi', this.queue.length, 0); // ★ 0.202.3：司忆量埋点（本队展示张数）
@@ -257,6 +261,7 @@ export struct ReviewPage {
       this.finished = true;
       this.saveTodayDone();
       this.requestEncourage();
+      this.markReminderDone(); // ★ 0.299.0：当日队列刷完——提醒转正反馈文案
     }
   }
 
@@ -885,6 +890,42 @@ export struct ReviewPage {
     }
   }
 
+  // ★ 0.299.0：当日复习完成——写完成标记 + 刷新提醒文案（双态判据见 ReminderUtil）
+  markReminderDone(): void {
+    this.reminder.lastDoneDate = todayKey();
+    refreshReviewReminder();
+  }
+
+  // ★ 0.299.0：提醒时段切换（改即生效——cancel 旧周期+发布新周期；19~22 四档整点）
+  applyReminderHour(hour: number): void {
+    this.reminder.hour = hour;
+    this.reminder.minute = 0;
+    refreshReviewReminder();
+  }
+
+  // ★ 0.299.0：提醒时段段选（无参 @Builder 铁律 0.209.1——内部直读状态）
+  @Builder
+  reminderTimeSegment(): void {
+    Row({ space: 6 }) {
+      ForEach([19, 20, 21, 22], (h: number) => {
+        Text(`${h}:00`)
+          .fontSize(12)
+          .fontWeight(this.reminder.hour === h ? 600 : 400)
+          .fontColor(this.reminder.hour === h ? Color.White : this.theme.textSecondary)
+          .height(30)
+          .padding({ left: 12, right: 12 })
+          .borderRadius(8)
+          .backgroundColor(this.reminder.hour === h ? this.theme.brandPrimary : Color.Transparent)
+          .onClick(() => {
+            this.applyReminderHour(h);
+          })
+      }, (h: number) => `rh${h}`)
+    }
+    .padding(3)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(this.theme.surfaceSoft)
+  }
+
   // ★ 0.209.1 修复：countSegment 带参 @Builder 按值传参不刷新（同 faceSegment）——无参化拆分，内部直读状态
   @Builder
   wordCountSegment(): void {
@@ -1063,6 +1104,35 @@ export struct ReviewPage {
             .width('100%')
             .margin({ top: 10 })
           }
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.theme.surfaceSoft)
+        .margin({ top: 12 })
+        // ── ★ 0.299.0：每日复习提醒（后台代理提醒——app 被杀也每天按时提醒；
+        //    AGC 代理提醒权益生效前静默待激活，开关偏好照常落盘）──
+        Column() {
+          Row() {
+            Text('每日复习提醒')
+              .fontSize(14)
+              .fontWeight(600)
+              .fontColor(this.theme.textPrimary)
+            Blank()
+            Toggle({ type: ToggleType.Switch, isOn: this.reminder.on })
+              .selectedColor(this.theme.brandPrimary)
+              .onChange((on: boolean) => {
+                this.reminder.on = on;
+                refreshReviewReminder();
+              })
+          }
+          .width('100%')
+          Text('开启后每天在所选时间提醒你复习（需保持系统通知开启）')
+            .fontSize(11)
+            .fontColor(this.theme.textTertiary)
+            .alignSelf(ItemAlign.Start)
+            .margin({ top: 4 })
+          this.reminderTimeSegment()
         }
         .width('100%')
         .padding(12)
