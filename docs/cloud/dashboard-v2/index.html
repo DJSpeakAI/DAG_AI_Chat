@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DAGAI 埋点看板 v2</title>
+<title>DAGAI 后台数据</title>
 <script src="https://registry.npmmirror.com/echarts/5.5.0/files/dist/echarts.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,8 +57,26 @@
 </style>
 </head>
 <body>
+<script>
+// ★ 0.302.1.3 iframe 鉴权桥：登录跳转带 ?k=token → 存 localStorage（iframe 分区存储，SameSite 拦 Cookie 也能活）
+// → 清 URL → 包装 fetch 全量带 X-Dash-Token 头（服务端 authed 三通道放行）
+(function () {
+  var k = new URLSearchParams(location.search).get('k');
+  if (k) { try { localStorage.setItem('dash_token', k); } catch (_e) {} history.replaceState(null, '', '/'); }
+  var t = '';
+  try { t = localStorage.getItem('dash_token') || ''; } catch (_e) {}
+  if (t) {
+    var of = window.fetch;
+    window.fetch = function (u, o) {
+      o = o || {};
+      o.headers = Object.assign({}, o.headers || {}, { 'X-Dash-Token': t });
+      return of.call(this, u, o);
+    };
+  }
+})();
+</script>
 <div class="top">
-  <h1>DAGAI 埋点看板 v2</h1>
+  <h1>DAGAI 后台数据</h1>
   <span class="sub" id="meta"></span>
   <span style="flex:1"></span>
   <button class="btn" onclick="syncNow()">手动同步</button>
@@ -66,12 +84,43 @@
 </div>
 
 <div class="tabs">
+  <div class="tab" data-p="p7" onclick="switchTab('p7')">⑦ SP 数据台</div>
   <div class="tab active" data-p="p1" onclick="switchTab('p1')">① 行为埋点</div>
   <div class="tab" data-p="p2" onclick="switchTab('p2')">② SP 消耗与发放</div>
   <div class="tab" data-p="p3" onclick="switchTab('p3')">③ 毛利财务</div>
   <div class="tab" data-p="p4" onclick="switchTab('p4')">④ 规模与质量</div>
   <div class="tab dim" data-p="p5" onclick="switchTab('p5')">⑤ 告警</div>
   <div class="tab" data-p="p6" onclick="switchTab('p6')">⑥ AI 助手</div>
+</div>
+
+<!-- ============ ★ 0.302.1.3 Tab7 SP 数据台（自测试台平移：查账号/下指令/盯执行） ============ -->
+<div class="page" id="p7">
+  <div class="card">
+    <h2>账号查询（任意华为账号 SP 全貌——unionID/openID；最近账号列表点行自动带入）</h2>
+    <div class="controls">
+      <input id="spAcc" placeholder="华为账号 ID" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
+      <button class="btn active" onclick="spQuery()">查询</button>
+      <button class="btn" onclick="spRecent()">最近账号</button>
+    </div>
+    <div id="spCard" class="hint">快照滞后性：设备不开 app 不刷新，以 reportedAt 为准。</div>
+  </div>
+  <div class="card">
+    <h2>⬇ 下发指令（发放 / 扣减——app 回前台/进账单页时拉取执行；扣减建议只扣嘉奖口径）</h2>
+    <div class="controls">
+      <select id="spCmdType" style="background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px"><option value="grant">发放 grant</option><option value="deduct">扣减 deduct</option></select>
+      <input id="spCmdAmount" type="number" placeholder="数额（如 10000）" style="width:140px;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
+      <input id="spCmdNote" placeholder="备注（如：活动奖励）" style="width:180px;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
+      <button class="btn active" onclick="spSendCommand()">提交指令（目标=上方查询框账号）</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>📋 指令流水（最近 20 条）<button class="btn" onclick="spLoadCommands()" style="margin-left:10px">刷新</button></h2>
+    <div id="spCmdList" class="hint">点「刷新」加载</div>
+  </div>
+  <div class="card">
+    <h2>📜 事件流水（该账号 SP 每一次加减——查询账号后自动加载）</h2>
+    <div id="spLedger" class="hint">查询账号后自动加载</div>
+  </div>
 </div>
 
 <!-- ============ Tab1 行为埋点（0.206.dash 平移） ============ -->
@@ -251,6 +300,7 @@ function switchTab(id) {
   document.querySelectorAll('.tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.p === id));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('show', p.id === id));
   [chart, spTrendChart, spModelChart, spUidChart, spBalChart, spHitChart, spSrcChart, finHoursChart, finDauChart, finLvChart].forEach(c => c && c.resize());
+  if (id === 'p7') spLoadCommands(); // ★ 0.302.1.3 进 SP 数据台自动拉指令流水
 }
 
 async function loadAll() {
@@ -671,6 +721,108 @@ async function aiAsk() {
 }
 
 function aiClear() { AI_HISTORY = []; aiRender(); }
+
+// ================= ★ 0.302.1.3 Tab7 SP 数据台（自测试台平移，配色适配本站） =================
+const SP_C = { ok: '#7ad09a', warn: '#e6b35a', bad: '#e07a7a', dim: '#8a7fa8', acc: '#b9a5ff' };
+function spFmtSp(n) { return Number(n || 0).toLocaleString(); }
+function spFmtTime(t) { let n = Number(t) || 0; if (n > 0 && n < 1e12) n *= 1000; return n ? new Date(n).toLocaleString() : '—'; } // 云端表时间戳=秒级（Integer 32位）
+function spPkgRows(pkgJson) {
+  let list = [];
+  try { list = JSON.parse(pkgJson || '[]'); } catch (_e) { return '<div class="hint">（无充能包）</div>'; }
+  if (!list.length) return '<div class="hint">（无充能包）</div>';
+  let h = '<table class="tb" style="width:100%"><tr><th align="left">购入</th><th align="right">额度</th><th align="right">剩余</th><th align="left">状态</th></tr>';
+  for (const p of list) {
+    const st = p.ref === 1 ? '<span style="color:' + SP_C.bad + '">已退款</span>' : (p.frozenUntil > Date.now() ? '<span style="color:' + SP_C.warn + '">退款冻结中</span>' : '正常');
+    h += '<tr><td>' + spFmtTime(p.ts) + '</td><td align="right">' + spFmtSp(p.amt) + '</td><td align="right">' + spFmtSp(p.amt - p.cons) + '</td><td>' + st + '</td></tr>';
+  }
+  return h + '</table>';
+}
+function spRenderMirror(m) {
+  return '<div style="border:1px solid #4a3d75;border-radius:10px;padding:12px;margin-bottom:10px">' +
+    '<div class="hint" style="word-break:break-all">' + m.objectId + ' · ' + (m.deviceModel || '未知设备') + ' · 上报 ' + spFmtTime(m.reportedAt) + '</div>' +
+    '<div style="font-size:22px;font-weight:700;margin:6px 0">可用余额 <span style="color:' + SP_C.ok + '">' + spFmtSp(m.availableSp) + '</span> SP' + (Number(m.frozenSp) > 0 ? ' <span style="font-size:12px;color:' + SP_C.warn + '">（冻结 ' + spFmtSp(m.frozenSp) + '）</span>' : '') + '</div>' +
+    '<div class="hint">充能池 ' + spFmtSp(m.permSp - m.permCons) + '（发' + spFmtSp(m.permSp) + '/耗' + spFmtSp(m.permCons) + '） · 嘉奖池 ' + spFmtSp(m.bonusSp - m.bonusCons) + ' · 赠送池 ' + spFmtSp(m.giftSp - m.giftCons) + '</div>' +
+    '<div style="margin-top:6px">' + spPkgRows(m.pkgJson) + '</div>' +
+    '<button class="btn" style="margin-top:6px" onclick="spFill(\'' + m.objectId + '\')">填入查询框（对它下指令）</button></div>';
+}
+function spFill(id) { document.getElementById('spAcc').value = id; }
+async function spQuery() {
+  const id = document.getElementById('spAcc').value.trim();
+  const card = document.getElementById('spCard');
+  if (!id) { card.innerHTML = '先填账号 ID（或点「最近账号」从列表带入）'; return; }
+  card.innerHTML = '查询中…';
+  spLoadLedger(id);
+  try {
+    const r = await fetch('/api/sp/query?accountId=' + encodeURIComponent(id));
+    const j = await r.json();
+    if (!j.ok) { card.innerHTML = '<span style="color:' + SP_C.bad + '">' + (j.err || '查询失败') + '</span>'; return; }
+    if (!j.mirrors || !j.mirrors.length) { card.innerHTML = '<span style="color:' + SP_C.warn + '">该账号无上报记录（未登录过 / app 侧 0.301.0+ 未装机）——app 里发条 AI 消息等 10 秒再查</span>'; return; }
+    card.innerHTML = j.mirrors.map(spRenderMirror).join('');
+  } catch (e) { card.innerHTML = '<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>'; }
+}
+async function spRecent() {
+  const card = document.getElementById('spCard');
+  card.innerHTML = '拉取最近账号…';
+  try {
+    const r = await fetch('/api/sp/query?accountId=__recent__');
+    const j = await r.json();
+    if (!j.ok) { card.innerHTML = '<span style="color:' + SP_C.bad + '">' + (j.err || '查询失败') + '</span>'; return; }
+    if (!j.mirrors || !j.mirrors.length) { card.innerHTML = '<span style="color:' + SP_C.warn + '">还没有任何账号上报过</span>'; return; }
+    card.innerHTML = j.mirrors.map(spRenderMirror).join('');
+  } catch (e) { card.innerHTML = '<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>'; }
+}
+async function spSendCommand() {
+  const id = document.getElementById('spAcc').value.trim();
+  const type = document.getElementById('spCmdType').value;
+  const amount = parseInt(document.getElementById('spCmdAmount').value, 10);
+  const note = document.getElementById('spCmdNote').value.trim();
+  const card = document.getElementById('spCard');
+  if (!id) { card.innerHTML = '<span style="color:' + SP_C.bad + '">先在查询框填目标账号 ID</span>'; return; }
+  if (!amount || amount <= 0) { card.innerHTML = '<span style="color:' + SP_C.bad + '">数额必须为正整数</span>'; return; }
+  if (!confirm('确认对账号 ' + id + ' ' + (type === 'grant' ? '发放' : '扣减') + ' ' + spFmtSp(amount) + ' SP？')) return;
+  try {
+    const r = await fetch('/api/sp/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targets: [id], type: type, amount: amount, note: note }) });
+    const j = await r.json();
+    if (!j.ok) { card.innerHTML = '<span style="color:' + SP_C.bad + '">' + (j.err || '下发失败') + '</span>'; return; }
+    card.innerHTML = '<span style="color:' + SP_C.ok + '">✓ 指令已下发（' + j.count + ' 条）——目标设备下次回前台/进账单页时执行（下方流水盯状态）</span>';
+    spLoadCommands();
+  } catch (e) { card.innerHTML = '<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>'; }
+}
+async function spLoadLedger(id) {
+  const box = document.getElementById('spLedger');
+  if (!box) return;
+  box.innerHTML = '流水加载中…';
+  try {
+    const r = await fetch('/api/sp/ledger?accountId=' + encodeURIComponent(id));
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = '<span style="color:' + SP_C.dim + '">' + (j.err || '暂无') + '</span>'; return; }
+    if (!j.ledger || !j.ledger.length) { box.innerHTML = '（该账号暂无流水——app 0.302.0+ 装机后，任意 SP 变更 10 秒内出现）'; return; }
+    const evName = { grant: '发放', consume: '消耗' };
+    let h = '<table class="tb" style="width:100%"><tr><th align="left">时间</th><th align="left">事件</th><th align="left">来源</th><th align="right">数额</th><th align="left">池明细</th><th align="right">事后余额</th></tr>';
+    for (const e of j.ledger) {
+      const pos = Number(e.amount) > 0;
+      h += '<tr><td>' + spFmtTime(e.ts) + '</td><td>' + (evName[e.event] || e.event) + '</td><td>' + (e.src || '') + '</td><td align="right" style="color:' + (pos ? SP_C.ok : SP_C.bad) + '">' + (pos ? '+' : '') + spFmtSp(e.amount) + '</td><td class="hint">' + (e.pool || '') + '</td><td align="right">' + spFmtSp(e.balAfter) + '</td></tr>';
+    }
+    box.innerHTML = h + '</table>';
+  } catch (e) { box.innerHTML = '<span style="color:' + SP_C.dim + '">加载失败：' + e.message + '</span>'; }
+}
+async function spLoadCommands() {
+  const box = document.getElementById('spCmdList');
+  if (!box) return;
+  box.innerHTML = '加载中…';
+  try {
+    const r = await fetch('/api/sp/commands');
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = '<span style="color:' + SP_C.dim + '">' + (j.err || '暂无') + '</span>'; return; }
+    if (!j.commands || !j.commands.length) { box.innerHTML = '（暂无指令）'; return; }
+    const stColor = { pending: SP_C.warn, claimed: SP_C.acc, done: SP_C.ok };
+    let h = '<table class="tb" style="width:100%"><tr><th align="left">创建</th><th align="left">目标</th><th align="left">类型</th><th align="right">数额</th><th align="right">实发扣</th><th align="left">状态</th><th align="left">备注</th></tr>';
+    for (const c of j.commands) {
+      h += '<tr><td>' + spFmtTime(c.createdAt) + '</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + c.target + '</td><td>' + (c.type === 'grant' ? '发放' : '扣减') + '</td><td align="right">' + spFmtSp(c.amount) + '</td><td align="right">' + (c.status === 'done' ? spFmtSp(c.resultAmount) : '—') + '</td><td style="color:' + (stColor[c.status] || SP_C.dim) + '">' + c.status + (c.status === 'claimed' ? '（执行中/待设备确认）' : '') + '</td><td>' + (c.note || '') + '</td></tr>';
+    }
+    box.innerHTML = h + '</table>';
+  } catch (e) { box.innerHTML = '<span style="color:' + SP_C.dim + '">加载失败：' + e.message + '</span>'; }
+}
 
 async function loadAiCfg() {
   AI_CFG = await fetch('/api/ai/config').then(r => r.json());

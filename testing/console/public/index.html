@@ -37,7 +37,7 @@
   .mbtn { background:#241A3F; border:1px solid var(--line); color:var(--dim); cursor:pointer; font-size:14px; font-weight:700; padding:10px 26px; border-radius:14px; transition:.18s; letter-spacing:.5px; }
   .mbtn:hover { color:var(--txt); border-color:var(--acc2); transform:translateY(-1px); }
   .mbtn.on { color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--acc),var(--acc2)); box-shadow:0 4px 18px rgba(124,77,255,.45), 0 0 0 1px rgba(167,139,250,.25); transform:translateY(-1px); }
-  #dataView.wrap { grid-template-columns: minmax(420px,5fr) 7fr; padding-top:16px; }
+  #dataView.wrap { grid-template-columns: 1fr; padding-top:16px; }
   /* 看板面板纵向 flex：iframe 吃满剩余高（窄窗口自动缩，不再固定 calc 高被裁） */
   #dashPanel { display:flex; flex-direction:column; }
   #dashFrame { width:100%; flex:1 1 auto; min-height:360px; border:1px solid var(--line); border-radius:12px; background:#fff; }
@@ -161,34 +161,11 @@
   <button class="btn ghost sm" onclick="refreshDevices()">刷新设备</button>
 
 </header>
-<!-- ★ 0.302.1.2 原 header 下独立板块条已并入顶栏（上） -->
-<!-- ★ 0.302.1.1 后台数据板块：左=SP 数据台（0.301.0 自测试台 Tab 挪入）·右=运营看板（阿里云 dagai-dash，含行为埋点/SP 消耗/毛利/AI 问答） -->
+<!-- ★ 0.302.1.3 后台数据板块=整页内嵌「DAGAI 后台数据」（阿里云看板——行为埋点/SP 消耗/毛利/规模/AI 问答/⑦ SP 数据台已并入看板） -->
 <div id="dataView" class="wrap" style="display:none">
-  <div class="panel">
-    <h2>📊 SP 数据台 <span style="font-size:11px;color:var(--dim);font-weight:400">查任意华为账号 SP 全貌 / 下发扣指令 / 盯指令执行</span></h2>
-    <div class="row" style="margin:8px 0">
-      <input id="spAcc" placeholder="华为账号 ID（lastAccountMark：unionID||openID）" style="flex:1;padding:6px 8px;border:1px solid var(--dim);border-radius:6px;background:transparent;color:inherit;font-size:12.5px">
-      <button class="btn sm primary" onclick="spQuery()">查询</button>
-      <button class="btn sm ghost" onclick="spRecent()" title="拉最近 50 个有上报的账号——点行自动填入上方查询框">最近账号</button>
-    </div>
-    <div id="spCard" class="sub" style="color:var(--dim);font-size:12.5px;margin-bottom:10px">输入账号 ID 查询（「最近账号」列表点行自动带入）。快照滞后性：设备不开 app 不刷新，以 reportedAt 为准。</div>
-    <h3 style="font-size:13px;margin:10px 0 6px">⬇ 下发指令（发放 / 扣减）</h3>
-    <div class="row" style="flex-wrap:wrap;gap:6px">
-      <select id="spCmdType"><option value="grant">发放 grant</option><option value="deduct">扣减 deduct</option></select>
-      <input id="spCmdAmount" type="number" placeholder="数额（如 10000）" style="width:130px;padding:6px 8px;border:1px solid var(--dim);border-radius:6px;background:transparent;color:inherit;font-size:12.5px">
-      <input id="spCmdNote" placeholder="备注（如：活动奖励）" style="width:150px;padding:6px 8px;border:1px solid var(--dim);border-radius:6px;background:transparent;color:inherit;font-size:12.5px">
-      <button class="btn sm primary" onclick="spSendCommand()">提交指令</button>
-      <span class="sub" style="color:var(--dim);font-size:11.5px">目标=上方查询框当前账号；app 回前台/进账单页时拉取执行（扣减建议只扣嘉奖口径——IAP 充能扣减有消费纠纷风险）</span>
-    </div>
-    <h3 style="font-size:13px;margin:12px 0 6px">📋 指令流水（最近 20 条）<button class="btn sm ghost" onclick="spLoadCommands()" style="margin-left:8px">刷新</button></h3>
-    <div id="spCmdList" class="sub" style="color:var(--dim);font-size:12px">点「刷新」加载</div>
-    <h3 style="font-size:13px;margin:12px 0 6px">📜 事件流水（该账号 SP 每一次加减——时间/事件/数额/池/事后余额）</h3>
-    <div id="spLedger" class="sub" style="color:var(--dim);font-size:12px">查询账号后自动加载</div>
-  </div>
-  <div class="panel" id="dashPanel">
-    <h2>📈 运营看板 <button class="btn sm ghost" style="float:right;margin-top:-3px" onclick="window.open('http://8.152.216.55:8766','_blank')">新窗口打开 ↗</button></h2>
-    <div class="footer-note" style="margin:0 0 8px">行为埋点 / SP 消耗与发放 / 毛利财务 / 规模质量 / <b style="color:var(--acc2)">⑥ AI 问答助手</b>（直接问：「注册用户多少」「完成新手任务多少」「一个月按周给我表格」）——数据每 10 分钟从云端同步一次；看板口令登录一次即可</div>
-    <iframe id="dashFrame" src="http://8.152.216.55:8766" loading="lazy" title="DAGAI 运营看板"></iframe>
+  <div class="panel" id="dashPanel" style="display:flex;flex-direction:column">
+    <h2>📈 后台数据 <span style="font-size:11px;color:var(--dim);font-weight:400">行为埋点 · SP 消耗与发放 · 毛利财务 · 规模质量 · ⑥ AI 问答（问「注册多少/完成新手任务多少/一个月按周表格」）· ⑦ SP 数据台（查账号/下指令/流水）——数据每 10 分钟云端同步</span></h2>
+    <iframe id="dashFrame" src="http://8.152.216.55:8766" loading="lazy" title="DAGAI 后台数据"></iframe>
   </div>
 </div>
 <div id="app" class="wrap" style="display:none">
@@ -309,7 +286,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-     const PAGE_VER = '0.302.1.2'; // ★ 0.302.1.2：切换钮挪进顶栏凸出胶囊+dataView 滚动修复 // 上版 0.302.1.1：板块拆分 // 更早历史见 MEMORY.md 版本表
+     const PAGE_VER = '0.302.1.3'; // ★ 0.302.1.3：后台数据板块=整页内嵌看板（SP 数据台并入看板 ⑦，本页 SP 面板+函数删）；0.302.1.2：顶栏切换钮+滚动修复 // 更早历史见 MEMORY.md 版本表
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;
@@ -836,6 +813,7 @@ function switchTab(t) {
 }
 
 // ★ 0.302.1.1 一级板块切换（🧪 测试台 / 📈 后台数据——localStorage 记忆，boot 恢复）
+// ★ 0.302.1.3 SP 数据台已并入阿里云「后台数据」看板（⑦ Tab）——本页 SP 函数群随迁删除
 function switchMode(m) {
   const test = m !== 'data';
   $('mbTest').className = 'mbtn' + (test ? ' on' : '');
@@ -843,109 +821,8 @@ function switchMode(m) {
   $('app').style.display = test ? 'grid' : 'none';
   $('dataView').style.display = test ? 'none' : 'grid';
   try { localStorage.setItem('console-mode', test ? 'test' : 'data'); } catch (_) {}
-  if (!test) spLoadCommands(); // 进后台数据板块自动拉一次指令流水
 }
 
-// ---------- ★ 0.301.0 SP 数据台 ----------
-function spFmtSp(n) { return Number(n || 0).toLocaleString(); }
-function spFmtTime(t) { let n = Number(t) || 0; if (n > 0 && n < 1e12) n *= 1000; return n ? new Date(n).toLocaleString() : '—'; } // ★ 云端表时间戳=秒级（Integer 32位）——10 位数自动×1000 兼容
-function spPkgRows(pkgJson) {
-  let list = [];
-  try { list = JSON.parse(pkgJson || '[]'); } catch (_) { return '<div class="sub" style="color:var(--dim)">（无充能包）</div>'; }
-  if (!list.length) return '<div class="sub" style="color:var(--dim)">（无充能包）</div>';
-  let h = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="color:var(--dim)"><th align="left">购入</th><th align="right">额度</th><th align="right">剩余</th><th align="left">状态</th></tr>';
-  for (const p of list) {
-    const st = p.ref === 1 ? '<span style="color:var(--bad)">已退款</span>' : (p.frozenUntil > Date.now() ? '<span style="color:var(--warn)">退款冻结中</span>' : '正常');
-    h += `<tr><td>${spFmtTime(p.ts)}</td><td align="right">${spFmtSp(p.amt)}</td><td align="right">${spFmtSp(p.amt - p.cons)}</td><td>${st}</td></tr>`;
-  }
-  return h + '</table>';
-}
-function spRenderMirror(m) {
-  const okc = 'var(--ok)', dimc = 'var(--dim)';
-  return `<div style="border:1px solid var(--dim);border-radius:8px;padding:10px;margin-bottom:8px">` +
-    `<div style="font-size:12px;color:${dimc};word-break:break-all">${m.objectId} · ${m.deviceModel || '未知设备'} · 上报 ${spFmtTime(m.reportedAt)}</div>` +
-    `<div style="font-size:22px;font-weight:700;margin:6px 0">可用余额 <span style="color:${okc}">${spFmtSp(m.availableSp)}</span> SP${Number(m.frozenSp) > 0 ? ` <span style="font-size:12px;color:var(--warn)">（冻结 ${spFmtSp(m.frozenSp)}）</span>` : ''}</div>` +
-    `<div style="font-size:12px;color:${dimc}">充能池 ${spFmtSp(m.permSp - m.permCons)}（发${spFmtSp(m.permSp)}/耗${spFmtSp(m.permCons)}） · 嘉奖池 ${spFmtSp(m.bonusSp - m.bonusCons)} · 赠送池 ${spFmtSp(m.giftSp - m.giftCons)}</div>` +
-    `<div style="margin-top:6px">${spPkgRows(m.pkgJson)}</div>` +
-    `<button class="btn sm ghost" style="margin-top:6px" onclick="spFill('${m.objectId}')">填入查询框（对它下指令）</button></div>`;
-}
-function spFill(id) { $('spAcc').value = id; }
-async function spQuery() {
-  const id = $('spAcc').value.trim();
-  const card = $('spCard');
-  if (!id) { card.innerHTML = '先填账号 ID（或点「最近账号」从列表带入）'; return; }
-  card.innerHTML = '查询中…';
-  spLoadLedger(id);
-  try {
-    const r = await fetch('/api/sp/query?accountId=' + encodeURIComponent(id));
-    const j = await r.json();
-    if (!j.ok) { card.innerHTML = '<span style="color:var(--bad)">' + (j.err || '查询失败') + '</span>'; return; }
-    if (!j.mirrors || !j.mirrors.length) { card.innerHTML = '<span style="color:var(--warn)">该账号无上报记录（未登录过 / app 侧 0.301.0+ 未装机 / 云函数刚部署）——app 里发条 AI 消息等 10 秒再查</span>'; return; }
-    card.innerHTML = j.mirrors.map(spRenderMirror).join('');
-  } catch (e) { card.innerHTML = '<span style="color:var(--bad)">请求失败：' + e.message + '</span>'; }
-}
-async function spRecent() {
-  const card = $('spCard');
-  card.innerHTML = '拉取最近账号…';
-  try {
-    const r = await fetch('/api/sp/query?accountId=__recent__');
-    const j = await r.json();
-    if (!j.ok) { card.innerHTML = '<span style="color:var(--bad)">' + (j.err || '查询失败') + '</span>'; return; }
-    if (!j.mirrors || !j.mirrors.length) { card.innerHTML = '<span style="color:var(--warn)">还没有任何账号上报过（app 0.301.0+ 装机 + 云函数部署后，任意账号 SP 变更 10 秒内出现）</span>'; return; }
-    card.innerHTML = j.mirrors.map(spRenderMirror).join('');
-  } catch (e) { card.innerHTML = '<span style="color:var(--bad)">请求失败：' + e.message + '</span>'; }
-}
-async function spSendCommand() {
-  const id = $('spAcc').value.trim();
-  const type = $('spCmdType').value;
-  const amount = parseInt($('spCmdAmount').value, 10);
-  const note = $('spCmdNote').value.trim();
-  const card = $('spCard');
-  if (!id) { card.innerHTML = '<span style="color:var(--bad)">先在查询框填目标账号 ID</span>'; return; }
-  if (!amount || amount <= 0) { card.innerHTML = '<span style="color:var(--bad)">数额必须为正整数</span>'; return; }
-  if (!confirm(`确认对账号 ${id} ${type === 'grant' ? '发放' : '扣减'} ${spFmtSp(amount)} SP？`)) return;
-  try {
-    const r = await fetch('/api/sp/command', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targets: [id], type, amount, note }) });
-    const j = await r.json();
-    if (!j.ok) { card.innerHTML = '<span style="color:var(--bad)">' + (j.err || '下发失败') + '</span>'; return; }
-    card.innerHTML = `<span style="color:var(--ok)">✓ 指令已下发（${j.count} 条）——目标设备下次回前台/进账单页时执行（下方流水盯状态）</span>`;
-    spLoadCommands();
-  } catch (e) { card.innerHTML = '<span style="color:var(--bad)">请求失败：' + e.message + '</span>'; }
-}
-async function spLoadLedger(id) {
-  const box = $('spLedger');
-  if (!box) return;
-  box.innerHTML = '流水加载中…';
-  try {
-    const r = await fetch('/api/sp/ledger?accountId=' + encodeURIComponent(id));
-    const j = await r.json();
-    if (!j.ok) { box.innerHTML = '<span style="color:var(--dim)">' + (j.err || '暂无') + '</span>'; return; }
-    if (!j.ledger || !j.ledger.length) { box.innerHTML = '（该账号暂无流水——app 0.302.0+ 装机后，任意 SP 变更 10 秒内出现）'; return; }
-    const evName = { grant: '发放', consume: '消耗' };
-    let h = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="color:var(--dim)"><th align="left">时间</th><th align="left">事件</th><th align="left">来源</th><th align="right">数额</th><th align="left">池明细</th><th align="right">事后余额</th></tr>';
-    for (const e of j.ledger) {
-      const pos = Number(e.amount) > 0;
-      h += `<tr><td>${spFmtTime(e.ts)}</td><td>${evName[e.event] || e.event}</td><td>${e.src || ''}</td><td align="right" style="color:${pos ? 'var(--ok)' : 'var(--bad)'}">${pos ? '+' : ''}${spFmtSp(e.amount)}</td><td style="font-size:11px;color:var(--dim)">${e.pool || ''}</td><td align="right">${spFmtSp(e.balAfter)}</td></tr>`;
-    }
-    box.innerHTML = h + '</table>';
-  } catch (e) { box.innerHTML = '<span style="color:var(--dim)">加载失败：' + e.message + '</span>'; }
-}
-async function spLoadCommands() {  const box = $('spCmdList');
-  if (!box) return;
-  box.innerHTML = '加载中…';
-  try {
-    const r = await fetch('/api/sp/commands');
-    const j = await r.json();
-    if (!j.ok) { box.innerHTML = '<span style="color:var(--dim)">' + (j.err || '暂无') + '</span>'; return; }
-    if (!j.commands || !j.commands.length) { box.innerHTML = '（暂无指令）'; return; }
-    const stColor = { pending: 'var(--warn)', claimed: 'var(--acc2)', done: 'var(--ok)' };
-    let h = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr style="color:var(--dim)"><th align="left">创建</th><th align="left">目标</th><th align="left">类型</th><th align="right">数额</th><th align="right">实发扣</th><th align="left">状态</th><th align="left">备注</th></tr>';
-    for (const c of j.commands) {
-      h += `<tr><td>${spFmtTime(c.createdAt)}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${c.target}</td><td>${c.type === 'grant' ? '发放' : '扣减'}</td><td align="right">${spFmtSp(c.amount)}</td><td align="right">${c.status === 'done' ? spFmtSp(c.resultAmount) : '—'}</td><td style="color:${stColor[c.status] || 'var(--dim)'}">${c.status}${c.status === 'claimed' ? '（执行中/待设备确认）' : ''}</td><td>${c.note || ''}</td></tr>`;
-    }
-    box.innerHTML = h + '</table>';
-  } catch (e) { box.innerHTML = '<span style="color:var(--dim)">加载失败：' + e.message + '</span>'; }
-}
 // ★ 0.229.16：活动指示——执行中「最近活动 Xs 前」；>10s 黄、>30s 红（可能卡住）
 setInterval(() => {
   const line = $('actLine'); if (!line) return;

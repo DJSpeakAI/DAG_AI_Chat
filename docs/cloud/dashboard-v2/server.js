@@ -21,6 +21,9 @@
 //       一个月按周给我表格」AI 直接出数字/Markdown 表格（前端 mdToHtml 渲染）。
 //       口径：注册=SpMirror 行数（须开云同步）；新手任务≥1=流水 src~rookie_* 去重账号；
 //       完赛=src=rookie_bonus；首见周=流水上线(2026-10-23)后首次产生流水所在周。
+//   11. ★ 0.302.1.3 更名「后台数据」+SP 数据台并入（自测试台平移）：/api/sp/query·command·commands·
+//       ledger 四路由（直连 Cloud DB 同实例）；鉴权三通道（Cookie+X-Dash-Token 头+?k= query）——
+//       治本测试台 iframe 内登不进（浏览器 SameSite 拦第三方 Cookie，token 走 localStorage 分区存储）。
 // 老能力平移：GET /api/data（内存全量，前端 Tab1 热区+事件分布零改）
 // 凭证：../agc-credential.json（track-events 根，绝不入 git）
 // ============================================================
@@ -28,7 +31,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { cloud, Region } = require('@hw-agconnect/cloud-server');
+const { cloud, Region, CloudDBZoneGenericObject } = require('@hw-agconnect/cloud-server');
 
 // ---------- 配置 ----------
 const ROOT = __dirname;
@@ -153,7 +156,15 @@ function cookieToken(req) {
   const m = /dag_dash=([0-9a-f]+)/.exec(req.headers.cookie || '');
   return m ? m[1] : '';
 }
-function authed(req) { return cookieToken(req) === TOKEN; }
+function authed(req) {
+  // ★ 0.302.1.3 三通道：Cookie（顶级窗口直开）+ X-Dash-Token 头（iframe 内 fetch——第三方 Cookie 被
+  //   浏览器 SameSite 拦截，token 存 iframe 分区 localStorage）+ ?k= query（登录后跳转/iframe 首开）
+  if (req.headers['x-dash-token'] === TOKEN) return true;
+  const u = req.url || '';
+  const qi = u.indexOf('?k=');
+  if (qi >= 0 && u.slice(qi + 3, qi + 3 + TOKEN.length) === TOKEN) return true;
+  return cookieToken(req) === TOKEN;
+}
 
 // ---------- Cloud DB（★ 阿里云部署适配：凭证路径可配 + 缺凭证降级不崩服务——Reports 不受影响） ----------
 let dbInst = null;
@@ -722,10 +733,10 @@ function loginPage() {
     'h1{font-size:16px;color:#b9a5ff;margin:0 0 16px}input{width:100%;padding:9px;border-radius:6px;border:1px solid #4a3d75;background:#2c2440;color:#e8e2f5;box-sizing:border-box}' +
     'button{margin-top:12px;width:100%;padding:9px;border:none;border-radius:6px;background:#6c4fe0;color:#fff;cursor:pointer}' +
     '.err{color:#e07a7a;font-size:12px;margin-top:8px;min-height:16px}</style></head><body>' +
-    '<div class="box"><h1>DAGAI 埋点看板 v2</h1><input id="pw" type="password" placeholder="访问口令" onkeydown="if(event.key===\'Enter\')go()">' +
+    '<div class="box"><h1>DAGAI 后台数据</h1><input id="pw" type="password" placeholder="访问口令" onkeydown="if(event.key===\'Enter\')go()">' +
     '<button onclick="go()">进入</button><div class="err" id="err"></div></div>' +
     '<script>async function go(){const r=await fetch(\'/api/login\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({pass:document.getElementById(\'pw\').value})});' +
-    'if(r.ok){location.reload()}else{document.getElementById(\'err\').textContent=\'口令不对\'}}</script></body></html>';
+    'if(r.ok){const t=await r.json();location.href=\'/?k=\'+(t.token||\'\')}else{document.getElementById(\'err\').textContent=\'口令不对\'}}</script></body></html>';
 }
 
 const server = http.createServer(async (req, res) => {
@@ -739,8 +750,10 @@ const server = http.createServer(async (req, res) => {
         try {
           const pass = (JSON.parse(body || '{}') || {}).pass || '';
           if (crypto.createHash('sha256').update(String(pass) + '::dagai-dash').digest('hex') === TOKEN) {
+            // ★ 0.302.1.3 响应带 token：登录页跳 /?k=token——前端存 localStorage（iframe 分区存储，
+            //   SameSite 拦 Cookie 也能活）；Cookie 保留（顶级窗口直开场景）
             res.writeHead(200, { 'Set-Cookie': 'dag_dash=' + TOKEN + '; HttpOnly; Path=/; Max-Age=' + 7 * 86400, 'Content-Type': 'application/json; charset=utf-8' });
-            res.end('{"ok":true}');
+            res.end('{"ok":true,"token":"' + TOKEN + '"}');
           } else sendJson(res, 401, { ok: false });
         } catch (_e) { sendJson(res, 400, { ok: false }); }
       });
@@ -768,6 +781,74 @@ const server = http.createServer(async (req, res) => {
       // ★ 0.273.0 Tab3 财务+运营聚合（range=day/week/month——D4 日/周/月，年不做）
       const m = /range=(day|week|month)/.exec(req.url);
       sendJson(res, 200, finAggregate(m ? m[1] : 'week'));
+    } else if (url === '/api/sp/query' && req.method === 'GET') {
+      // ★ 0.302.1.3 SP 数据台·账号镜像查询（自测试台 0.301.0.2 平移——直连 Cloud DB 同实例）
+      const qi2 = req.url.indexOf('?');
+      const sp = new URLSearchParams(qi2 >= 0 ? req.url.slice(qi2 + 1) : '');
+      const accountId = sp.get('accountId') || '';
+      if (!accountId) { sendJson(res, 400, { ok: false, err: 'accountId 必填（或 __recent__ 看最近 50 行）' }); return; }
+      try {
+        const coll = getDb().collection('SpMirror');
+        const q = accountId === '__recent__' ? coll.query().orderByDesc('reportedAt').limit(50) : coll.query().equalTo('objectId', accountId);
+        const rows = await q.get();
+        const out = [];
+        for (const o of rows) out.push(o.getObject ? o.getObject() : o);
+        sendJson(res, 200, { ok: true, mirrors: out });
+      } catch (e) { sendJson(res, 200, { ok: false, err: '查询失败：' + (e && e.message ? e.message : String(e)) }); }
+    } else if (url === '/api/sp/command' && req.method === 'POST') {
+      // ★ 0.302.1.3 SP 数据台·下发指令（写 SpCommand pending 行，app 拉取执行）
+      let cbody = '';
+      req.on('data', c => cbody += c);
+      req.on('end', async () => {
+        try {
+          const b = JSON.parse(cbody || '{}');
+          const targets = Array.isArray(b.targets) ? b.targets : [];
+          if (targets.length === 0) { sendJson(res, 400, { ok: false, err: 'targets 必填（账号 ID 数组）' }); return; }
+          if (b.type !== 'grant' && b.type !== 'deduct') { sendJson(res, 400, { ok: false, err: 'type 必须 grant/deduct' }); return; }
+          if (!(parseInt(b.amount, 10) > 0)) { sendJson(res, 400, { ok: false, err: 'amount 必须为正整数' }); return; }
+          const now = Math.floor(Date.now() / 1000); // 表时间戳秒级（Integer 32 位坑）
+          const rows = [];
+          for (const t of targets) {
+            const o = CloudDBZoneGenericObject.build('SpCommand');
+            o.addFieldValue('objectId', 'c' + Date.now() + Math.floor(Math.random() * 100000));
+            o.addFieldValue('target', String(t));
+            o.addFieldValue('type', b.type);
+            o.addFieldValue('amount', parseInt(b.amount, 10));
+            o.addFieldValue('note', String(b.note || ''));
+            o.addFieldValue('status', 'pending');
+            o.addFieldValue('claimedBy', '');
+            o.addFieldValue('claimedAt', 0);
+            o.addFieldValue('confirmedAt', 0);
+            o.addFieldValue('resultAmount', 0);
+            o.addFieldValue('createdAt', now);
+            rows.push(o);
+          }
+          await getDb().collection('SpCommand').upsert(rows);
+          sendJson(res, 200, { ok: true, count: rows.length });
+        } catch (e) { sendJson(res, 400, { ok: false, err: '请求体解析/写入失败：' + (e && e.message ? e.message : String(e)) }); }
+      });
+      return;
+    } else if (url === '/api/sp/commands' && req.method === 'GET') {
+      // ★ 0.302.1.3 SP 数据台·指令流水（最近 20 条）
+      try {
+        const rows = await getDb().collection('SpCommand').query().orderByDesc('createdAt').limit(20).get();
+        const out = [];
+        for (const o of rows) out.push(o.getObject ? o.getObject() : o);
+        sendJson(res, 200, { ok: true, commands: out });
+      } catch (e) { sendJson(res, 200, { ok: false, err: '查询失败：' + (e && e.message ? e.message : String(e)) }); }
+    } else if (url === '/api/sp/ledger' && req.method === 'GET') {
+      // ★ 0.302.1.3 SP 数据台·事件流水（该账号最近 N 条）
+      const qi3 = req.url.indexOf('?');
+      const sp3 = new URLSearchParams(qi3 >= 0 ? req.url.slice(qi3 + 1) : '');
+      const accountId = sp3.get('accountId') || '';
+      const limit = Math.min(parseInt(sp3.get('limit') || '50', 10) || 50, 100);
+      if (!accountId) { sendJson(res, 400, { ok: false, err: 'accountId 必填' }); return; }
+      try {
+        const rows = await getDb().collection('SpLedger').query().equalTo('accountId', accountId).orderByDesc('ts').limit(limit).get();
+        const out = [];
+        for (const o of rows) out.push(o.getObject ? o.getObject() : o);
+        sendJson(res, 200, { ok: true, ledger: out });
+      } catch (e) { sendJson(res, 200, { ok: false, err: '查询失败：' + (e && e.message ? e.message : String(e)) }); }
     } else if (url === '/api/ai/chat' && req.method === 'POST') {
       // ★ 0.273.0 看板 AI 问答助手（口令鉴权沿用；快照注入+非流式+成本入账 ai-cost.jsonl）
       let body = '';

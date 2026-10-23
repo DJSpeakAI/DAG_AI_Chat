@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.302.1.2'; // ★ 0.302.1.2：与页面同步（顶栏切换钮+滚动修复；服务行为零改动仅版本对齐）；0.302.1.1：板块拆分 // 更早历史见 MEMORY.md 版本表
+const VERSION = '0.302.1.3'; // ★ 0.302.1.3：SP 数据台三路由+spDb 随迁删除（并入阿里云「后台数据」看板 ⑦ Tab——测试台纯测试化）；0.302.1.2：顶栏切换钮+滚动修复 // 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -5220,38 +5220,6 @@ function apiGuard(req) {
 }
 function json(res, code, obj) { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(obj)); }
 
-// ★ 0.301.0.2 SP 数据台：直连 Cloud DB（SDK 签名调用；云函数 HTTP 触发器仅放行 SDK——裸 HTTP 被
-//   网关 401 拦，且 server SDK call 高层封装只回 getValue() 恒 null——测试台直查 SpMirror/SpCommand
-//   表零中转；云函数只服务 app 端 callFunction 链路。全案 docs/cloud/sp-admin/）
-//   凭证=testing/console/agc-credential.json（已入 .gitignore，绝不外传/入 git）
-let _spDb = null;
-function spDb() {
-  if (_spDb) return _spDb;
-  try {
-    const agc = require('@hw-agconnect/cloud-server');
-    const cloudMod = agc.cloud || agc;
-    const inst = cloudMod.createInstance(path.join(ROOT, 'agc-credential.json'), 'spAdminConsole',
-      (agc.Region || cloudMod.Region).REGION_CN);
-    const db = inst.database({ zoneName: 'default' });
-    _spDb = { mirror: db.collection('SpMirror'), cmd: db.collection('SpCommand'),
-      ledger: db.collection('SpLedger'),
-      G: agc.CloudDBZoneGenericObject, inst: inst };
-  } catch (e) {
-    _spDb = { err: 'Cloud DB 初始化失败：' + e.message + '（检查 testing/console/agc-credential.json + node_modules/@hw-agconnect）' };
-  }
-  return _spDb;
-}
-function spBuildRow(G, table, plain) {
-  const o = G.build(table);
-  for (const k of Object.keys(plain)) o.addFieldValue(k, plain[k]);
-  return o;
-}
-function spRowsToPlain(rows) {
-  const out = [];
-  for (let i = 0; i < rows.length; i++) out.push(rows[i].getObject ? rows[i].getObject() : rows[i]);
-  return out;
-}
-
 let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
@@ -5285,70 +5253,6 @@ async function handler(req, res) {
     return;
   }
   if (!apiGuard(req)) return json(res, 403, { error: 'Origin 不在白名单' });
-  // ★ 0.301.0.2 SP 数据台三路由（直连 Cloud DB——SDK 签名；云函数只服务 app 端）
-  if (u.pathname === '/api/sp/query' && req.method === 'GET') {
-    const accountId = u.searchParams.get('accountId') || '';
-    if (!accountId) return json(res, 400, { ok: false, err: 'accountId 必填（或 __recent__ 看最近 50 行）' });
-    const d = spDb();
-    if (d.err) return json(res, 200, { ok: false, err: d.err });
-    try {
-      const q = accountId === '__recent__'
-        ? d.mirror.query().orderByDesc('reportedAt').limit(50)
-        : d.mirror.query().equalTo('objectId', accountId);
-      return json(res, 200, { ok: true, mirrors: spRowsToPlain(await q.get()) });
-    } catch (e) { return json(res, 200, { ok: false, err: '查询失败：' + e.message }); }
-  }
-  if (u.pathname === '/api/sp/command' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (c) => { body += c; });
-    req.on('end', async () => {
-      try {
-        const b = JSON.parse(body);
-        const targets = Array.isArray(b.targets) ? b.targets : [];
-        if (targets.length === 0) return json(res, 400, { ok: false, err: 'targets 必填（账号 ID 数组）' });
-        if (b.type !== 'grant' && b.type !== 'deduct') return json(res, 400, { ok: false, err: 'type 必须 grant/deduct' });
-        if (!(parseInt(b.amount, 10) > 0)) return json(res, 400, { ok: false, err: 'amount 必须为正整数' });
-        const d = spDb();
-        if (d.err) return json(res, 200, { ok: false, err: d.err });
-        const now = Math.floor(Date.now() / 1000); // 表时间戳秒级（Integer 32 位坑）
-        const rows = [];
-        for (const t of targets) {
-          rows.push(spBuildRow(d.G, 'SpCommand', {
-            objectId: 'c' + Date.now() + Math.floor(Math.random() * 100000),
-            target: String(t), type: b.type, amount: parseInt(b.amount, 10), note: String(b.note || ''),
-            status: 'pending', claimedBy: '', claimedAt: 0, confirmedAt: 0, resultAmount: 0, createdAt: now,
-          }));
-        }
-        await d.cmd.upsert(rows);
-        return json(res, 200, { ok: true, count: rows.length });
-      } catch (e) {
-        return json(res, 400, { ok: false, err: '请求体解析/写入失败：' + e.message });
-      }
-    });
-    return;
-  }
-  if (u.pathname === '/api/sp/commands' && req.method === 'GET') {
-    const d = spDb();
-    if (d.err) return json(res, 200, { ok: false, err: d.err });
-    try {
-      return json(res, 200, { ok: true, commands: spRowsToPlain(await d.cmd.query().orderByDesc('createdAt').limit(20).get()) });
-    } catch (e) { return json(res, 200, { ok: false, err: '查询失败：' + e.message }); }
-  }
-  // ★ 0.302.0 SP 事件流水（直查 SpLedger 表——按账号最近 N 条）
-  if (u.pathname === '/api/sp/ledger' && req.method === 'GET') {
-    const accountId = u.searchParams.get('accountId') || '';
-    const limit = Math.min(parseInt(u.searchParams.get('limit') || '50', 10) || 50, 100);
-    if (!accountId) return json(res, 400, { ok: false, err: 'accountId 必填' });
-    const d = spDb();
-    if (d.err) return json(res, 200, { ok: false, err: d.err });
-    try {
-      const rows = spRowsToPlain(await d.ledger.query().equalTo('accountId', accountId)
-        .orderByDesc('ts').limit(limit).get());
-      return json(res, 200, { ok: true, ledger: rows });
-    } catch (e) {
-      return json(res, 200, { ok: false, err: '查询失败：' + e.message + '（SpLedger 表未建？见 docs/cloud/sp-admin/部署指引.md）' });
-    }
-  }
   // ★ 0.229.15 延迟关闭+取消：pagehide 带 ?delay=ms → 延迟执行；页面回来 /api/shutdown/cancel 取消
   //   解决"刷新也触发 pagehide"的误停——刷新后 boot 成功即取消，只有真关页签才延迟后停
   if (u.pathname === '/api/shutdown' && req.method === 'POST') {
