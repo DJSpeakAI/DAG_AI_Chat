@@ -16,6 +16,11 @@
 //   8. /api/ai/chat 看板 AI 问答助手（四提供商照抄 app 0.190.0 结构默认火山；快照注入数字锚定；
 //      自身成本入账 data/ai-cost.jsonl——tencent 档折 ¥ 扣净利、其余档金额记 0）
 //   9. config 新增 pricing/fixedMonthlyCostCny/aiAssistant 三段（默认值内置，零配置可用）
+//   10. ★ 0.302.1.1 用户规模数据源（SpMirror+SpLedger 直拉）+ AI 快照注入：注册账号数/新手任务
+//       完成数/完赛数/签到用户数/近 6 周活跃与首见周表——问「注册多少、完成新手任务多少、
+//       一个月按周给我表格」AI 直接出数字/Markdown 表格（前端 mdToHtml 渲染）。
+//       口径：注册=SpMirror 行数（须开云同步）；新手任务≥1=流水 src~rookie_* 去重账号；
+//       完赛=src=rookie_bonus；首见周=流水上线(2026-10-23)后首次产生流水所在周。
 // 老能力平移：GET /api/data（内存全量，前端 Tab1 热区+事件分布零改）
 // 凭证：../agc-credential.json（track-events 根，绝不入 git）
 // ============================================================
@@ -177,6 +182,7 @@ function getDb() {
 const MEM = new Map();
 let lastSyncT = 0;
 let lastSyncAt = 0;
+let lastLedgerT = 0; // ★ 0.302.1.1：SpLedger 增量游标（与 lastSyncT 同 state.json 持久化）
 
 function dayKey(t) { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
@@ -185,8 +191,7 @@ function volPath(day) { return path.join(DATA_DIR, 'data-' + day + '.json'); }
 function loadVolumes() {
   if (!fs.existsSync(DATA_DIR)) { fs.mkdirSync(DATA_DIR, { recursive: true }); }
   // state
-  try { const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); lastSyncT = Number(s.lastSyncT) || 0; } catch (_e) {}
-  // 明细卷（90 天滚动）
+  try { const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); lastSyncT = Number(s.lastSyncT) || 0; lastLedgerT = Number(s.lastLedgerT) || 0; } catch (_e) {}  // 明细卷（90 天滚动）
   const cutoff = Date.now() - CFG.detailRetainDays * 864e5;
   let removed = 0;
   for (const f of fs.readdirSync(DATA_DIR)) {
@@ -243,9 +248,125 @@ async function syncFromCloud() {
     }
     lastSyncAt = Date.now();
     console.log('[dash] sync +' + added + ' rows, total ' + MEM.size + ', lastT=' + lastSyncT);
+    await syncUsers(db); // ★ 0.302.1.1：SpMirror+SpLedger 同节奏拉取（10 分钟）
   } catch (e) {
     console.log('[dash] sync fail: ' + (e && e.message ? e.message : String(e)));
   }
+}
+
+// ---------- ★ 0.302.1.1 用户规模数据源（SpMirror + SpLedger → AI 快照） ----------
+const MIRROR = new Map(); // accountId -> {availableSp, frozenSp, reportedAt, deviceModel}
+const LEDGER = new Map(); // id -> {accountId, ts, event, src, amount}（裁剪保近 180 天）
+const LEDGER_RETAIN_MS = 180 * 864e5;
+
+async function syncUsers(db) {
+  try {
+    // SpMirror 全量（账号量级小；objectId 主键游标翻页）
+    let round = 0;
+    while (round < 10) {
+      const coll = db.collection('SpMirror');
+      let q = coll.query().orderByAsc('objectId').limit(1000);
+      if (MIRROR.size > 0) {
+        const cursor = MIRROR.get('_cursor_') || '';
+        if (cursor) q = coll.query().greaterThan('objectId', cursor).orderByAsc('objectId').limit(1000);
+      }
+      const arr = await q.get();
+      let maxId = '';
+      for (const o of arr) {
+        const id = String(o.getFieldValue('objectId') || '');
+        if (!id || id === '_cursor_') continue;
+        MIRROR.set(id, {
+          availableSp: Number(o.getFieldValue('availableSp')) || 0,
+          frozenSp: Number(o.getFieldValue('frozenSp')) || 0,
+          reportedAt: Number(o.getFieldValue('reportedAt')) || 0,
+          deviceModel: String(o.getFieldValue('deviceModel') || '')
+        });
+        if (id > maxId) maxId = id;
+      }
+      if (maxId) MIRROR.set('_cursor_', maxId);
+      if (arr.length < 1000) break;
+      round++;
+    }
+    // SpLedger 增量（ts 游标，照抄 events 分页模式）
+    let lRound = 0;
+    let lAdded = 0;
+    while (lRound < 30) {
+      const coll = db.collection('SpLedger');
+      const arr = await coll.query().greaterThanOrEqualTo('ts', lastLedgerT).orderByAsc('ts').limit(1000).get();
+      let pageMax = lastLedgerT;
+      for (const o of arr) {
+        const id = String(o.getFieldValue('objectId') || '');
+        const ts = Number(o.getFieldValue('ts')) || 0;
+        if (!id || LEDGER.has(id)) continue;
+        LEDGER.set(id, { accountId: String(o.getFieldValue('accountId') || ''), ts: ts, event: String(o.getFieldValue('event') || ''), src: String(o.getFieldValue('src') || ''), amount: Number(o.getFieldValue('amount')) || 0 });
+        if (ts > pageMax) pageMax = ts;
+        lAdded++;
+      }
+      lastLedgerT = Math.max(lastLedgerT, pageMax);
+      if (arr.length < 1000) break;
+      lRound++;
+    }
+    // 裁剪：只保近 180 天流水（量有界）
+    const ledgerCutoff = Date.now() / 1000 - LEDGER_RETAIN_MS / 1000;
+    for (const [id, e] of LEDGER) if (e.ts < ledgerCutoff) LEDGER.delete(id);
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ lastSyncT: lastSyncT, lastLedgerT: lastLedgerT }));
+    console.log('[dash] users sync: mirrors=' + (MIRROR.size - 1) + ' ledger+' + lAdded + ' total=' + LEDGER.size);
+  } catch (e) {
+    console.log('[dash] users sync fail: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+function weekKeyTs(tsMs) {
+  // ISO 周标签（周一为一周起点）：YYYY-Www
+  const d = new Date(tsMs);
+  const day = (d.getDay() + 6) % 7; // 周一=0
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - day);
+  const y = monday.getFullYear();
+  const jan4 = new Date(y, 0, 4);
+  const jan4Day = (jan4.getDay() + 6) % 7;
+  const week1Mon = new Date(y, 0, 4 - jan4Day);
+  const wk = Math.floor((monday - week1Mon) / 6048e5) + 1;
+  return y + '-W' + String(wk).padStart(2, '0');
+}
+
+function usersAggregate() {
+  const totalAccounts = Math.max(0, MIRROR.size - 1); // 减游标伪行
+  const rookie = new Set();
+  const rookieFinal = new Set();
+  const signUsers = new Set();
+  const firstSeen = new Map(); // accountId -> min ts
+  const weeks = new Map();     // weekKey -> {active:Set, firstSeen:Set, grant, consume}
+  for (let i = 5; i >= 0; i--) {
+    weeks.set(weekKeyTs(Date.now() - i * 6048e5), { active: new Set(), firstSeen: new Set(), grant: 0, consume: 0 });
+  }
+  for (const e of LEDGER.values()) {
+    if (!e.accountId) continue;
+    if (e.src && e.src.indexOf('rookie_') === 0) rookie.add(e.accountId);
+    if (e.src === 'rookie_bonus') rookieFinal.add(e.accountId);
+    if (e.src === 'sign') signUsers.add(e.accountId);
+    const prev = firstSeen.get(e.accountId);
+    if (prev === undefined || e.ts < prev) firstSeen.set(e.accountId, e.ts);
+    const wk = weekKeyTs(e.ts * 1000);
+    const w = weeks.get(wk);
+    if (w) {
+      w.active.add(e.accountId);
+      if (e.event === 'grant') w.grant += Math.abs(e.amount); else if (e.event === 'consume') w.consume += Math.abs(e.amount);
+    }
+  }
+  for (const [acc, ts] of firstSeen) {
+    const w = weeks.get(weekKeyTs(ts * 1000));
+    if (w) w.firstSeen.add(acc);
+  }
+  const weekList = [];
+  for (const [k, w] of weeks) weekList.push({ week: k, active: w.active.size, firstSeen: w.firstSeen.size, grantSp: w.grant, consumeSp: w.consume });
+  return {
+    totalAccounts: totalAccounts,
+    rookieTouched: rookie.size,
+    rookieFinal: rookieFinal.size,
+    signUsers: signUsers.size,
+    ledgerSince: '2026-10-23',
+    weeks: weekList
+  };
 }
 
 // ---------- SP 聚合（Tab2 数据源，服务端算好前端只渲染） ----------
@@ -536,7 +657,8 @@ function aiSnapshot() {
     week: pick(finAggregate('week')),
     month: pick(finAggregate('month')),
     aiAssistantCost: finAggregate('month').aiCost.total,
-    hourPeak: (() => { const f = finAggregate('day'); const max = Math.max(...f.hours); return { hour: f.hours.indexOf(max), count: max }; })()
+    hourPeak: (() => { const f = finAggregate('day'); const max = Math.max(...f.hours); return { hour: f.hours.indexOf(max), count: max }; })(),
+    users: usersAggregate() // ★ 0.302.1.1：用户规模块（注册数/新手任务/完赛/签到/近 6 周表）
   };
 }
 
@@ -548,7 +670,9 @@ const AI_SYSTEM_PROMPT = '你是 DAG AI Chat 运营看板的数据分析助手�
   '4. 金额单位=人民币元（保留 2 位小数）；token 展示为 tokens；SP 即司忆点。\n' +
   '5. scene 对照：chat=聊天 regen=重生成 word=查词 extract=提炼 encourage_r=复习鼓励 encourage_s=统计鼓励 rerank=AI排序 profile=画像观察 summary=分支摘要 hook=伴读编排。\n' +
   '6. 毛利=充值流水−token成本；净利润=毛利−固定成本−看板AI助手成本。老数据无 token 字段时成本从生效日起算，须注明。\n' +
-  '7. 不回答与看板数据无关的问题（代码、隐私、密钥等），礼貌引导回数据话题。';
+  '7. 不回答与看板数据无关的问题（代码、隐私、密钥等），礼貌引导回数据话题。\n' +
+  '8. 用户规模口径（users 块）：注册账号数=users.totalAccounts（开启云同步的华为账号，SpMirror 上报口径）；完成新手任务（≥1 个）=users.rookieTouched；新手七任务完赛=users.rookieFinal；签到用户=users.signUsers。问「注册多少/完成新手任务多少」直接引用这些数字。\n' +
+  '9. 按周统计用 users.weeks（近 6 周，week=ISO 周标签）：active=当周有 SP 流水的账号数、firstSeen=当周首次产生流水的账号数、grantSp/consumeSp=当周发放/消耗 SP。注意：流水 2026-10-23 上线，此前注册账号的首见周都落在上线当周——引用周新增时必须注明该口径。周表用 markdown 表格输出（表头：周/活跃账号/首见账号/发放SP/消耗SP）。';
 
 // OpenAI 兼容非流式调用（60s 超时）
 function callAiChat(messages, cb) {
