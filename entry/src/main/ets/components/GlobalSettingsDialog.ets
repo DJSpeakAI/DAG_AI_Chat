@@ -36,7 +36,7 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填�
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
-  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）
+  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL, connectSishuClassic, SishuClassicStore } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）；★ 0.300.0：connectSishuClassic（司枢经典模式灰度开关）
 import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
 import { SiyiGateStore, connectSiyiGate, refreshSiyiGatePerm, requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：permGranted 单一真值源（SiyiGate 共享 store——任意处刷新 GSD 即时可见，0.229.24 根治）；★ 0.298.0 requireSiyiGate（重做性格测试=SP 获得前置云同步门卫）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
@@ -199,7 +199,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.299.2'; // ★ 0.299.2：登录态影子持久化根治冷启动丢登录；上一版 0.299.1 签到引导门卫（版本历史详见 MEMORY.md）
+const APP_VERSION: string = 'v0.300.0'; // ★ 0.300.0：司枢 Agent 3.0 V1（枢机→执笔→御史三角色流水线+反问卡+联网解互斥）；上一版 0.299.2 登录态影子持久化（版本历史详见 MEMORY.md）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -261,6 +261,7 @@ export struct GlobalSettingsDialog {
 
   apiConfig: ApiConfig = connectApiConfig();       // ★ 0.143：换 key 'api-config-v2' 工厂
   aiPreference: AiPreference = connectAiPreference(); // ★ 0.150：全新 key 'ai-preference-v1'
+  @Local sishuClassic: SishuClassicStore = connectSishuClassic(); // ★ 0.300.0：司枢经典模式（Toggle 即时生效——@Local 接管 @ObservedV2 实例）
   anchorPref: AnchorPref = connectAnchorPref(); // ★ 0.234.0：全新 key 'anchor-pref-v1'（锚点卡片/密度/分章折叠）
   wordBank = connectWordBank(); // ★ 0.205.0：备份恢复合并写词库
   knowledgeBank = connectKnowledgeBank(); // ★ 0.205.0：备份恢复合并写知识库
@@ -2277,6 +2278,32 @@ export struct GlobalSettingsDialog {
           .lineHeight(18)
           .fontColor(this.theme.textTertiary)
           .margin({ top: 6 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .margin({ bottom: 24 })
+
+      // ★ 0.300.0 司枢经典模式（老用户灰度——Toggle 即时生效直连 store，不走编辑副本/保存链）
+      Column() {
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('司枢经典模式')
+              .fontSize(14)
+              .fontColor(this.theme.textPrimary)
+            Text('开启后司枢模式回退旧版「框架两段式」（不启用枢机/反问/御史三角色流水线）。新用户建议关闭体验完整 Agent。')
+              .fontSize(11)
+              .lineHeight(18)
+              .fontColor(this.theme.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.sishuClassic.classic })
+            .selectedColor(this.theme.brandPrimary)
+            .onChange((on: boolean) => {
+              this.sishuClassic.classic = on;
+            })
+        }
+        .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)

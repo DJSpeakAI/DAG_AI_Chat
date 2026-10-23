@@ -374,10 +374,12 @@ export function formatSearchResults(hits: SearchHit[]): string {
 }
 
 // search_web 执行体：GET Bing 结果页 → 解析条目（失败 reject 中文 Error，上层写进 tool 结果防模型瞎编）
+// ★ 0.300.0：www.bing.com→cn.bing.com——国内网络 www 域 302 重定向到 cn（app http 库不跟随
+//   重定向则恒失败）；cn 域直连实测 5/5 稳定 200 零反爬（2026-10-23 前置验证②）
 export function searchWeb(query: string): Promise<SearchHit[]> {
   return new Promise<SearchHit[]>((resolve, reject) => {
     const req = http.createHttp();
-    const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-hans&count=10`;
+    const searchUrl = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-hans&count=10`;
     req.request(searchUrl, {
       method: http.RequestMethod.GET,
       header: {

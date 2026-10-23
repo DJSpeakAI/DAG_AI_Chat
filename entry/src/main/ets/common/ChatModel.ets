@@ -738,6 +738,20 @@ export function normalizeThinkingMode(mode: string): string {
 }
 
 // ============================================================
+// ★ 0.300.0 司枢经典模式开关（老用户灰度——切回 0.290.0 旧两段式链路）
+// 独立全新 key 'sishu-classic-v1'（0.143 铁律：绝不往 ai-preference-v2 旧快照类加字段）；
+// GSD 设置消费；ChatPage 司枢链分支依据。
+// ============================================================
+@ObservedV2
+export class SishuClassicStore {
+  @Trace classic: boolean = false; // true=经典模式（旧 0.290.0 框架两段式，不走 3.0 三角色流水线）
+}
+
+export function connectSishuClassic(): SishuClassicStore {
+  return PersistenceV2.connect(SishuClassicStore, 'sishu-classic-v1', () => new SishuClassicStore()) as SishuClassicStore;
+}
+
+// ============================================================
 // ★ 0.271.0：深度思考策略（任务书 §3.1/§3.2 终稿）——纯函数集，ohosTest 断言消费
 // ============================================================
 

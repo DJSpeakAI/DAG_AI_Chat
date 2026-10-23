@@ -33,9 +33,10 @@ import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除；★ 0.275.0：Ctrl+V 读取剪贴板图片（getData + PasteDataRecord.pixelMap/uri）
 import { unifiedDataChannel } from '@kit.ArkData'; // ★ 0.275.0：onDrop 拖拽图片记录类型（DragEvent.getData → UnifiedData → Image.imageUri）
 
-  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, docPageTokens } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）；★ 0.291.2：docPageTokens（文档页费嫁接——页数折算等效 input token 并账）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, docPageTokens, connectSishuClassic } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）；★ 0.291.2：docPageTokens（文档页费嫁接——页数折算等效 input token 并账）；★ 0.300.0：connectSishuClassic（经典模式灰度开关）
   import { PendingDoc, DocParseResult, ATTACH_SUFFIX_FILTERS, DOC_CONFIRM_BYTES, DOC_MAX_BYTES, docExtOf, isImageExt, isDocExt, needsCloudParse, fmtDocSize, parseDocsForSend, buildDocContextBlock, docListLabel } from '../utils/DocParseUtil'; // ★ 0.291.2：文档加载（+号混选/格式路由/腾讯云解析/system 注入——方案 docs/0.165+/0.291.0）
-  import { PODCAST_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, ANCHOR_MEDIUM_PROMPT, PLAN_PROMPT, buildWritePrompt } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）；★ 0.234.0：SECTION/ANCHOR（锚点一期）；★ 0.290.0：PLAN_PROMPT/buildWritePrompt（司枢 2.0 两段式）+ HOOK_SYSTEM_PROMPT/buildAnchorLongPrompt 退役（②段伴读废止、长回复锚点指令并入框架规划）
+  import { PODCAST_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, ANCHOR_MEDIUM_PROMPT, PLAN_PROMPT, buildWritePrompt, PLAN3_PROMPT, buildDeliverPrompt, CENSOR_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）；★ 0.234.0：SECTION/ANCHOR（锚点一期）；★ 0.290.0：PLAN_PROMPT/buildWritePrompt（司枢 2.0 两段式）+ HOOK_SYSTEM_PROMPT/buildAnchorLongPrompt 退役（②段伴读废止、长回复锚点指令并入框架规划）；★ 0.300.0：司枢 3.0 三件（PLAN3_PROMPT 枢机契约/buildDeliverPrompt 交付执笔/CENSOR_PROMPT 御史）
+  import { TaskContract, SishuClarifyState, connectSishuClarify, sanitizeContract, contractToneLine, buildContractBrief, recordCorrectEntry, loadCorrectHint, parseCensorVerdict } from '../common/SishuAgent'; // ★ 0.300.0：司枢 Agent 3.0 契约层（会话级不持久化）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
 import { KnowledgeCard, KnowledgeBankStore, KnowledgeQueryResult, KFolder, KFolderTreeItem, CardImportStore, connectCardImport, AttentionStore, connectAttention, updateAttention, parseTags, getTitleImages, getCardImages } from '../common/KnowledgeModel'; // ★ 0.146：知识库数据模型；★ 0.200.0：卡片导入气泡落地消费；★ 0.202.0：注意力标签提取；★ 0.202.1：parseTags（建议标签勾选）；★ 0.222.22：KFolder/KFolderTreeItem（知识卡入库文件夹选择弹窗）；★ 0.246.0：getTitleImages/getCardImages（司忆区知识卡正反面缩略图）
 import { image } from '@kit.ImageKit'; // ★ 0.152：截图 PixelMap 打包 base64（componentSnapshot 产物 → data URI）
@@ -58,6 +59,7 @@ import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149
 // ★ 0.251.0：AppLifecycleStore import 随 0.153「切后台中断提炼」策略反转删除（后台保活见 utils/AiStreamGuard.ets）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
 import { GlobalSettingsDialog, isKnownTextOnlyModel, GlobalSettingsSharedStore, connectGlobalSettingsShared } from './GlobalSettingsDialog'; // ★ 0.150：全局设置弹窗（顶栏 ⚙ 唤起，Tab1 API 配置 + Tab2 AI 偏好）；★ 0.190.2：加 isKnownTextOnlyModel（纯文本模型发图拦截）；★ 0.230.0：加共享开态 store
+import { ClarifyCard } from './ClarifyCard'; // ★ 0.300.0：司枢 3.0 反问收束卡（对话流内嵌，性格测试 3.0 点选流同款）
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一——chevron SVG 旋转两态）
 import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：通用感叹号信息卡（查词/提炼 SP 透明化；主链路 tokenInfoBuilder 不动防回归）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
@@ -82,6 +84,14 @@ import { MdSegment, ReviewCacheEntry, KnowledgeReviewCacheEntry, RichPlan, RichP
 import { parseMarkdown, buildFoldItems } from '../utils/ChatMdParser';
 import { WordFolderPicker, CardFolderPicker, QuotePicker } from './FolderPickerDialogs';
 import { ImageViewer } from './ImageViewer';
+
+// ★ 0.300.0：联网本地预路由关键词宽匹配（任务书 §三.1——宁可多挂声明、不可漏挂：
+// 多挂代价仅几十 token，漏挂=场景整个失效；只作用于单段直写链路，司枢链路恒挂由枢机自主）
+const WEB_PREROUTE_RE: RegExp = /(查一下|查查|搜一下|搜索|帮我查|官网|官方网站|最新|新闻|今天|现在几点|价格|多少钱|版本|政策|资质|发布|上线|写一篇|写个|生成|改写|润色|发帖|发到|投稿|邮件|文案|翻译)/;
+// ★ 0.300.0：枢机工具轮防死循环护栏（非省 SP——产品军令 2 消耗永不封顶；这是防 bug）：
+// 连续 N 轮工具结果全空/失败→停挂 tools 强制落笔；重复打开同一 URL→结果直回已读提示
+const ORCH_EMPTY_ROUNDS_LIMIT: number = 2;
+const ORCH_TOOL_ROUNDS_LIMIT: number = 8;
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
@@ -111,6 +121,19 @@ export struct ChatPage {
   @Local planningMsgId: string = '';         // ①段规划进行中的消息 ID（空=无；气泡内规划卡依据）
   @Local planPreview: string = '';           // ①段流式预览文本（规划卡滚动展示，思考卡同族浅紫底）
   planController: StreamController | null = null; // ①段流控制器（取消/regenerate 防乱序）
+  // ============================================================
+  // ★ 0.300.0 司枢 Agent 3.0：三角色流水线状态（枢机→执笔→御史）
+  //   契约=会话级临时数据（任务书 §二铁律：不持久化/不进 Schema/不写对话历史）
+  // ============================================================
+  @Local sishuSpPreview: string = '';        // 分阶段实时已耗 SP 估算（枢机/工具/执笔/御史逐轮累计，状态行展示）
+  @Local censorBadge: string = '';           // 审核中标记（「正在审核（第N轮）」——消息区审核卡依据；空=无）
+  contractByMsg: Map<string, TaskContract> = new Map();        // 交付卡渲染依据+纠偏入口（会话级；刷新退化普通气泡）
+  @Local deliverMsgIds: string[] = [];                          // 交付型完成标记（@Local 整体重赋值触发渲染——交付卡出现依据）
+  correctPendingByMsg: Map<string, TaskContract> = new Map();  // 纠偏重跑契约暂存（regenerate 消费即删）
+  clarifyResume: ((answers: string[] | null) => void) | null = null; // ★ 0.300.0 反问恢复闭包（onSubmit/onSkip→resolveClarify；重入/销毁→abandonClarify 静默死亡）
+  clarifyState: SishuClarifyState = connectSishuClarify();     // 反问卡共享 store（AppStorageV2 应用级不落盘）
+  classicStore = connectSishuClassic();      // ★ 经典模式灰度开关（true=旧 0.290.0 两段式链路）
+  streamGen: number = 0;                     // 任务代际（反问 await 恢复后核对——被新任务顶替则静默中断）
   // ============================================================
   // ★ 0.271.0 深度思考模式：思考卡状态机（phase2 思考中→phase3 冻结收起；乱序防护=contentStarted
   //   局部 flag；思维链会话级 Map 暂存 5000 字截断——不进 ChatMessage、不持久化、不云同步）
@@ -289,7 +312,7 @@ export struct ChatPage {
   //   发送恒为正常对话；历史播客消息的 isPodcastMode 字段保留，兼容渲染与重生成。
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
   @Local replyLengthMode: string = 'medium';
-  @Local webMode: boolean = false; // ★ 0.292.0：联网问答开关（FC 工具循环；会话态不持久化，默认关）
+  @Local webMode: string = 'auto'; // ★ 0.292.0 联网问答（FC 工具循环；会话态不持久化）；★ 0.300.0 两态化：'auto'=AI 自主（枢机恒挂 tools 自己决定+单段关键词预路由命中才挂）/ 'force'=强制挂（Bing 抽风手动兜底）——禁止决策负担丢给用户（产品军令 5）
   // ★ 0.151-D：⋮ 三点气泡菜单开关（合并原模式下拉 0.133 + 长度下拉 0.144 两个面板为一棵树形菜单）
   // ★ 0.153：代码块放大弹窗状态（代码块左上角「放大」按钮打开，全屏查看 + 换行切换）
   @Local codeZoomVisible: boolean = false;
@@ -1287,8 +1310,10 @@ export struct ChatPage {
       Text(this.streamPhase === 4 ? '正在读取网页' // ★ 0.286.0：阶段 4——消息含链接时的网页抓取期间（无省略号，遵循 0.191.0 定稿）
         : this.streamPhase === 7 ? '正在联网搜索' // ★ 0.292.0：阶段 7——联网工具循环 search_web 执行期间
         : this.streamPhase === 8 ? '正在打开网页' // ★ 0.292.0：阶段 8——联网工具循环 open_url 抓取期间
+        : this.streamPhase === 9 ? '御史审核中（交付质检）' // ★ 0.300.0：阶段 9——司枢 3.0 御史审核期间
+        : this.streamPhase === 10 ? '发现瑕疵，重写中' // ★ 0.300.0：阶段 10——御史打回按意见重写期间
         : this.streamPhase === 6 ? '正在解析文档' // ★ 0.291.2：阶段 6——带文档发送时的文档解析期间（本地直读/腾讯云 Submit+轮询）
-        : this.streamPhase === 5 ? '正在搭建回答框架' // ★ 0.290.0：阶段 5——司枢 2.0 ①段规划器流式期间（规划卡同气泡展示预览）
+        : this.streamPhase === 5 ? (this.classicStore.classic ? '正在搭建回答框架' : '枢机规划中') // ★ 0.290.0 阶段 5；★ 0.300.0 司枢 3.0=枢机（契约+任务类型判定，工具轮也在此态）
         : this.streamPhase === 3 ? '整理历史记忆中' // ★ 0.199.0：阶段 3——上下文压缩摘要生成期间（无省略号，遵循 0.191.0 定稿：三点动画已表达进行中）
         : this.streamPhase === 1 ? (this.thinkingEnabledNow ? '已提交请求 · 深度思考' : '已提交请求') // ★ 0.271.0：思考档生效加后缀（计费透明——SP 预估行任务书 §3.8）
         : this.streamPhase === 2 ? (this.thinkingEnabledNow ? '深度思考中' : '等待服务器返回') // ★ 0.271.0：三阶段状态行「深度思考中→生成正文→编排阅读节奏」首段
@@ -1297,6 +1322,15 @@ export struct ChatPage {
         .fontColor(this.theme.textSecondary)
         .maxLines(1)
         .margin({ left: 8 })
+      // ★ 0.300.0 SP 分阶段实时透明（产品军令 3：成本透明替代封顶——枢机/工具/执笔/御史逐轮累计；
+      //   仅流水线阶段展示，常规单段链路沿用完成态感叹号明细，不重复打扰）
+      if (this.sishuSpPreview.length > 0 && this.streamPhase >= 5) {
+        Text(`· 已耗约 ${this.sishuSpPreview} SP`)
+          .fontSize(12)
+          .fontColor(this.theme.textTertiary)
+          .maxLines(1)
+          .margin({ left: 4 })
+      }
       // ★ 0.282.0：仅开启深度思考（长回复）时显示模式段；中回复=默认不啰嗦（0.190.7 口径延续）
       if (this.replyLengthMode === 'long') {
         Text('· 深度思考')
@@ -1404,6 +1438,26 @@ export struct ChatPage {
 
   async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
     this.cancelPlanning('new'); // ★ 0.290.0：发新消息自动取消进行中①段（非阻塞，不挡发送）
+    this.streamGen += 1; // ★ 0.300.0：任务代际+1（反问挂起链路恢复后核对——被顶替则静默死亡）
+    this.abandonClarify(); // ★ 0.300.0：新消息顶替反问挂起（旧链路静默中断，反问卡收起）
+    // ★ 0.300.0：北极星最强负信号 sishu_reask（任务书 §七）——上一条 AI 消息属司枢任务且本轮
+    //   输入命中「不对/不是我要的/我要的是」类重问语气 → 记一次同话题重问
+    const reaskBubble = this.currentBubble;
+    if (reaskBubble !== null && reaskBubble !== undefined && this.inputText.length > 0
+      && /(不对|不是我要的|我要的是|不是这个|弄错了|说错了|重新|再问一次)/.test(this.inputText)) {
+      const prev = reaskBubble.messages;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].role === 'assistant') {
+          const pc = this.contractByMsg.get(prev[i].messageId);
+          if (pc !== undefined) {
+            const rk: Record<string, string> = {};
+            rk['taskType'] = pc.taskType;
+            track(this.getUIContext().getHostContext() as common.Context, 'sishu_reask', rk);
+          }
+          break; // 只看最近一条 AI 消息
+        }
+      }
+    }
     // ★ 0.190.4：卡死自愈（须在 guard 前）——isLoading=true 但 streamController=null 是异常态
     //   （正常流两者同步设置/清除；真机实测超时出错后偶发卡此态，guard 挡死后续所有发送
     //   「发送不出去」），检测到即强制恢复放行，用户永远不会再被卡死
@@ -1490,11 +1544,14 @@ export struct ChatPage {
       ? bubbleForThink.messages.filter((m: ChatMessage): boolean => m.role === 'assistant').length : 0;
     const topicForThink = bubbleForThink !== null && bubbleForThink.topicTags.length > 0
       ? bubbleForThink.topicTags.join('、') : '';
-    // ★ 0.292.0：联网模式（FC 工具循环）与深度思考互斥——FC+thinking 网关兼容未验保守恒关；
-    //   联网与司枢两段式亦互斥（web 优先=单段直写+工具循环）
-    const webOn: boolean = this.webMode;
+    // ★ 0.300.0：解除联网×深度思考互斥（前置验证①实锤——腾讯云 TokenHub DeepSeek-Flash
+    //   tools+thinking 同请求三组全 200；当年一刀切互斥的根因就是没验证，本版纠正）
+    // ★ 0.300.0：联网两态+本地预路由（任务书 §三.1——'force' 强制挂 / 'auto' 单段链路
+    //   关键词宽匹配命中才挂（宁可多挂漏挂=场景整个失效）；司枢链路恒挂由枢机自主）
+    const webPrerouteHit: boolean = this.webMode === 'force' || WEB_PREROUTE_RE.test(this.inputText);
+    const webOn: boolean = webPrerouteHit; // 单段直写链路挂 tools 依据（司枢链路独立恒挂）
     const webOffReq: ThinkingRequest = { enabled: false, effort: '' };
-    const thinkingReq: ThinkingRequest = webOn ? webOffReq : resolveThinkingFor('auto', // ★ 0.290.0：深度思考三态随 GSD UI 隐藏恒 auto（司枢开=长回复恒 high）
+    const thinkingReq: ThinkingRequest = resolveThinkingFor('auto', // ★ 0.290.0：深度思考三态随 GSD UI 隐藏恒 auto（司枢开=长回复恒 high）；★ 0.300.0 删 webOn 强制关（兼容已验证）
       this.replyLengthMode, isPodcast, this.inputText, topicForThink, aiCountForThink);
     this.thinkingEnabledNow = thinkingReq.enabled;
     if (thinkingReq.enabled) {
@@ -1644,7 +1701,9 @@ export struct ChatPage {
     // ★ 0.290.0（司枢 2.0）：长回复（司枢模式开）走框架先行两段式——长度裁定权前移到①段规划器，
     //   不再注入 LONG_REPLY_PROMPT（fallback 直写时动态补注）；中回复单段链路照旧注入 MEDIUM。
     //   prefPrompt 两段式下不进①段（防称呼指令污染框架 JSON）——②段执笔组装时追加。
-    const siyuMode = this.replyLengthMode === 'long' && !isPodcast && !webOn; // ★ 0.292.0：联网与司枢互斥（web 优先=单段直写+工具循环）
+    // ★ 0.300.0：删 !webOn 互斥（司枢+联网组合=枢机带工具轮，任务书 §三.1）；经典模式灰度分流
+    const siyuMode = this.replyLengthMode === 'long' && !isPodcast;
+    const useSishu3 = siyuMode && !this.classicStore.classic; // ★ 0.300.0：3.0 三角色流水线（默认）；classic=true 走旧 2.0 两段式
     const prefPrompt = this.buildPreferencePrompt(isPodcast);
     if (!siyuMode) {
       if (this.replyLengthMode === 'long') {
@@ -1675,7 +1734,7 @@ export struct ChatPage {
     let webDowngraded = false;
     let curWebToolsOn = false;
     const toolAppendixAcc: Object[] = [];
-    const webTools: Object[] = webOn ? buildWebToolsSchema() : []; // 工具定义（每条消息构造一次）
+    const webTools: Object[] = (webOn || siyuMode) ? buildWebToolsSchema() : []; // 工具定义（每条消息构造一次；★ 0.300.0 司枢链路恒构建——枢机自主决定调不调）
     const isWebToolParamError = (raw: string): boolean => {
       const lower = raw.toLowerCase();
       const toolWord = lower.includes('tool') || lower.includes('function call');
@@ -1685,13 +1744,20 @@ export struct ChatPage {
     };
     // onToolCalls：执行工具（search_web=Bing 解析 / open_url=单 URL 两级瀑布）→ 结果回填 → 递归下一轮；
     //   到 WEB_MAX_TOOL_ROUNDS 上限后不再声明 tools 强制落笔；用户已取消（isLoading=false）则中断递归
-    const handleToolCalls = (calls: ToolCallResult[], inTok: number, outTok: number, cachedTok: number): void => {
+    // ★ 0.300.0：工具轮统一改造——执行体抽 execToolRound（单段链路/司枢枢机链路共用），
+    //   递归目标由 nextRecall 注入；新增防死循环护栏（openedUrls 查重+连续空轮计数——防 bug 非省 SP）
+    const openedUrls = new Set<string>();
+    let emptyToolRounds = 0;
+    const execToolRound = (calls: ToolCallResult[], inTok: number, outTok: number, cachedTok: number,
+      appendixAcc: Object[], nextRecall: (toolsStillOn: boolean) => void, roundLimit: number): void => {
       webInTok += inTok;
       webOutTok += outTok;
       webCachedTok += cachedTok;
       webRound += 1;
+      this.updateSishuSpPreview(0, 0, 0, planInTok + webInTok, planOutTok + webOutTok, planCachedTok + webCachedTok); // ★ 0.300.0 SP 透明：工具轮逐轮累计
       const execTools = async (): Promise<void> => {
         const results: string[] = [];
+        let anyUseful = false; // 护栏信号：本轮是否有任一成功结果
         for (let i = 0; i < calls.length; i++) {
           const c = calls[i];
           let arg1 = '';
@@ -1713,6 +1779,9 @@ export struct ChatPage {
             }
             try {
               const hits = await searchWeb(arg1);
+              if (hits.length > 0) {
+                anyUseful = true;
+              }
               results.push(`【联网搜索：${arg1}】\n${formatSearchResults(hits)}`);
             } catch (se) {
               const reason = se instanceof Error ? se.message : '未知原因';
@@ -1724,9 +1793,15 @@ export struct ChatPage {
               results.push('（open_url 参数缺失或不是 http/https 链接，未执行）');
               continue;
             }
+            if (openedUrls.has(arg1)) { // ★ 0.300.0 护栏：重复打开同一 URL（枢机死循环典型症状）
+              results.push(`【已打开网页：${arg1}】\n（该网页本轮已读取过，请勿重复打开；请基于已有资料继续）`);
+              continue;
+            }
+            openedUrls.add(arg1);
             const item = await fetchSingleUrlReadable(arg1,
               (u: string): Promise<string> => this.renderUrlViaWeb(u));
             if (item.ok) {
+              anyUseful = true;
               results.push(`【已打开网页：${arg1}】\n${item.content}`);
             } else {
               results.push(`【已打开网页：${arg1}】\n（读取失败：${item.content}。不要编造该网页内容）`);
@@ -1737,16 +1812,24 @@ export struct ChatPage {
         }
         const roundMsgs: Object[] = buildToolRoundMessages(calls, results);
         for (let i = 0; i < roundMsgs.length; i++) {
-          toolAppendixAcc.push(roundMsgs[i]);
+          appendixAcc.push(roundMsgs[i]);
         }
-        const limitReached = webRound >= WEB_MAX_TOOL_ROUNDS;
+        emptyToolRounds = anyUseful ? 0 : emptyToolRounds + 1; // 连续空轮累计（防死循环）
+        const limitReached = webRound >= roundLimit || emptyToolRounds >= ORCH_EMPTY_ROUNDS_LIMIT;
         this.streamPhase = 1; // 恢复等待态（下一轮流即将发出）
         if (!this.isLoading) {
           return; // 用户已取消：不再递归（取消语义与现有链路一致）
         }
-        startStream(webOffReq, [], toolAppendixAcc, !limitReached);
+        nextRecall(!limitReached);
       };
       execTools();
+    };
+    // ★ 0.292.0 单段链路薄包装：工具轮后递归 startStream（原 handleToolCalls 语义零变化）
+    const handleToolCalls = (calls: ToolCallResult[], inTok: number, outTok: number, cachedTok: number): void => {
+      execToolRound(calls, inTok, outTok, cachedTok, toolAppendixAcc,
+        (toolsOn: boolean): void => {
+          startStream(webOffReq, [], toolAppendixAcc, toolsOn);
+        }, WEB_MAX_TOOL_ROUNDS);
     };
     let downgraded = false; // 降级防循环锚（降级请求本身 disabled 不可能再触发参数型降级，天然无循环）
     let contentStarted = false; // ★ 0.271.0：乱序防护——phase3（正文已开始）之后到达的 reasoning 分片一律丢弃
@@ -1754,6 +1837,165 @@ export struct ChatPage {
     let planOutTok = 0;
     let planCachedTok = 0;
     let activeFrame: PlanFrame | null = null;
+    // ★ 0.300.0（司枢 3.0）：三角色流水线暂存——deliver 族 token 累加器（执笔可能多轮：初稿+
+    //   打回重写）/御史 token/审核轮次/契约存档；全部一次性并入 finalizeStream 落账
+    //   （军令延续：凡 AI 交互必扣必展示——多轮 token 累加一次性实扣；过程透明走 sishuSpPreview）
+    let deliverInTok = 0;
+    let deliverOutTok = 0;
+    let deliverCachedTok = 0;
+    let deliverReasonTok = 0;
+    let censorInTok = 0;
+    let censorOutTok = 0;
+    let censorCachedTok = 0;
+    let censorRoundsDone = 0; // 已完成审核次数（0=未审/99=终态通过；交付型最多 2 次审核=1 轮打回）
+    let deliverMode = false;  // 交付型链路标志（onDone 分流进御史轮）
+    let activeContract: TaskContract | null = null;
+    let userClarifiedText = '';    // 反问卡答案文本（buildDeliverPrompt userClarified 参）
+    let lastCensorComments = '';   // 最近一轮御史意见（打回重写注入）
+    let deliverWriteThink: ThinkingRequest = webOffReq; // 交付执笔思考档（continueWrite 定档）
+    // ★ 0.300.0：落账收口——plan+web+deliver+censor+docPage 全并账（onDone 终点/审核通过/降级三点共用）
+    const finalizeStream = (lastInTok: number, lastOutTok: number, lastCachedTok: number, lastReasonTok: number,
+      thinkReqFin: ThinkingRequest): void => {
+      this.isLoading = false;
+      this.streamController = null;
+      this.streamPhase = 0; // ★ 0.191.0：阶段复位
+      this.censorBadge = '';
+      this.sishuSpPreview = '';
+      // ★ 0.290.0：两段 token 累加一次性落账（军令：①规划+②执笔合并计入消息统计，SP 实扣同源）
+      // ★ 0.291.2：文档页费嫁接并入；★ 0.300.0：deliver/censor（多轮）并入
+      aiMsg.inputTokens = lastInTok + planInTok + docExtraInTok + webInTok + deliverInTok + censorInTok;
+      aiMsg.outputTokens = lastOutTok + planOutTok + webOutTok + deliverOutTok + censorOutTok;
+      aiMsg.cacheHitTokens = lastCachedTok + planCachedTok + webCachedTok + deliverCachedTok + censorCachedTok;
+      aiMsg.reasoningTokens = lastReasonTok + deliverReasonTok;
+      const mergedIn = aiMsg.inputTokens;
+      const mergedOut = aiMsg.outputTokens;
+      const mergedCached = aiMsg.cacheHitTokens;
+      const thinkDur = this.thinkingSecondsByMsg.get(aiMsg.messageId) ?? 0;
+      const thinkChars = this.thinkingTraceByMsg.get(aiMsg.messageId)?.length ?? 0;
+      if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
+        const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额（consumeSiyiSp 不足 clamp 到 0）
+        consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
+        this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), mergedIn, mergedCached, 'chat', mergedOut); // ★ 0.260.0；★ 0.273.0 补 ot；★ 0.290.0 合并口径；★ 0.300.0 三角色全并
+        // ★ 0.271.0：thinking_use 埋点（sp=本条实扣；思考生效但零思考 token=网关静默忽略 degraded）
+        this.trackThinkingUse(!thinkReqFin.enabled ? 'off' : (lastReasonTok + deliverReasonTok > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
+          this.replyLengthMode, thinkReqFin.effort, thinkDur, thinkChars, _bal0 - siyiTotalSp(this.siyiStore));
+      } else {
+        this.trackSpConsume(aiMsg, true, 0, mergedIn, mergedCached, 'chat', mergedOut); // ★ 0.260.0：免扣照报 f:y（成本红线要真实 token/命中/余额）；★ 0.273.0 补 ot；★ 0.290.0 合并口径
+        this.trackThinkingUse(!thinkReqFin.enabled ? 'off' : (lastReasonTok + deliverReasonTok > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
+          this.replyLengthMode, thinkReqFin.effort, thinkDur, thinkChars, 0);
+      }
+      // ★ 0.300.0：任务级 SP 埋点（北极星 sishu_task_cost——按类型分桶）
+      if (activeContract !== null) {
+        const tc: Record<string, string> = {};
+        tc['taskType'] = activeContract.taskType;
+        tc['form'] = activeContract.form;
+        tc['sp'] = `${Math.round(this.spCostOf(aiMsg))}`;
+        tc['tools'] = activeContract.usedTools ? '1' : '0';
+        tc['censor'] = censorRoundsDone > 90 ? (lastCensorComments.length > 0 ? '2' : '1') : '0'; // 终态折算：打回过=2 审/直通=1 审/未审=0
+        track(this.getUIContext().getHostContext() as common.Context, 'sishu_task_cost', tc);
+        // 交付型终态=交付卡出现（@Local 数组整体重赋值触发渲染）
+        if (activeContract.form === 'deliverable') {
+          this.deliverMsgIds = [...this.deliverMsgIds, aiMsg.messageId];
+        }
+      }
+      // ★ 0.290.0：渲染期钩子合成（merged 态）——框架 hooks 按 afterSection 节号插入（Q6 钩子隔离：
+      //   ②段写劈叉不影响钩子结构；合成失败=原文返回零风险）；fallback（activeFrame=null）跳过，
+      //   渲染层 insertLocalAnchors 的 breath 保底自动兜住；★ 0.300.0 交付型零钩子（activeFrame=null）
+      if (activeFrame !== null && aiMsg.content.length > 0) {
+        const merged = mergeSectionHooks(activeFrame.hooks, aiMsg.content);
+        if (merged !== aiMsg.content) {
+          aiMsg.content = merged;
+        }
+      }
+      this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
+      recordStat(this.statStore, 'aiMsg', mergedIn, mergedOut); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
+      // 流式完成时滚到底部
+      this.scroller.scrollEdge(Edge.Bottom);
+      this.saveTree(); // ★ 0.151：按模式分池保存
+      this.finishStreamFold(aiMsg); // ★ 0.234.0：完成瞬间解析章节→一次性收拢（前 1/3 展开，springMotion 收拢动画）
+    };
+    // ★ 0.300.0：御史审核流（同模型无记忆自审——只给契约简报+成品，不给生成过程/对话历史）；
+    //   输出锁死「判定+≤3条意见」；通过→finalizeStream；不通过且未打回过→重写一轮；二审不过→降级告知
+    let censorBuf = '';
+    const runCensorPass = (): void => {
+      if (activeContract === null || aiMsg.content.length === 0) {
+        finalizeStream(0, 0, 0, 0, deliverWriteThink); // 防御：无契约/空成品直接放行
+        return;
+      }
+      this.censorBadge = `正在审核（第 ${censorRoundsDone + 1} 轮）`;
+      this.streamPhase = 9; // ★ 0.300.0 阶段 9——御史审核中
+      censorBuf = '';
+      const brief = buildContractBrief(activeContract);
+      const censorPrompt = CENSOR_PROMPT.replace('{brief}', brief).replace('{content}', aiMsg.content);
+      this.streamController = streamChat(
+        [new ChatMessage(generateMessageId(), 'user', censorPrompt)],
+        this.apiConfig,
+        (chunk: string) => {
+          censorBuf += chunk; // 审核流不写气泡（纯后台判定）
+        },
+        (inTok: number, outTok: number, cachedTok: number, _rTok: number) => {
+          censorInTok += inTok;
+          censorOutTok += outTok;
+          censorCachedTok += cachedTok;
+          this.updateSishuSpPreview(0, 0, 0, planInTok + deliverInTok, planOutTok + deliverOutTok, planCachedTok + deliverCachedTok);
+          const v = parseCensorVerdict(censorBuf);
+          if (v !== null && v.verdict === 'pass') {
+            censorRoundsDone = 99; // 终态通过
+            this.censorBadge = '';
+            finalizeStream(0, 0, 0, 0, deliverWriteThink);
+            return;
+          }
+          if (v !== null && censorRoundsDone < 1 && v.comments.length > 0) {
+            // 打回重写（自动 ≤1 轮——2 次审核；用户手动「继续优化」为 V2）
+            censorRoundsDone += 1;
+            lastCensorComments = v.comments.map((c: string): string => `- ${c}`).join('\n');
+            const cr: Record<string, string> = {};
+            cr['round'] = `${censorRoundsDone}`;
+            track(this.getUIContext().getHostContext() as common.Context, 'sishu_reject_round', cr);
+            this.censorBadge = '发现瑕疵，重写中';
+            this.streamPhase = 10; // ★ 0.300.0 阶段 10——按意见重写
+            aiMsg.content = PLACEHOLDER_LOADING; // 重写从新稿开始（旧稿已被御史记录在案）
+            this.mirrorStreamToLive(streamBubbleId, aiMsg);
+            startDeliverWrite(lastCensorComments);
+            return;
+          }
+          // 二审不过/审核输出两次解析失败 → 降级：保留成品+开头明确告知未兑现契约（不放行带病成品也不销毁）
+          censorRoundsDone = 99;
+          const fails = v !== null && v.comments.length > 0 ? v.comments.map((c: string): string => `- ${c}`).join('\n') : '（审核意见解析失败）';
+          aiMsg.content = `> ⚠️ 御史审核未完全通过，以下契约项未兑现：\n> ${fails.replace(/\n/g, '\n> ')}\n> 已按分析型保留内容。可点「换一份」重试或补充要求后重发。\n\n${aiMsg.content}`;
+          if (activeContract !== null) {
+            activeContract.form = 'analysis'; // 降级=形态转分析（纠偏入口随之下线）
+          }
+          finalizeStream(0, 0, 0, 0, deliverWriteThink);
+        },
+        (_errMsg: string) => {
+          // 审核流失败=放行成品（御史是质量增强不是阻塞——审核失败不能丢用户已付的执笔成品）
+          censorRoundsDone = 99;
+          this.showToastSafe('审核服务暂不可用，已直接交付');
+          finalizeStream(0, 0, 0, 0, deliverWriteThink);
+        },
+        undefined,
+        '御史审核',
+        true // implicit：御史关思考（低随机性轻量审）
+      );
+    };
+    // ★ 0.300.0：交付执笔（censorComments=''=初稿；非空=御史打回重写模式）
+    const startDeliverWrite = (censorComments: string): void => {
+      if (activeContract === null) {
+        return;
+      }
+      deliverMode = true;
+      const brief = buildContractBrief(activeContract);
+      const writeMsgs: ChatMessage[] = [
+        new ChatMessage(generateMessageId(), 'system', buildDeliverPrompt(brief, contractToneLine(activeContract),
+          activeContract.targetChars, userClarifiedText, censorComments))
+      ];
+      if (prefPrompt.length > 0) {
+        writeMsgs.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+      }
+      this.thinkingEnabledNow = deliverWriteThink.enabled;
+      startStream(deliverWriteThink, writeMsgs);
+    };
     // ★ 0.292.0：webAppendix=FC 轮次消息；webToolsOn=本轮是否声明工具（onError 降级门读取 curWebToolsOn）
     const startStream = (thinkReq: ThinkingRequest, extraMsgs: ChatMessage[], webAppendix?: Object[], webToolsOn: boolean = false): void => {
     curWebToolsOn = webToolsOn;
@@ -1780,55 +2022,29 @@ export struct ChatPage {
       (inputTokens: number, outputTokens: number, cachedTokens: number, reasoningTokens: number) => {
         // onDone：解锁 + 存储 token（★ 0.247.4：缓存命中一并落账——弹层展示节省 SP；
         //   ★ 0.271.0：思考 token 拆分落账——已计入 outputTokens，仅明细弹层拆分展示用）
-        this.isLoading = false;
+        // ★ 0.300.0 交付型御史分流：执笔完成≠任务完成——先审核（不落账），审核通过/降级才落账；
+        //   执笔 tokens 入 deliver 累加器（重写多轮全累计，一次性实扣军令）
         this.streamController = null;
-        this.streamPhase = 0; // ★ 0.191.0：阶段复位
-        // ★ 0.271.0：思考态收尾（零正文直接完成的兜底场景——正常路径在 onChunk 首片已收起）
         if (this.thinkingActiveMsgId === aiMsg.messageId) {
           this.finishThinkingTrace(aiMsg.messageId);
         }
-        // ★ 0.132 兜底：流结束但零内容时给出明确提示，杜绝任何场景永久卡占位
         if (aiMsg.content === PLACEHOLDER_LOADING || aiMsg.content === PLACEHOLDER_THINKING) {
           aiMsg.content = '（AI 未返回文本内容，请重试或更换模型）';
         }
-        // ★ 0.290.0：两段 token 累加一次性落账（军令：①规划+②执笔合并计入消息统计，SP 实扣同源）
-        // ★ 0.291.2：文档页费嫁接并入（页数×等效 token——并入后 spCostOf/明细展示/埋点全链自动带出）
-        aiMsg.inputTokens = inputTokens + planInTok + docExtraInTok + webInTok;
-        aiMsg.outputTokens = outputTokens + planOutTok + webOutTok;
-        aiMsg.cacheHitTokens = cachedTokens + planCachedTok + webCachedTok;
-        aiMsg.reasoningTokens = reasoningTokens;
-        const mergedIn = aiMsg.inputTokens;
-        const mergedOut = aiMsg.outputTokens;
-        const mergedCached = aiMsg.cacheHitTokens;
-        const thinkDur = this.thinkingSecondsByMsg.get(aiMsg.messageId) ?? 0;
-        const thinkChars = this.thinkingTraceByMsg.get(aiMsg.messageId)?.length ?? 0;
-        if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
-          const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额（consumeSiyiSp 不足 clamp 到 0）
-          consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
-          this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), mergedIn, mergedCached, 'chat', mergedOut); // ★ 0.260.0；★ 0.273.0 补 ot；★ 0.290.0 合并口径
-          // ★ 0.271.0：thinking_use 埋点（sp=本条实扣；思考生效但零思考 token=网关静默忽略 degraded）
-          this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
-            this.replyLengthMode, thinkReq.effort, thinkDur, thinkChars, _bal0 - siyiTotalSp(this.siyiStore));
-        } else {
-          this.trackSpConsume(aiMsg, true, 0, mergedIn, mergedCached, 'chat', mergedOut); // ★ 0.260.0：免扣照报 f:y（成本红线要真实 token/命中/余额）；★ 0.273.0 补 ot；★ 0.290.0 合并口径
-          this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
-            this.replyLengthMode, thinkReq.effort, thinkDur, thinkChars, 0);
+        if (deliverMode && censorRoundsDone < 90 && aiMsg.content.length > 0
+          && aiMsg.content !== '（AI 未返回文本内容，请重试或更换模型）') {
+          deliverInTok += inputTokens;
+          deliverOutTok += outputTokens;
+          deliverCachedTok += cachedTokens;
+          deliverReasonTok += reasoningTokens;
+          this.updateSishuSpPreview(0, 0, 0, planInTok + deliverInTok + censorInTok, planOutTok + deliverOutTok + censorOutTok, planCachedTok + deliverCachedTok + censorCachedTok); // ★ 0.300.0 SP 透明：执笔轮落定
+          this.isLoading = true; // 审核也是任务一部分（保持可取消）
+          this.mirrorStreamToLive(streamBubbleId, aiMsg); // 执笔成品先写穿（审核期间可见）
+          this.scroller.scrollEdge(Edge.Bottom);
+          runCensorPass();
+          return; // 落账延后到审核终点（finalizeStream）
         }
-        // ★ 0.290.0：渲染期钩子合成（merged 态）——框架 hooks 按 afterSection 节号插入（Q6 钩子隔离：
-        //   ②段写劈叉不影响钩子结构；合成失败=原文返回零风险）；fallback（activeFrame=null）跳过，
-        //   渲染层 insertLocalAnchors 的 breath 保底自动兜住
-        if (activeFrame !== null && aiMsg.content.length > 0) {
-          const merged = mergeSectionHooks(activeFrame.hooks, aiMsg.content);
-          if (merged !== aiMsg.content) {
-            aiMsg.content = merged;
-          }
-        }
-        this.mirrorStreamToLive(streamBubbleId, aiMsg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
-        recordStat(this.statStore, 'aiMsg', mergedIn, mergedOut); // ★ 0.192.0：统计埋点——AI 回复 +1 + token 累加
-        // 流式完成时滚到底部
-        this.scroller.scrollEdge(Edge.Bottom);
-        this.saveTree(); // ★ 0.151：按模式分池保存
-        this.finishStreamFold(aiMsg); // ★ 0.234.0：完成瞬间解析章节→一次性收拢（前 1/3 展开，springMotion 收拢动画）
+        finalizeStream(inputTokens, outputTokens, cachedTokens, reasoningTokens, thinkReq);
       },
       (errMsg: string) => {
         // ★ 0.271.0：思考参数不兼容自动降级（窄门：仅 400 且匹配 thinking/reasoning/模型不支持/参数非法——
@@ -1853,14 +2069,16 @@ export struct ChatPage {
         this.streamingMsgId = ''; // ★ 0.234.0：错误态不折叠，恢复平铺显示
         // ★ 0.290.0（司枢 2.0）：②段失败语义=仅扣①段（任务书 §3.5，与 0.269 军令 #3/#4 一致）——
         //   ①段规划 token 已实耗则落账实扣；失败路径零扣费惯例保持（plan 无 usage=零扣）
-        if (planInTok > 0 || planOutTok > 0 || webInTok > 0 || webOutTok > 0) {
-          aiMsg.inputTokens = planInTok + webInTok;
-          aiMsg.outputTokens = planOutTok + webOutTok;
-          aiMsg.cacheHitTokens = planCachedTok + webCachedTok;
+        // ★ 0.300.0：deliver/censor 已耗 token 一并照落账（取消按已耗结算军令——审核轮失败不白嫖）
+        if (planInTok > 0 || planOutTok > 0 || webInTok > 0 || webOutTok > 0
+          || deliverInTok > 0 || deliverOutTok > 0 || censorInTok > 0 || censorOutTok > 0) {
+          aiMsg.inputTokens = planInTok + webInTok + deliverInTok + censorInTok;
+          aiMsg.outputTokens = planOutTok + webOutTok + deliverOutTok + censorOutTok;
+          aiMsg.cacheHitTokens = planCachedTok + webCachedTok + deliverCachedTok + censorCachedTok;
           if (!this.spFree()) {
             const bal0 = siyiTotalSp(this.siyiStore);
             consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg));
-            this.trackSpConsume(aiMsg, false, bal0 - siyiTotalSp(this.siyiStore), planInTok, planCachedTok, 'plan', planOutTok);
+            this.trackSpConsume(aiMsg, false, bal0 - siyiTotalSp(this.siyiStore), planInTok + deliverInTok + censorInTok, planCachedTok, 'plan', planOutTok + deliverOutTok + censorOutTok);
           }
         }
         // ★ 0.271.0：思考档失败不自动重发（超时/断流类二次超时概率高=双倍计费零收益）——
@@ -1906,12 +2124,211 @@ export struct ChatPage {
     );
     };
     // ============================================================
-    // ★ 0.290.0（司枢 2.0）：①段规划器（planning 态）——输入=对话上下文（含画像卡/摘要头/
-    //   网页块）+本轮问题+PLAN_PROMPT；输出=框架 JSON（lengthTier/sections/hooks/tone）。
-    //   sanitizePlan 防弹衣（Q3）：解析失败/幻觉框架→重试①段一次→仍失败走 fallback 直写。
-    //   implicit:true=规划器关思考（轻量）；SP 实扣走②段 token 累加路径（非隐式免扣）。
-    //   规划卡=浅紫底思考卡同族视觉语言（0.269 视觉分族纪律延续，禁与钩子卡混用）。
+    // ★ 0.300.0（司枢 3.0）：枢机轮（Orchestrator）——三角色流水线总指挥。
+    //   输入=对话上下文+PLAN3_PROMPT（+纠偏历史注入）；输出=执行契约 JSON（sanitizeContract 防弹衣）；
+    //   恒挂联网 tools 由枢机自主调用（execToolRound 共用执行体，递归回枢机轮；护栏=空轮/查重/轮上限）；
+    //   反问=挂起-回调恢复模式（clarifyResume 闭包注册——ClarifyCard 作答触发 resume；重入/销毁走
+    //   abandonClarify 静默死亡，代际核对防新旧任务并发）；分级触发在 continueWrite。
     // ============================================================
+    let activeContractPre: TaskContract | null = null; // 反问挂起期契约暂存（resume 后 continueWrite 消费）
+    const startOrchestr = (): void => {
+      const myGen = this.streamGen;
+      this.streamPhase = 5; // 阶段 5——枢机规划中（复用规划卡视觉）
+      this.planningMsgId = aiMsg.messageId;
+      this.planPreview = '';
+      const orchAppendixAcc: Object[] = [];
+      let orchBuf = '';
+      let orchRetried = false;
+      const correctHint = loadCorrectHint(this.getUIContext().getHostContext() as common.Context);
+      const orchMsgs: ChatMessage[] = [...messagesToSend,
+        new ChatMessage(generateMessageId(), 'system', correctHint.length > 0 ? `${PLAN3_PROMPT}\n\n${correctHint}` : PLAN3_PROMPT)];
+      // 枢机契约消费终点：分级触发（任务书 §一分级触发表）
+      const continueWrite = (contract: TaskContract): void => {
+        activeContract = contract;
+        this.planningMsgId = '';
+        this.planController = null;
+        this.streamPhase = 1;
+        // 契约存档（交付卡渲染+纠偏入口依据；会话级——刷新退化为普通气泡可接受）
+        this.contractByMsg.set(aiMsg.messageId, contract);
+        const o3: Record<string, string> = {};
+        o3['ev'] = 'orch_ok';
+        o3['taskType'] = contract.taskType;
+        o3['form'] = contract.form;
+        o3['tools'] = contract.usedTools ? '1' : '0';
+        track(this.getUIContext().getHostContext() as common.Context, 'plan_three_stage', o3);
+        if (contract.taskType === 'closed') {
+          // 封闭问答：单轮直出（MEDIUM 自适应短答——不进框架链）
+          activeFrame = null;
+          const closedMsgs: ChatMessage[] = [new ChatMessage(generateMessageId(), 'system', MEDIUM_REPLY_PROMPT)];
+          if (prefPrompt.length > 0) {
+            closedMsgs.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+          }
+          this.thinkingEnabledNow = false;
+          startStream({ enabled: false, effort: '' }, closedMsgs);
+          return;
+        }
+        if (contract.form === 'deliverable') {
+          // 交付型（含 creative V1 归并）：执笔→御史（1 轮打回）→定稿/降级
+          activeFrame = null; // 交付型零钩子合成
+          deliverWriteThink = contract.lengthTier === 'brief' ? webOffReq : thinkingReq;
+          censorRoundsDone = 0;
+          startDeliverWrite('');
+          return;
+        }
+        // 分析型/检索型：框架执笔（PlanFrame 兼容链——契约 sections/hooks 注入 buildWritePrompt）
+        const frameLike: PlanFrame = new PlanFrame();
+        frameLike.lengthTier = contract.lengthTier;
+        frameLike.targetChars = contract.targetChars;
+        frameLike.sections = contract.sections;
+        frameLike.hooks = contract.hooks;
+        frameLike.voice = contract.voice;
+        frameLike.encourage = contract.encourage;
+        frameLike.analogy = contract.analogy;
+        activeFrame = frameLike;
+        const writeMsgs: ChatMessage[] = [
+          new ChatMessage(generateMessageId(), 'system', buildWritePrompt(planFrameJson(frameLike), frameLike.targetChars, planToneLine(frameLike))),
+          new ChatMessage(generateMessageId(), 'system', SECTION_PROMPT)
+        ];
+        if (prefPrompt.length > 0) {
+          writeMsgs.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+        }
+        if (userClarifiedText.length > 0) {
+          writeMsgs.push(new ChatMessage(generateMessageId(), 'system', `【用户反问作答（必须按此执行）】\n${userClarifiedText}`));
+        }
+        const writeThink: ThinkingRequest = contract.lengthTier === 'brief'
+          ? webOffReq
+          : thinkingReq;
+        this.thinkingEnabledNow = writeThink.enabled;
+        startStream(writeThink, writeMsgs);
+      };
+      // 枢机产物终点：防弹衣两次失败→fallback 直写（LONG 链，零契约）
+      const fallbackOrch = (inTok: number, outTok: number, cachedTok: number): void => {
+        this.planningMsgId = '';
+        this.planController = null;
+        planInTok = inTok;
+        planOutTok = outTok;
+        planCachedTok = cachedTok;
+        activeFrame = null;
+        activeContract = null;
+        this.streamPhase = 1;
+        const fbMsgs: ChatMessage[] = [new ChatMessage(generateMessageId(), 'system', LONG_REPLY_PROMPT),
+          new ChatMessage(generateMessageId(), 'system', SECTION_PROMPT)];
+        if (prefPrompt.length > 0) {
+          fbMsgs.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+        }
+        const oFail: Record<string, string> = {};
+        oFail['ev'] = 'orch_degrade';
+        track(this.getUIContext().getHostContext() as common.Context, 'plan_three_stage', oFail);
+        startStream(thinkingReq, fbMsgs);
+      };
+      const finishOrchestr = (contract: TaskContract | null, inTok: number, outTok: number, cachedTok: number): void => {
+        planInTok = inTok;
+        planOutTok = outTok;
+        planCachedTok = cachedTok;
+        this.updateSishuSpPreview(0, 0, 0, planInTok, planOutTok, planCachedTok); // ★ 0.300.0 SP 透明：枢机轮落定
+        if (contract === null) {
+          fallbackOrch(0, 0, 0); // token 已记入上方，fallback 零参防双计
+          return;
+        }
+        contract.usedTools = webRound > 0;
+        // 反问收束（三条件由 PLAN3_PROMPT 判定；单任务最多 1 轮；跳过=按默认假设做）
+        if (contract.needAsk && contract.askQuestions.length > 0) {
+          activeContractPre = contract;
+          this.planningMsgId = ''; // 规划期结束（进入反问态——规划卡收起）
+          this.planController = null;
+          this.planPreview = '';
+          this.isLoading = false; // 挂起期暂释（用户需交互；resume 后复位）
+          this.streamController = null;
+          this.streamPhase = 0;
+          this.clarifyState.messageId = aiMsg.messageId;
+          this.clarifyState.questions = contract.askQuestions;
+          this.clarifyState.title = `开工前确认 ${contract.askQuestions.length} 个问题`;
+          this.clarifyState.visible = true;
+          const cs: Record<string, string> = {};
+          cs['count'] = `${contract.askQuestions.length}`;
+          track(this.getUIContext().getHostContext() as common.Context, 'sishu_clarify_show', cs);
+          // 恢复闭包：ClarifyCard onSubmit/onSkip → resolveClarify → resume（代际核对防并发）
+          this.clarifyResume = (answers: string[] | null): void => {
+            this.clarifyResume = null;
+            this.clarifyState.visible = false;
+            if (myGen !== this.streamGen) {
+              return; // 被新任务顶替：静默死亡（新链路已接管）
+            }
+            if (answers === null || answers.length === 0) {
+              const ck: Record<string, string> = {};
+              ck['ev'] = 'skip';
+              track(this.getUIContext().getHostContext() as common.Context, 'sishu_clarify_answer', ck);
+            } else {
+              userClarifiedText = answers.filter((a: string): boolean => a.length > 0).join('\n');
+              const ca: Record<string, string> = {};
+              ca['ev'] = 'answer';
+              track(this.getUIContext().getHostContext() as common.Context, 'sishu_clarify_answer', ca);
+            }
+            const c = activeContractPre;
+            activeContractPre = null;
+            if (c === null) {
+              return;
+            }
+            c.needAsk = false;
+            this.isLoading = true;
+            this.streamPhase = 1;
+            continueWrite(c);
+          };
+          return;
+        }
+        continueWrite(contract);
+      };
+      const attemptOrchestrator = (toolsOn: boolean): void => {
+        this.planController = streamChat(
+          orchMsgs,
+          this.apiConfig,
+          (chunk: string) => {
+            orchBuf += chunk; // 枢机不直显正文，规划卡流式预览（思考卡同族）
+            this.planPreview = orchBuf.length > 160 ? `${orchBuf.substring(0, 160)}…` : orchBuf;
+          },
+          (inTok: number, outTok: number, cachedTok: number, _rTok: number) => {
+            const contract = sanitizeContract(orchBuf);
+            if (contract === null && !orchRetried) {
+              orchRetried = true;
+              orchBuf = '';
+              this.planPreview = '';
+              const oRetry: Record<string, string> = {};
+              oRetry['ev'] = 'orch_retry';
+              track(this.getUIContext().getHostContext() as common.Context, 'plan_three_stage', oRetry);
+              attemptOrchestrator(toolsOn);
+              return;
+            }
+            finishOrchestr(contract, inTok, outTok, cachedTok);
+          },
+          (_errMsg: string) => {
+            if (!orchRetried) {
+              orchRetried = true;
+              orchBuf = '';
+              this.planPreview = '';
+              attemptOrchestrator(toolsOn);
+              return;
+            }
+            fallbackOrch(0, 0, 0); // 两次失败：fallback 直写（枢机 onError 无 usage=零扣费惯例）
+          },
+          undefined,
+          '司枢枢机',
+          true, // implicit：枢机关思考（轻量快速）；SP 走全链 token 累加实扣
+          undefined, // thinking（implicit 已钳 disabled，显式留空）
+          toolsOn ? webTools : undefined,
+          orchAppendixAcc.length > 0 ? orchAppendixAcc : undefined,
+          toolsOn ? (calls: ToolCallResult[], inTok: number, outTok: number, cachedTok: number): void => {
+            execToolRound(calls, inTok, outTok, cachedTok, orchAppendixAcc,
+              (stillOn: boolean): void => {
+                if (!this.isLoading) {
+                  return; // 用户已取消：中断递归
+                }
+                attemptOrchestrator(stillOn);
+              }, ORCH_TOOL_ROUNDS_LIMIT);
+          } : undefined
+        );
+      };
+      attemptOrchestrator(true); // 司枢恒挂 tools——枢机自主决定调不调（产品军令 5）
+    };
     const startPlanning = (): void => {
       this.streamPhase = 5; // 阶段 5——正在搭建回答框架
       this.planningMsgId = aiMsg.messageId;
@@ -2001,11 +2418,14 @@ export struct ChatPage {
       };
       attemptPlan();
     };
-    if (siyuMode) {
+    if (useSishu3) {
+      this.thinkingEnabledNow = false; // 枢机期无思考；执笔按契约档位重算
+      startOrchestr(); // ★ 0.300.0 司枢 3.0：枢机→（反问）→执笔→御史 三角色流水线
+    } else if (siyuMode) {
       this.thinkingEnabledNow = false; // 规划期无思考；②段按框架档位重算
-      startPlanning();
+      startPlanning(); // ★ 经典模式：旧 0.290.0 框架两段式（灰度开关）
     } else {
-      startStream(thinkingReq, [], undefined, webOn); // ★ 0.292.0：联网开=首轮即声明工具
+      startStream(thinkingReq, [], undefined, webOn); // ★ 0.292.0：联网开=首轮即声明工具；★ 0.300.0 webOn=强制或预路由命中
     }
     // 发送消息后自动滚到底部
     this.scroller.scrollEdge(Edge.Bottom);
@@ -2015,6 +2435,8 @@ export struct ChatPage {
   // buildBranchMessageList 自动剔除占位使旧回复不进入新请求；消息不删、位置不变）
   async regenerateMessage(msg: ChatMessage, forceDisabled: boolean = false): Promise<void> { // ★ 0.271.0：forceDisabled——「普通模式重试」强制本条 disabled
     this.cancelPlanning('new'); // ★ 0.290.0：重生成先 abort 旧①段防乱序
+    this.streamGen += 1; // ★ 0.300.0：任务代际+1（防反问挂起链路复活）
+    this.abandonClarify(); // ★ 0.300.0：重生成顶替反问挂起（静默中断）
     // ★ 0.190.4：卡死自愈（同 sendMessage，须在 guard 前）
     if (this.isLoading && this.streamController === null) {
       this.isLoading = false;
@@ -2100,6 +2522,7 @@ export struct ChatPage {
     let regenPlanOut = 0;
     let regenPlanCached = 0;
     let regenFrame: PlanFrame | null = null;
+    let regenDeliverCorrected = false; // ★ 0.300.0：纠偏切交付型重跑完成→交付卡标记同步
     const startRegenStream = (thinkReq: ThinkingRequest, extraMsgs: ChatMessage[]): void => {
     const regenMsgs: ChatMessage[] = extraMsgs.length > 0 ? [...messagesToSend, ...extraMsgs] : messagesToSend;
     this.streamController = streamChat(
@@ -2160,6 +2583,12 @@ export struct ChatPage {
           if (merged !== msg.content) {
             msg.content = merged;
           }
+        }
+        // ★ 0.300.0：纠偏重跑完成→交付卡标记同步（切交付型=出现 / 切分析型=移除）
+        if (regenDeliverCorrected && !this.deliverMsgIds.includes(msg.messageId)) {
+          this.deliverMsgIds = [...this.deliverMsgIds, msg.messageId];
+        } else if (!regenDeliverCorrected && this.deliverMsgIds.includes(msg.messageId)) {
+          this.deliverMsgIds = this.deliverMsgIds.filter((id: string): boolean => id !== msg.messageId);
         }
         this.mirrorStreamToLive(regenBubbleId, msg); // ★ 0.244.0：收尾写穿后再落盘（完整内容）
         recordStat(this.statStore, 'aiMsg', regenMergedIn, regenMergedOut); // ★ 0.192.0：统计埋点——重新生成同样计 AI 回复 + token
@@ -2304,7 +2733,44 @@ export struct ChatPage {
     };
     if (regenSiyu) {
       this.thinkingEnabledNow = false;
-      startRegenPlanning();
+      // ★ 0.300.0 纠偏直写分支：correctPendingByMsg 有存档契约（form 已切换）→ 跳过枢机直接按
+      //   修正后契约重跑执笔（任务书 §三.4「不是让用户重新描述」）；V1 纠偏重跑不再机审（用户接管）
+      const corrected = this.correctPendingByMsg.get(msg.messageId);
+      if (corrected !== undefined) {
+        this.correctPendingByMsg.delete(msg.messageId);
+        this.contractByMsg.set(msg.messageId, corrected);
+        if (corrected.form === 'deliverable') {
+          regenDeliverCorrected = true;
+          const cMsgs: ChatMessage[] = [new ChatMessage(generateMessageId(), 'system',
+            buildDeliverPrompt(buildContractBrief(corrected), contractToneLine(corrected), corrected.targetChars, '', ''))];
+          if (prefPrompt.length > 0) {
+            cMsgs.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+          }
+          this.streamPhase = 1;
+          startRegenStream(regenThinking, cMsgs);
+        } else {
+          const frameLike: PlanFrame = new PlanFrame();
+          frameLike.lengthTier = corrected.lengthTier;
+          frameLike.targetChars = corrected.targetChars;
+          frameLike.sections = corrected.sections;
+          frameLike.hooks = corrected.hooks;
+          frameLike.voice = corrected.voice;
+          frameLike.encourage = corrected.encourage;
+          frameLike.analogy = corrected.analogy;
+          regenFrame = frameLike;
+          const wMsgs: ChatMessage[] = [
+            new ChatMessage(generateMessageId(), 'system', buildWritePrompt(planFrameJson(frameLike), frameLike.targetChars, planToneLine(frameLike))),
+            new ChatMessage(generateMessageId(), 'system', SECTION_PROMPT)
+          ];
+          if (prefPrompt.length > 0) {
+            wMsgs.push(new ChatMessage(generateMessageId(), 'system', prefPrompt));
+          }
+          this.streamPhase = 1;
+          startRegenStream(regenThinking, wMsgs);
+        }
+      } else {
+        startRegenPlanning(); // 常规重生成：经典两段式规划器（3.0 全链在 sendMessage 主链，重生成沿用 2.0 框架链——契约重判由新发送承担）
+      }
     } else {
       startRegenStream(regenThinking, []);
     }
@@ -2760,6 +3226,13 @@ export struct ChatPage {
       this.streamController.cancel();
       this.streamController = null;
     }
+    if (this.planController !== null) { // ★ 0.300.0：枢机/规划流兜底清理
+      this.planController.cancel();
+      this.planController = null;
+    }
+    this.abandonClarify(); // ★ 0.300.0：反问挂起链路随组件销毁静默死亡（防回调悬挂）
+    this.contractByMsg.clear(); // 会话级契约随页销毁回收
+    this.correctPendingByMsg.clear();
     this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
     this.stopExtractTimer(); // ★ 0.153：组件销毁清除提炼计时器，防内存泄漏
     this.cleanupWebRender(); // ★ 0.286.1：渲染通道清理（清超时定时器+resolve 挂起 Promise+卸载隐形 Web，防泄漏）
@@ -3548,6 +4021,14 @@ export struct ChatPage {
     const text = msg.role === 'assistant' ? stripAnchorMarks(msg.content, false) : msg.content;
     if (text.length === 0) {
       return;
+    }
+    // ★ 0.300.0：交付型复制=北极星正信号（sishu_copy——交付型核心正信号，任务书 §七）
+    if (msg.role === 'assistant' && this.deliverMsgIds.includes(msg.messageId)) {
+      const c = this.contractByMsg.get(msg.messageId);
+      const cp: Record<string, string> = {};
+      cp['taskType'] = c !== undefined ? c.taskType : '';
+      cp['genre'] = c !== undefined ? c.genre : '';
+      track(this.getUIContext().getHostContext() as common.Context, 'sishu_copy', cp);
     }
     try {
       const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
@@ -5127,6 +5608,77 @@ export struct ChatPage {
     }
   }
 
+  // ============================================================
+  // ★ 0.300.0 司枢 Agent 3.0 成员方法组
+  // ============================================================
+  // 反问卡作答/跳过 → 恢复挂起的枢机链路（代际核对在 resume 闭包内）
+  resolveClarify(answers: string[] | null): void {
+    const resume = this.clarifyResume;
+    this.clarifyResume = null;
+    if (resume !== null) {
+      resume(answers);
+    }
+  }
+
+  // 反问挂起被顶替（新消息/重生成/组件销毁）→ 旧链路静默死亡（不 resume——新链路已接管）
+  abandonClarify(): void {
+    this.clarifyResume = null;
+    if (this.clarifyState.visible) {
+      this.clarifyState.visible = false;
+      this.clarifyState.questions = [];
+    }
+  }
+
+  // ★ 0.300.0 SP 分阶段透明（产品军令 3：成本全程透明替代封顶）——枢机/工具/执笔/御史
+  //   逐轮累计实时估算（spCostOfTokens 同源公式；live 轮的 token 未完不计，保守偏低不虚高）
+  updateSishuSpPreview(liveIn: number, liveOut: number, liveCached: number,
+    accIn: number, accOut: number, accCached: number): void {
+    const inT = liveIn + accIn;
+    const outT = liveOut + accOut;
+    if (inT <= 0 && outT <= 0) {
+      return;
+    }
+    const sp = spCostOfTokens(inT, outT, liveCached + accCached);
+    this.sishuSpPreview = sp >= 100 ? `${Math.round(sp)}` : sp.toFixed(1);
+  }
+
+  // ★ 0.300.0 一键纠偏（任务书 §三.4）——成品卡「这不是我要的形态」：切换 form→存档契约直改→
+  //   跳过枢机重跑执笔（不是让用户重新描述）；纠偏历史落 preferences（最近 20 条注入枢机调权重）
+  correctForm(msg: ChatMessage): void {
+    const c = this.contractByMsg.get(msg.messageId);
+    if (c === undefined) {
+      return;
+    }
+    const from = c.form;
+    const to = from === 'deliverable' ? 'analysis' : 'deliverable';
+    c.form = to;
+    this.correctPendingByMsg.set(msg.messageId, c);
+    recordCorrectEntry(this.getUIContext().getHostContext() as common.Context, from, to, c.taskType, c.genre);
+    const cc: Record<string, string> = {};
+    cc['from'] = from;
+    cc['to'] = to;
+    cc['taskType'] = c.taskType;
+    track(this.getUIContext().getHostContext() as common.Context, 'sishu_correct', cc);
+    this.showToastSafe(to === 'deliverable' ? '已切换为成品形态，重新执笔中' : '已切换为分析形态，重新执笔中');
+    this.regenerateMessage(msg);
+  }
+
+  // 交付卡渲染三取数（@Builder 内禁 as 断言/局部变量——方法封装）
+  deliverContractOf(msg: ChatMessage): TaskContract | null {
+    const c = this.contractByMsg.get(msg.messageId);
+    return c !== undefined && c.form === 'deliverable' ? c : null;
+  }
+
+  deliverGenreOf(msg: ChatMessage): string {
+    const c = this.deliverContractOf(msg);
+    return c !== null ? c.genre : '';
+  }
+
+  deliverAssumptionsOf(msg: ChatMessage): string {
+    const c = this.deliverContractOf(msg);
+    return c !== null ? c.assumptions.join('；') : '';
+  }
+
   // 思考开始：登记活动消息 + 启动秒表计时器（1s tick——思考卡「深度思考中 Ns」）
   beginThinkingTrace(msgId: string): void {
     this.thinkingActiveMsgId = msgId;
@@ -6012,6 +6564,8 @@ export struct ChatPage {
                                   .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                                   .onClick(() => {
                                     this.cancelPlanning('user');
+                                    this.streamGen += 1; // ★ 0.300.0：代际+1（挂起链路全部死亡）
+                                    this.abandonClarify();
                                     if (this.planController !== null) {
                                       this.planController.cancel();
                                       this.planController = null;
@@ -6023,6 +6577,7 @@ export struct ChatPage {
                                     this.isLoading = false;
                                     this.streamPhase = 0;
                                     this.streamingMsgId = '';
+                                    this.sishuSpPreview = ''; // ★ 0.300.0：SP 预览复位
                                   })
                               }
                               .width('100%')
@@ -6041,6 +6596,101 @@ export struct ChatPage {
                             .padding(10)
                             .borderRadius(RADIUS_CONTROL)
                             .backgroundColor(this.theme.hookBg)
+                            .margin({ top: 6 })
+                          }
+
+                          // ★ 0.300.0：反问收束卡（枢机 needAsk——对话流内嵌选择题，性格测试 3.0 点选流同款；
+                          //   onSubmit=按作答执笔 / onSkip=按默认假设执笔；单任务最多 1 轮）
+                          if (this.clarifyState.visible && this.clarifyState.messageId === msg.messageId) {
+                            ClarifyCard({
+                              onSubmit: (answers: string[]): void => {
+                                this.resolveClarify(answers);
+                              },
+                              onSkip: (): void => {
+                                this.resolveClarify(null);
+                              }
+                            })
+                          }
+
+                          // ★ 0.300.0：御史审核卡（streamPhase 9/10 的气泡内体现——审核轮次/重写态可见；
+                          //   取消=整条任务终止（审核流挂 streamController 同链取消））
+                          if (this.censorBadge.length > 0 && this.streamingMsgId === msg.messageId) {
+                            Row({ space: 8 }) {
+                              Image($r('app.media.timer'))
+                                .width(14)
+                                .height(14)
+                                .objectFit(ImageFit.Contain)
+                              Text(this.censorBadge)
+                                .fontSize(13)
+                                .fontColor(this.theme.brandSecondary)
+                                .maxLines(1)
+                                .layoutWeight(1)
+                              Text('取消')
+                                .fontSize(12)
+                                .fontColor(this.theme.textTertiary)
+                                .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                                .onClick(() => {
+                                  this.streamGen += 1;
+                                  if (this.streamController !== null) {
+                                    this.streamController.cancel();
+                                    this.streamController = null;
+                                  }
+                                  this.isLoading = false;
+                                  this.streamPhase = 0;
+                                  this.censorBadge = '';
+                                  this.streamingMsgId = '';
+                                  this.sishuSpPreview = '';
+                                })
+                            }
+                            .width('100%')
+                            .padding(10)
+                            .borderRadius(RADIUS_CONTROL)
+                            .backgroundColor(this.theme.hookBg)
+                            .margin({ top: 6 })
+                          }
+
+                          // ★ 0.300.0：交付卡（交付型终态——已成稿标记+默认假设标注+形态纠偏入口；
+                          //   正文即成品可整体复制（复制钮复用操作行「复制全文」）；纠偏=存档契约切 form
+                          //   跳过枢机重跑执笔——全链路唯一零成本高质量标注信号）
+                          if (!this.isLoading && this.deliverMsgIds.includes(msg.messageId)
+                            && this.deliverContractOf(msg) !== null) {
+                            Column({ space: 6 }) {
+                              Row({ space: 8 }) {
+                                Image($r('app.media.timer'))
+                                  .width(14)
+                                  .height(14)
+                                  .objectFit(ImageFit.Contain)
+                                Text(`已成稿 · ${this.deliverGenreOf(msg)}`)
+                                  .fontSize(13)
+                                  .fontWeight(FontWeight.Medium)
+                                  .fontColor(this.theme.brandSecondary)
+                                  .maxLines(1)
+                                  .layoutWeight(1)
+                                Text('这不是我要的形态')
+                                  .fontSize(12)
+                                  .fontColor(this.theme.textSecondary)
+                                  .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                                  .borderRadius(10)
+                                  .backgroundColor(this.theme.surfaceSoft)
+                                  .border({ width: 1, color: this.theme.strokeCard })
+                                  .onClick(() => {
+                                    this.correctForm(msg);
+                                  })
+                              }
+                              .width('100%')
+                              if (this.deliverAssumptionsOf(msg).length > 0) {
+                                Text(`默认假设：${this.deliverAssumptionsOf(msg)}`)
+                                  .fontSize(11)
+                                  .lineHeight(16)
+                                  .fontColor(this.theme.textTertiary)
+                                  .width('100%')
+                              }
+                            }
+                            .width('100%')
+                            .padding(10)
+                            .borderRadius(RADIUS_CONTROL)
+                            .backgroundColor(this.theme.hookBg)
+                            .border({ width: 1, color: this.theme.strokeCard })
                             .margin({ top: 6 })
                           }
 
@@ -6667,23 +7317,26 @@ export struct ChatPage {
             })
 
             // ★ 0.292.0：联网问答开关——开=AI 可自主搜索/读网页（FC 工具循环，同司枢胶囊视觉语言）
+            // ★ 0.300.0：两态化（任务书 §三.1）——「自动」（默认：枢机自主决定+单段关键词预路由）↔
+            //   「强制」（任何模式恒挂 tools——Bing 抽风时手动兜底）；点击循环切换，不删除
             Row({ space: 4 }) {
               Image($r('app.media.globe'))
                 .width(14)
                 .height(14)
                 .objectFit(ImageFit.Contain)
-              Text('联网')
+              Text(this.webMode === 'force' ? '联网·强制' : '联网·自动')
                 .fontSize(12)
-                .fontColor(this.webMode ? Color.White : this.theme.textSecondary)
+                .fontColor(this.webMode === 'force' ? Color.White : this.theme.textSecondary)
                 .maxLines(1)
             }
             .height(28)
             .padding({ left: 9, right: 11 })
             .borderRadius(14)
-            .backgroundColor(this.webMode ? this.theme.brandPrimary : Color.Transparent)
-            .border({ width: 0.5, color: this.webMode ? Color.Transparent : this.theme.strokeCard })
+            .backgroundColor(this.webMode === 'force' ? this.theme.brandPrimary : Color.Transparent)
+            .border({ width: 0.5, color: this.webMode === 'force' ? Color.Transparent : this.theme.strokeCard })
             .onClick(() => {
-              this.webMode = !this.webMode;
+              this.webMode = this.webMode === 'force' ? 'auto' : 'force';
+              this.showToastSafe(this.webMode === 'force' ? '联网已强制：每次回答都先查资料' : '联网自动：AI 按需决定是否查资料');
             })
 
             Blank()
