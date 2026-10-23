@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-     "versionCode": 1000439, // ★ 0.300.0：司枢 Agent 3.0 V1（枢机→执笔→御史三角色流水线+反问卡+联网解互斥）；上一版 0.299.2 登录态影子持久化
-     "versionName": "1.0.0",
+    "versionCode": 1000444, // ★ 0.302.1：全局设置加每日复习提醒区块（代理提醒 AGC 驳回补场景截图）；0.302.0：SpLedger 事件流水
+    "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
     // debug 证书连开发环境（AGC 云侧容器/数据类型配置就绪后同步生效）

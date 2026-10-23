@@ -15,9 +15,10 @@ import { AppStorageV2, PersistenceV2, window } from '@kit.ArkUI'; // ★ 0.167�
 import { hilog } from '@kit.PerformanceAnalysisKit'; // ★ 0.279.5：持久化异常日志
 import { util } from '@kit.ArkTS'; // 0.206.0：initAgc 读 rawfile json 解码
 import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flushCloudRowsNow } from '../common/ChatModel'; // ★ 0.161.3：启动时从 rawfile/config.json 加载内置 API Key；★ 0.165.2：注册云端下行处理器
-import { initCloudDb, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
+import { initCloudDb, forceCloudSyncNow, connectCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
 import { settleRookieTasks } from '../common/RookieTask'; // ★ 0.294.0：新手任务结算（回前台对账差集补发）
 import { maybeAutoShowSignIn } from '../common/ChatModel'; // ★ 0.294.0：每日首开自动弹签到（gate ready 才弹）
+import { pullSpAdminCommands, reportSpAdminMirror } from '../common/ChatModel'; // ★ 0.301.0：SP 数据台——回前台拉运营指令（发放/扣减）+ 退后台镜像快照碰运气上报
 import { refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫——启动/回前台刷新 DISTRIBUTED_DATASYNC 权限缓存（系统设置改权限回来即校正）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue, handleWidgetSpeak } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue; ★ 0.255.0 speak
 import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
@@ -31,7 +32,9 @@ import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard
 import { refreshReviewReminder } from '../utils/ReminderUtil'; // ★ 0.299.0：每日复习提醒退后台刷新（文案动态化主时机；权益未开通静默）
 import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：退后台短时任务续跑摘要头 flush
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
-import { initAgreementPrefs } from '../utils/Agreement'; // ★ 0.279.5：协议同意态 preferences 同步初始化（onCreate 最早同步点——此后任意时刻读到的即磁盘真值）
+import { initAgreementPrefs } from '../utils/Agreement';
+import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil';
+import { initCloudSwitchShadow, writeCloudSwitchShadow, readCloudSwitchShadow, restoreShadowFromP2File } from '../utils/CloudSwitchShadow'; // ★ 0.301.1：bug8 云同步开关影子（P2 水合失败兜底） // ★ 0.279.5：协议同意态 preferences 同步初始化（onCreate 最早同步点——此后任意时刻读到的即磁盘真值）
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 import { initAccountShadow, restoreAccountFromShadow } from '../utils/HuaweiAccountUtil'; // ★ 0.299.2：登录态影子持久化（P2 'huawei-account' 水合黑盒根治——bug5）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
@@ -54,7 +57,8 @@ export class AppLifecycleStore {
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    initAgreementPrefs(this.context); // ★ 0.279.5：preferences 同步初始化（getPreferencesSync 返回即完成载入——协议门禁自此零水合竞态）
+    initAgreementPrefs(this.context);
+    initCloudSwitchShadow(this.context); // ★ 0.301.1：云同步开关影子初始化（preferences 同步载入） // ★ 0.279.5：preferences 同步初始化（getPreferencesSync 返回即完成载入——协议门禁自此零水合竞态）
     // ★ 0.299.2：登录态影子通道同步初始化+恢复（bug5 根治——P2 'huawei-account' 水合永久失败，
     //   影子 preferences 实测可靠；恢复先于任何 UI 读取，侧边栏首屏即正确登录态）
     initAccountShadow(this.context);
@@ -79,6 +83,14 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.293.0：SP 云同步门卫——启动即刷权限缓存（SiyiGate permGranted 单一真值源，
     //   GSD 云同步 Tab 状态卡与门卫判定共用）
     refreshSiyiGatePerm();
+    // ★ 0.301.1 bug8：云同步开关影子——enabled=true 则记影子；P2 水合失败时按影子恢复
+    if (connectHuaweiAccount().isLoggedIn) {
+      if (connectCloudSync().enabled) {
+        writeCloudSwitchShadow(true);
+      } else if (readCloudSwitchShadow() || restoreShadowFromP2File(this.context)) {
+        setCloudSyncEnabled(true);
+      }
+    }
     // ★ 0.230.1：0.228.4 临时清洗钩子 wipeCloudRows 已删除（伪墓碑止血改由 initCloudDb 内
     //   一次性幂等清洗接管——正本 server 同步；此入口曾是全量 del 行写入口，数据毁灭地雷拆除）
   }
@@ -360,12 +372,22 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.293.0：回前台刷新 SP 门卫权限缓存（用户可能刚从系统设置改权限回来——
     //   华为无权限变化推送 API，onForeground 主动重查是官方推荐做法）
     refreshSiyiGatePerm();
+    // bug8-onForeground：回前台同款影子恢复（会话内开启后掉水合也兜得住）
+    if (connectHuaweiAccount().isLoggedIn) {
+      if (connectCloudSync().enabled) {
+        writeCloudSwitchShadow(true);
+      } else if (readCloudSwitchShadow() || restoreShadowFromP2File(this.context)) {
+        setCloudSyncEnabled(true);
+      }
+    }
     // ★ 0.294.0：回前台=新手任务结算时机（云服务开通后挂账自动补发）+ 每日首开自动弹签到
     settleRookieTasks();
     maybeAutoShowSignIn();
     // ★ 0.291.0：回前台拉云端退款标记（**主拉取点**——退款核销白嫖闭环论证：用 SP 必开 app，
     //   开 app 即拉取核销先于扣费生效；静默无提示，核销结果进账单页时展示）
     pullRefundMarks();
+    // ★ 0.301.0：回前台拉 SP 数据台运营指令（发放/扣减——云函数未部署返 '[]' 静默零影响）
+    pullSpAdminCommands();
   }
 
   onBackground(): void {
@@ -407,6 +429,13 @@ export default class EntryAbility extends UIAbility {
       refreshReviewReminder();
     } catch (_e) {
       // 静默（提醒是增强能力，绝不阻断退后台链）
+    }
+    // ★ 0.301.0：SP 镜像快照退后台兜底上报（碰运气语义——0.206.2 教训退后台网络大概率被掐，
+    //   失败静默指纹不置位，下次变更/回前台 pull 顺带再报）
+    try {
+      reportSpAdminMirror();
+    } catch (_e) {
+      // 静默
     }
   }
 }

@@ -1,0 +1,9 @@
+{
+  "name": "sp-admin",
+  "version": "1.0.0",
+  "description": "DAG AI Chat SP 数据台云函数（镜像上报+运营指令，0.301.0）",
+  "main": "handler.js",
+  "dependencies": {
+    "@hw-agconnect/cloud-server": "^1.0.0"
+  }
+}

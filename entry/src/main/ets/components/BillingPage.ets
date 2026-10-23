@@ -13,7 +13,8 @@ import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLog
   IapPackage, parseIapPackages, ensureIapPackagesMigrated,
   freezePackageUntil, REFUND_FREEZE_MS, frozenAvailableSp,
 
-  StatisticsStore, connectStatistics, getStatDays } from '../common/ChatModel';
+  StatisticsStore, connectStatistics, getStatDays,
+  pullSpAdminCommands } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
 import { needsAgreement, needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：协议两段门禁（弹窗 Index 根挂载）
 import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases, detectRefundedIapPurchases, pullRefundMarks } from '../utils/IapUtil';
@@ -80,6 +81,8 @@ export struct BillingPage {
           this.purchaseNotice = `该充能包退款已到账，已自动核销 ${writtenOff / 10000} 万 SP（退款金额以华为订单为准）`;
         }
       });
+      // ★ 0.301.0：账单页进场拉 SP 数据台运营指令（与退款标记同款三时机之一；静默零影响）
+      pullSpAdminCommands();
     }
   }
 

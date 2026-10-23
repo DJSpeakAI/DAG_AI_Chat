@@ -24,6 +24,7 @@ import { AnnotationPage } from '../components/AnnotationPage'; // ★ 0.152：�
 import { SketchPage } from '../components/SketchPage'; // ★ 0.297.0：数学证明画板页路由
 import { StatisticsPage } from '../components/StatisticsPage'; // ★ 0.192.0：学习统计页路由
 import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单/订阅页路由
+import { APP_VERSION } from '../components/GlobalSettingsDialog'; // ★ 0.301.0：版本号单一来源（GSD export 常量——修 Index 硬编码漏更七版 bug，版本同步点从两处制回三处制）
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
 import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markReminderShownToday, isVip, wipeHistoricalTestStats } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定；★ 0.248.1：markWelcomeShown 随首登欢迎弹窗移除；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计
@@ -820,8 +821,8 @@ struct Index {
             .textAlign(TextAlign.Center)
         }
 
-        // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；每次改动编译装机递增末位（0.160.1 → 0.160.2 → ...）
-          Text('v0.293.0') // ★ 0.293.0：SP 云同步门卫（SiyiGate）+签到口径统一+礼包云下行后发放；上一版 0.292.1（版本历史详见 MEMORY.md）
+        // ★ 版本号体系（0.160.x）：装机后一眼确认设备代码版本；★ 0.301.0 起读 GSD APP_VERSION 单一来源（0.293.0~0.300.0 硬编码漏更七版根治）
+          Text(APP_VERSION)
           .fontSize(12)
           .fontColor(this.theme.textTertiary) // ★ 0.174.1：版本号小字收敛 Token（原 isDark 三元随 getThemeStore 删除）
           .margin({ top: 12 })

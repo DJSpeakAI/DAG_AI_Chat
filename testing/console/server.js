@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.274.0.1'; // ★ 0.274.0.1：WIDGET-SWITCH 桌面卡片切库死锁回归 + SEED-V4 种子数据用例 + widget 套件（app 0.274.0 配套）；上版 0.266.0.1 华为协议门禁// 更早历史见 MEMORY.md 版本表
+const VERSION = '0.301.0.2'; // ★ 0.301.0.2：SP 数据台三路由改直连 Cloud DB（SDK 签名——HTTP 触发器仅放行 SDK 裸 HTTP 被 401 拦+call 高层封装回 null，直查表零中转）；0.301.0.1：SP 三路由上线// 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -2148,6 +2148,349 @@ const CASES = [
       }
       artSave('SP-CONSUME', 'siyi-points.json', { before: b0, after: b1, at: now() });
     } },
+
+  // ============================================================
+  // ★ 0.299.2.1 SP 司忆点云同步专项套件（bug1 定性五件套——用户 2026-10-23 指派：
+  //   现象=PC 200万 SP / Pad 冷装登录气泡全到但 SP=0 / 设备重启 SP 归 0。
+  //   嫌疑链三条：①云端 cfg:siyi-points 行缺失或过期（上行链断）②P2 'siyi-points-v1'
+  //   单 key 水合失败（0.299.2 bug5 同族——盘值真运行时恒 0）③首拉闸门未开 SP 变动从未上行。
+  //   五条用例：审计（静态定性）/重启恢复/冷装首拉/签到跨端/长时监控。
+  // ============================================================
+
+  // SP-AUDIT ①：三端静态审计（零破坏）——行存在性+内容+chunk 分片+P2 盘值 四位一体，一次跑完定性
+  { id: 'SP-AUDIT', suite: 'sp', name: 'SP 资产静态审计（三端行值+chunk 分片+P2 盘值——bug1 定性主刀·零破坏）', semi: false, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (!devs.length) { ctx.log('前置', 'skip', '无在线设备'); return; }
+      // 行值解析（含余额口径——与 app BillingPage 同源：max(0,池-消耗) 三池合计）
+      const parseSiyi = (raw) => {
+        try {
+          const v = JSON.parse(raw);
+          const balance = Math.max(0, (v.permanentSp || 0) - (v.consumedPermanentSp || 0))
+            + Math.max(0, (v.bonusSp || 0) - (v.consumedBonusSp || 0))
+            + Math.max(0, (v.giftSp || 0) - (v.consumedGiftSp || 0));
+          let signed = -1;
+          try { signed = (JSON.parse(v.signedDates || '[]') || []).length; } catch (_e) { signed = -1; }
+          let pkgs = -1;
+          try { pkgs = (JSON.parse(v.iapPackages || '[]') || []).length; } catch (_e) { pkgs = -1; }
+          return { ok: true, permanentSp: v.permanentSp || 0, bonusSp: v.bonusSp || 0, giftSp: v.giftSp || 0,
+            consumed: (v.consumedPermanentSp || 0) + (v.consumedBonusSp || 0) + (v.consumedGiftSp || 0),
+            balance, welcomeGranted: !!v.welcomeGranted, signed, pkgs, rookieDone: v.rookieDoneJson || '', rookieGranted: v.rookieGrantedJson || '' };
+        } catch (e) { return { ok: false, raw: String(raw).slice(0, 60) }; }
+      };
+      // P2 盘值抽取（★实测盘路径=haps/entry/files/persistent_storage——0.299.2.1 首跑实锤少了 haps/entry 层；
+      //   busybox grep 不支持 \{0,N\} 量词——改无量词特征串，实测可用）
+      const readDisk = async (serial) => {
+        const out = await sh(serial, `grep -o -E '(permanentSp|bonusSp|giftSp|consumedPermanentSp|consumedBonusSp|consumedGiftSp|welcomeGranted)[^,}]*' ${CFG.sandboxBase}/haps/entry/files/persistent_storage 2>/dev/null | head -8`, 15000);
+        if (!out || SH_ERR_RE.test(out)) return { hit: false, raw: String(out).slice(0, 60) };
+        const num = (k) => { const m = out.match(new RegExp(k + '\\\\?&?quot;?:([0-9]+|true|false)')); return m ? m[1] : null; };
+        const p = num('permanentSp'); const c = num('consumedPermanentSp'); const w = num('welcomeGranted');
+        return { hit: p !== null, permanentSp: p, consumedPermanentSp: c, welcomeGranted: w, raw: '盘数字命中 len=' + out.length };
+      };
+      const snaps = [];
+      for (const d of devs) {
+        const r = await sqliteQuery(d.serial, "select value || '|' || updated_at from cloud_data where key='cfg:siyi-points'");
+        if (r.bad || !r.out.trim()) {
+          ctx.log(`①行存在性·${d.label}`, 'fail', `cfg:siyi-points 行缺失（${(r.out || r.raw || '空').toString().slice(0, 40)}）——该端本地 RDB 无 SP 行=云端行从未拉到或从未上行（未登录/未开同步先跑 sync-boot；已开=上行链断实锤）`);
+          snaps.push({ dev: d, row: null });
+          continue;
+        }
+        const [val, ts] = r.out.split('|');
+        const p = parseSiyi(val);
+        if (!p.ok) { ctx.log(`①行解析·${d.label}`, 'fail', `JSON 坏行：${p.raw}`); snaps.push({ dev: d, row: null }); continue; }
+        const age = Math.round((Date.now() - parseInt(ts, 10)) / 60000);
+        ctx.log(`①行值·${d.label}`, 'pass', `余额=${p.balance.toLocaleString()}（永久${p.permanentSp.toLocaleString()}+嘉奖${p.bonusSp.toLocaleString()}+赠${p.giftSp.toLocaleString()}·已耗${p.consumed.toLocaleString()}）·签${p.signed}天·包${p.pkgs}个·礼包${p.welcomeGranted ? '已发' : '未发'}·行龄${age}分钟`);
+        const ch = await dbCount(d.serial, 'cfg:siyi-points~');
+        if (ch.ok && ch.n > 0) ctx.log(`②chunk 分片·${d.label}`, 'warn', `检测到 ${ch.n} 条 cfg:siyi-points~N 分片行——SP 行超 512KB 被应用层拆片，缺片=整行丢弃+闸门不开（SP 恒 0 嫌疑之一），结合 SP-MONITOR 观察`);
+        const disk = await readDisk(d.serial);
+        if (!disk.hit) ctx.log(`③P2 盘值·${d.label}`, 'warn', `persistent_storage 未抽出 siyi-points-v1 条目（${disk.raw}）——条目缺失=重启 SP 归 0 实锤方向；grep 格式不适配也可能，人工复核：hdc shell cat ${CFG.sandboxBase}/files/persistent_storage`);
+        else if (disk.permanentSp !== null && disk.permanentSp < p.permanentSp) ctx.log(`③P2 盘值·${d.label}`, 'fail', `盘值落后：盘 permanentSp=${disk.permanentSp} < 行值=${p.permanentSp}——下行 merge 后写回 P2 失败/未持久化（水合族嫌疑），重启将回退旧值`);
+        else ctx.log(`③P2 盘值·${d.label}`, 'pass', `盘 permanentSp=${disk.permanentSp}（≥行值 ${p.permanentSp}）——盘账本在位`);
+        snaps.push({ dev: d, row: p });
+      }
+      // 跨端一致性（max/union 收敛后各行六数字应全等）
+      const rows = snaps.filter((s) => s.row);
+      if (rows.length >= 2) {
+        const base = rows[0].row;
+        let allEq = true;
+        for (const s of rows.slice(1)) {
+          const diffs = [];
+          for (const k of ['permanentSp', 'bonusSp', 'giftSp', 'consumed', 'balance']) if (s.row[k] !== base[k]) diffs.push(`${k} ${base[k]}↔${s.row[k]}`);
+          if (s.row.signed !== base.signed) diffs.push(`签天数 ${base.signed}↔${s.row.signed}`);
+          if (s.row.welcomeGranted !== base.welcomeGranted) diffs.push(`礼包标记 ${base.welcomeGranted}↔${s.row.welcomeGranted}`);
+          if (diffs.length) { allEq = false; ctx.log(`④跨端一致·${rows[0].dev.label}↔${s.dev.label}`, 'fail', diffs.join('，') + '——max/union 合并未收敛（某端行龄旧=该端拉取滞后；值小端=云端行旧或上行断）'); }
+        }
+        if (allEq) ctx.log('④跨端一致', 'pass', `${rows.length} 端 SP 账本六数字+签天数+礼包标记全等——云同步收敛达成`);
+      } else if (rows.length === 1) {
+        ctx.log('④跨端一致', 'warn', '仅 1 端有 SP 行——单端无法比对（其余端见 ① 失败原因）');
+      }
+      artSave('SP-AUDIT', 'sp-audit.json', { at: now(), snaps: snaps.map((s) => ({ dev: s.dev.id, row: s.row })) });
+    } },
+
+  // ★ 0.301.0 SP-ADMIN：SP 数据台链路健康（装机版本+回前台拉取零崩溃+测试台代理配置三断言；
+  //   云函数未部署=常态（fetch 静默返 []），本用例只证端侧旁路在位不炸）
+  { id: 'SP-ADMIN-LINK', suite: 'sp', name: 'SP 数据台链路健康（0.301.0：版本≥1000440+冷启拉取零 JSError+测试台代理状态）', semi: false, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (!devs.length) { ctx.log('前置', 'skip', '无在线设备'); return; }
+      for (const d of devs) {
+        // ①装机版本（bm dump 实读——SpAdminUtil+三挂点随 1000440 上车）
+        const bm = await sh(d.serial, 'bm dump -n com.dagaichat.app', 15000);
+        const m = String(bm).match(/"versionCode":\s*(\d+)/);
+        const vc = m ? parseInt(m[1], 10) : 0;
+        if (vc >= 1000440) ctx.log(`①版本·${d.label}`, 'pass', `versionCode ${vc} ≥ 1000440（SpAdminUtil 镜像上报/指令拉取已上车）`);
+        else ctx.log(`①版本·${d.label}`, 'fail', `versionCode ${vc} < 1000440——SP 数据台端侧未上车，装机最新 HAP 后重跑`);
+        // ②冷启拉取链路零崩溃（onCreate→onForeground 触发 pullSpAdminCommands；未部署=静默降级，任何 JSError=红）
+        await sh(d.serial, 'aa start -a EntryAbility -b com.dagaichat.app', 10000);
+        await sleep(4000);
+        const hlog = await sh(d.serial, 'hilog -x -z 5000 2>/dev/null | grep -i -E "JsError|sp-admin" | head -5', 15000);
+        if (/JsError/i.test(String(hlog))) ctx.log(`②拉取零崩溃·${d.label}`, 'fail', `捕获 JSError：${String(hlog).slice(0, 120)}`);
+        else ctx.log(`②拉取零崩溃·${d.label}`, 'pass', '冷启+回前台链路无 JSError（sp-admin 未部署时 fetch 静默属预期，部署后自动全链生效）');
+      }
+      // ③服务端代理配置（本机测试台 config——fnUrl 空=未部署属常态非缺陷）
+      const cfg = CFG.spAdmin || {};
+      if (cfg.fnUrl && cfg.token) ctx.log('③测试台代理', 'pass', 'spAdmin.fnUrl/token 已配置——「📊 SP 数据」tab 可直接查询/下指令');
+      else ctx.log('③测试台代理', 'warn', 'spAdmin.fnUrl/token 未配置——SP tab 将提示未部署（部署指引 docs/cloud/sp-admin/部署指引.md；app 侧零改动权益式生效）');
+    } },
+
+  // SP-RESTART ②：冷启 SP 恢复监控——「重启归 0」专项（数据层三快照 + UI 层余额锚点）
+  { id: 'SP-RESTART', suite: 'sp', name: '冷启动 SP 恢复（重启归 0 专项：force-stop→冷启→盘值/行值/不降断言+UI 余额锚点）', semi: true, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (!devs.length) { ctx.log('前置', 'skip', '无在线设备'); return; }
+      const readBal = async (serial) => {
+        const { out, bad } = await sqliteQuery(serial, "select value from cloud_data where key='cfg:siyi-points'");
+        if (bad || !out.trim()) return { ok: false, n: 0 };
+        try { const v = JSON.parse(out); return { ok: true, n: Math.max(0, (v.permanentSp || 0) - (v.consumedPermanentSp || 0)) + Math.max(0, (v.bonusSp || 0) - (v.consumedBonusSp || 0)) + Math.max(0, (v.giftSp || 0) - (v.consumedGiftSp || 0)), permanentSp: v.permanentSp || 0 }; }
+        catch (e) { return { ok: false, n: 0 }; }
+      };
+      for (const d of devs) {
+        const b0 = await readBal(d.serial);
+        if (!b0.ok) { ctx.log(`前置·${d.label}`, 'skip', '无 SP 行/坏行（先跑 SP-AUDIT 定性）'); continue; }
+        if (b0.n <= 0) { ctx.log(`前置·${d.label}`, 'skip', `当前行余额=0（发送会被闸门拦）——充值/兑换后再测本端`); continue; }
+        await coldStart(d.serial, 9000);
+        const b1 = await readBal(d.serial);
+        const disk = await sh(d.serial, `grep -o -E 'permanentSp[^,}]*' ${CFG.sandboxBase}/haps/entry/files/persistent_storage 2>/dev/null | head -2`, 15000);
+        const diskSp = (() => { const m = disk.match(/permanentSp\\?&?quot?:([0-9]+)/); return m ? parseInt(m[1], 10) : null; })();
+        ctx.log(`①冷启后行值·${d.label}`, b1.ok && b1.n >= b0.n ? 'pass' : 'fail',
+          b1.ok ? `余额 ${b0.n.toLocaleString()} → ${b1.n.toLocaleString()}（${b1.n >= b0.n ? '未回退' : '回退！下行 reconcile 未拉回/闸门链断'}）` : '冷启后行读取失败');
+        if (diskSp !== null) ctx.log(`②冷启后盘值·${d.label}`, diskSp >= b0.permanentSp ? 'pass' : 'fail', `盘 permanentSp=${diskSp.toLocaleString()}（行值 ${b0.permanentSp.toLocaleString()}）——盘小=水合写入链断（重启归 0 根因方向）`);
+        else ctx.log(`②冷启后盘值·${d.label}`, 'warn', '盘条目未抽出（格式不适配/条目缺失——人工 cat 复核）');
+        const steady = await pollUntil(async () => { const c = await readBal(d.serial); return c.ok && c.n >= b0.n; }, 90000);
+        ctx.log(`③90s 稳定性·${d.label}`, steady ? 'pass' : 'fail', steady ? '余额持续不低于冷启前——无闪断回 0' : '90s 内余额跌破基线（意外归 0 活体证据——结合 SP-MONITOR 时间线）');
+        // UI 层锚点（仅 UI 通道端；无通道如实 skip）
+        if (canUiDump(d)) {
+          const cp = await ctx.checkpoint({ label: `请在【${d.label}】进入「设置 → SP与账单（账单页）」，停在能看到 SP 余额的位置`, deviceId: d.id,
+            detect: async () => { const t = await dumpLayout(d.serial); return /嘉奖 SP|充能 SP|暂无余额/.test(t.text); },
+            timeoutMs: 120000 });
+          if (cp.state === 'timeout') { ctx.log(`④UI 余额显示·${d.label}`, 'skip', '120s 未就位（跳过 UI 断言，数据层结论仍有效）'); continue; }
+          const t = await dumpLayout(d.serial);
+          await ctx.art.dump('SP-RESTART', `dump-${d.id}.json`, d.serial);
+          const zero = /暂无余额/.test(t.text);
+          const hasSp = /嘉奖 SP|充能 SP/.test(t.text);
+          ctx.log(`④UI 余额显示·${d.label}`, zero ? 'fail' : (hasSp ? 'pass' : 'warn'),
+            zero ? `界面显示「暂无余额」而行余额=${b0.n.toLocaleString()}——★重启归 0 用户现象活体复现（UI 读 store 与行/RDB 脱节——P2 水合族）`
+              : (hasSp ? '界面正常展示 SP 余额（嘉奖/充能行在位）' : '未识别到余额锚点文本（页面可能未到位）'));
+        } else ctx.log(`④UI 余额显示·${d.label}`, 'skip', '无 UI 断言通道（数据层结论为准）');
+      }
+    } },
+
+  // SP-COLD-FULL ③：冷装首拉 SP 到位——用户 Pad 场景复刻（B 端卸载重装→登录→SP 行必须到且与云端全等）
+  { id: 'SP-COLD-FULL', suite: 'sp', name: '冷装首拉 SP（卸载重装→登录→SP 行到位且全等+礼包不重发——用户 Pad 场景）', semi: true, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (devs.length < 2) { ctx.log('前置', 'skip', '需 ≥2 台（A 端云端基线，B 端冷装验证）'); return; }
+      const [a, b] = devs;
+      const readRaw = async (serial) => { const { out, bad } = await sqliteQuery(serial, "select value from cloud_data where key='cfg:siyi-points'"); return { bad, out: out.trim() }; };
+      const ra = await readRaw(a.serial);
+      if (ra.bad || !ra.out) { ctx.log('前置·A 端基线', 'fail', `A 端（${a.label}）无 SP 行——云端账本不存在，冷装端必为 0（先在 A 端登录开同步跑 SP-AUDIT）`); return; }
+      let va = null; try { va = JSON.parse(ra.out); } catch (e) { ctx.log('前置·A 端基线', 'fail', 'A 端 SP 行 JSON 坏'); return; }
+      ctx.log('前置·A 端云端基线', 'pass', `permanentSp=${(va.permanentSp || 0).toLocaleString()}·welcomeGranted=${va.welcomeGranted}（${a.label}）`);
+      ctx.log('⚠️破坏性提示', 'info', `本条将卸载重装【${b.label}】（B 端本地数据全清——与用户冷装路径一致）`);
+      const un = await bmUninstall(b.serial);
+      ctx.log('①B 端卸载', un.ok ? 'pass' : 'fail', un.detail);
+      const ins = await bmInstall(b.serial);
+      ctx.log('②B 端重装', ins.ok ? 'pass' : 'fail', ins.detail);
+      if (!ins.ok) return;
+      await coldStart(b.serial, 12000);
+      const cp = await ctx.checkpoint({ label: `请在【${b.label}】上完成：协议同意 → 登录华为账号（同 A 端账号）→ 云同步开启`, deviceId: b.id,
+        detect: async () => { const c = await dbCount(b.serial, null); return c.ok && c.n > 0; },
+        timeoutMs: 300000 });
+      if (cp.state === 'timeout') { ctx.log('③B 端登录/首拉', 'fail', '300s 内 cloud_data 仍为空（登录未完成或首拉链死）'); return; }
+      const ok = await pollUntil(async () => { const r = await readRaw(b.serial); return !r.bad && !!r.out; }, CFG.poll.syncTimeoutMs);
+      const rb = await readRaw(b.serial);
+      if (!ok || !rb.out) { ctx.log('★冷装 SP 行到位', 'fail', `气泡行已到而 SP 行 90s 未到——★用户现象（Pad SP=0）活体复现：云端行缺失或 SP 行下行滞后（对照 A 端基线与 SP-AUDIT 结论定性）`); return; }
+      let vb = null; try { vb = JSON.parse(rb.out); } catch (e) { ctx.log('★冷装 SP 行解析', 'fail', 'B 端 SP 行 JSON 坏'); return; }
+      const diffs = [];
+      for (const k of ['permanentSp', 'bonusSp', 'giftSp', 'consumedPermanentSp', 'consumedBonusSp', 'consumedGiftSp']) {
+        if ((va[k] || 0) !== (vb[k] || 0)) diffs.push(`${k} 云${va[k] || 0}↔B${vb[k] || 0}`);
+      }
+      ctx.log('★冷装 SP 全等', diffs.length ? 'fail' : 'pass',
+        diffs.length ? diffs.join('，') + '——max 合并未收敛（90s 窗口短或行旧）' : `六数字与云端全等（permanentSp=${(vb.permanentSp || 0).toLocaleString()}）——冷装首拉 SP 到位 ✓`);
+      ctx.log('★礼包不重发', va.welcomeGranted && vb.welcomeGranted ? 'pass' : 'warn',
+        `云端=${va.welcomeGranted} 冷装=${vb.welcomeGranted}（老账号重装须保持 true——false+余额突增=礼包重发 Bug A 复发）`);
+      artSave('SP-COLD-FULL', 'sp-cold.json', { a: va, b: vb, at: now() });
+    } },
+
+  // SP-SIGNIN-CROSS ④：签到跨端一致（0.293.0 场景①——一端签到→三端已签）
+  { id: 'SP-SIGNIN-CROSS', suite: 'sp', name: '签到跨端一致（操作端签到→行 signedDates 增→其余端冷启后并集一致）', semi: true, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (devs.length < 2) { ctx.log('前置', 'skip', '需 ≥2 台'); return; }
+      const op = devs.find((d) => canUiDump(d)) || devs[0];
+      const rest = devs.filter((d) => d !== op);
+      const readSign = async (serial) => {
+        const { out, bad } = await sqliteQuery(serial, "select value from cloud_data where key='cfg:siyi-points'");
+        if (bad || !out.trim()) return { ok: false, n: -1 };
+        try { const v = JSON.parse(out); let n = -1; try { n = (JSON.parse(v.signedDates || '[]') || []).length; } catch (_e) { } return { ok: true, n }; }
+        catch (e) { return { ok: false, n: -1 }; }
+      };
+      const b0 = await readSign(op.serial);
+      if (!b0.ok) { ctx.log('前置·操作端', 'fail', `SP 行缺失（${op.label}——先跑 sync-boot/SP-AUDIT）`); return; }
+      ctx.log('前置·基线', 'pass', `signedDates=${b0.n} 天（${op.label}）`);
+      const cp = await ctx.checkpoint({ label: `请在【${op.label}】上完成一次签到（画布右上角任务入口/签到弹窗——若今日已签，本条只能验证已签状态跨端一致）`, deviceId: op.id,
+        detect: async () => { const c = await readSign(op.serial); return c.ok && c.n > b0.n; },
+        timeoutMs: 180000 });
+      const b1 = await readSign(op.serial);
+      if (cp.state === 'timeout' && b1.n <= b0.n) {
+        ctx.log('①操作端签到', 'warn', `180s signedDates 未增（今日已签或未操作）——降级为「已签状态跨端一致」断言`);
+      } else {
+        ctx.log('①操作端签到', 'pass', `signedDates ${b0.n} → ${b1.n}（+1 上行实锤）`);
+      }
+      for (const rd of rest) { await sh(rd.serial, 'aa force-stop ' + CFG.bundle); await sleep(1000); await coldStart(rd.serial, 9000); }
+      const synced = await pollUntil(async () => { for (const rd of rest) { const c = await readSign(rd.serial); if (!c.ok || c.n < b1.n) return false; } return true; }, 150000);
+      const finals = [];
+      for (const d of devs) { const c = await readSign(d.serial); finals.push(`${d.id}=${c.ok ? c.n : 'ERR'}`); }
+      ctx.log('★签到跨端一致', synced ? 'pass' : 'fail', finals.join(' ') + (synced ? '（并集已传播）' : '——150s 未收敛（未签端=下行滞后或行旧，结合 SP-AUDIT 行龄）'));
+    } },
+
+  // SP-MONITOR ⑤：长时旁路监控（5 分钟 5s 采样——捕捉上行时点/传播延迟/意外闪断归 0）
+  { id: 'SP-MONITOR', suite: 'sp', name: 'SP 长时监控（5 分钟旁路采样：行值/updated_at/签天数变化时间线——零打扰）', semi: false, scope: 'cross', timeoutMs: 340000,
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (!devs.length) { ctx.log('前置', 'skip', '无在线设备'); return; }
+      const snap = async (serial) => {
+        const { out, bad } = await sqliteQuery(serial, "select value || '|' || updated_at from cloud_data where key='cfg:siyi-points'");
+        if (bad || !out.trim()) return null;
+        try { const [v, ts] = out.split('|'); const j = JSON.parse(v); let s = -1; try { s = (JSON.parse(j.signedDates || '[]') || []).length; } catch (_e) { }
+          return { ts: parseInt(ts, 10), p: j.permanentSp || 0, c: (j.consumedPermanentSp || 0) + (j.consumedBonusSp || 0) + (j.consumedGiftSp || 0), s }; }
+        catch (e) { return null; }
+      };
+      const prev = {}; const timeline = [];
+      for (const d of devs) { prev[d.id] = await snap(d.serial); if (prev[d.id]) ctx.log(`基线·${d.label}`, 'info', `余额=${(prev[d.id].p - prev[d.id].c).toLocaleString()}·行龄=${Math.round((Date.now() - prev[d.id].ts) / 60000)}分钟`); else ctx.log(`基线·${d.label}`, 'warn', '无 SP 行（该端采样空转）'); }
+      const t0 = Date.now(); const DUR = 5 * 60 * 1000;
+      while (Date.now() - t0 < DUR) {
+        await sleep(5000);
+        for (const d of devs) {
+          const cur = await snap(d.serial);
+          if (!cur) continue;
+          const p0 = prev[d.id];
+          if (!p0 || cur.ts !== p0.ts || cur.p !== p0.p || cur.c !== p0.c || cur.s !== p0.s) {
+            const dlt = [];
+            if (cur.p !== (p0 && p0.p)) dlt.push(`池${(p0 ? p0.p : 0).toLocaleString()}→${cur.p.toLocaleString()}`);
+            if (cur.c !== (p0 ? p0.c : 0)) dlt.push(`耗${(p0 ? p0.c : 0).toLocaleString()}→${cur.c.toLocaleString()}`);
+            if (cur.s !== (p0 ? p0.s : 0)) dlt.push(`签${p0 ? p0.s : 0}→${cur.s}`);
+            if (cur.ts !== (p0 && p0.ts)) dlt.push(`行戳+${Math.round((cur.ts - (p0 ? p0.ts : cur.ts)) / 1000)}s`);
+            const tag = cur.p === 0 && cur.c === 0 ? '【⚠️归 0 闪断！】' : '';
+            ctx.log(`变化·${d.label}@+${Math.round((Date.now() - t0) / 1000)}s`, 'info', tag + (dlt.join(' ') || '行戳更新'));
+            timeline.push({ dev: d.id, at: Date.now(), cur, prev: p0 });
+          }
+          prev[d.id] = cur;
+        }
+      }
+      const finals = devs.map((d) => ({ id: d.id, s: prev[d.id] }));
+      const vals = finals.filter((f) => f.s).map((f) => `${f.id}:池${f.s.p.toLocaleString()}/耗${f.s.c}`);
+      ctx.log('监控结束·终态', 'info', vals.join(' ') + (timeline.length ? `·共 ${timeline.length} 次变化` : '·全程静默（无 SP 变动——监控期未操作 app 属正常）'));
+      if (timeline.length) artSave('SP-MONITOR', 'sp-monitor.json', { at: now(), timeline, finals });
+      const eq = (() => { const vs = finals.filter((f) => f.s).map((f) => f.s.p + '/' + f.s.c); return vs.length >= 2 && vs.every((v) => v === vs[0]); })();
+      if (finals.filter((f) => f.s).length >= 2) ctx.log('★终态跨端一致', eq ? 'pass' : 'warn', eq ? '监控期末多端账本一致' : '期末不一致（可能收敛窗口未到——重跑 SP-AUDIT 看行龄）');
+    } },
+
+  // SP-HYDRATION ⑥：P2 水合哨兵（★华为官方 2026-10-23 答复落地：PersistenceV2 反序列化失败=静默丢弃
+  //   条目回退 factory 默认值（错误码 140107 仅日志上报），唯一官方观测通道=notifyOnError——app 已注册
+  //   （EntryAbility tag 'DagChat'，msg 形如 'persistence error key=... reason=... msg=...'）。
+  //   本用例=冷启窗口抓该日志：命中 siyi-points-v1/huawei-account =「重启 SP 归 0 / 冷启掉登录态」根因活体实锤）
+  { id: 'SP-HYDRATION', suite: 'sp', name: 'P2 水合哨兵（清 hilog→冷启→抓 notifyOnError——140107 静默丢弃实锤通道）', semi: false, scope: 'cross',
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      if (!devs.length) { ctx.log('前置', 'skip', '无在线设备'); return; }
+      for (const d of devs) {
+        await sh(d.serial, 'hilog -r', 12000);
+        await coldStart(d.serial, 12000);
+        const out = await sh(d.serial, `hilog -x 2>/dev/null | grep -i "persistence error" | head -20`, 25000);
+        const lines = String(out).split('\n').map((s) => s.trim()).filter((s) => s && /persistence error/i.test(s));
+        if (!lines.length) {
+          ctx.log(`①水合哨兵·${d.label}`, 'pass', '冷启窗口无 P2 反序列化/配额错误（本会话水合健康）');
+        } else {
+          const keys = lines.map((l) => (l.match(/key=([^ ]+)/) || [])[1]).filter(Boolean);
+          const hitSiyi = keys.some((k) => /siyi|huawei-account/.test(k || ''));
+          ctx.log(`①水合哨兵·${d.label}`, hitSiyi ? 'fail' : 'warn',
+            `捕获 ${lines.length} 条 persistence error：${[...new Set(keys)].join(',') || lines[0].slice(0, 120)}`
+            + (hitSiyi ? '——★命中 SP/账号 key=「重启归 0 / 掉登录态」根因实锤（reason=serialization=类结构不一致被静默丢弃；quota=超配额）' : '（非 SP key——知识库 base64 图等已知场景，另案）'));
+          artSave('SP-HYDRATION', `hilog-${d.id}.txt`, { at: now(), lines });
+        }
+        const disk = await sh(d.serial, `grep -c -E 'permanentSp' ${CFG.sandboxBase}/haps/entry/files/persistent_storage 2>/dev/null`, 15000);
+        ctx.log(`②盘条目在位·${d.label}`, disk && !SH_ERR_RE.test(disk) && parseInt(disk, 10) > 0 ? 'pass' : 'warn',
+          disk && parseInt(disk, 10) > 0 ? 'persistent_storage 含 siyi-points-v1 条目（haps/entry 真实路径）' : '盘条目未抽出（条目缺失=重启必归 0 实锤方向；格式不适配人工复核）');
+      }
+    } },
+
+  // SP-GATE-BRANCH ⑦：SP 云服务门卫三分支（★用户 2026-10-23 指派「功能不开/后台不开各种情况全测」+
+  //   project_rule SP 铁律：不开云服务=不能获得也不能消耗 SP。三分支：关 app 内云同步开关→
+  //   发消息必弹「涉及司忆点」引导（不扣不增）→重开→恢复正常。semi=用户在场配合点开关）
+  { id: 'SP-GATE-BRANCH', suite: 'sp', name: 'SP 门卫三分支（关同步→发消息弹引导不扣点→重开恢复——需人工配合点开关）', semi: true, scope: 'cross', timeoutMs: 420000,
+    run: async (ctx) => {
+      const devs = ctx.devices;
+      const op = devs.find((d) => canUiDump(d));
+      if (!op) { ctx.log('前置', 'skip', '无 UI 操作端（需 Pad/手机在线）'); return; }
+      const readSiyi = async (serial) => {
+        const { out, bad } = await sqliteQuery(serial, "select value || '|' || updated_at from cloud_data where key='cfg:siyi-points'");
+        if (bad || !out.trim()) return null;
+        try { const [v, ts] = out.split('|'); const j = JSON.parse(v); return { ts: parseInt(ts, 10), p: j.permanentSp || 0, c: (j.consumedPermanentSp || 0) + (j.consumedBonusSp || 0) + (j.consumedGiftSp || 0) }; }
+        catch (e) { return null; }
+      };
+      const b0 = await readSiyi(op.serial);
+      if (!b0) { ctx.log('前置·基线', 'fail', `操作端（${op.label}）无 SP 行——先跑 sync-boot/SP-AUDIT`); return; }
+      ctx.log('前置·基线', 'pass', `余额=${(b0.p - b0.c).toLocaleString()}·行龄=${Math.round((Date.now() - b0.ts) / 60000)}分钟（${op.label}）`);
+      // ① 用户关闭云同步开关（GSD 云同步 Tab 关闭，或系统设置-云空间-应用数据同步关）
+      const cp1 = await ctx.checkpoint({ label: `请在【${op.label}】上关闭云同步：设置(⚙) → 云同步 → 关闭开关（若弹确认请确认）`, deviceId: op.id, timeoutMs: 240000 });
+      if (cp1.state === 'timeout') { ctx.log('①关闭云同步', 'skip', '240s 未确认——本条中止（不判失败）'); return; }
+      await coldStart(op.serial, 10000);
+      // ② 发消息→必弹「涉及司忆点」引导（不消耗；文案锚点=Index.syncGateMessage 三分支公共词）
+      let nav = await uiClickText(op.serial, '气泡树', { waitMs: 2200 });
+      if (!nav.ok) { nav = await uiClickText(op.serial, '进入气泡树', { waitMs: 2600 }); }
+      if (!nav.ok) { await sh(op.serial, 'uitest uiInput keyEvent Back', 15000); await sleep(1500); nav = await uiClickText(op.serial, '气泡树', { waitMs: 2200 }); }
+      if (!nav.ok) { ctx.log('②进画布', 'fail', '「气泡树」入口未命中'); return; }
+      const d0 = await dumpLayout(op.serial);
+      const hits = findNodeBoundsAll(d0.text, '条对话').filter((h) => !String(h.text).includes('个气泡'));
+      if (!hits.length) { ctx.log('②找对话气泡', 'fail', '画布无「N条对话」气泡卡——先造一条对话'); return; }
+      await uiDoubleClick(op.serial, hits[hits.length - 1].x, hits[hits.length - 1].y);
+      await sleep(2200);
+      const d1 = await dumpLayout(op.serial);
+      const inBox = findNodeHintAll(d1.text, '输入问题')[0];
+      if (!inBox) { ctx.log('②定位输入框', 'fail', '未命中 hint「输入问题...」'); return; }
+      const probe = 'GATE' + String(Date.now()).slice(-6);
+      await uiInputText(op.serial, inBox.x, inBox.y, probe);
+      const sd = await uiClickText(op.serial, '发送', { waitMs: 2500 });
+      if (!sd.ok) { ctx.log('②发送', 'fail', '「发送」按钮未命中'); return; }
+      await sleep(1800);
+      const d2 = await dumpLayout(op.serial);
+      await ctx.art.dump('SP-GATE-BRANCH', `dump-guide-${op.id}.json`, op.serial);
+      const guided = /涉及司忆点/.test(d2.text);
+      ctx.log('★关同步·发送被门卫拦截', guided ? 'pass' : 'fail',
+        guided ? '弹出「此功能涉及司忆点（SP）…」引导——SP 铁律生效（未开云服务不消耗）'
+          : '未检出引导弹窗（锚点「涉及司忆点」）——可能弹窗已关/文案变更/门卫失效，看 dump 人工定性');
+      const b1 = await readSiyi(op.serial);
+      const noSpend = b1 ? (b1.c <= b0.c && b1.ts === b0.ts) : true;
+      ctx.log('★关同步·零 SP 事务', noSpend ? 'pass' : 'fail',
+        b1 ? `消耗 ${b0.c}→${b1.c}·行戳${b1.ts === b0.ts ? '未动' : '变动！'}（关同步期须冻结：不扣不增不上行）` : '行读取失败（关同步后行保留属正常——本地 RDB 不清）');
+      // ③ 用户重开云同步→引导应消失可正常发送
+      const cp2 = await ctx.checkpoint({ label: `请在【${op.label}】上重新开启云同步（设置 ⚙ → 云同步），等 30s 让首拉闸门完成`, deviceId: op.id, timeoutMs: 240000 });
+      if (cp2.state === 'timeout') { ctx.log('③重开云同步', 'warn', '240s 未确认——恢复分支未验证（前两分支结论仍有效）'); return; }
+      const recov = await pollUntil(async () => { const c = await dbCount(op.serial, null); return c.ok && c.n > 0; }, 60000);
+      ctx.log('③重开·同步恢复', recov ? 'pass' : 'warn', recov ? 'cloud_data 行在位——通路恢复（首拉闸门开后台自动完成，SP 功能随之恢复）' : '60s cloud_data 空——重开未生效或权限/账号态异常（跑 SP-AUDIT 定性）');
+    } },
+
 
   // ---------- ★ 0.229.25 功能②b 云同步数据链·跨端编排（SYNC-FLOW：真实 UI 产生→云端→对端收敛，验证"链路活不活"） ----------
   // 基线对齐铁律（§12.11）：每条用例复刻真实用户路径——边栏导航→顶栏 +→弹窗输入→保存；断言=settle 轮询对端行数收敛
@@ -4160,7 +4503,7 @@ const CASES = [
     } },
 
   // ---------- 功能③ ArkUI Test（设备内真断言，hypium；工程 entry/src/ohosTest） ----------
-  { id: 'ARKUI-TEST', suite: 'arkui', name: 'ArkUI Test 设备内真断言（hypium 2 条）', semi: false, scope: 'each', builtin: true, timeoutMs: 900000,
+  { id: 'ARKUI-TEST', suite: 'arkui', name: 'ArkUI Test 设备内真断言（hypium 2 条）', semi: false, scope: 'each', timeoutMs: 900000,
     run: async (ctx) => {
       const dev = ctx.devices[0]; const serial = dev.serial;
       // ★ 0.241.0.10：复用前比对测试包 versionCode 与工程当前值（现读 app.json5，防服务跨发版未重启用旧期望）——
@@ -4877,6 +5220,38 @@ function apiGuard(req) {
 }
 function json(res, code, obj) { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(obj)); }
 
+// ★ 0.301.0.2 SP 数据台：直连 Cloud DB（SDK 签名调用；云函数 HTTP 触发器仅放行 SDK——裸 HTTP 被
+//   网关 401 拦，且 server SDK call 高层封装只回 getValue() 恒 null——测试台直查 SpMirror/SpCommand
+//   表零中转；云函数只服务 app 端 callFunction 链路。全案 docs/cloud/sp-admin/）
+//   凭证=testing/console/agc-credential.json（已入 .gitignore，绝不外传/入 git）
+let _spDb = null;
+function spDb() {
+  if (_spDb) return _spDb;
+  try {
+    const agc = require('@hw-agconnect/cloud-server');
+    const cloudMod = agc.cloud || agc;
+    const inst = cloudMod.createInstance(path.join(ROOT, 'agc-credential.json'), 'spAdminConsole',
+      (agc.Region || cloudMod.Region).REGION_CN);
+    const db = inst.database({ zoneName: 'default' });
+    _spDb = { mirror: db.collection('SpMirror'), cmd: db.collection('SpCommand'),
+      ledger: db.collection('SpLedger'),
+      G: agc.CloudDBZoneGenericObject, inst: inst };
+  } catch (e) {
+    _spDb = { err: 'Cloud DB 初始化失败：' + e.message + '（检查 testing/console/agc-credential.json + node_modules/@hw-agconnect）' };
+  }
+  return _spDb;
+}
+function spBuildRow(G, table, plain) {
+  const o = G.build(table);
+  for (const k of Object.keys(plain)) o.addFieldValue(k, plain[k]);
+  return o;
+}
+function spRowsToPlain(rows) {
+  const out = [];
+  for (let i = 0; i < rows.length; i++) out.push(rows[i].getObject ? rows[i].getObject() : rows[i]);
+  return out;
+}
+
 let pendingShutdown = null;
 async function handler(req, res) {
   const u = new URL(req.url, `http://127.0.0.1:${CFG.port}`);
@@ -4910,6 +5285,70 @@ async function handler(req, res) {
     return;
   }
   if (!apiGuard(req)) return json(res, 403, { error: 'Origin 不在白名单' });
+  // ★ 0.301.0.2 SP 数据台三路由（直连 Cloud DB——SDK 签名；云函数只服务 app 端）
+  if (u.pathname === '/api/sp/query' && req.method === 'GET') {
+    const accountId = u.searchParams.get('accountId') || '';
+    if (!accountId) return json(res, 400, { ok: false, err: 'accountId 必填（或 __recent__ 看最近 50 行）' });
+    const d = spDb();
+    if (d.err) return json(res, 200, { ok: false, err: d.err });
+    try {
+      const q = accountId === '__recent__'
+        ? d.mirror.query().orderByDesc('reportedAt').limit(50)
+        : d.mirror.query().equalTo('objectId', accountId);
+      return json(res, 200, { ok: true, mirrors: spRowsToPlain(await q.get()) });
+    } catch (e) { return json(res, 200, { ok: false, err: '查询失败：' + e.message }); }
+  }
+  if (u.pathname === '/api/sp/command' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', async () => {
+      try {
+        const b = JSON.parse(body);
+        const targets = Array.isArray(b.targets) ? b.targets : [];
+        if (targets.length === 0) return json(res, 400, { ok: false, err: 'targets 必填（账号 ID 数组）' });
+        if (b.type !== 'grant' && b.type !== 'deduct') return json(res, 400, { ok: false, err: 'type 必须 grant/deduct' });
+        if (!(parseInt(b.amount, 10) > 0)) return json(res, 400, { ok: false, err: 'amount 必须为正整数' });
+        const d = spDb();
+        if (d.err) return json(res, 200, { ok: false, err: d.err });
+        const now = Math.floor(Date.now() / 1000); // 表时间戳秒级（Integer 32 位坑）
+        const rows = [];
+        for (const t of targets) {
+          rows.push(spBuildRow(d.G, 'SpCommand', {
+            objectId: 'c' + Date.now() + Math.floor(Math.random() * 100000),
+            target: String(t), type: b.type, amount: parseInt(b.amount, 10), note: String(b.note || ''),
+            status: 'pending', claimedBy: '', claimedAt: 0, confirmedAt: 0, resultAmount: 0, createdAt: now,
+          }));
+        }
+        await d.cmd.upsert(rows);
+        return json(res, 200, { ok: true, count: rows.length });
+      } catch (e) {
+        return json(res, 400, { ok: false, err: '请求体解析/写入失败：' + e.message });
+      }
+    });
+    return;
+  }
+  if (u.pathname === '/api/sp/commands' && req.method === 'GET') {
+    const d = spDb();
+    if (d.err) return json(res, 200, { ok: false, err: d.err });
+    try {
+      return json(res, 200, { ok: true, commands: spRowsToPlain(await d.cmd.query().orderByDesc('createdAt').limit(20).get()) });
+    } catch (e) { return json(res, 200, { ok: false, err: '查询失败：' + e.message }); }
+  }
+  // ★ 0.302.0 SP 事件流水（直查 SpLedger 表——按账号最近 N 条）
+  if (u.pathname === '/api/sp/ledger' && req.method === 'GET') {
+    const accountId = u.searchParams.get('accountId') || '';
+    const limit = Math.min(parseInt(u.searchParams.get('limit') || '50', 10) || 50, 100);
+    if (!accountId) return json(res, 400, { ok: false, err: 'accountId 必填' });
+    const d = spDb();
+    if (d.err) return json(res, 200, { ok: false, err: d.err });
+    try {
+      const rows = spRowsToPlain(await d.ledger.query().equalTo('accountId', accountId)
+        .orderByDesc('ts').limit(limit).get());
+      return json(res, 200, { ok: true, ledger: rows });
+    } catch (e) {
+      return json(res, 200, { ok: false, err: '查询失败：' + e.message + '（SpLedger 表未建？见 docs/cloud/sp-admin/部署指引.md）' });
+    }
+  }
   // ★ 0.229.15 延迟关闭+取消：pagehide 带 ?delay=ms → 延迟执行；页面回来 /api/shutdown/cancel 取消
   //   解决"刷新也触发 pagehide"的误停——刷新后 boot 成功即取消，只有真关页签才延迟后停
   if (u.pathname === '/api/shutdown' && req.method === 'POST') {
@@ -4947,7 +5386,7 @@ async function handler(req, res) {
   }
   if (u.pathname === '/api/suites') {
     const suites = {};
-    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', 'sync-boot': '云同步·三端从零引导（★0.241.0.4：fresh 装机后 协议→登录→开同步→三端收敛；唯一人工=华为授权页）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）+ 手机操作端链路（0.241.0.4 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', widget: '桌面服务卡片（切库死锁回归+完成态切换入口；0.274.0 新增）', arkui: 'ArkUI Test（设备内真断言）' };
+    const SUITE_NAME = { version: '版本核验（装机真身）', login: '账号登录（三入口×真实状态：门禁→各入口登录→退出→覆盖保留）', 'sync-boot': '云同步·三端从零引导（★0.241.0.4：fresh 装机后 协议→登录→开同步→三端收敛；唯一人工=华为授权页）', sync: '云同步四域数据链', syncflow: '云同步数据链·跨端编排（Pad UI 产生→PC 云端收敛；0.229.25 新增）+ 手机操作端链路（0.241.0.4 新增）', 'ui-audit': 'UI 规范审计（A 类页面巡检+B 类弹窗体系；0.229.26 新增）', chat: '对话稳定性与划词（压后台保留/划词清除/划词引用/划词取词准确；0.232.0 起）', tts: '云端语音朗读 API（openspeech；0.232.0 新增）', kbview: '知识库双视图与加号菜单（网格封面卡/跨页记忆/+菜单双库统一；0.239.0 新增）', widget: '桌面服务卡片（切库死锁回归+完成态切换入口；0.274.0 新增）', arkui: 'ArkUI Test（设备内真断言）', sp: 'SP 司忆点云同步专项（★0.299.2.1 bug1 定性五件套：静态审计/冷启恢复/冷装首拉/签到跨端/长时监控）' };
     for (const c of CASES) { if (c.builtin) continue; (suites[c.suite] = suites[c.suite] || { name: SUITE_NAME[c.suite] || c.suite, cases: [] }).cases.push({ id: c.id, name: c.name, semi: c.semi, scope: c.scope }); }
     return json(res, 200, { suites, running, config: { bundle: CFG.bundle, expectedVersionCode: EXPECTED_VC, appVersionName: readAppVersionName(), hap: CFG.hap } });
   }

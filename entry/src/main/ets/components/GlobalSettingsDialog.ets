@@ -37,7 +37,8 @@ import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
   import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL, connectSishuClassic, SishuClassicStore } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）；★ 0.300.0：connectSishuClassic（司枢经典模式灰度开关）
-import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
+import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil';
+import { writeCloudSwitchShadow } from '../utils/CloudSwitchShadow'; // ★ 0.301.1 bug8：关闭同步时同步影子=不自动复活 // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
 import { SiyiGateStore, connectSiyiGate, refreshSiyiGatePerm, requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：permGranted 单一真值源（SiyiGate 共享 store——任意处刷新 GSD 即时可见，0.229.24 根治）；★ 0.298.0 requireSiyiGate（重做性格测试=SP 获得前置云同步门卫）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
@@ -65,6 +66,8 @@ import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL
 import { RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, RADIUS_NODE, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, ThemeBadgeStore, connectAppTheme, connectThemeBadge, chooseThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题（外观卡）
 import { connectPersonalityQuiz, resetQuizForRetake, connectQuizLaunch } from '../common/PersonalityQuiz'; // ★ 0.294.0：重新做性格测试入口（everDone 才显示；重置+关 GSD+桥唤起答题）
+import { ReviewReminderStore, connectReviewReminder } from '../common/ReviewReminderStore'; // ★ 0.302.1：每日复习提醒（代理提醒权益 AGC 驳回补场景——设置内用户主动设置闹钟提醒）
+import { refreshReviewReminder } from '../utils/ReminderUtil'; // ★ 0.302.1：开关/时段变更即时刷新系统代理提醒（与 ReviewPage ⚙ 同链路）
 import { AppStorageV2 } from '@kit.ArkUI'; // ★ 0.230.0：GlobalSettingsSharedStore（开态跨页共享——返回键拦截）
 import { BusinessError } from '@kit.BasicServicesKit'; // ★ 0.238.0：测试连接 http 异常捕获
 
@@ -199,7 +202,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-const APP_VERSION: string = 'v0.300.0'; // ★ 0.300.0：司枢 Agent 3.0 V1（枢机→执笔→御史三角色流水线+反问卡+联网解互斥）；上一版 0.299.2 登录态影子持久化（版本历史详见 MEMORY.md）
+export const APP_VERSION: string = 'v0.302.1'; // ★ 0.302.1：全局设置加每日复习提醒区块（代理提醒 AGC 驳回补场景截图） // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -403,6 +406,7 @@ export struct GlobalSettingsDialog {
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.196.8：云同步↔账号绑定——未登录拦截「开启」
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.195.0：复习显示（全局设置直达——0=关闭复习区）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.195.0：同上（知识卡）
+  @Local reminder: ReviewReminderStore = connectReviewReminder(); // ★ 0.302.1：每日复习提醒（全局设置直达入口——与 ReviewPage ⚙ 同一 store 单通道，即时生效）
   // ★ 0.195.0：复习显示 Tab 输入态（0/1/2 快速项 + 自由输入框）；★ 0.253.0：交互重设计——
   //   「确定」按钮与红色报错删除（用户拍板：底部已有「保存」，确定冗余且空输入报红字像 bug）；
   //   输入合法值即时写编辑副本+输入框亮紫描边选中态；超 20 不写值（保存永远取最近合法选中）+
@@ -955,6 +959,7 @@ export struct GlobalSettingsDialog {
           // 用户在权限面板上开了权限：当场激活云同步 + 刷新面板状态
           connectSiyiGate().permGranted = true; // ★ 0.293.0：写真值源（全局即时可见）
           connectCloudSync().enabled = true;
+          writeCloudSwitchShadow(true); // ★ 0.301.1 bug8：P2 水合失败兜底——影子记住用户开过
           activateCloudSync();
           this.showToastSafe('云同步已开启');
         }
@@ -2398,6 +2403,36 @@ export struct GlobalSettingsDialog {
     .width('100%')
   }
 
+  // ★ 0.302.1：提醒时段切换（改即生效——cancel 旧周期+发布新周期；与 ReviewPage.applyReminderHour 同逻辑，19~22 四档整点）
+  applyReminderHour(hour: number): void {
+    this.reminder.hour = hour;
+    this.reminder.minute = 0;
+    refreshReviewReminder();
+  }
+
+  // ★ 0.302.1：提醒时段段选（无参 @Builder 铁律 0.209.1——内部直读状态，复刻 ReviewPage.reminderTimeSegment）
+  @Builder
+  gsdReminderTimeSegment(): void {
+    Row({ space: 6 }) {
+      ForEach([19, 20, 21, 22], (h: number) => {
+        Text(`${h}:00`)
+          .fontSize(12)
+          .fontWeight(this.reminder.hour === h ? 600 : 400)
+          .fontColor(this.reminder.hour === h ? Color.White : this.theme.textSecondary)
+          .height(30)
+          .padding({ left: 12, right: 12 })
+          .borderRadius(8)
+          .backgroundColor(this.reminder.hour === h ? this.theme.brandPrimary : Color.Transparent)
+          .onClick(() => {
+            this.applyReminderHour(h);
+          })
+      }, (h: number) => `grh${h}`)
+    }
+    .padding(3)
+    .borderRadius(RADIUS_CONTROL)
+    .backgroundColor(this.theme.surfaceSoft)
+  }
+
   // ★ 0.195.0：复习显示 Tab（用户拍板：从 AI 偏好挪到顶层——与云同步/关于齐平）。
   //   布局与两库 ⚙ 设置完全同款：0/1/2 快速项 + 自由输入框一行（界面统一）。
   //   ★ 0.197.2：改保存模式（用户反馈：要保存按钮）——快速项/确定写编辑副本，底部「保存」统一落 store
@@ -2564,6 +2599,48 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
       .margin({ bottom: 20 })
 
+      // ── ★ 0.302.1：每日复习提醒（代理提醒权益 AGC 驳回补场景——设置内用户主动设置
+      //    闹钟提醒的显性入口；与 ReviewPage ⚙ 同一 store 单通道，开关/时段即时生效，
+      //    不走底部「保存」（保存只管词条数/卡片数）；权益生效前 publishReminder 静默降级）──
+      Column() {
+        Row() {
+          Column() {
+            Text('每日复习提醒')
+              .fontSize(14)
+              .fontWeight(600)
+              .fontColor(this.theme.textPrimary)
+            Text('系统闹钟提醒，无需打开 App 也能收到（需保持系统通知开启）')
+              .fontSize(11)
+              .lineHeight(18)
+              .fontColor(this.theme.textTertiary)
+              .margin({ top: 2 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.reminder.on })
+            .selectedColor(this.theme.brandPrimary)
+            .onChange((on: boolean) => {
+              this.reminder.on = on;
+              refreshReviewReminder();
+            })
+        }
+        .width('100%')
+        Row() {
+          Text('提醒时间')
+            .fontSize(12)
+            .fontColor(this.theme.textSecondary)
+          this.gsdReminderTimeSegment()
+        }
+        .width('100%')
+        .margin({ top: 10 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(12)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(this.theme.surfaceSoft)
+      .margin({ bottom: 20 })
+
       // ★ 0.202.2 彩蛋（用户定稿文案，位于保存/返回按钮上方）：仓颉司文，此区司忆
       Text('昔仓颉造字以载文，今司忆守学而存忆')
         .fontSize(10)
@@ -2647,6 +2724,7 @@ export struct GlobalSettingsDialog {
           .borderRadius(RADIUS_CONTROL)
           .margin({ bottom: 16 })
           .onClick(() => {
+            writeCloudSwitchShadow(false);
             setCloudSyncEnabled(false); // 0.196.8 现成函数：enabled=false + deactivate（登录态保持，与退出账号无关）
             this.showToastSafe('云同步已关闭，数据仅保存在本设备，可随时重新开启');
           })

@@ -17,14 +17,16 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
-import { CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter, writeTombstone, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）；★ 0.230.1 writeTombstone（显式墓碑唯一出生通道）+ forceCloudSyncNow（缺片 nudge 重拉）
+import { connectCloudSync, CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter, writeTombstone, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）；★ 0.230.1 writeTombstone（显式墓碑唯一出生通道）+ forceCloudSyncNow（缺片 nudge 重拉）
 import { WordItem, WordFolder, WordBankStore } from './WordModel'; // ★ 0.228.0 行桥接（词池序列化/复活）
 import { KnowledgeCard, KFolder, KnowledgeBankStore } from './KnowledgeModel'; // ★ 0.228.0 行桥接
 import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, reviveFolder } from '../utils/BackupUtil'; // ★ 0.228.0 plain 流水线复用（0.205.4 纪律）
 import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
- import { siyiGateReady } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
+import { spAdminReport, spAdminFetch, spAdminConfirm } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）
+import { deviceInfo } from '@kit.BasicServicesKit';
+ import { siyiGateReady, siyiGateBlockReason, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
  import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.293.0：新用户礼包仪式感弹窗桥（AppConfirmDialog 不引 ChatModel 不成环）
 import { trackUidAuto, setDailyLdProvider } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）；★ 0.273.0：setDailyLdProvider（app_daily 日活行的 ld 字段注入位——TrackUtil 禁 import ChatModel，由本模块单向注入）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
@@ -1394,6 +1396,11 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
     }
   }
   recordSpUsed(g + b + p); // ★ 0.259.0：SP 消耗统计埋点（单一收口——一切新扣点场景自动带上；实扣额才计）
+  const poolParts: string[] = [];
+  if (g > 0) { poolParts.push(`gift:-${g}`); }
+  if (b > 0) { poolParts.push(`bonus:-${b}`); }
+  if (p > 0) { poolParts.push(`perm:-${p}`); }
+  recordSpLedger('consume', 'consume', -(g + b + p), poolParts.join(',')); // ★ 0.302.0 流水
   scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
   return true;
 }
@@ -1604,6 +1611,7 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
   _gp['sp'] = `${amount}`;
   _gp['bal'] = `${siyiTotalSp(store)}`;
   trackUidAuto('sp_grant', _gp);
+  recordSpLedger('grant', 'welcome', amount, `gift:${amount}`); // ★ 0.302.0 流水
   return amount;
 }
 
@@ -1827,6 +1835,7 @@ export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string
   _sg['sp'] = `${total}`;
   _sg['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', _sg);
+  recordSpLedger('grant', 'sign', total, `bonus:${total}`); // ★ 0.302.0 流水
   return total;
 }
 
@@ -1848,6 +1857,7 @@ export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string):
   p['sp'] = `${amount}`;
   p['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', p);
+  recordSpLedger('grant', src, amount, `bonus:${amount}`); // ★ 0.302.0 流水
   return true;
 }
 
@@ -2194,6 +2204,7 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   _ip['amt'] = amountCny; // ★ 0.273.0：实际成交价 ¥（充值流水求和数据源）
   _ip['pid'] = productId; // ★ 0.273.0：商品 ID
   trackUidAuto('sp_grant', _ip);
+  recordSpLedger('grant', 'iap', amount, `perm:${amount}`, productId); // ★ 0.302.0 流水
   return true;
 }
 
@@ -3049,6 +3060,7 @@ function cfgFaceModeApply(v: string): boolean {
 let flushTimerId: number = -1;
 
 function scheduleRowFlush(): void {
+  markSpAdminDirty(); // ★ 0.301.0：SP 数据台统一挂点（任何云行变更都过一遍——非 SP 变更由快照指纹比对拦截省配额）
   if (flushTimerId >= 0) {
     clearTimeout(flushTimerId);
   }
@@ -4302,4 +4314,191 @@ function refreshWorkspaceFromPools(): void {
     current.bubbleY = 0;
   }
   store.needsCloudRedraw = true;
+}
+
+// ============================================================
+// ★ 0.301.0 SP 数据台端侧区块（方案 A 运营旁路——全案 docs/0.165+/0.301.0）
+//   架构：SP 账本主链（cloudSync cfg:siyi-points）零触碰；本区块=旁路三件：
+//   ①scheduleRowFlush 统一挂点 → markSpAdminDirty（快照指纹比对 + 8s 防抖）→ 镜像上报 SpMirror
+//   ②pullSpAdminCommands（EntryAbility.onForeground / BillingPage 进场）→ fetch →
+//     端侧执行（grantBonusSp / consumeSiyiSp 既有收口——gate 防御/埋点/云上行三件套全继承）→ confirm 回实发/实扣
+//   ③云函数未部署 = 全链静默零影响（fetch '[]' / report false，零报错零阻塞）
+//   幂等与竞态：claim 竞态窗口毫秒级（同账号双设备同秒拉同一指令理论双领）——一期已知边界；
+//   云函数 fetch 侧回收 claimed 超 10 分钟未 confirm 的指令回 pending 兜底重派（grant 被 gate
+//   拦截时不 confirm=挂起重派，余额不足实扣 0 也 confirm=终结防空转重派）。
+// ============================================================
+
+let spAdminTimerId: number = -1;
+let spAdminLastReportedKey: string = '';
+let spAdminGateRetry: number = 0; // ★ 0.301.1 闸门未就绪重试计数
+
+// ★ 0.302.0 SpLedger 事件流水（运营侧事件级账目——「内容看不到、动作全有数」）
+//   内存缓冲搭镜像上报便车批量上行；云函数侧 upsert SpLedger 表；未登录不记。
+class SpLedgerEntry {
+  id: string = '';   // L+毫秒+序号（云端主键）
+  ts: number = 0;    // 秒级（表时间戳 Integer 32 位坑）
+  event: string = ''; // grant / consume
+  src: string = '';  // sign/welcome/iap/admin/rookie_xxx/quiz/consume
+  amount: number = 0; // 正=发放 负=消耗
+  pool: string = ''; // gift:-5000,bonus:-3000（只记非零项）
+  bal: number = 0;   // 事后余额
+  note: string = '';
+}
+let spLedgerBuf: SpLedgerEntry[] = [];
+let spLedgerSeq: number = 0;
+
+function recordSpLedger(event: string, src: string, amount: number, pool: string, note: string = ''): void {
+  if (spAccountMark().length === 0) {
+    return; // 未登录=运营侧无主体
+  }
+  spLedgerSeq++;
+  const e = new SpLedgerEntry();
+  e.id = `L${Date.now()}${spLedgerSeq}`;
+  e.ts = Math.floor(Date.now() / 1000);
+  e.event = event;
+  e.src = src;
+  e.amount = amount;
+  e.pool = pool;
+  e.note = note;
+  e.bal = siyiTotalSp(connectSiyiPoints());
+  spLedgerBuf.push(e);
+  if (spLedgerBuf.length > 50) {
+    spLedgerBuf.splice(0, spLedgerBuf.length - 50); // 有界（断网兜底不无限涨）
+  }
+}
+
+// 指令结构（云函数 fetch 返回的 plain 结构——非持久化类，仅本区块解析用）
+class SpAdminCommand {
+  id: string = '';   // commandId
+  type: string = ''; // grant / deduct
+  amount: number = 0;
+  note: string = '';
+}
+
+function spAccountMark(): string {
+  // ★ 0.301.1 兜底：运行时 lastAccountMark 可能为空（影子写入早于标记落定）——按语义回退 unionID/openID
+  const acc = connectHuaweiAccount();
+  const mark = acc.lastAccountMark;
+  if (mark !== undefined && mark.length > 0) {
+    return mark;
+  }
+  const uid = acc.unionID;
+  if (uid !== undefined && uid.length > 0) {
+    return uid;
+  }
+  const oid = acc.openID;
+  return oid !== undefined ? oid : '';
+}
+
+// ①SP 变更统一挂点（scheduleRowFlush 内调用；词卡等非 SP 行变更由指纹比对拦截）
+function markSpAdminDirty(): void {
+  if (spAccountMark().length === 0) {
+    return; // 未登录=运营侧无主体，零请求
+  }
+  const siyi = connectSiyiPoints();
+  const key = `${siyiTotalSp(siyi)}|${frozenAvailableSp(siyi)}|${siyi.iapPackages}`;
+  if (key === spAdminLastReportedKey && spAdminTimerId < 0) {
+    return; // 快照未变且无在途定时——省配额
+  }
+  if (spAdminTimerId >= 0) {
+    clearTimeout(spAdminTimerId);
+  }
+  spAdminTimerId = setTimeout(() => {
+    spAdminTimerId = -1;
+    reportSpAdminMirror();
+  }, 8000);
+}
+
+// 镜像快照构建+上报（payload 全字符串值——track-events 埋点同款；失败静默指纹不置位下轮再报）
+// export：EntryAbility.onBackground 兜底直调（退后台网络受限大概率失败——0.206.2 教训，失败静默下轮补）
+export function reportSpAdminMirror(): void {
+  const acc = spAccountMark();
+  if (acc.length === 0) {
+    return;
+  }
+  const siyi = connectSiyiPoints();
+  const key = `${siyiTotalSp(siyi)}|${frozenAvailableSp(siyi)}|${siyi.iapPackages}`;
+  const payload: Record<string, Object> = {};
+  payload['action'] = 'report';
+  payload['accountId'] = acc;
+  payload['availableSp'] = `${siyiTotalSp(siyi)}`;
+  payload['frozenSp'] = `${frozenAvailableSp(siyi)}`;
+  payload['permSp'] = `${siyi.permanentSp}`;
+  payload['permCons'] = `${siyi.consumedPermanentSp}`;
+  payload['bonusSp'] = `${siyi.bonusSp}`;
+  payload['bonusCons'] = `${siyi.consumedBonusSp}`;
+  payload['giftSp'] = `${siyi.giftSp}`;
+  payload['giftCons'] = `${siyi.consumedGiftSp}`;
+  payload['pkgJson'] = siyi.iapPackages;
+  payload['deviceModel'] = deviceInfo.productModel;
+  payload['reportedAt'] = `${Date.now()}`;
+  // ★ 0.302.0：流水搭便车（快照长度内成功才清——上报期间新入账条目保留）
+  const ledgerLen = spLedgerBuf.length;
+  if (ledgerLen > 0) {
+    payload['ledger'] = JSON.stringify(spLedgerBuf);
+  }
+  spAdminReport(payload).then((ok: boolean) => {
+    if (ok) {
+      spAdminLastReportedKey = key;
+      if (ledgerLen > 0) {
+        spLedgerBuf.splice(0, ledgerLen);
+      }
+    }
+  });
+}
+
+// ②指令拉取+执行+回报（EntryAbility.onForeground / BillingPage.aboutToAppear 挂点；静默全降级）
+export function pullSpAdminCommands(): void {
+  const acc = spAccountMark();
+  if (acc.length === 0) {
+    return;
+  }
+  // ★ 0.301.1：冷启时闸门（云同步首拉）未就绪——5s 后重试，最多 4 次（否则拉到的指令会卡在 gate 检查）
+  if (!siyiGateReady()) {
+    if (spAdminGateRetry < 4) {
+      spAdminGateRetry++;
+      setTimeout(() => {
+        pullSpAdminCommands();
+      }, 5000);
+    }
+    return;
+  }
+  spAdminGateRetry = 0;
+  spAdminFetch(acc).then((raw: string) => {
+    let cmds: SpAdminCommand[] = [];
+    try {
+      cmds = JSON.parse(raw) as SpAdminCommand[];
+    } catch (_e) {
+      return;
+    }
+    if (!Array.isArray(cmds) || cmds.length === 0) {
+      return;
+    }
+    const siyi = connectSiyiPoints();
+    for (let i = 0; i < cmds.length; i++) {
+      executeSpAdminCommand(siyi, cmds[i]);
+    }
+    reportSpAdminMirror(); // 执行后快照立即上报（数据台尽快见新余额）
+  });
+}
+
+// 指令执行（发放/扣减全走既有收口；gate 未就绪不 confirm=云端 10 分钟回收重派）
+function executeSpAdminCommand(siyi: SiyiPointStore, cmd: SpAdminCommand): void {
+  if (!siyiGateReady()) {
+    return; // 云同步未就绪：不执行也不 confirm——超时回收重派（SP 铁律：账本云端对齐才动 SP）
+  }
+  let result = 0;
+  if (cmd.type === 'grant' && cmd.amount > 0) {
+    if (grantBonusSp(siyi, cmd.amount, 'admin')) {
+      result = cmd.amount; // src='admin' 埋点可追溯
+    }
+  } else if (cmd.type === 'deduct' && cmd.amount > 0) {
+    const before = siyiTotalSp(siyi);
+    if (!consumeSiyiSp(siyi, cmd.amount) && siyiTotalSp(siyi) >= before) {
+      result = 0; // 余额 0 一分未扣——confirm 终结（重派无意义）
+    } else {
+      result = before - siyiTotalSp(siyi); // 全额或部分实扣
+    }
+  }
+  spAdminConfirm(cmd.id, spAccountMark(), result); // 回报实发/实扣额（含 0——终结防空转）
 }

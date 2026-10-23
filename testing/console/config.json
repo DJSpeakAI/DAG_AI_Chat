@@ -1,15 +1,19 @@
 {
   "port": 8766,
+  "spAdmin": {
+    "_note": "★ 0.301.0.2 起 SP 数据台直连 Cloud DB（凭证=testing/console/agc-credential.json 已 gitignore；fnUrl/token 字段废弃不再需要）；部署与坑全案 docs/cloud/sp-admin/部署指引.md"
+  },
   "bundle": "com.dagaichat.app",
   "ability": "EntryAbility",
   "hap": "entry/build/default/outputs/default/entry-default-signed.hap",
-  "expectedVersionCode": 1000340,
+  "expectedVersionCode": 1000443,
   "rdb": "/data/app/el2/100/database/com.dagaichat.app/entry/rdb/dag_chat_cloud.db",
   "sandboxBase": "/data/app/el2/100/base/com.dagaichat.app",
   "dumpRemote": "/data/local/tmp/dagtest_dump.json",
   "hilogTags": [
     "DAGAI_RB",
-    "DAGAI_TE"
+    "DAGAI_TE",
+    "DagChat"
   ],
   "devices": [
     {

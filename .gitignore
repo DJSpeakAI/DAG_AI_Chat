@@ -67,3 +67,4 @@ testing/console/keepalive.json
 .env
 # AGC Service Account 私钥（模式 B 凭证，绝不提交）
 *private.json
+agc-credential.json
