@@ -196,7 +196,7 @@
 - 按钮：单按钮通栏「知道了」= BRAND_PRIMARY 底白字高 48 圆角 RADIUS_CONTROL；双按钮 = `Row({ space: 10 })` + 各 `layoutWeight(1)` 等宽
 
 **12b. 协议同意区 / 法律条款卡（★ 0.226.0 入规则——合规刚需：处理个人信息前须告知并取得同意）**
-- **适用组件**：首启「阅读并同意」弹窗 `AgreementDialog`、体验改进计划引导 `ImproveDataDialog`、首页底部勾选行（仅 PC/Pad）、关于页「法律条款」卡——文案统一取自 `utils/Agreement.ets`（协议正文 + 版本号 `AGREEMENT_VERSION`，单一来源）
+- **适用组件**：首启合并门禁 `OnboardingGate`（★ 0.303.0 起接管首启一屏；体验改进开关已移至外观页——`ImproveDataDialog` 已删）、`AgreementDialog`（hw 形态·登录门槛）、关于页「法律条款」卡——文案统一取自 `utils/Agreement.ets`（协议正文 + 版本号 `AGREEMENT_VERSION`，单一来源）
 - **弹窗宽度断点制（同第 12/12a 条）**：`.width(this.isTablet ? 400 : '88%')`（同意弹窗手机 88% 略宽于确认弹窗 86%，因含三协议勾选行正文）
 - 结构：标题「阅读并同意」16/600（TEXT_PRIMARY）→ 说明正文 FONT_SIZE_BODY/TEXT_SECONDARY → **勾选行**（`checkbox_on`/`checkbox_off` 18 + 前缀「我已阅读并同意」+ 三协议名 BRAND_PRIMARY 可点）→ 双按钮行（「暂不同意」SURFACE_SOFT+STROKE_CARD 描边 / 「同意并继续」BRAND_PRIMARY，且**未勾选时置灰 `enabled(false)`**）
 - **勾选行点击归属**：勾选框图标 + 前缀文字 = 切换勾选；三个协议名 = 查看正文 / 外链，各自消费点击**互不干扰**（避免 `Span.onClick` 冒泡到整行导致误切换勾选）
@@ -204,6 +204,12 @@
 - **法律条款卡（关于页）**：标题「法律条款」+ 三行入口（用户协议 / 隐私政策 / 华为账号用户认证协议「↗」外链）+「撤回同意」按钮；入口行高 40、圆角 RADIUS_CONTROL、底色 SURFACE_SOFT、右侧 chevron「›」
 - **合规红线**：勾选项**默认未勾选**；禁「登录即代表同意」式隐式同意；体验改进计划必须**单独、非捆绑、默认关**；不同意**不得**禁用本地功能（只 gate 登录 / 云同步）
 - 华为账号用户认证协议走**系统浏览器** `openLink`（不在应用内自撰正文）
+
+**12c. 首启合并门禁 OnboardingGate 一屏布局（★ 0.303.0 定稿；★ 0.304.1 用户实测修订）**
+- **垂直分区（自上而下）**：品牌区（DAG AI Chat 32/Bold + 副标题 13 + 说明 10）→ **主按钮「华为账号登录」紧贴品牌文案下方、落屏高正中区**（用户拍板「放到正当中，跟原先一样」——禁止压在协议勾选行下方）→ 弹性留白 → 协议勾选行 → 「暂不登录，先本地使用」（Body 13/TEXT_SECONDARY，距 24）→ 「不同意，退出」（Caption/TEXT_TERTIARY，距 16）。上下两段 `Blank().layoutWeight(1)` 等分。
+- **主按钮（双行）**：高由内边距定（上下 14）+ 圆角 RADIUS_CONTROL + 宽 `100%` 且 `constraintSize maxWidth 420`；**未勾选态 = SURFACE_SOFT 透底 + 1px STROKE_BRAND 描边 + 主字 TEXT_SECONDARY / 副字 TEXT_TERTIARY**（★ 0.304.1：替代原「死灰一块」——保持可点，点按走抖动负反馈，见 21.1 不置灰）；已勾选态 = BRAND_PRIMARY 实底 + 双行白字。副行文案「登录后开启云同步」。
+- **协议勾选行（用户实测两条硬约束）**：①**整行水平居中**——`Row().justifyContent(FlexAlign.Center)`，文字块**禁挂 `layoutWeight(1)`**（撑满即左对齐，是原「偏左」根因），改 `constraintSize maxWidth 420`；②**勾选框与文字块纵向居中**——`Row().alignItems(VerticalAlign.Center)` + 勾选框 18 + 文字 `FONT_SIZE_META(11)/lineHeight 18`（等高同心；原 `VerticalAlign.Top` + 行高 20 造成文字相对小框下沉）。
+- 品牌文案与主按钮距 28；按钮与提示/错误行距 12；勾选行以下次级入口距 24、退出入口距 16（4 档间距语义）。
 
 ## 七、图标资源
 
