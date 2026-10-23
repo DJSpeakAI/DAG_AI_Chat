@@ -395,7 +395,7 @@ struct Index {
     // ★ 0.195.0 bugfix：边栏选中态动态跟踪——didShow 拿目标页名（'navBar'=首页清空高亮；
     //   push/pop/replacePath 全走这里，边栏高亮恒与主界面页面一致）
     this.pathStack.setInterception({
-      didShow: (from: NavDestinationContext | NavBar, to: NavDestinationContext | NavBar, operation: NavigationOperation, isAnimated: boolean) => {
+      didShow: (_from: NavDestinationContext | NavBar, to: NavDestinationContext | NavBar, _operation: NavigationOperation, _isAnimated: boolean) => { // ★ 0.305.1：未用参数 _ 前缀
         if (to === 'navBar') {
           this.currentRoute = '';
         } else {
@@ -1237,7 +1237,7 @@ struct Index {
     })
     // ★ 0.196.4：窗口实宽写入共享模式——根 Stack 满窗，onAreaChange 在分屏/悬浮窗 resize 时
     // 实时纠正（首帧用 aboutToAppear 屏宽猜测，此处一帧内校正；≥600vp=平板布局）
-    .onAreaChange((oldVal: Area, newVal: Area) => {
+    .onAreaChange((_oldVal: Area, newVal: Area) => { // ★ 0.305.1：未用参数 _ 前缀
       const w = newVal.width as number;
       // ★ 0.279.6：窗口实宽记录 + PC 恒平板布局（窄窗保留边栏）；手机恒手机布局；Pad 维持 600vp 断点
       this.winWidth = w;

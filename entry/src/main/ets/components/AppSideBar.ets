@@ -42,9 +42,9 @@ interface SideFolderTreeItem {
 @ComponentV2
 export struct AppSideBar {
   theme: AppTheme = connectAppTheme();
-  @Event onNavClick: (kind: string) => void = (kind: string) => {};
+  @Event onNavClick: (kind: string) => void = (_kind: string) => {}; // ★ 0.305.1：默认实现未用参数 _ 前缀
   // ★ 0.220.0：文件夹树点击回调（宿主消费：确保路由在知识库页+视图切换已在共享 store 生效）
-  @Event onFolderClick: (folderId: string) => void = (folderId: string) => {};
+  @Event onFolderClick: (folderId: string) => void = (_folderId: string) => {}; // ★ 0.305.1：默认实现未用参数 _ 前缀
   // ★ 0.195.0 bugfix：选中态动态跟踪（用户实测报 bug：停在统计页边栏仍高亮气泡树「对不上」——
   //   原画布项硬编码永久高亮已废）。宿主注入当前路由名，本组件按映射判定高亮；
   //   BBTreeCanvas 手机抽屉形态固定传 'BBTreeCanvas'（抽屉只能从画布唤出，人就在画布上）
