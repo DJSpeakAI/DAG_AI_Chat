@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.302.1.1'; // ★ 0.302.1.1：与页面板块拆分版对齐（本版服务行为零改动，仅版本号同步——重启后消除版本守卫误报）；0.301.0.2：SP 数据台三路由直连 Cloud DB // 更早历史见 MEMORY.md 版本表
+const VERSION = '0.302.1.2'; // ★ 0.302.1.2：与页面同步（顶栏切换钮+滚动修复；服务行为零改动仅版本对齐）；0.302.1.1：板块拆分 // 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
