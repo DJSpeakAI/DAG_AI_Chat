@@ -18,7 +18,7 @@
 import { common } from '@kit.AbilityKit';
 import {
   RADIUS_CONTROL, FONT_SIZE_CARD_TITLE_SM,
-  FONT_SIZE_BODY, FONT_SIZE_CAPTION, FONT_SIZE_META, FONT_INTER_SEMIBOLD
+  FONT_SIZE_BODY, FONT_SIZE_CAPTION, FONT_INTER_SEMIBOLD
 } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { WindowMode, connectWindowMode } from '../common/WindowMode';
@@ -146,13 +146,8 @@ export struct OnboardingGate {
         .fontSize(FONT_SIZE_CARD_TITLE_SM)
         .fontColor(this.theme.textSecondary)
         .margin({ top: 8 })
-      Text('登录华为账号，学习数据多端同步')
-        .fontSize(FONT_SIZE_CAPTION)
-        .fontColor(this.theme.textTertiary)
-        .margin({ top: 8 })
 
-      // ★ 0.304.1：主按钮上移至品牌文案下方（用户拍板「放到正当中，跟原先一样」）；
-      //   未勾选态=品牌描边透底（不再是死灰一块），已勾选=品牌实底白字
+      // ★ 0.304.2：主按钮（未勾选态=品牌描边透底，已勾选=品牌实底白字）
       Column({ space: 3 }) {
         Text(this.busy ? '登录中…' : '华为账号登录')
           .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -178,24 +173,35 @@ export struct OnboardingGate {
 
       if (this.tip !== '') {
         Text(this.tip)
-          .fontSize(FONT_SIZE_CAPTION)
-          .lineHeight(18)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .lineHeight(20)
           .fontColor(this.theme.danger)
           .textAlign(TextAlign.Center)
           .constraintSize({ maxWidth: 420 })
           .margin({ top: 12 })
       } else if (this.hint !== '') {
         Text(this.hint)
-          .fontSize(FONT_SIZE_CAPTION)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
           .fontColor(this.theme.danger)
           .textAlign(TextAlign.Center)
           .margin({ top: 12 })
       }
 
+      // 次级入口：不登录也能用本地三板块（与《用户协议》第 2 条一致，规避强制登录）
+      Text('暂不登录，先本地使用')
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .fontColor(this.theme.textSecondary)
+        .margin({ top: 20 })
+        .onClick(() => {
+          if (!this.busy) {
+            this.onLocalOnly();
+          }
+        })
+
       Blank().layoutWeight(1)
 
-      // 三项协议同一勾选行（★ 0.304.1：整行水平居中 + 勾选框与文字块纵向居中；
-      //   协议名点击不改变勾选态）
+      // 三项协议勾选行（★ 0.304.2：整组 X 轴居中；两行固定分行——第一行勾选+两协议、
+      //   第二行华为认证协议，勾选框与两行文字块纵向居中；协议名点击不改变勾选态）
       Row({ space: 8 }) {
         if (this.checked) {
           Image($r('app.media.checkbox_on'))
@@ -212,53 +218,47 @@ export struct OnboardingGate {
               this.toggleChecked();
             })
         }
-        Text() {
-          Span(AGREEMENT_CHECK_PREFIX)
-            .fontColor(this.theme.textSecondary)
-            .onClick(() => {
-              this.toggleChecked();
-            })
-          Span('《' + AGREEMENT_USER_NAME + '》')
-            .fontColor(this.theme.brandPrimary)
-            .onClick(() => {
-              this.viewing = 0;
-            })
-          Span('《' + AGREEMENT_PRIVACY_NAME + '》')
-            .fontColor(this.theme.brandPrimary)
-            .onClick(() => {
-              this.viewing = 1;
-            })
-          Span('《' + AGREEMENT_HUAWEI_NAME + '》')
-            .fontColor(this.theme.brandPrimary)
-            .onClick(() => {
-              this.openHuaweiAgreement();
-            })
+        Column({ space: 2 }) {
+          Text() {
+            Span(AGREEMENT_CHECK_PREFIX)
+              .fontColor(this.theme.textSecondary)
+              .onClick(() => {
+                this.toggleChecked();
+              })
+            Span('《' + AGREEMENT_USER_NAME + '》')
+              .fontColor(this.theme.brandPrimary)
+              .onClick(() => {
+                this.viewing = 0;
+              })
+            Span('《' + AGREEMENT_PRIVACY_NAME + '》')
+              .fontColor(this.theme.brandPrimary)
+              .onClick(() => {
+                this.viewing = 1;
+              })
+          }
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .lineHeight(20)
+          Text() {
+            Span('《' + AGREEMENT_HUAWEI_NAME + '》')
+              .fontColor(this.theme.brandPrimary)
+              .onClick(() => {
+                this.openHuaweiAgreement();
+              })
+          }
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .lineHeight(20)
         }
-        .fontSize(FONT_SIZE_META)
-        .lineHeight(18)
-        .constraintSize({ maxWidth: 420 })
+        .alignItems(HorizontalAlign.Start)
       }
-      .width('100%')
       .constraintSize({ maxWidth: 460 })
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
 
-      // 次级入口：不登录也能用本地三板块（与《用户协议》第 2 条一致，规避强制登录）
-      Text('暂不登录，先本地使用')
-        .fontSize(FONT_SIZE_BODY)
-        .fontColor(this.theme.textSecondary)
-        .margin({ top: 24 })
-        .onClick(() => {
-          if (!this.busy) {
-            this.onLocalOnly();
-          }
-        })
-
       // 不同意=直接退出（官方 FAQ：不得多次弹窗强制用户操作）
       Text('不同意，退出')
-        .fontSize(FONT_SIZE_CAPTION)
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
         .fontColor(this.theme.textTertiary)
-        .margin({ top: 16 })
+        .margin({ top: 20 })
         .onClick(() => {
           if (!this.busy) {
             this.onExit();
@@ -267,7 +267,7 @@ export struct OnboardingGate {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 24, right: 24, top: 16, bottom: 20 })
+    .padding({ left: 24, right: 24, top: 16, bottom: 24 })
     .alignItems(HorizontalAlign.Center)
   }
 

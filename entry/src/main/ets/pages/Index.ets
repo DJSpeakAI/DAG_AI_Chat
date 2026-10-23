@@ -505,14 +505,13 @@ struct Index {
     // PersistenceV2：API 配置持久化，跨重启保存
     PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());
     // ★ 0.226.0：首次启动（未同意 / 协议版本落后）自动弹同意弹窗（全端，弹一次；同意后不再弹）
-    //   ★ 0.279.2：延迟 300→800ms 对齐水合等待惯例（persistent_storage 大文件解析提速判定可靠性；
-    //   残余竞态由 showAgreementPrompt @Computed 自动校正兜底——水合翻真弹窗即自动消失）
-    setTimeout(() => {
-      if (needsAgreement() && !this.agreementBridge.promptVisible) {
-        this.agreementBridge.pendingAction = '';
-        this.agreementBridge.promptVisible = true;
-      }
-    }, 800);
+    // ★ 0.304.2 bug 修复：冷装首启「先闪主界面 ~0.8s 再弹门禁」——原 setTimeout 800ms 是 0.279.2
+    //   时代等 PersistenceV2 水合的遗留；0.279.5 存储已整体迁 preferences 同步接口（getSync 返回即
+    //   真值、无水合竞态），无需等待。aboutToAppear 先于首帧 build 执行，同步判定=首帧直出门禁。
+    if (needsAgreement() && !this.agreementBridge.promptVisible) {
+      this.agreementBridge.pendingAction = '';
+      this.agreementBridge.promptVisible = true;
+    }
   }
 
   // ============================================================

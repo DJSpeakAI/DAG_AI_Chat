@@ -205,11 +205,12 @@
 - **合规红线**：勾选项**默认未勾选**；禁「登录即代表同意」式隐式同意；体验改进计划必须**单独、非捆绑、默认关**；不同意**不得**禁用本地功能（只 gate 登录 / 云同步）
 - 华为账号用户认证协议走**系统浏览器** `openLink`（不在应用内自撰正文）
 
-**12c. 首启合并门禁 OnboardingGate 一屏布局（★ 0.303.0 定稿；★ 0.304.1 用户实测修订）**
-- **垂直分区（自上而下）**：品牌区（DAG AI Chat 32/Bold + 副标题 13 + 说明 10）→ **主按钮「华为账号登录」紧贴品牌文案下方、落屏高正中区**（用户拍板「放到正当中，跟原先一样」——禁止压在协议勾选行下方）→ 弹性留白 → 协议勾选行 → 「暂不登录，先本地使用」（Body 13/TEXT_SECONDARY，距 24）→ 「不同意，退出」（Caption/TEXT_TERTIARY，距 16）。上下两段 `Blank().layoutWeight(1)` 等分。
-- **主按钮（双行）**：高由内边距定（上下 14）+ 圆角 RADIUS_CONTROL + 宽 `100%` 且 `constraintSize maxWidth 420`；**未勾选态 = SURFACE_SOFT 透底 + 1px STROKE_BRAND 描边 + 主字 TEXT_SECONDARY / 副字 TEXT_TERTIARY**（★ 0.304.1：替代原「死灰一块」——保持可点，点按走抖动负反馈，见 21.1 不置灰）；已勾选态 = BRAND_PRIMARY 实底 + 双行白字。副行文案「登录后开启云同步」。
-- **协议勾选行（用户实测两条硬约束）**：①**整行水平居中**——`Row().justifyContent(FlexAlign.Center)`，文字块**禁挂 `layoutWeight(1)`**（撑满即左对齐，是原「偏左」根因），改 `constraintSize maxWidth 420`；②**勾选框与文字块纵向居中**——`Row().alignItems(VerticalAlign.Center)` + 勾选框 18 + 文字 `FONT_SIZE_META(11)/lineHeight 18`（等高同心；原 `VerticalAlign.Top` + 行高 20 造成文字相对小框下沉）。
-- 品牌文案与主按钮距 28；按钮与提示/错误行距 12；勾选行以下次级入口距 24、退出入口距 16（4 档间距语义）。
+**12c. 首启合并门禁 OnboardingGate 一屏布局（★ 0.303.0 定稿；★ 0.304.2 用户实测终稿——手机版式）**
+- **垂直分区（自上而下）**：品牌区（DAG AI Chat 32/Bold + 「你的AI学习伴侣」13/TEXT_SECONDARY）→ **主按钮「华为账号登录」紧贴品牌文案下方、落屏高正中区** → 次级入口「暂不登录，先本地使用」（Body 13/TEXT_SECONDARY，距按钮 20）→ 弹性留白 → 协议勾选行 → 「不同意，退出」（13/TEXT_TERTIARY，距协议 20）。上下两段 `Blank().layoutWeight(1)` 等分。
+- **品牌区禁止第三行说明句**（★ 0.304.2 用户删「登录华为账号，学习数据多端同步」——信息与按钮副行重复）。
+- **主按钮（双行）**：内边距上下 14 + 圆角 RADIUS_CONTROL + 宽 `100%` 且 `constraintSize maxWidth 420`；**未勾选态 = SURFACE_SOFT 透底 + 1px STROKE_BRAND 描边 + 主字 TEXT_SECONDARY / 副字 TEXT_TERTIARY**（点按走抖动负反馈，不置灰见 21.1）；已勾选态 = BRAND_PRIMARY 实底 + 双行白字。副行文案「登录后开启云同步」。
+- **协议勾选行**：**固定两行**——第一行「我已阅读并同意《用户协议》《隐私政策》」，第二行「《华为账号用户认证协议》」（★ 0.304.2 用户拍板「另起一行，要统一」——不再靠窄屏自然折行）；`Row({ space: 8 })` **整组 X 轴居中**（`justifyContent(FlexAlign.Center)`，**禁给文字块挂 `layoutWeight(1)`** = 撑满即左对齐的偏左根因）+ 勾选框 18 与两行文字块 `VerticalAlign.Center` 纵向居中。
+- **字号统一军令**：协议行、暂不登录、不同意退出、品牌副标题**一律 `FONT_SIZE_CARD_TITLE_SM(13)`**（★ 0.304.2 用户：「字体大小跟你的AI学习伴侣对齐，都一样」）；协议行 `lineHeight 20`、行距 2。全屏元素 X 轴居中。
 
 ## 七、图标资源
 

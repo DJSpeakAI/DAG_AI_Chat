@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000451, // ★ 0.304.1：首启门禁布局修订（登录按钮上移居中/勾选行居中对齐）；0.304.0：TTS 朗读后台续读
+    "versionCode": 1000452, // ★ 0.304.2：首启门禁首帧直出（修冷装闪主界面 bug）+手机版式重排；0.304.1：门禁布局修订
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；
