@@ -42,7 +42,7 @@ import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
 import { clearAllLocalUserData } from '../utils/DataWipeUtil'; // ★ 0.263.0：退出登录「同时清空本机数据」（借给他人前场景）
-import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启动构建桌面卡片快照
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204.0：同上
@@ -51,8 +51,7 @@ import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3�
 import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.204.0：每日量（快照按量截断）；★ 0.274.0 外提件（原居 ReviewPage）
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
 import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：华为协议登录门禁（非首启路径）
-import { OnboardingGate } from '../components/OnboardingGate'; // ★ 0.303.0：首启合并门禁（协议三项勾选+华为账号登录一屏）
-import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, needsHwAgreement, markHwAgreed, markImprovePromptShown, AGREEMENT_CHECK_PREFIX, AgreementStore, AGREEMENT_VERSION } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分；★ 0.279.5：markImprovePromptShown 落盘收口（存储层已迁 preferences）
+import { AgreementBridge, connectAgreementBridge, connectAgreement, markAgreed, needsHwAgreement, markHwAgreed, markImprovePromptShown, AGREEMENT_CHECK_PREFIX, AGREEMENT_USER_NAME, AGREEMENT_PRIVACY_NAME, AGREEMENT_HUAWEI_NAME, HUAWEI_ACCOUNT_AGREEMENT_URL, USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, isPrivacySensitiveSection, AgreementStore, AGREEMENT_VERSION } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分；★ 0.279.5：markImprovePromptShown 落盘收口（存储层已迁 preferences）；★ 0.305.0：门禁并入首页——协议正文/协议名常量全量迁入
 import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
 import { ThemeChooseDialog } from '../components/ThemeChooseDialog'; // ★ 0.262.0：新用户首启主题选择弹窗（协议同意后弹）
 import { AppTheme, connectAppTheme, connectThemeMode, ThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员；★ 0.303.0：ThemeMode 外观页回调
@@ -129,27 +128,22 @@ struct Index {
   agreementBridge: AgreementBridge = connectAgreementBridge();
   // ★ 0.279.2：协议同意持久化态（响应式接入——水合迟到翻真时弹窗自动校正的观察源）
   agreement: AgreementStore = connectAgreement();
-  // ★ 0.279.2 水合竞态根治：弹窗可见 = 桥开关 && 确实未同意（AgreementStore @Trace 响应式）。
-  //   根因=PersistenceV2 冷启水合异步（persistent_storage 已 270KB+ 全量 base64 卡图），启动 800ms
-  //   判定时若水合未完，needsAgreement 读到 factory 默认 false → 已同意用户误弹；水合随后完成把
-  //   盘值（agreed=true）写入 @Trace → 本 @Computed 重算 → 误弹弹窗自动从渲染树消失，时序无关。
-  @Computed get showAgreementPrompt(): boolean {
-    return this.agreementBridge.promptVisible &&
-      (!this.agreement.agreed || this.agreement.agreedVersion < AGREEMENT_VERSION);
+  // ★ 0.305.0 架构重构（用户拍板「不要在首页上盖一层」）：首启门禁不再做独立全屏覆盖层，
+  //   改为**首页未同意态**——同一个首页两态渲染（品牌区共用、零重复）。协议存储 0.279.5 已迁
+  //   preferences 同步接口（getSync 即时真值），@Computed 首帧即准，无延迟无水合竞态。
+  //   合规不变：未同意时唯一可见内容=门禁态；侧边栏与页面跳转由逻辑守卫拦截（非视觉盖层）。
+  @Computed get needsOnboarding(): boolean {
+    return !this.agreement.agreed || this.agreement.agreedVersion < AGREEMENT_VERSION;
   }
-  // ★ 0.279.2：华为协议门禁弹窗同款校正（hwAgreed 水合迟到同理）
+  // 门禁态交互状态（原 OnboardingGate 组件内状态迁入——组件文件删除）
+  @Local onboardingChecked: boolean = false;   // 默认未勾选（合规红线）
+  @Local onboardingViewing: number = -1;       // -1=门禁主态 0=用户协议正文 1=隐私政策正文
+  @Local onboardingShakeX: number = 0;         // 未勾选点登录的抖动偏移
+  @Local onboardingHint: string = '';          // 未勾选提示（与登录失败 tip 分开）
+  // ★ 0.279.2 华为协议门禁弹窗同款校正（hwAgreed 水合迟到同理）
   @Computed get showHwAgreementPrompt(): boolean {
     return this.agreementBridge.hwPromptVisible && !this.agreement.hwAgreed;
   }
-  // ★ 0.279.3：首页「我已阅读并同意」勾选框响应式判定（原 build 内直调 needsAgreement()——
-  //   冷启动首帧水合未完时读到 false→勾选框区块闪现给已同意用户，水合后才消失；改 @Computed
-  //   响应式后闪现窗口内也随水合翻值即时校正，且已同意用户恒不渲染）
-  @Computed get showHomeAgreeCheck(): boolean {
-    return this.isTablet && !this.getHuaweiAccount().isLoggedIn &&
-      (!this.agreement.agreed || this.agreement.agreedVersion < AGREEMENT_VERSION);
-  }
-  @Local homeAgreed: boolean = false; // 首页（仅 PC/Pad）常驻勾选框本地态（勾选后点登录=同意）
-  @Local homeShakeX: number = 0;      // 未勾选点登录的抖动偏移（负反馈）
   @Local themeChooseVisible: boolean = false; // ★ 0.262.0：新用户主题选择弹窗（协议同意后、theme-mode-v1 未落盘时弹）
 
   // ★ 0.164：点击华为账号登录
@@ -160,14 +154,8 @@ struct Index {
     if (this.isProcessing) {
       return;
     }
-    // ★ 0.303.0：首启由 OnboardingGate 一屏收口；此处仅保留非首启路径（边栏/设置/AI 引导）的两段式门禁
-    if (needsAgreement()) {
-      this.agreementBridge.pendingAction = fromSyncEntry ? 'sync' : 'login';
-      this.agreementBridge.promptVisible = true;
-      return;
-    }
-    // ★ 0.264.0：华为账号用户认证协议门禁（登录门槛——不同意仅取消登录不退出应用；
-    //   同意一次即可不随版本重置；三登录入口+云同步引导+AI 引导全汇入 doLogin 天然全覆盖）
+    // ★ 0.305.0：基础协议门禁已由首页未同意态承担（唯一同意入口）——未同意时进不了任何
+    //   二级页/侧边栏，故此处只保留华为账号协议门禁（登录门槛）
     if (needsHwAgreement()) {
       this.agreementBridge.pendingAction = fromSyncEntry ? 'sync' : 'login';
       this.agreementBridge.hwPromptVisible = true;
@@ -207,7 +195,6 @@ struct Index {
         // ★ 0.303.0：首启登录成功=同意全部协议 + 入口即意图开启云同步 → 外观选择
         markHwAgreed();
         markAgreed();
-        this.agreementBridge.promptVisible = false;
         enableCloudSyncNow(this.getUIContext());
         setTimeout(() => {
           this.maybeShowThemeChoose();
@@ -235,7 +222,6 @@ struct Index {
   onOnboardingLocalOnly(): void {
     markHwAgreed();
     markAgreed();
-    this.agreementBridge.promptVisible = false;
     this.onboardingTip = '';
     setTimeout(() => {
       this.maybeShowThemeChoose();
@@ -244,7 +230,6 @@ struct Index {
 
   // ★ 0.303.0：不同意=直接退出（官方 FAQ：不得通过多次弹窗强制用户操作）
   onOnboardingExit(): void {
-    this.agreementBridge.promptVisible = false;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       context.terminateSelf();
@@ -361,6 +346,10 @@ struct Index {
   // ★ 0.195.0：常驻边栏导航（大屏）——气泡树=回画布页：栈顶已是则不动 / 深栈 pop 一层 / 根栈 push；
   //   其余项 pushPath（页面在边栏右侧 Navigation 区域平移，边栏恒在——用户定稿）
   sideBarNav(kind: string): void {
+    // ★ 0.305.0：未同意协议=首页门禁态唯一可见内容——侧边栏导航逻辑守卫（防绕过同意进入业务页）
+    if (this.needsOnboarding) {
+      return;
+    }
     if (kind === 'wordbank') {
       // ★ 0.222.19：进单词库=首次自动配置默认态（导航收起+文件夹展开）；用户手动改动后 autoConfigured=true 不再自动干预
       if (!this.wbSection.autoConfigured) {
@@ -456,7 +445,8 @@ struct Index {
           writeInternalBackup(ctx, buildBackupPayload(wb, kb)); // 正常有数据→备份
         } else {
           const p = readInternalBackup(ctx); // 库空但有备份→可能升级异常清空/误删→询问恢复
-          if (p !== undefined && (p.words.length > 0 || p.cards.length > 0)) {
+          // ★ 0.305.0：未同意协议时不弹任何业务弹窗（首页门禁态独占）
+          if (!this.needsOnboarding && p !== undefined && (p.words.length > 0 || p.cards.length > 0)) {
             this.pendingRestore = p;
             this.restorePromptVisible = true;
           }
@@ -504,14 +494,8 @@ struct Index {
     }
     // PersistenceV2：API 配置持久化，跨重启保存
     PersistenceV2.connect(ApiConfig, 'api-config', () => new ApiConfig());
-    // ★ 0.226.0：首次启动（未同意 / 协议版本落后）自动弹同意弹窗（全端，弹一次；同意后不再弹）
-    // ★ 0.304.2 bug 修复：冷装首启「先闪主界面 ~0.8s 再弹门禁」——原 setTimeout 800ms 是 0.279.2
-    //   时代等 PersistenceV2 水合的遗留；0.279.5 存储已整体迁 preferences 同步接口（getSync 返回即
-    //   真值、无水合竞态），无需等待。aboutToAppear 先于首帧 build 执行，同步判定=首帧直出门禁。
-    if (needsAgreement() && !this.agreementBridge.promptVisible) {
-      this.agreementBridge.pendingAction = '';
-      this.agreementBridge.promptVisible = true;
-    }
+    // ★ 0.305.0：首启门禁不再需要弹窗判定——首页 @Computed needsOnboarding 首帧即按
+    //   preferences 同步真值渲染未同意态（0.304.2 的同步判定块随覆盖层一并删除）。
   }
 
   // ============================================================
@@ -545,38 +529,263 @@ struct Index {
     this.agreementBridge.pendingAction = '';
   }
 
-  // 首页未勾选点登录的抖动负反馈（逐帧 setTimeout 偏移，末尾归零）
-  shakeHome(): void {
+  // ★ 0.305.0：门禁态交互（原 OnboardingGate 组件逻辑迁入首页——单一入口、零重复）
+  onboardingViewSections(): string[] {
+    return this.onboardingViewing === 0 ? USER_AGREEMENT_SECTIONS : PRIVACY_SECTIONS;
+  }
+
+  onboardingViewTitle(): string {
+    return this.onboardingViewing === 0 ? AGREEMENT_USER_NAME : AGREEMENT_PRIVACY_NAME;
+  }
+
+  // 华为账号用户认证协议：系统浏览器打开华为官方页（不用应用内 WebView）
+  openHuaweiAgreement(): void {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      ctx.openLink(HUAWEI_ACCOUNT_AGREEMENT_URL).catch(() => {
+        // 打开失败静默
+      });
+    } catch (_e) {
+      // 静默
+    }
+  }
+
+  // 未勾选点登录的抖动负反馈（逐帧偏移，末尾归零）
+  shakeOnboarding(): void {
     const seq: number[] = [8, -8, 6, -6, 3, -3, 0];
     for (let i = 0; i < seq.length; i++) {
       setTimeout(() => {
-        this.homeShakeX = seq[i];
+        this.onboardingShakeX = seq[i];
       }, 40 * i);
     }
   }
 
-  // 首页账号行点击（未登录态分流）：PC/Pad=勾选放行或抖动提示；手机=弹同意弹窗→登录
+  toggleOnboardingChecked(): void {
+    if (this.isProcessing) {
+      return;
+    }
+    this.onboardingChecked = !this.onboardingChecked;
+    if (this.onboardingChecked) {
+      this.onboardingHint = '';
+    }
+  }
+
+  // 门禁态点「华为账号登录」：未勾选=提示+抖动（不发任何请求），勾选=走登录
+  requestOnboardingLogin(): void {
+    if (this.isProcessing) {
+      return;
+    }
+    if (!this.onboardingChecked) {
+      this.onboardingHint = '请先勾选同意上述协议';
+      this.shakeOnboarding();
+      return;
+    }
+    this.onboardingHint = '';
+    this.onOnboardingLogin();
+  }
+
+  // 首页账号行点击（★ 0.305.0：未同意时首页呈门禁态，本入口仅在已同意态可见——直接登录）
   onHomeAccountClick(): void {
     if (this.getHuaweiAccount().isLoggedIn) {
       return;
     }
-    if (needsAgreement()) {
-      if (this.isTablet) {
-        if (this.homeAgreed) {
-          markAgreed();
-          this.doLogin(false);
-          this.maybeShowThemeChoose(); // ★ 0.262.0：PC/Pad 勾选路径同意后弹主题选择（与弹窗路径同收口）
-        } else {
-          this.loginTip = '请先阅读并勾选同意下方协议';
-          this.shakeHome();
-        }
-      } else {
-        this.agreementBridge.pendingAction = 'login';
-        this.agreementBridge.promptVisible = true;
-      }
-      return;
-    }
     this.doLogin(false);
+  }
+
+  // ★ 0.305.0：品牌区——首页正常态/门禁态共用一份（消除原「首页 + 独立门禁层」两套视觉重复）
+  @Builder
+  brandHeader() {
+    Text('DAG AI Chat')
+      .fontSize(32)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(this.theme.textPrimary)
+      .fontFamily(FONT_INTER_SEMIBOLD)
+    Text('你的AI学习伴侣')
+      .fontSize(FONT_SIZE_CARD_TITLE_SM) // ★ 0.305.0：副标题 14→13（与门禁辅助文字同号——用户拍板字号对齐）
+      .fontColor(this.theme.textSecondary)
+      .margin({ top: 8 })
+  }
+
+  // ★ 0.305.0：首页未同意态（首启/协议升版）= 门禁内容直接作为首页本体渲染
+  //   （版式见 UI_GUIDELINES 12c：品牌 → 登录按钮 → 暂不登录 → 协议两行 → 不同意退出）
+  @Builder
+  onboardingPanel() {
+    Column() {
+      Blank().layoutWeight(1)
+      this.brandHeader()
+
+      // 主按钮（未勾选=品牌描边透底 + 抖动负反馈；已勾选=品牌实底白字）
+      Column({ space: 3 }) {
+        Text(this.isProcessing ? '登录中…' : '华为账号登录')
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.onboardingChecked ? Color.White : this.theme.textSecondary)
+        Text('登录后开启云同步')
+          .fontSize(FONT_SIZE_CAPTION)
+          .fontColor(this.onboardingChecked ? Color.White : this.theme.textTertiary)
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: 420 })
+      .padding({ top: 14, bottom: 14 })
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(this.onboardingChecked ? this.theme.brandPrimary : this.theme.surfaceSoft)
+      .border({ width: 1, color: this.onboardingChecked ? Color.Transparent : this.theme.strokeBrand })
+      .alignItems(HorizontalAlign.Center)
+      .translate({ x: this.onboardingShakeX })
+      .enabled(!this.isProcessing)
+      .onClick(() => {
+        this.requestOnboardingLogin();
+      })
+      .margin({ top: 28 })
+
+      if (this.onboardingTip !== '') {
+        Text(this.onboardingTip)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .lineHeight(20)
+          .fontColor(this.theme.danger)
+          .textAlign(TextAlign.Center)
+          .constraintSize({ maxWidth: 420 })
+          .margin({ top: 12 })
+      } else if (this.onboardingHint !== '') {
+        Text(this.onboardingHint)
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontColor(this.theme.danger)
+          .textAlign(TextAlign.Center)
+          .margin({ top: 12 })
+      }
+
+      Text('暂不登录，先本地使用')
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .fontColor(this.theme.textSecondary)
+        .margin({ top: 20 })
+        .onClick(() => {
+          if (!this.isProcessing) {
+            this.onOnboardingLocalOnly();
+          }
+        })
+
+      Blank().layoutWeight(1)
+
+      // 协议勾选行（固定两行：用户/隐私协议一行 + 华为认证协议另起；整组 X 轴居中、
+      //   勾选框与两行文字块纵向居中；协议名点击不改变勾选态）
+      Row({ space: 8 }) {
+        if (this.onboardingChecked) {
+          Image($r('app.media.checkbox_on'))
+            .width(18)
+            .height(18)
+            .onClick(() => {
+              this.toggleOnboardingChecked();
+            })
+        } else {
+          Image($r('app.media.checkbox_off'))
+            .width(18)
+            .height(18)
+            .onClick(() => {
+              this.toggleOnboardingChecked();
+            })
+        }
+        Column({ space: 2 }) {
+          Text() {
+            Span(AGREEMENT_CHECK_PREFIX)
+              .fontColor(this.theme.textSecondary)
+              .onClick(() => {
+                this.toggleOnboardingChecked();
+              })
+            Span('《' + AGREEMENT_USER_NAME + '》')
+              .fontColor(this.theme.brandPrimary)
+              .onClick(() => {
+                this.onboardingViewing = 0;
+              })
+            Span('《' + AGREEMENT_PRIVACY_NAME + '》')
+              .fontColor(this.theme.brandPrimary)
+              .onClick(() => {
+                this.onboardingViewing = 1;
+              })
+          }
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .lineHeight(20)
+          Text() {
+            Span('《' + AGREEMENT_HUAWEI_NAME + '》')
+              .fontColor(this.theme.brandPrimary)
+              .onClick(() => {
+                this.openHuaweiAgreement();
+              })
+          }
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .lineHeight(20)
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .constraintSize({ maxWidth: 460 })
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+
+      Text('不同意，退出')
+        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .fontColor(this.theme.textTertiary)
+        .margin({ top: 20 })
+        .onClick(() => {
+          if (!this.isProcessing) {
+            this.onOnboardingExit();
+          }
+        })
+
+      // 门禁态也显示版本号（装机验收/反馈报障定位用）
+      Text(APP_VERSION)
+        .fontSize(12)
+        .fontColor(this.theme.textTertiary)
+        .margin({ top: 12 })
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 24, right: 24, top: 16, bottom: 24 })
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // ★ 0.305.0：协议正文整页（门禁态内点协议名进入；标题行「返回」回门禁主态）
+  @Builder
+  agreementTextPanel() {
+    Column() {
+      Row() {
+        Text(this.onboardingViewTitle())
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(600)
+          .fontFamily(FONT_INTER_SEMIBOLD)
+          .fontColor(this.theme.textPrimary)
+          .layoutWeight(1)
+        Text('返回')
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontColor(this.theme.brandPrimary)
+          .onClick(() => {
+            this.onboardingViewing = -1;
+          })
+      }
+      .width('100%')
+      .margin({ bottom: 12 })
+
+      Scroll() {
+        Column() {
+          ForEach(this.onboardingViewSections(), (sec: string) => {
+            Text(sec)
+              .fontSize(FONT_SIZE_BODY)
+              .lineHeight(21)
+              .fontColor(isPrivacySensitiveSection(sec) ? this.theme.textPrimary : this.theme.textSecondary)
+              .fontWeight(isPrivacySensitiveSection(sec) ? FontWeight.Medium : FontWeight.Normal)
+              .width('100%')
+              .margin({ bottom: 10 })
+          }, (_sec: string, idx: number) => `${idx}`)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 24, right: 24, top: 16, bottom: 20 })
+    .alignItems(HorizontalAlign.Center)
   }
 
   @Builder
@@ -611,7 +820,7 @@ struct Index {
       // ★ 0.278.10：平板边栏安全区垫层——边栏本体 bgNav，上下安全区原本露根 Stack 的 bgApp，
       //   造成边栏上下颜色与本体不一致（用户 Pad 实测指认）；垫层只占边栏宽度并用 expandSafeArea
       //   把 bgNav 铺进状态栏/手势条区，折叠时宽 0 自动消失；置于 Row 之下、hitTest 穿透不挡事件
-      if (this.isTablet) {
+      if (this.isTablet && !this.needsOnboarding) {
         Column()
           .width(this.indexSidebarState.collapsed ? 0 : this.sidebarWidth) // ★ 0.279.6：PC 窄窗自适应收窄
           .height('100%')
@@ -624,7 +833,7 @@ struct Index {
       //   把手浮在左缘变右箭头，再点恢复（滑入滑出带动画）；收起状态 AppStorageV2 共享——
       //   跳到对话页等任何页面边栏保持隐藏，跨页面一致；手机不渲染边栏（画布抽屉承担导航）
       Row() {
-        if (this.isTablet) {
+        if (this.isTablet && !this.needsOnboarding) {
           Column() {
             AppSideBar({
               currentRoute: this.currentRoute, // ★ 0.195.0 bugfix：选中态动态跟踪（高亮恒与主界面一致）
@@ -655,23 +864,18 @@ struct Index {
       // 首页内容（★ 0.174.1：按 UI_GUIDELINES 重做——this.theme.bgApp 暗紫底 + expandSafeArea 满屏 +
       // Logo 区/主按钮/账号区对齐组件规格；删「图结构对话 · 多分支推理」（用户拍板））
       Column() {
+        if (this.needsOnboarding && this.onboardingViewing >= 0) {
+          this.agreementTextPanel() // ★ 0.305.0：协议正文整页（门禁态内查看，非弹窗）
+        } else if (this.needsOnboarding) {
+          this.onboardingPanel() // ★ 0.305.0：首页未同意态（门禁内容=首页本体，非覆盖层）
+        } else {
         // ★ 0.179.0：布局改「上标题 + 下按钮组」双区结构——顶部/中部/底部弹性占位 2.5:2.5:1
         //   （★ 0.181.1：原 2:3:1，用户要求标题往下挪一点点——顶部 2→2.5 标题区下移约半份弹性、
         //   中部 3→2.5 对冲，按钮组/版本号位置纹丝不动），
         //   主按钮+登录区落至屏幕下部左手拇指区（用户拍板：左手持握大拇指直接按得到，
         //   原垂直居中布局需另一只手按、体验割裂）；标题/副标题同步放大（24→32 / 11→14）
         Blank().layoutWeight(2.5) // ★ 0.181.1：顶部弹性 2→2.5（标题往下挪）；★ 0.179.0：顶部弹性（标题区悬于上部、不贴顶）
-        // ★ 0.174.2：删 Logo 区（用户要求去掉首页分叉图标），标题成为首元素
-        Text('DAG AI Chat')
-          .fontSize(32) // ★ 0.179.0：标题放大 24→32（用户拍板）
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.theme.textPrimary)
-          .fontFamily(FONT_INTER_SEMIBOLD)
-
-        Text('你的AI学习伴侣')
-          .fontSize(14) // ★ 0.179.0：副标题放大 11→14（用户拍板）
-          .fontColor(this.theme.textSecondary)
-          .margin({ top: 8 })
+        this.brandHeader() // ★ 0.305.0：品牌区提取共用（门禁态同款，消除两套首页重复）
 
         Blank().layoutWeight(2.5) // ★ 0.181.1：中部弹性 3→2.5（与顶部增量对冲，按钮组位置不动）；★ 0.179.0：中部弹性——把按钮组推至下部拇指区
         // 主按钮（UI_GUIDELINES 六-9 类推：主紫底 + RADIUS_CONTROL 圆角）
@@ -779,40 +983,9 @@ struct Index {
           .backgroundColor(this.theme.surfaceSoft)
           .alignItems(VerticalAlign.Center)
           .enabled(!this.isProcessing)
-          .translate({ x: this.homeShakeX }) // ★ 0.226.0：未勾选点登录时的抖动负反馈
           .onClick(() => {
-            this.onHomeAccountClick(); // ★ 0.226.0：未登录分流（PC/Pad 勾选放行或抖动提示；手机弹同意弹窗）
+            this.onHomeAccountClick(); // ★ 0.305.0：已同意态直接登录（未同意时本卡不渲染）
           })
-        }
-        // ★ 0.226.0：首页底部阅读并同意勾选框（仅 PC/Pad 常驻；未登录且未同意时显示）
-        // ★ 0.279.3：改接 @Computed（水合竞态闪现校正——同 showAgreementPrompt 方案）
-        if (this.showHomeAgreeCheck) {
-          Row({ space: 8 }) {
-            if (this.homeAgreed) {
-              Image($r('app.media.checkbox_on'))
-                .width(16)
-                .height(16)
-                .onClick(() => {
-                  this.homeAgreed = false;
-                })
-            } else {
-              Image($r('app.media.checkbox_off'))
-                .width(16)
-                .height(16)
-                .onClick(() => {
-                  this.homeAgreed = true;
-                })
-            }
-            Text(AGREEMENT_CHECK_PREFIX + '《用户协议》《隐私政策》') // ★ 0.264.0：基础门禁两份协议（华为协议登录时单独征求）
-              .fontSize(FONT_SIZE_CAPTION)
-              .lineHeight(18)
-              .fontColor(this.theme.textTertiary)
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .constraintSize({ maxWidth: 360 })
-          .margin({ top: 10 })
-          .alignItems(VerticalAlign.Top)
         }
         // ★ 0.164：登录/退出结果提示（错误时显示，深浅色适配）
         if (this.loginTip !== '') {
@@ -831,6 +1004,7 @@ struct Index {
           .margin({ top: 12 })
 
         Blank().layoutWeight(1) // ★ 0.179.0：底部弹性——版本号与底部留白
+        }
       }
       .width('100%')
       .height('100%')
@@ -854,7 +1028,7 @@ struct Index {
       // ★ 0.278.14 用户三诉求：①垂直居中（y:'50%' 是左上角对齐中线，高度越大偏下越明显——translate 半高回退）
       //   ②长度翻倍 112→224 ③触发热区扩大（7vp 太难点中）——透明热区容器 27×240 包住 7×224 细胶囊，
       //   视觉不变、可点范围横向翻近 4 倍；onClick 挂热区容器（子组件无点击事件，冒泡到容器）
-      if (this.isTablet) {
+      if (this.isTablet && !this.needsOnboarding) {
         Row() {
           Column()
             .width(7)
@@ -1040,22 +1214,8 @@ struct Index {
         this.confirmDialog.welcomeBonusVisible = false;
       }
     })
-    // ★ 0.303.0：首启合并门禁（协议三项勾选 + 华为账号登录一屏；不同意=直接退出）
-    // ★ 0.279.2：visible 接 @Computed（水合迟到翻真时自动消失——已同意用户不被误弹）
-    OnboardingGate({
-      visible: this.showAgreementPrompt,
-      busy: this.isProcessing,
-      tip: this.onboardingTip,
-      onLogin: () => {
-        this.onOnboardingLogin();
-      },
-      onLocalOnly: () => {
-        this.onOnboardingLocalOnly();
-      },
-      onExit: () => {
-        this.onOnboardingExit();
-      }
-    })
+    // ★ 0.305.0：首启门禁=首页未同意态（OnboardingGate 独立覆盖层已删除——技术债清理：
+    //   原「首页 + 门禁层」两套视觉重复，现首页 @Computed needsOnboarding 双态渲染）
     // ★ 0.264.0：华为协议登录门禁弹窗（hw 形态；同意=markHwAgreed+续跑登录，不同意=仅取消登录）
     // ★ 0.279.2：visible 同接 @Computed 自动校正
     AgreementDialog({

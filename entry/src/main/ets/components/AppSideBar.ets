@@ -17,7 +17,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.9：确�
 import { common } from '@kit.AbilityKit'; // ★ 0.196.2：头像登录（getHostContext 转 common.Context 调 loginWithHuaweiID）
 import { requestPublishReviewWidget } from '../utils/WidgetReviewUtil'; // ★ 0.203.0：桌面卡片入口（请求发布复习卡片到桌面）
 import { track } from '../utils/TrackUtil'; // 0.206.0 埋点
-import { needsAgreement, needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.226.0：登录前同意拦截（弹窗 Index 根挂载）；★ 0.264.0：华为协议门禁拆分
+import { needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.226.0：登录前同意拦截；★ 0.264.0：华为协议门禁拆分；★ 0.305.0：基础协议由首页未同意态承担
 import { RADIUS_LOGO, RADIUS_NAV, FONT_SIZE_NAV_LABEL, FONT_SIZE_CARD_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 
@@ -929,13 +929,7 @@ export struct AppSideBar {
         // ★ 0.196.2 用户拍板：点头像=华为账号退出确认弹窗（原跳统计页废弃——统计已有边栏独立入口）
         // ★ 0.196.3 bugfix（用户实测「退出后再点没反应」）：未登录点头像=直接拉起登录
         if (!this.account.isLoggedIn) {
-          // ★ 0.226.0：未同意协议 → 先弹同意弹窗（Index 根挂载），同意后由 Index 续跑登录；同意前不埋点
-          // ★ 0.264.0：基础门禁拆分——两份协议弹窗同意后 Index.doLogin 会再查华为协议门禁
-          if (needsAgreement()) {
-            connectAgreementBridge().pendingAction = 'login';
-            connectAgreementBridge().promptVisible = true;
-            return;
-          }
+          // ★ 0.305.0：基础协议门禁=首页未同意态（唯一同意入口，未同意时边栏不渲染）——此处只留华为协议门禁
           // ★ 0.264.0：华为账号用户认证协议门禁（登录前单独征求；不同意仅取消登录）
           if (needsHwAgreement()) {
             connectAgreementBridge().pendingAction = 'login';

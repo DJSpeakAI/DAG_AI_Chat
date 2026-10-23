@@ -196,7 +196,7 @@
 - 按钮：单按钮通栏「知道了」= BRAND_PRIMARY 底白字高 48 圆角 RADIUS_CONTROL；双按钮 = `Row({ space: 10 })` + 各 `layoutWeight(1)` 等宽
 
 **12b. 协议同意区 / 法律条款卡（★ 0.226.0 入规则——合规刚需：处理个人信息前须告知并取得同意）**
-- **适用组件**：首启合并门禁 `OnboardingGate`（★ 0.303.0 起接管首启一屏；体验改进开关已移至外观页——`ImproveDataDialog` 已删）、`AgreementDialog`（hw 形态·登录门槛）、关于页「法律条款」卡——文案统一取自 `utils/Agreement.ets`（协议正文 + 版本号 `AGREEMENT_VERSION`，单一来源）
+- **适用组件**：首启门禁=**首页未同意态**（★ 0.305.0 起 Index `onboardingPanel` 原地渲染，独立覆盖层已删）、`AgreementDialog`（仅 hw 形态·登录门槛）、关于页「法律条款」卡——文案统一取自 `utils/Agreement.ets`（协议正文 + 版本号 `AGREEMENT_VERSION`，单一来源）
 - **弹窗宽度断点制（同第 12/12a 条）**：`.width(this.isTablet ? 400 : '88%')`（同意弹窗手机 88% 略宽于确认弹窗 86%，因含三协议勾选行正文）
 - 结构：标题「阅读并同意」16/600（TEXT_PRIMARY）→ 说明正文 FONT_SIZE_BODY/TEXT_SECONDARY → **勾选行**（`checkbox_on`/`checkbox_off` 18 + 前缀「我已阅读并同意」+ 三协议名 BRAND_PRIMARY 可点）→ 双按钮行（「暂不同意」SURFACE_SOFT+STROKE_CARD 描边 / 「同意并继续」BRAND_PRIMARY，且**未勾选时置灰 `enabled(false)`**）
 - **勾选行点击归属**：勾选框图标 + 前缀文字 = 切换勾选；三个协议名 = 查看正文 / 外链，各自消费点击**互不干扰**（避免 `Span.onClick` 冒泡到整行导致误切换勾选）
@@ -205,12 +205,15 @@
 - **合规红线**：勾选项**默认未勾选**；禁「登录即代表同意」式隐式同意；体验改进计划必须**单独、非捆绑、默认关**；不同意**不得**禁用本地功能（只 gate 登录 / 云同步）
 - 华为账号用户认证协议走**系统浏览器** `openLink`（不在应用内自撰正文）
 
-**12c. 首启合并门禁 OnboardingGate 一屏布局（★ 0.303.0 定稿；★ 0.304.2 用户实测终稿——手机版式）**
-- **垂直分区（自上而下）**：品牌区（DAG AI Chat 32/Bold + 「你的AI学习伴侣」13/TEXT_SECONDARY）→ **主按钮「华为账号登录」紧贴品牌文案下方、落屏高正中区** → 次级入口「暂不登录，先本地使用」（Body 13/TEXT_SECONDARY，距按钮 20）→ 弹性留白 → 协议勾选行 → 「不同意，退出」（13/TEXT_TERTIARY，距协议 20）。上下两段 `Blank().layoutWeight(1)` 等分。
-- **品牌区禁止第三行说明句**（★ 0.304.2 用户删「登录华为账号，学习数据多端同步」——信息与按钮副行重复）。
+**12c. 首启门禁 = 首页双态（★ 0.303.0 定稿；★ 0.304.2 手机版式终稿；★ 0.305.0 架构重构：OnboardingGate 独立覆盖层已删）**
+- **架构铁律**：门禁**不是独立页面/覆盖层**——首页（Index 的 Navigation 内容）按 `@Computed needsOnboarding` 原地双态渲染：
+  未同意 → `onboardingPanel()`；已同意 → 正常首页。品牌区 `brandHeader()` 两态**共用一份**（禁止再出现第二套首页）。
+  协议正文 `agreementTextPanel()` = 首页内切换页（非弹窗）。合规由**逻辑守卫**保证（未同意不渲染侧边栏/`sideBarNav` 拦截/不弹业务弹窗），不用视觉盖层。
+- **垂直分区（自上而下）**：品牌区（DAG AI Chat 32/Bold + 「你的AI学习伴侣」13/TEXT_SECONDARY）→ **主按钮「华为账号登录」紧贴品牌文案下方、落屏高正中区** → 次级入口「暂不登录，先本地使用」（13/TEXT_SECONDARY，距按钮 20）→ 弹性留白 → 协议勾选行 → 「不同意，退出」（13/TEXT_TERTIARY，距协议 20）→ 版本号 12/TEXT_TERTIARY（验收定位用，门禁态也显示）。上下两段 `Blank().layoutWeight(1)` 等分。
+- **品牌区禁止第三行说明句**（0.304.2 用户删「登录华为账号，学习数据多端同步」——与按钮副行重复）。
 - **主按钮（双行）**：内边距上下 14 + 圆角 RADIUS_CONTROL + 宽 `100%` 且 `constraintSize maxWidth 420`；**未勾选态 = SURFACE_SOFT 透底 + 1px STROKE_BRAND 描边 + 主字 TEXT_SECONDARY / 副字 TEXT_TERTIARY**（点按走抖动负反馈，不置灰见 21.1）；已勾选态 = BRAND_PRIMARY 实底 + 双行白字。副行文案「登录后开启云同步」。
-- **协议勾选行**：**固定两行**——第一行「我已阅读并同意《用户协议》《隐私政策》」，第二行「《华为账号用户认证协议》」（★ 0.304.2 用户拍板「另起一行，要统一」——不再靠窄屏自然折行）；`Row({ space: 8 })` **整组 X 轴居中**（`justifyContent(FlexAlign.Center)`，**禁给文字块挂 `layoutWeight(1)`** = 撑满即左对齐的偏左根因）+ 勾选框 18 与两行文字块 `VerticalAlign.Center` 纵向居中。
-- **字号统一军令**：协议行、暂不登录、不同意退出、品牌副标题**一律 `FONT_SIZE_CARD_TITLE_SM(13)`**（★ 0.304.2 用户：「字体大小跟你的AI学习伴侣对齐，都一样」）；协议行 `lineHeight 20`、行距 2。全屏元素 X 轴居中。
+- **协议勾选行**：**固定两行**——第一行「我已阅读并同意《用户协议》《隐私政策》」，第二行「《华为账号用户认证协议》」；`Row({ space: 8 })` **整组 X 轴居中**（`justifyContent(FlexAlign.Center)`，**禁给文字块挂 `layoutWeight(1)`** = 撑满即左对齐的偏左根因）+ 勾选框 18 与两行文字块 `VerticalAlign.Center` 纵向居中。
+- **字号统一军令**：协议行、暂不登录、不同意退出、品牌副标题**一律 `FONT_SIZE_CARD_TITLE_SM(13)`**；协议行 `lineHeight 20`、行距 2。全屏元素 X 轴居中。
 
 ## 七、图标资源
 
@@ -530,9 +533,9 @@
 ## 二十一、协议门禁与隐私政策敏感信息突出展示（★ 0.264.0 协议合规修订定稿）
 
 ### 21.1 两段协议门禁（同意拆分）
-- **基础门禁（总门槛）**：首启/版本落后时弹，只含《用户协议》《隐私政策》两份；「不同意，退出」（左）/「同意并进入」（右）；不同意→二次挽留「不同意将无法使用本应用」→仍不同意=退出应用；勾选未勾选点同意=按钮抖动提示（**不置灰**——保持可点给负反馈）。
+- **基础门禁（总门槛）**：★ 0.305.0 起 = **首页未同意态**（Index 双态渲染，见 12c）——未同意时首页只显示门禁内容（三协议勾选 + 华为登录 + 暂不登录 + 不同意退出）；不弹独立弹窗、不做覆盖层；勾选未勾选点登录=按钮抖动提示（**不置灰**——保持可点给负反馈）；不同意=退出应用。
 - **华为协议门禁（登录门槛）**：华为账号登录前单独弹《华为账号用户认证协议》（系统浏览器外链）；「不同意」（左，仅取消登录不退出）/「同意并登录」（右）；同意一次即可不随版本重置。
-- 判定唯一真相源 `utils/Agreement.ets`：`needsAgreement()`/`needsHwAgreement()`/`markAgreed()`/`markHwAgreed()`；弹窗经 `AgreementBridge`（promptVisible/hwPromptVisible）Index 根 Stack 双挂载 `AgreementDialog`（mode='basic'/'hw' 同组件两形态）；登录链路门禁检查一律收口在 `Index.doLogin`（边栏/BillingPage 直调 `loginWithHuaweiID` 的入口自行补两段检查）。
+- 判定唯一真相源 `utils/Agreement.ets`：`needsAgreement()`/`needsHwAgreement()`/`markAgreed()`/`markHwAgreed()`；基础门禁=`Index @Computed needsOnboarding`（无需桥字段；`promptVisible` 已退役），华为门禁经 `AgreementBridge.hwPromptVisible` 挂 `AgreementDialog`（hw 形态，basic 形态已退役）；登录链路门禁检查收口在 `Index.doLogin`（未同意时进不了二级页=逻辑守卫兜底）。
 
 ### 21.2 隐私政策敏感条款突出展示（华为审核独立项）
 - 「1. 本地存储」与「2. AI 服务与安全审计」两条在隐私政策展示层加粗：`fontWeight(Medium)` + `textPrimary`（正文其余 `Normal`+`textSecondary`）。

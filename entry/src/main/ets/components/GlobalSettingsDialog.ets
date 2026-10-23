@@ -62,7 +62,7 @@ import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.272.0：本机语�
 import { speakerPulse } from '../utils/WordSpeaker'; // ★ 0.287.6：试听喇叭播放动画脉冲
 import { http } from '@kit.NetworkKit'; // ★ 0.238.0：测试连接（非流式轻量 POST，零侵入 streamChat 主链路）
 
-import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, needsAgreement, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME, isPrivacySensitiveSection } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回；★ 0.264.0：隐私敏感条款判定（华为审核独立项）
+import { USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, HUAWEI_ACCOUNT_AGREEMENT_URL, connectAgreementBridge, revokeAgreement, AGREEMENT_USER_NAME, AGREEMENT_HUAWEI_NAME, isPrivacySensitiveSection } from '../utils/Agreement'; // ★ 0.226.0：协议正文单一来源 + 同意拦截/撤回；★ 0.264.0：隐私敏感条款判定（华为审核独立项）；★ 0.305.0：基础协议门禁由首页未同意态承担（needsAgreement 引用移除）
 // ★ 0.174.1：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码；AppStorageV2/ThemeStore 引用随 getThemeStore 删除）
 import { RADIUS_CONTROL, RADIUS_NAV, RADIUS_LOGO, RADIUS_NODE, FONT_SIZE_SCREEN_TITLE, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, ThemeBadgeStore, connectAppTheme, connectThemeBadge, chooseThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题（外观卡）
@@ -203,7 +203,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.304.2'; // ★ 0.304.2：首启门禁首帧直出+手机版式重排 // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
+export const APP_VERSION: string = 'v0.305.0'; // ★ 0.305.0：首页双态重构（门禁=首页本体） // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2742,12 +2742,7 @@ export struct GlobalSettingsDialog {
           .onClick(() => {
             // 未登录：登录引导弹窗（Index 根挂载；登录成功直接开云同步——入口即意图 0.196.11）
             if (!this.account.isLoggedIn) {
-              // ★ 0.226.0：未同意协议 → 先弹同意弹窗（Index 根挂载），同意后由 Index 续跑云同步登录
-              if (needsAgreement()) {
-                connectAgreementBridge().pendingAction = 'sync';
-                connectAgreementBridge().promptVisible = true;
-                return;
-              }
+              // ★ 0.305.0：基础协议门禁=首页未同意态（唯一同意入口，未同意时进不了设置）——直接走登录引导
               connectConfirmDialog().loginPromptVisible = true;
               return;
             }
@@ -2907,10 +2902,14 @@ export struct GlobalSettingsDialog {
       setTrackingEnabled(ctx, false);
       this.trkEnabled = false;
     }
-    this.onClose(); // 关设置弹窗（门禁弹窗挂 Index 根 Stack 顶层，层级天然在上）
-    const bridge = connectAgreementBridge();
-    bridge.pendingAction = '';
-    bridge.promptVisible = true;
+    this.onClose(); // 关设置弹窗
+    // ★ 0.305.0：撤回同意=停止一切处理（合规）——直接结束应用，重开即首页门禁态
+    //   （原链路靠 Index 根 basic 弹窗兜底，该弹窗已随覆盖层重构删除）
+    try {
+      ctx.terminateSelf();
+    } catch (_e) {
+      // 退出失败静默——下次启动仍会以门禁态拦下
+    }
   }
 
   // ============================================================

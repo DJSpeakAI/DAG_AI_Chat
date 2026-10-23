@@ -2,11 +2,12 @@
 // Agreement.ets — 用户协议 / 隐私政策 文案 + 同意状态（★ 0.226.0）
 // ============================================================
 // 「阅读并同意」机制的统一数据层：
-//   - 持久化：AgreementStore（PersistenceV2 key 'agreement-v1'）
-//       agreed / agreedVersion / improvePromptShown
+//   - 持久化：AgreementStore（Preferences name 'agreement_store'）
+//       agreed / agreedVersion / improvePromptShown / hwAgreed
 //   - 运行时桥：AgreementBridge（AppStorageV2 key 'agreement-bridge'）
-//       promptVisible / pendingAction / improveVisible（不持久化，重启即清）
-//   - 三入口统一：首页勾选框 / 边栏登录 / 设置云同步 共用本状态
+//       pendingAction / improveVisible / hwPromptVisible（不持久化，重启即清）
+//   - ★ 0.305.0：基础协议门禁=首页未同意态（Index @Computed needsOnboarding 直接渲染）
+//       ——promptVisible 独立可见性字段随覆盖层删除（单一入口，无双渲染路径）
 //   - 合规边界：同意只 gate「登录 / 云同步」，不禁用本地功能
 // ============================================================
 
@@ -160,7 +161,6 @@ export function connectAgreement(): AgreementStore {
 // 运行时桥（不持久化——弹窗可见性与待执行动作，重启即清）
 @ObservedV2
 export class AgreementBridge {
-  @Trace promptVisible: boolean = false;   // 同意弹窗可见性（Index 根唯一挂载）
   @Trace pendingAction: string = '';       // 同意后待执行：'' | 'login' | 'sync'
   @Trace improveVisible: boolean = false;  // 体验改进计划引导弹窗可见性
   @Trace hwPromptVisible: boolean = false; // ★ 0.264.0：华为协议登录门禁弹窗可见性（Index 根挂载）

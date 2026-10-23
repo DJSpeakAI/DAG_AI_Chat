@@ -16,7 +16,7 @@ import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLog
   StatisticsStore, connectStatistics, getStatDays,
   pullSpAdminCommands } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
-import { needsAgreement, needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：协议两段门禁（弹窗 Index 根挂载）
+import { needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：华为协议门禁（基础协议由首页未同意态承担，0.305.0）
 import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases, detectRefundedIapPurchases, pullRefundMarks } from '../utils/IapUtil';
 import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（充值购买前置闸）
 import { common } from '@kit.AbilityKit'; // ★ 0.194.0：loginWithHuaweiID 的 context 类型
@@ -204,12 +204,7 @@ export struct BillingPage {
     if (this.isLoggingIn) {
       return;
     }
-    // ★ 0.264.0：协议两段门禁（基础协议+华为协议弹窗均 Index 根挂载，同意后经 pendingAction='login' 续跑登录）
-    if (needsAgreement()) {
-      connectAgreementBridge().pendingAction = 'login';
-      connectAgreementBridge().promptVisible = true;
-      return;
-    }
+    // ★ 0.305.0：基础协议门禁=首页未同意态（唯一同意入口，未同意时进不了本页）——此处只留华为协议门禁
     if (needsHwAgreement()) {
       connectAgreementBridge().pendingAction = 'login';
       connectAgreementBridge().hwPromptVisible = true;
