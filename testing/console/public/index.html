@@ -31,7 +31,8 @@
   header .spacer { flex:1; }
 
   /* ★ 0.241.0.6 右栏设备面板 240→300 加宽 + 列间距/内边距放大（用户需求：右边宽一点好看） */
-  .wrap { display:grid; grid-template-columns: 300px 1fr 300px; gap:16px; padding:16px 24px; max-width:1500px; margin:0 auto; }
+  /* ★ 0.302.1.4 宽度自适应：原 max-width:1500px 居中在大屏两侧留大片空白——改全宽铺满 */
+  .wrap { display:grid; grid-template-columns: 320px 1fr 320px; gap:16px; padding:16px 24px; width:100%; }
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; }
   /* ★ 0.302.1.2 一级板块切换钮（挪进顶部导航栏——凸出大胶囊：激活=紫渐变发光上浮，未激活=深底描边） */
   .mbtn { background:#241A3F; border:1px solid var(--line); color:var(--dim); cursor:pointer; font-size:14px; font-weight:700; padding:10px 26px; border-radius:14px; transition:.18s; letter-spacing:.5px; }
@@ -286,7 +287,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;',
 
 // ---------- API base（固定本地 127.0.0.1:8766；服务器编译兜底是后端 /api/build 自动逻辑，不暴露界面） ----------
 const LOCAL_BASE = location.protocol === 'http:' ? '' : 'http://127.0.0.1:8766'; // http 同源直连；file:// 双击副本走绝对地址
-     const PAGE_VER = '0.302.1.3'; // ★ 0.302.1.3：后台数据板块=整页内嵌看板（SP 数据台并入看板 ⑦，本页 SP 面板+函数删）；0.302.1.2：顶栏切换钮+滚动修复 // 更早历史见 MEMORY.md 版本表
+     const PAGE_VER = '0.302.1.4'; // ★ 0.302.1.4：内容区宽度自适应全屏（原 max-width:1500px 大屏两侧留白——用户拍板改铺满）；0.302.1.3：SP 台并入看板 // 更早历史见 MEMORY.md 版本表
 const base = () => LOCAL_BASE;
 // ★ 0.229.23 旧服务盲区守卫：服务跑的代码 vs 磁盘正本（正本被 AI 更新而服务未重启→stale；30s 轮询复查，开跑前置确认）
 let STALE = false, STALE_TOASTED = false;

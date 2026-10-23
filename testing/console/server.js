@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.302.1.3'; // ★ 0.302.1.3：SP 数据台三路由+spDb 随迁删除（并入阿里云「后台数据」看板 ⑦ Tab——测试台纯测试化）；0.302.1.2：顶栏切换钮+滚动修复 // 更早历史见 MEMORY.md 版本表
+const VERSION = '0.302.1.4'; // ★ 0.302.1.4：与页面同步（内容区全宽自适应；服务行为零改动）；0.302.1.3：SP 三路由随迁删除 // 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。

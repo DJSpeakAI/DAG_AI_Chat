@@ -735,8 +735,11 @@ function loginPage() {
     '.err{color:#e07a7a;font-size:12px;margin-top:8px;min-height:16px}</style></head><body>' +
     '<div class="box"><h1>DAGAI 后台数据</h1><input id="pw" type="password" placeholder="访问口令" onkeydown="if(event.key===\'Enter\')go()">' +
     '<button onclick="go()">进入</button><div class="err" id="err"></div></div>' +
-    '<script>async function go(){const r=await fetch(\'/api/login\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({pass:document.getElementById(\'pw\').value})});' +
-    'if(r.ok){const t=await r.json();location.href=\'/?k=\'+(t.token||\'\')}else{document.getElementById(\'err\').textContent=\'口令不对\'}}</script></body></html>';
+    // ★ 0.302.1.4 自动登录：本机存过 token（登录一次后的 7 天+有效期=长期）→ 直接带 k 参数进首页，不再重输口令
+    '<script>(function(){try{var t=localStorage.getItem(\'dash_token\');if(t){location.replace(\'/?k=\'+t);return}}catch(_e){}' +
+    'setTimeout(function(){var p=document.getElementById(\'pw\');if(p)p.focus()},80)})();' +
+    'async function go(){const r=await fetch(\'/api/login\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({pass:document.getElementById(\'pw\').value})});' +
+    'if(r.ok){const t=await r.json();try{localStorage.setItem(\'dash_token\',t.token||\'\')}catch(_e){}location.replace(\'/?k=\'+(t.token||\'\'))}else{document.getElementById(\'err\').textContent=\'口令不对\'}}</script></body></html>';
 }
 
 const server = http.createServer(async (req, res) => {
