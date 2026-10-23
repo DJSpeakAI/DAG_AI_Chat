@@ -6,7 +6,7 @@
 //   ③整包未消耗 1 点=可退（申请退款=弹订单凭据+引导华为应用市场）；退款由开发者后台执行；
 //   退款到账后 app 进本页自动感知核销（queryPurchaseRecords 检测 revocationTime，用户零操作）
 
-import { SubscriptionStore, connectSubscription, redeemCode, stampFreeTrialOnLogin,
+import { SubscriptionStore, connectSubscription, redeemCode, onLoginAccountHooks,
   SiyiPointStore, connectSiyiPoints, siyiLevelTitle, SIYI_REDEEM_SP,
   SignInStore, connectSignIn, siyiBalanceDisplay,
   IAP_PRODUCT_SP_200W, IAP_PRODUCT_SP_400W,
@@ -222,7 +222,7 @@ export struct BillingPage {
         this.showToastSafe(tip);
         return;
       }
-      stampFreeTrialOnLogin(this.subscription);
+      onLoginAccountHooks(); // ★ 0.305.1：登录后账号钩子
       this.showToastSafe('登录成功');
     });
   }

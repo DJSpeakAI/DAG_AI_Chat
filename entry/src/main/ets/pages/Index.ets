@@ -27,14 +27,13 @@ import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单
 import { APP_VERSION } from '../components/GlobalSettingsDialog'; // ★ 0.301.0：版本号单一来源（GSD export 常量——修 Index 硬编码漏更七版 bug，版本同步点从两处制回三处制）
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, SubscriptionStore, connectSubscription, stampFreeTrialOnLogin, checkDailyReminder, markReminderShownToday, isVip, wipeHistoricalTestStats } from '../common/ChatModel'; // ★ 0.196.8：isVip——登录后云同步弹窗 VIP 判定；★ 0.248.1：markWelcomeShown 随首登欢迎弹窗移除；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计
+import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, onLoginAccountHooks, wipeHistoricalTestStats } from '../common/ChatModel'; // ★ 0.305.1：订阅语义清零（stampFreeTrialOnLogin→onLoginAccountHooks；ReminderDialog/isVip/倒计时引擎随订阅退役删除）；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { siyiGateBlockReason, refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（引导弹窗文案/动作分支+权限刷新）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { SignInDialog, LevelUpDialog } from '../components/SignInDialog'; // ★ 0.256.0：签到弹窗+称号升级弹窗（桥驱动，Index 根唯一挂载点）
-import { ReminderDialog } from '../components/ReminderDialog'; // ★ 0.195.0：订阅提醒自定义弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
 import { GlobalSettingsDialog, GlobalSettingsSharedStore, connectGlobalSettingsShared } from '../components/GlobalSettingsDialog'; // ★ 0.195.0：常驻边栏「设置」入口（与画布/对话页实例共用 PersistenceV2 数据）；★ 0.230.0：加共享开态 store
 import display from '@ohos.display'; // ★ 0.195.0：大屏断点检测（屏宽 ≥600vp 渲染常驻边栏，同 BBTreeCanvas 判定）
@@ -75,14 +74,9 @@ struct Index {
     return connectHuaweiAccount();
   }
 
-  // ★ 0.194.0：订阅状态（登录成功时记录免费试用开始时间）
-  subscription: SubscriptionStore = connectSubscription();
-  // ★ 0.195.0：订阅提醒弹窗状态（ReminderDialog 自定义弹窗驱动：0=首登欢迎 / 1~7=剩余天数）
-  @Local reminderVisible: boolean = false;
   // ★ 0.205.0：空库+有内部备份→恢复询问弹窗（数据安全第二道防线兜底）
   @Local restorePromptVisible: boolean = false;
   pendingRestore: BackupPayload | undefined = undefined; // 待恢复载荷（弹窗确认后消费；大对象不放装饰字段）
-  @Local reminderMode: number = 0;
   // ★ 0.195.0：大屏常驻边栏——断点检测（≥600vp 平板/PC）+ 设置弹窗（边栏「设置」入口）
   // ★ 0.196.4：isTablet 改窗口宽度共享真相源（WindowMode）——分屏/悬浮窗屏宽不变导致小窗仍渲染
   //   平板布局（用户实测边栏挤压+黑屏）；本页根 onAreaChange 写入窗口实宽，首帧用屏宽猜测
@@ -189,8 +183,7 @@ struct Index {
         }
         return;
       }
-      // ★ 0.194.0：登录成功→统一打点（30 天免费试用起点，幂等）
-      stampFreeTrialOnLogin(this.subscription);
+      onLoginAccountHooks(); // ★ 0.305.1：登录后账号钩子（账号切换检测+签到引导；订阅打戳已随退役删除）
       if (fromOnboarding) {
         // ★ 0.303.0：首启登录成功=同意全部协议 + 入口即意图开启云同步 → 外观选择
         markHwAgreed();
@@ -333,16 +326,6 @@ struct Index {
     }
   }
 
-  // ★ 0.195.0：到期倒计时提醒——页面显示时检查（冷启动/回前台均触发），每日去重最多弹 1 次
-  onPageShow(): void {
-    const days = checkDailyReminder(this.subscription);
-    if (days > 0) {
-      markReminderShownToday(this.subscription); // 弹出即记账（每日去重）
-      this.reminderMode = days;
-      this.reminderVisible = true;
-    }
-  }
-
   // ★ 0.195.0：常驻边栏导航（大屏）——气泡树=回画布页：栈顶已是则不动 / 深栈 pop 一层 / 根栈 push；
   //   其余项 pushPath（页面在边栏右侧 Navigation 区域平移，边栏恒在——用户定稿）
   sideBarNav(kind: string): void {
@@ -420,8 +403,7 @@ struct Index {
         }
       }
     });
-    // ★ 0.194.0-bugfix：老用户补打免费试用时间戳（升级前已登录的账号不会再触发 doLogin 回调）
-    stampFreeTrialOnLogin(this.subscription);
+    onLoginAccountHooks(); // ★ 0.305.1：老用户补跑账号钩子（升级前已登录的账号不会再触发 doLogin 回调）
     // ★ 0.204.0 bugfix（bug2 根因）：启动即构建桌面卡片快照——原只在进复习页时写快照，
     //   新添加卡片/未进过复习页时快照为空 → 卡片误显「今日复习已完成」。
     //   延迟 800ms 等 PersistenceV2 磁盘水合完成再构建（冷启动首帧 store 可能未就绪）。
@@ -1056,18 +1038,6 @@ struct Index {
           }
         })
       }
-    // ★ 0.195.0：订阅提醒弹窗（Stack 顶层——盖在 Navigation 之上；倒计时「去账单」CTA 直跳订阅页）
-    ReminderDialog({
-      visible: this.reminderVisible,
-      mode: this.reminderMode,
-      onClose: () => {
-        this.reminderVisible = false;
-      },
-      onGoBilling: () => {
-        this.reminderVisible = false;
-        this.pathStack.pushPath({ name: 'BillingPage' });
-      }
-    })
     // ★ 0.196.9：退出华为账号确认（边栏头像触发——原系统 AlertDialog 灰底，用户实测反馈
     //   与暗紫风格不符；确认走 doLogout：退出 + 云同步强制关一条龙）
     AppConfirmDialog({

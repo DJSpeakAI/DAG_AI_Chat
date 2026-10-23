@@ -7,7 +7,7 @@
 //     勾选未勾选点「同意并进入」→抖动提示先勾选
 //   mode='hw'：华为账号登录门禁——《华为账号用户认证协议》单独征求（外链跳转）；
 //     不同意=仅取消登录不退出应用（本地三板块照用），同意=onAgree 后拉起登录
-// 样式模板：ReminderDialog 同款（遮罩 + this.theme.surfaceNode 面板 + RADIUS_NAV
+// 样式模板：AppConfirmDialog 同款（遮罩 + this.theme.surfaceNode 面板 + RADIUS_NAV
 //   + this.theme.strokeCard 描边 + 主紫按钮）；宽度断点制（手机 88% / 平板与 PC 固定 400）
 // 宿主：Index 根唯一挂载（两形态各挂一份，AgreementBridge 驱动）
 // 合规：勾选框默认未勾选；协议名可点；「不同意」在左、同意主操作在右（鸿蒙规范）

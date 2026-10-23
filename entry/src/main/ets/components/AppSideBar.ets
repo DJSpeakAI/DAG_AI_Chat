@@ -6,10 +6,10 @@
 //   canvas/wordbank/knowledge/statistics/billing/settings/account；kind='' = 点边栏空白（手机收抽屉）
 
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.9：logoutHuaweiID 删——退出确认弹窗移 Index 根挂载，确认后走 doLogout
-import { SubscriptionStore, connectSubscription, isVip, stampFreeTrialOnLogin,
+import { onLoginAccountHooks,
   SiyiPointStore, connectSiyiPoints, siyiLevelTitle, siyiBalanceDisplay,
   StatisticsStore, connectStatistics, getStatDays,
-  SignInStore, connectSignIn, isSignedToday, connectSignInDialog } from '../common/ChatModel'; // ★ 0.196.8：登录后云同步弹窗 VIP 判定；★ 0.217.2：stampFreeTrialOnLogin 打戳；★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）；★ 0.256.0：签到入口（红点驱动）；★ 0.259.0：Lv8 满级 SP 显示恒 999,999（siyiBalanceDisplay 收口）
+  SignInStore, connectSignIn, isSignedToday, connectSignInDialog } from '../common/ChatModel'; // ★ 0.248.0：司忆点资产显示（账户区等级头衔+SP 余额）；★ 0.256.0：签到入口（红点驱动）；★ 0.259.0：Lv8 SP 显示恒 999,999（siyiBalanceDisplay 收口）；★ 0.305.1：订阅语义清零（onLoginAccountHooks 替代试用打戳）
 import { shouldPromptCloudSyncAfterLogin } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
 import { openSettingsTab } from './GlobalSettingsDialog'; // ★ 0.248.0：账户区 SP 行点击→设置弹窗司忆点 Tab
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.248.0：PC(2in1) 隐藏「桌面卡片」入口（系统不提供桌面卡片）
@@ -54,7 +54,6 @@ export struct AppSideBar {
   @Param sidebarWidth: number = 208;
   @Param settingsOpen: boolean = false; // 设置是弹窗非页面：弹窗开着时高亮设置项
   account: HuaweiAccountStore = connectHuaweiAccount();
-  subscription: SubscriptionStore = connectSubscription(); // ★ 0.196.8：登录后云同步弹窗 VIP 判定
   siyi: SiyiPointStore = connectSiyiPoints(); // ★ 0.248.0：司忆点资产（账户区显示余额+头衔）
   statStore: StatisticsStore = connectStatistics(); // ★ 0.248.0：等级推导数据源
   signIn: SignInStore = connectSignIn(); // ★ 0.256.0：签到状态（入口红点判定）
@@ -942,10 +941,8 @@ export struct AppSideBar {
           // ★ 0.196.9：弹窗 UI 换 AppConfirmDialog 暗紫（Index 根挂载，store 触发）
           loginWithHuaweiID(loginContext).then((tip: string) => {
             if (tip === '') {
-              // ★ 0.217.2：登录成功先打试用戳（30 天起点）——此前边栏入口漏打戳，isVip 恒 false，
-              // 下方询问判定随之失效（云同步询问不弹+被守卫锁「云同步已停用」）
-              stampFreeTrialOnLogin(this.subscription);
-              if (shouldPromptCloudSyncAfterLogin(isVip(this.subscription))) {
+              onLoginAccountHooks(); // ★ 0.305.1：登录后账号钩子（订阅打戳已随退役删除）
+              if (shouldPromptCloudSyncAfterLogin(true)) {
                 connectConfirmDialog().cloudSyncPromptVisible = true;
               }
             }

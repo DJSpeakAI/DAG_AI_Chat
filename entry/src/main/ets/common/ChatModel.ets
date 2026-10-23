@@ -23,7 +23,7 @@ import { KnowledgeCard, KFolder, KnowledgeBankStore } from './KnowledgeModel'; /
 import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, reviveFolder } from '../utils/BackupUtil'; // ★ 0.228.0 plain 流水线复用（0.205.4 纪律）
 import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
- import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：stampFreeTrialOnLogin 统一试用打点（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
+ import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.305.1：onLoginAccountHooks 登录后账号钩子（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
 import { spAdminReport, spAdminFetch, spAdminConfirm } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）
 import { deviceInfo } from '@kit.BasicServicesKit';
  import { siyiGateReady, siyiGateBlockReason, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
@@ -1013,45 +1013,39 @@ export function wipeHistoricalTestStats(): void {
 }
 
 // ============================================================
-// ★ 0.194.0：订阅体系（用户定稿：¥9.9/月 + ¥99/年；到期只锁云同步其他 100% 可用；
-//   新用户登录华为账号免费试用 30 天；种子用户兑换码 +90 天）
+// ★ 0.194.0 订阅体系 → ★ 2026-10-22 用户拍板**订阅概念整体退役**（商业口径只剩 SP 司忆点）。
+// ★ 0.305.1 零技术债军令：订阅语义消费代码（isVip/vipExpireTime/vipDaysLeft/stampFreeTrial 打戳/
+//   到期提醒引擎）已全链删除；本类**按 Schema 铁律保留**（字段只许尾部追加禁删）——现役职责仅剩
+//   兑换码+IAP 本地账本载体：redeemedCodes / purchaseHistory / iapConsumedTokens（SP/IAP 防重入账）。
+//   freeTrialStart / subscriptionExpire / reminderState = 退役占位字段（恒默认值，永不写入）。
 // 存储：PersistenceV2 独立 key（0.143 教训：全新 key 无旧快照坑）
-// IAP：华为应用内支付（商品 ID/公钥待用户拿到商户资格后填入，当前占位）
 // ============================================================
 @ObservedV2
 export class SubscriptionStore {
-  @Trace freeTrialStart: number = 0;      // 免费试用开始时间戳（首次登录华为账号记录；0=从未登录）
-  @Trace subscriptionExpire: number = 0;  // 权益到期时间戳（订阅购买/兑换码写入；0=无权益）
-  @Trace redeemedCodes: string = '[]';    // 已兑换码 JSON 数组（防同码重复兑换）
+  @Trace freeTrialStart: number = 0;      // 【退役占位·Schema 铁律保留】免费试用戳（订阅退役后永不写入）
+  @Trace subscriptionExpire: number = 0;  // 【退役占位·Schema 铁律保留】权益到期戳（订阅退役后永不写入）
+  @Trace redeemedCodes: string = '[]';    // 已兑换码 JSON 数组（防同码重复兑换——兑 SP 活功能）
   @Trace purchaseHistory: string = '[]';  // 本地购买/兑换记录 JSON 数组（账单页展示）
-  @Trace reminderState: string = '{}';    // ★ 0.195.0：到期提醒状态 JSON {welcome,last}（旧快照缺字段→parse 兜底）
+  @Trace reminderState: string = '{}';    // 【退役占位·Schema 铁律保留】到期提醒状态（引擎已删）
   // ★ 0.261.0：IAP 已入账 purchaseToken JSON 数组（幂等防双入账；纯本地记录与 redeemedCodes 同类——
   //   不随 cfg 行上行：LWW 整行覆盖反而会丢别端 token，本地集合+permanentSp 云端 max 合并双保险已闭环）
   @Trace iapConsumedTokens: string = '[]';
 }
 
-// ★ 0.194.0：连接订阅持久化实例
+// ★ 0.194.0：连接订阅持久化实例（现役=兑换码/IAP 账本；key 'subscription-v1' 红线禁改）
 export function connectSubscription(): SubscriptionStore {
   return PersistenceV2.connect(SubscriptionStore, 'subscription-v1', () => new SubscriptionStore()) as SubscriptionStore;
 }
 
-// ★ 0.194.0：统一试用打点——已登录且从未记录 → 从当下起算 30 天免费试用
-//   （调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 / BillingPage 登录按钮 / 边栏头像，
-//   四处共用防逻辑漂移）
-// ★ 0.293.0：新用户礼包不再随 stamp 同步直发（「先发后拉」时序洞=冷装重领 200w 根因）——
-//   改挂云首拉完成回调 maybeGrantWelcomeAfterFirstPull（老账号重装由云端 welcomeGranted 拦截）；
-//   本函数新增职责=账号切换检测（资产行隔离入口，见 detectAccountSwitchAndResetAssets）
-export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean {
+// ★ 0.305.1：登录后账号钩子（原 0.194.0 stampFreeTrialOnLogin 统一试用打点——订阅退役后打戳逻辑
+//   删除，函数更名并保留两项活职责；调用方：Index.doLogin 登录回调 / Index.aboutToAppear 老用户补查 /
+//   BillingPage 登录按钮 / 边栏头像，四处共用防逻辑漂移）
+export function onLoginAccountHooks(): void {
   const account = connectHuaweiAccount();
   if (account.isLoggedIn) {
     detectAccountSwitchAndResetAssets(); // ★ 0.293.0：先于一切发放/同步合并（重置后闸门重开等新账号首拉）
     maybeShowSignInGuide(); // ★ 0.256.0：首登签到引导（挂此=四登录入口全覆盖；guideShown 只弹一次）
   }
-  if (account.isLoggedIn && subscription.freeTrialStart === 0) {
-    subscription.freeTrialStart = Date.now();
-    return true; // ★ 0.195.0：首次打戳返回 true——调用方据此弹「30 天试用欢迎弹窗」（仅首登 1 次）
-  }
-  return false;
 }
 
 // ============================================================
@@ -1173,36 +1167,8 @@ export async function debugResetNewUserAssets(): Promise<boolean> {
   }
 }
 
-// ★ 0.194.0：VIP 判断——免费期内 或 权益期内（到期只锁云同步，其他功能全开放）
-export function isVip(store: SubscriptionStore): boolean {
-  const now = Date.now();
-  if (store.freeTrialStart > 0 && now < store.freeTrialStart + 30 * 86400000) {
-    return true; // 免费试用 30 天内
-  }
-  if (store.subscriptionExpire > 0 && now < store.subscriptionExpire) {
-    return true; // 订阅/兑换码权益期内
-  }
-  return false;
-}
-
-// ★ 0.194.0：权益到期时间（显示用；0=无任何权益）
-export function vipExpireTime(store: SubscriptionStore): number {
-  const now = Date.now();
-  const trialEnd = store.freeTrialStart > 0 ? store.freeTrialStart + 30 * 86400000 : 0;
-  if (trialEnd > now && trialEnd > store.subscriptionExpire) {
-    return trialEnd; // 免费期更晚
-  }
-  return store.subscriptionExpire;
-}
-
-// ★ 0.194.0：剩余天数（向上取整；0=已到期/无权益）
-export function vipDaysLeft(store: SubscriptionStore): number {
-  const expire = vipExpireTime(store);
-  if (expire <= Date.now()) {
-    return 0;
-  }
-  return Math.ceil((expire - Date.now()) / 86400000);
-}
+// ★ 0.305.1：isVip/vipExpireTime/vipDaysLeft（0.194.0 订阅判定）随订阅退役整体删除——
+//   新代码禁止再引用 VIP/订阅/试用语义（零技术债军令）
 
 // ============================================================
 // ★ 0.248.0：司忆点（SP）资产体系——三池余额+新用户礼包+等级头衔（用户拍板商业方案 V2.1）
@@ -2010,7 +1976,7 @@ export function maybeAutoShowSignIn(): void {
 
 // 首登签到引导判定（丙方案）：从未引导过 && 从未签过 && 登录态已建立 → 弹一次并打标志。
 //   卸载重装清 PersistenceV2 沙箱 → guideShown 清零 → 重装后首次登录必弹（验收标准）。
-//   挂 stampFreeTrialOnLogin 内=四登录入口全覆盖（Index.doLogin/Index 补查/BillingPage/边栏头像，0.217.2 铁律）
+//   挂 onLoginAccountHooks 内=四登录入口全覆盖（Index.doLogin/Index 补查/BillingPage/边栏头像，0.217.2 铁律）
 // ★ 0.299.1：前置云服务门卫（0.293.0 SP 铁律第 4 条——签到类弹窗只在云服务已开通时弹，用户实测报
 //   「云同步还没就绪签到就弹出来了」）；gate 未就绪不置 guideShown（不消耗唯一机会）——gate ready 后
 //   由 maybeAutoShowSignIn 每日首开机制兜底补弹（今日未签+今日未弹过 → 必弹 SignInDialog），功能不丢。
@@ -2176,52 +2142,8 @@ export function notifyLevelUp(learnDays: number): void {
   }
 }
 
-// ============================================================
-// ★ 0.195.0：到期提醒引擎（付费转化·用户定稿）
-//   最后 7 天（7/6/5/4/3/2/1）每日首开弹 1 次 + 过期后不再打扰（★ 0.248.1：首登欢迎弹窗已移除）
-//   状态存 reminderState 单 JSON 字符串字段（0.143 教训：往类加字段旧快照坑——parse 全兜底）
-// ============================================================
-class ReminderState {
-  last: string = '';        // 最近一次倒计时提醒日期 'YYYY-MM-DD'（每日去重）
-}
-
-function parseReminderState(store: SubscriptionStore): ReminderState {
-  try {
-    const s = JSON.parse(store.reminderState) as ReminderState;
-    const st = new ReminderState();
-    st.last = typeof s.last === 'string' ? s.last : '';
-    return st;
-  } catch (_e) {
-    return new ReminderState();
-  }
-}
-
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
-}
-
-// 今日应弹的倒计时提醒：0=不弹；1~7=剩余 N 天（每天最多 1 次；过期/无权益恒 0）
-export function checkDailyReminder(store: SubscriptionStore): number {
-  if (!isVip(store)) {
-    return 0; // 已过期/无权益：不打扰（用户定稿）
-  }
-  if (parseReminderState(store).last === todayStr()) {
-    return 0; // 今天已弹过——每日去重
-  }
-  const daysLeft = vipDaysLeft(store);
-  if (daysLeft >= 1 && daysLeft <= 7) {
-    return daysLeft; // 最后 7 天：7/6/5/4/3/2/1 每日一弹
-  }
-  return 0;
-}
-
-// 倒计时弹窗已弹（弹出即记账，不依赖按钮点击）
-export function markReminderShownToday(store: SubscriptionStore): void {
-  const st = parseReminderState(store);
-  st.last = todayStr();
-  store.reminderState = JSON.stringify(st);
-}
+// ★ 0.305.1：到期提醒引擎（0.195.0 订阅倒计时弹窗）随订阅退役整体删除——
+//   checkDailyReminder/markReminderShownToday/parseReminderState/ReminderState/todayStr 全清。
 
 
 // ★ 0.248.0：兑换码奖励=100 万嘉奖 SP（用户拍板；200 个码与 SHA256 白名单不变；旧 +90 天会员逻辑作废）

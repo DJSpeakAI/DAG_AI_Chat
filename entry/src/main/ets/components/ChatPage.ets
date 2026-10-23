@@ -7954,7 +7954,7 @@ export struct ChatPage {
                 .width('100%')
             }
             // ★ 0.246.0：宽度收敛断点制（用户截图指认 PC 太宽）——手机 85% 原样、平板与 PC 固定 400
-            //   （UI_GUIDELINES 六-12 确认弹窗断点制定式，同 0.225.2 ReminderDialog/AppConfirmDialog 修法）
+            //   （UI_GUIDELINES 六-12 确认弹窗断点制定式，同 0.225.2 AppConfirmDialog 修法）
             .width(this.isTablet ? 400 : '85%')
             .padding(20)
             .borderRadius(RADIUS_NAV)

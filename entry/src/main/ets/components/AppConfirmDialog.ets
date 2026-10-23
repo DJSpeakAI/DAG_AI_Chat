@@ -1,8 +1,8 @@
 // AppConfirmDialog.ets — ★ 0.196.9：通用确认弹窗（暗紫设计语言，替代系统灰 AlertDialog）
 // 背景：登录后「是否开启云同步」/ 边栏头像「退出华为账号」两弹窗原用系统 AlertDialog
-//   （灰白底），用户实测反馈与应用暗紫风格不符（同 0.195.0 ReminderDialog 先例——
+//   （灰白底），用户实测反馈与应用暗紫风格不符（同 0.195.0 暗紫弹窗先例——
 //   用户拍板系统灰弹窗必须换自定义；本组件 = 该设计语言的通用双按钮版）
-// 样式模板：0.190.8 隐私弹窗 / 0.195.0 ReminderDialog 同款
+// 样式模板：0.190.8 隐私弹窗 / 0.195.0 AppConfirmDialog 同款
 //   （遮罩 rgba(0,0,0,0.5) + this.theme.surfaceNode 面板 + RADIUS_NAV + this.theme.strokeCard 描边 + 主紫确认钮）
 // 触发方式：ConfirmDialogStore（AppStorageV2 应用级共享、不落盘——弹窗状态重启即清不残留）；
 //   挂载点唯一：Index 根 Stack 顶层（盖住 Navigation 全部子页——AppSideBar 常驻/抽屉两形态全兜住）
@@ -125,7 +125,7 @@ export struct AppConfirmDialog {
         this.onCancel();
       })
 
-      // 面板（ReminderDialog 同款：88% 宽 + padding 20 + RADIUS_NAV + this.theme.surfaceNode + this.theme.strokeCard）
+      // 面板（AppConfirmDialog 同款：88% 宽 + padding 20 + RADIUS_NAV + this.theme.surfaceNode + this.theme.strokeCard）
       Column() {
         Text(this.title)
           .fontSize(FONT_SIZE_SCREEN_TITLE)

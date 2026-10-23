@@ -45,7 +45,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
-import { SubscriptionStore, connectSubscription, isVip, SP_TTS_PER_KCHAR, debugResetNewUserAssets } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）；★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费小字与播报扣点同源常量）；★ 0.303.1：debugResetNewUserAssets（debug 包测试重置）
+import { SP_TTS_PER_KCHAR, debugResetNewUserAssets } from '../common/ChatModel'; // ★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费同源常量）；★ 0.303.1：debug 重置；★ 0.305.1：isVip/subscription 随订阅退役清除
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
 import {
@@ -403,7 +403,6 @@ export struct GlobalSettingsDialog {
     }
     return '云端已启用·火山';
   }
-  subscription: SubscriptionStore = connectSubscription(); // ★ 0.194.0：云同步 VIP 守卫
   account: HuaweiAccountStore = connectHuaweiAccount(); // ★ 0.196.8：云同步↔账号绑定——未登录拦截「开启」
   learnCountStore: LearnCountStore = connectLearnCount(); // ★ 0.195.0：复习显示（全局设置直达——0=关闭复习区）
   knowledgeCountStore: KnowledgeCountStore = connectKnowledgeCount(); // ★ 0.195.0：同上（知识卡）
@@ -2685,9 +2684,7 @@ export struct GlobalSettingsDialog {
             ? '本设备对话数据将自动与云端保持一致'
             : (!this.account.isLoggedIn
               ? '云同步与华为账号绑定——请先登录华为账号' // ★ 0.196.8：未登录优先提示（用户拍板：先登录再开同步）
-              : (isVip(this.subscription)
-                ? '开启后，登录同一华为账号的多台设备共享对话数据'
-                : '云同步为会员功能——订阅后开启（其他功能永久免费）'))) // ★ 0.194.0：非 VIP 提示
+              : '开启后，登录同一华为账号的多台设备共享对话数据')) // ★ 0.194.0：非 VIP 提示
             .fontSize(11)
             .fontColor(this.theme.textTertiary)
             .margin({ top: 2 })
@@ -2729,7 +2726,7 @@ export struct GlobalSettingsDialog {
             setCloudSyncEnabled(false); // 0.196.8 现成函数：enabled=false + deactivate（登录态保持，与退出账号无关）
             this.showToastSafe('云同步已关闭，数据仅保存在本设备，可随时重新开启');
           })
-      } else if (!this.account.isLoggedIn || isVip(this.subscription)) {
+      } else if (true) { // ★ 0.305.1：未开启即显示开启按钮（订阅 VIP 门槛已退役——人人可用）
         Button('开启云同步')
           .width('100%')
           .height(48)

@@ -3,7 +3,7 @@
 //   学习天数落盘检测 触发，此处消费；AppConfirmDialog 同款解耦模式）
 // 口径（用户 2026-10-19 拍板）：连签奖励递增封顶——第 1 天 2,000 每天 +1,000，第 7 天起 8,000/天；
 //   里程碑 7/30/100 天额外 +10,000/+50,000/+200,000（发放入 bonusSp 嘉奖池）
-// 样式：AppConfirmDialog/ReminderDialog 同款暗紫定式（遮罩 0.5 + this.theme.surfaceNode + RADIUS_NAV +
+// 样式：AppConfirmDialog/AppConfirmDialog 同款暗紫定式（遮罩 0.5 + this.theme.surfaceNode + RADIUS_NAV +
 //   this.theme.strokeCard 描边 + 宽度断点制 isTablet?400:'86%'——UI_GUIDELINES 六-12a）
 // 调试：底部日期小字长按/右键 bindContextMenu → 日期偏移菜单（+1/+7/+30/+365/清零，默认 0 零影响）
 
