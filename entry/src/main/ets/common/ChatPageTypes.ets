@@ -13,7 +13,7 @@ import { KnowledgeCard } from './KnowledgeModel';
 export const glowHighlight: boolean = true;
 // ★ 0.285.0 对话正文行高倍率（UI_GUIDELINES 二十九章）：WCAG 1.4.12 行高 ≥1.5 为下限、1.75 为中文长文舒适档（对标 DeepSeek 16/28）
 //   铁律：AI 正文（MdBlockText 行高公式）、用户消息气泡、书签回退纯文本段三处必须走同一倍率，禁止单侧收紧。
-export const BODY_LINE_HEIGHT_RATIO: number = 1.75;
+export const BODY_LINE_HEIGHT_RATIO: number = 1.82; // ★ 0.302.2：1.75→1.82（豆包式行距呼吸感；正文 16 号字=29vp 行高）
 // ★ 0.285.0 PC 划词菜单定宽：条目文字 2~4 字，180vp 内整行可命中且不出现大片空白。
 export const PC_SELECTION_MENU_WIDTH: number = 180;
 

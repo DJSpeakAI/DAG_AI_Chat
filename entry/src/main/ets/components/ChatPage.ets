@@ -52,7 +52,7 @@ import { SketchResultStore, connectSketchResult } from '../common/SketchModel'; 
 import { completeRookieTask } from '../common/RookieTask'; // ★ 0.294.0：好奇宝宝新手任务完成信号（六挂点：新建气泡/司枢/圈注/划词翻译/划词入库/司忆区评分）
 import { wordSpeaker, showAccentDialogs, speakerPulse } from '../utils/WordSpeaker'; // ★ 0.149：单词发音 TTS 单例；★ 0.189.1：本地引擎化；★ 0.189.2：口音提示弹窗工厂共用
 import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 引擎（CoreSpeechKit 免费离线，替换火山云端——消息朗读直连）
-  import { MdSpan, MdBlock, parseInlineMd, blockPlainText, blockRenderedText, headerFontSize, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, PlanFrame, PlanHook, sanitizePlan, mergeSectionHooks, planFrameJson, planToneLine, buildTableMarkdown, buildTablePlainText } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染纯函数模块；★ 0.232.0：mdToSpeakableText；★ 0.234.0：锚点+分章折叠全家桶；★ 0.237.1：blockRenderedText；★ 0.290.0：司枢 2.0 框架四件（PlanFrame/sanitizePlan/mergeSectionHooks/planFrameJson/planToneLine）——旧 0.269.0 合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）随②段伴读退役移除；★ 0.285.5：表格整表工具两件；★ 拆分：renderMathText/parseBlockMd 随 ChatMdParser 迁出
+  import { MdSpan, MdBlock, parseInlineMd, blockPlainText, blockRenderedText, headerFontSize, listMarker, headingIcon, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, PlanFrame, PlanHook, sanitizePlan, mergeSectionHooks, planFrameJson, planToneLine, buildTableMarkdown, buildTablePlainText } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染纯函数模块；★ 0.232.0：mdToSpeakableText；★ 0.234.0：锚点+分章折叠全家桶；★ 0.237.1：blockRenderedText；★ 0.290.0：司枢 2.0 框架四件（PlanFrame/sanitizePlan/mergeSectionHooks/planFrameJson/planToneLine）——旧 0.269.0 合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）随②段伴读退役移除；★ 0.285.5：表格整表工具两件；★ 拆分：renderMathText/parseBlockMd 随 ChatMdParser 迁出
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
@@ -667,22 +667,44 @@ export struct ChatPage {
     return kind.length === 2 && kind.charAt(0) === 'h' && kind.charAt(1) >= '1' && kind.charAt(1) <= '6';
   }
 
+  // ★ 0.302.2：块级间距分级（原所有块统一 Column space:4 无层次——段落/列表/标题差异化，
+  //   豆包式「段落呼吸感」；与父 Column space 叠加生效，两处消费点（平铺/折叠章节）同源）
+  blockMargin(blk: MdBlock): Margin {
+    if (this.isHeadingKind(blk.kind)) {
+      return { top: 12, bottom: 2 }; // 标题前留大空隙、后紧跟正文
+    }
+    if (blk.kind === 'li' || blk.kind === 'oli') {
+      return { bottom: 2 }; // 列表项紧凑成组
+    }
+    if (blk.kind === 'quote') {
+      return { top: 2, bottom: 4 };
+    }
+    if (blk.kind === 'hr') {
+      return { top: 6, bottom: 6 };
+    }
+    return { bottom: 4 }; // 段落（p/兜底）
+  }
+
   // 单块 Text：统一挂划词工具栏四件套（选择菜单/选中回调/全选受控/可复制）
   @Builder
   MdBlockText(blk: MdBlock, selKey: string, fontSize: number) {
     Text('', { controller: this.getOrCreateTextController(selKey) }) {
       if (blk.kind === 'li') {
-        Span('• ')
+        Span(listMarker(blk.depth)) // ★ 0.302.2：分层符号（• / ◦ / ▪，与 blockRenderedText 同源）
           .fontSize(this.fs(fontSize))
           .fontColor(this.theme.textTertiary)
       } else if (blk.kind === 'oli') {
         Span(blk.order + ' ')
           .fontSize(this.fs(fontSize))
           .fontColor(this.theme.textTertiary)
+      } else if (this.isHeadingKind(blk.kind)) {
+        Span(headingIcon(blk.kind)) // ★ 0.302.2：标题 emoji 图标（h1 📌 / h2 🔹 / h3 🔸；h4+ 空）
+          .fontSize(this.fs(fontSize))
       }
       this.MdInlineSpans(blk.lines, fontSize)
     }
       .fontSize(this.fs(fontSize))
+      .letterSpacing(this.fs(0.3)) // ★ 0.302.2：字距微松（豆包观感；字体走系统 HarmonyOS Sans）
       .lineHeight(this.fs(Math.round(fontSize * BODY_LINE_HEIGHT_RATIO)))
       .fontColor(this.isHeadingKind(blk.kind) ? this.theme.brandSecondary : (blk.kind === 'quote' ? this.theme.textSecondary : this.theme.textPrimary)) // ★ 0.237.0 文章小标题品牌色（整条染色不拆编号——AI 编号格式不统一，拆解有误伤风险）
       .fontWeight(this.isHeadingKind(blk.kind) ? 600 : 400)
@@ -714,6 +736,7 @@ export struct ChatPage {
         this.selectAllKey.startsWith(selKey + '|') ? 0 : 1,
         this.selectAllKey.startsWith(selKey + '|') ? blockRenderedText(blk).length : 0
       )
+      .margin(this.blockMargin(blk)) // ★ 0.302.2：块级间距分级（段落 4 / 列表 2 / 标题前 12 / 引用 2·4 / 分隔线 6）
   }
 
   // ★ 0.290.0（WP4）：锚点卡纯胶囊形态 A（用户拍板喜欢「标签页」式样）——仅保留紫底白字
@@ -764,7 +787,7 @@ export struct ChatPage {
       Divider()
         .strokeWidth(0.5)
         .color(this.theme.strokeCard)
-        .margin({ top: 2, bottom: 2 })
+        .margin({ top: 6, bottom: 6 }) // ★ 0.302.2：分隔线上下留白加大（原 2/2 贴字）
     } else if (blk.kind === 'quote') {
       Column() {
         this.MdBlockText(blk, keyBase, 15.5)

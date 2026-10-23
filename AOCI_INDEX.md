@@ -36,7 +36,7 @@
 
 ## components/
 
-**ChatPage.ets** 8235 行（全项目最大，禁止整读） ｜ F: 对话页主体：消息渲染（Markdown 行内/代码高亮/LaTeX/折叠分章/锚点钩子）、流式接收管线、发送/重生成/换一批、划词三件套（翻译/入词库/入知识库，PC 右击/触屏选中即弹）、司忆区（复习位+AI 重排序）、图片多模态、联网问答 FC 工具循环（search_web/open_url 三轮上限）、司枢 Agent 3.0 三角色流水线（枢机契约→反问收束卡→执笔→御史）、AI 读网页 system 注入、隐形 Web 渲染通道、举报入口、SP 展示 ｜ R: ChatModel、ApiClient、Prompts、ChatMdParser、MdInline、CodeBlockView、FolderPickerDialogs、ImageViewer、SishuAgent、ClarifyCard、WebFetchUtil ｜ ⚠S: 深水区（build 内 @Builder 渲染链/TTS 状态机/放大弹窗深耦划词体系/知识卡编辑弹窗）拆动需新会话+装机回归；streamChat 尾参 tools/thinking 位错位高危（参数超长逐位核对）；反问挂起=回调恢复非顶层 await；三背景模糊接口同组件仅最后一生效 ｜ 全案→DETAIL
+**ChatPage.ets** 8900+ 行（全项目最大，禁止整读） ｜ F: 对话页主体：消息渲染（Markdown 行内/代码高亮/LaTeX/折叠分章/锚点钩子/**★0.302.2 排版体系——blockMargin 分级段距+列表分层符号+标题 emoji+字距 0.3**）、流式接收管线、发送/重生成/换一批、划词三件套（翻译/入词库/入知识库，PC 右击/触屏选中即弹）、司忆区（复习位+AI 重排序）、图片多模态、联网问答 FC 工具循环（search_web/open_url 三轮上限）、司枢 Agent 3.0 三角色流水线（枢机契约→反问收束卡→执笔→御史）、AI 读网页 system 注入、隐形 Web 渲染通道、举报入口、SP 展示 ｜ R: ChatModel、ApiClient、Prompts、ChatMdParser、MdInline、CodeBlockView、FolderPickerDialogs、ImageViewer、SishuAgent、ClarifyCard、WebFetchUtil ｜ ⚠S: 深水区（build 内 @Builder 渲染链/TTS 状态机/放大弹窗深耦划词体系/知识卡编辑弹窗）拆动需新会话+装机回归；streamChat 尾参 tools/thinking 位错位高危（参数超长逐位核对）；反问挂起=回调恢复非顶层 await；三背景模糊接口同组件仅最后一生效；**渲染层加的任何前缀（列表符号/标题 emoji）必须同步 blockRenderedText 划词基准，否则划词整体错位** ｜ 全案→DETAIL
 
 **GlobalSettingsDialog.ets** 3956+ 行 ｜ F: ⚙设置弹窗：API 提供商+模型别名+测试连接/AI 偏好（鼓励档三胶囊/称呼/重做性格测试/TTS 三引擎配置试听）/云同步 Tab/SP 签到/备份 Tab/复习设置（司忆区 Tab——0.302.1 加每日复习提醒 Toggle+时段段选，ReviewReminderStore 单通道即时生效不走底部保存）/文档解析服务配置/关于（版本号） ｜ R: ChatModel、CloudSyncUtil、SiyiGate、HuaweiAccountUtil、三 TtsEngine、IapUtil、BackupUtil、ProfileModel、ReviewReminderStore+ReminderUtil（0.302.1） ｜ ⚠S: versionCode 展示=版本三处同步点之二；弹窗宽 PC/Pad 固定 560 断点制；对象字面量必须内联调用参数位（arkts-no-untyped-obj-literals）；隐藏设置项=删 UI 不删 store/key+保存恒写定值；TTS 预设档展示官方值置灰可编辑
 
@@ -80,7 +80,7 @@
 
 **ProfileModel.ets** 574 行 ｜ F: 记忆引擎：画像观察行（每 8 轮隐式 LLM 观察+演变链）/深度记忆总开关（恒 true 用户终裁）/注入埋点/分支摘要 flush ｜ R: ApiClient(implicit)、ChatModel、EntryAbility、GSD、ChatPage、PersonalityQuiz ｜ ⚠S: 隐式调用不扣 SP（implicit 预留位）；超 20 次/日降频；画像云同步=CloudSyncUtil 红线转人工；演变链只增不删
 
-**其余 common**：ChatPageTypes 122（0.295 拆：类型常量层+ChatFontScaleStore/ImageViewerStore+会话级 Map——⚠PLACEHOLDER 两常量字面值=历史持久化过滤判据禁改）｜SketchModel 19（画板回传 store——⚠@ObservedV2/@Trace 是全局装饰器不从 @kit.ArkUI import）｜DailyReviewCountStore 9（每日复习量 1~500 默认 10）｜DesignTokens 19（UI 常量双真相源之一，改样式先查这+UI_GUIDELINES）｜FaceModeStore 12（卡面模式 key 'review-face-mode-v1'）｜Prompts.ts（全部 prompt 单一真相源，新 prompt 必须遵守 CONTEXT_MANAGEMENT 十军规——⚠HOOK_SYSTEM_PROMPT 与 buildAnchorLongPrompt 已退役墓碑留存禁复活）｜PersonalityQuiz.ets 710（性格测试 3.0 数据层：15 题封闭题库/进度存储（choiceAnswers·customAnswers 尾追兼容——Schema 红线适用）/SP 节点三段相加/AI 评阅（implicit 不扣 SP+25s 超时+幂等闸）+本地关键词兜底）｜AnnotationModel 24（圈选三 store）
+**其余 common**：ChatPageTypes 122（0.295 拆：类型常量层+ChatFontScaleStore/ImageViewerStore+会话级 Map——⚠PLACEHOLDER 两常量字面值=历史持久化过滤判据禁改；**BODY_LINE_HEIGHT_RATIO=1.82（0.302.2 自 1.75 升级）**）｜SketchModel 19（画板回传 store——⚠@ObservedV2/@Trace 是全局装饰器不从 @kit.ArkUI import）｜DailyReviewCountStore 9（每日复习量 1~500 默认 10）｜DesignTokens 19（UI 常量双真相源之一，改样式先查这+UI_GUIDELINES）｜FaceModeStore 12（卡面模式 key 'review-face-mode-v1'）｜Prompts.ts（全部 prompt 单一真相源，新 prompt 必须遵守 CONTEXT_MANAGEMENT 十军规——⚠HOOK_SYSTEM_PROMPT 与 buildAnchorLongPrompt 已退役墓碑留存禁复活）｜PersonalityQuiz.ets 710（性格测试 3.0 数据层：15 题封闭题库/进度存储（choiceAnswers·customAnswers 尾追兼容——Schema 红线适用）/SP 节点三段相加/AI 评阅（implicit 不扣 SP+25s 超时+幂等闸）+本地关键词兜底）｜AnnotationModel 24（圈选三 store）
 
 ## utils/
 
@@ -108,7 +108,7 @@
 
 **CloudTtsEngine.ets / QianwenTtsEngine.ets** 445/553 行 ｜ F: 云端 TTS 双引擎（火山 openspeech/千问 CosyVoice 复刻音色），云端优先失败回退本地 ｜ ⚠S: speakWithParams 显式传参（试听链路）；文档端点与实测有出入以实测为准
 
-**MdInline.ets** 990+ 行 ｜ F: Markdown 行内渲染纯函数层：#标题/粗体/列表/引用/链接/FoldSection 分章折叠/锚点钩子/表格整表工具+司枢 PlanFrame 防弹衣（sanitizePlan：围栏抠取/越界钳制/幻觉拦截）+mergeSectionHooks 渲染期钩子合成 ｜ ⚠S: **纯函数零状态——修改必须同步 ohosTest 断言**；folded 状态按 messageId+锚点 id 记忆；JSON 往返具名化（arkts-no-any-unknown 索引防御定式）
+**MdInline.ets** 990+ 行 ｜ F: Markdown 行内渲染纯函数层：#标题/粗体/列表/引用/链接/FoldSection 分章折叠/锚点钩子/表格整表工具+司枢 PlanFrame 防弹衣（sanitizePlan：围栏抠取/越界钳制/幻觉拦截）+mergeSectionHooks 渲染期钩子合成+**★0.302.2 listMarker/headingIcon（列表分层符号 • ◦ ▪/标题 emoji，blockRenderedText 划词基准同源）** ｜ ⚠S: **纯函数零状态——修改必须同步 ohosTest 断言**；folded 状态按 messageId+锚点 id 记忆；JSON 往返具名化（arkts-no-any-unknown 索引防御定式）；**渲染前缀改动必须同步 blockRenderedText（否则划词偏移整体错位）**
 
 **WidgetReviewUtil.ets + WidgetHostBridge.ets** 400+211 行 ｜ F: 桌面卡片双层：ReviewUtil=卡片进程安全层（formId filesDir JSON 直存/状态推送/speak）；HostBridge=主进程业务层（快照/pending 回放/评分/call 分发） ｜ ⚠S: formId 必须 filesDir JSON 文件直存（preferences 进程内存缓存跨进程看不到）；卸载重装自愈=一切生命周期回调记 formId；卡片评分路径 reviewCount 不增长（已知待补）；FaceMode/DailyReviewCount 外提件防反向外环
 

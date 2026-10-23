@@ -380,12 +380,41 @@ export function blockPlainText(block: MdBlock): string {
 //   划词选区偏移（onTextSelectionChange）按渲染文本计，取词/全选长度必须用同一字符串——
 //   此前误用 blockPlainText（原始行含标记、无列表前缀），凡消息带行内标记，划词取词整体前移（用户实锤）。
 //   纯函数=ChatPage 划词基准 + ohosTest 断言双消费（§12.13）。
+// ★ 0.302.2：列表符号分层（豆包式三级：一级实心圆/二级空心圆/三级方块）——渲染 Span 与
+//   blockRenderedText 划词基准双处同源，改符号只改这一处（漂移=划词整体错位）
+export function listMarker(depth: number): string {
+  if (depth <= 0) {
+    return '• ';
+  }
+  if (depth === 1) {
+    return '◦ ';
+  }
+  return '▪ ';
+}
+
+// ★ 0.302.2：标题 emoji 图标（用户拍板 Emoji 小图标——DeepSeek 式标题 icon 借鉴）
+export function headingIcon(kind: string): string {
+  if (kind === 'h1') {
+    return '📌 ';
+  }
+  if (kind === 'h2') {
+    return '🔹 ';
+  }
+  if (kind === 'h3') {
+    return '🔸 ';
+  }
+  return '';
+}
+
 export function blockRenderedText(block: MdBlock): string {
   let prefix = '';
   if (block.kind === 'li') {
-    prefix = '• ';
+    prefix = listMarker(block.depth); // ★ 0.302.2：分层符号（原固定 '• '）
   } else if (block.kind === 'oli') {
     prefix = block.order + ' ';
+  } else if (block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3' ||
+    block.kind === 'h4' || block.kind === 'h5' || block.kind === 'h6') {
+    prefix = headingIcon(block.kind); // ★ 0.302.2：标题渲染带 emoji 前缀——划词/全选基准必须同构
   }
   const renderedLines: string[] = [];
   for (let i = 0; i < block.lines.length; i++) {

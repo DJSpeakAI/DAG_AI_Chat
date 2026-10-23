@@ -658,15 +658,23 @@
 3. **规格**（★ 0.280.3 官方终式，华为客服五问答复定案）：36vp 圆钮用 **`backgroundEffect({ radius: 24, saturation: 1.1, brightness: 1.05, color: '#1AFFFFFF' })` 自定义玻璃**——color 的 alpha（10% 白）全权决定透明度，想更透降 `#0DFFFFFF`（5%）；+ 0.5 描边 `#33FFFFFF`（20% 白高光边）+ 阴影 `{ radius: 12, color: '#66000000', offsetY: 4 }`。**禁用 `backgroundBlurStyle(COMPONENT_THICK)`**（组件材质组第二厚档、深色蒙版深且不透明度高=真机显实色深底，0.280.1 翻车根因）；**三背景模糊接口（backgroundBlurStyle/backgroundEffect/backdropBlur）同组件仅最后设置的生效、禁与 backgroundColor 混设**；radius 小面积组件取 20~40。内 18vp `arrow_down.svg` 双主题（华为细线 1.5 描边/圆帽/65% 透明，照 mic.svg 定式）；出现/消失 150ms `TransitionEffect.OPACITY` 过渡。
 4. **点击行为**：`scroller.scrollEdge(Edge.Bottom)` 滚到最底并复位状态；禁止另造滚动通道。
 
-## 二十九、对话正文行高与 PC 划词菜单宽度（★ 0.285.0 用户定稿）
+## 二十九、对话正文行高与 PC 划词菜单宽度（★ 0.285.0 用户定稿；★ 0.302.2 升级 1.82 + 排版体系）
 
-### 29.1 对话正文行高 = 1.75 倍（对标 DeepSeek，替代原 1.5）
+### 29.1 对话正文行高 = 1.82 倍（★ 0.302.2 自 1.75 再升级）
 
-- **依据**：WCAG 2.1 SC 1.4.12 规定行高 ≥1.5 倍字号（本项目原值 1.5 正好压在下限，长文显挤）；中文排版需求（CLReq）与业界通行舒适区间为 1.6~1.8；DeepSeek 正文实测 16px / 28px = **1.75**，为舒适档基准。
-- **落码**：`ChatPage.ets` 顶部常量 `BODY_LINE_HEIGHT_RATIO = 1.75`，统一公式 `lineHeight = Math.round(fontSize × BODY_LINE_HEIGHT_RATIO)`，且必须经 `fs()` 随字号缩放同步。
-- **数值口径**：正文/列表 16 → **28**；引用块与锚点降级块 15.5 → **27**；用户消息气泡 16 → **28**；书签回退纯文本段 16 → **28**。
+- **依据**：WCAG 2.1 SC 1.4.12 规定行高 ≥1.5 倍字号；中文排版需求（CLReq）与业界通行舒适区间 1.6~1.8；★ 0.302.2 用户实机对比豆包/DeepSeek 后拍板再松一档到 **1.82**（中文长文呼吸感，仍在舒适区间上限附近）。
+- **落码**：`common/ChatPageTypes.ets` 常量 `BODY_LINE_HEIGHT_RATIO = 1.82`，统一公式 `lineHeight = Math.round(fontSize × BODY_LINE_HEIGHT_RATIO)`，且必须经 `fs()` 随字号缩放同步。
+- **数值口径**：正文/列表 16 → **29**；引用块与锚点降级块 15.5 → **28**。
 - **铁律**：**AI 正文、用户消息气泡、书签回退段三处必须同一倍率**——同屏两套行距=视觉割裂，禁止只松一侧；禁止再散落写死 `lineHeight(24)`。
-- **不改动**：段间距（`Column({ space: 4 })`）、代码块、表格、折叠行、思考卡摘要（11/17）、思维链弹窗（13/21）维持原样，避免连带变松。
+
+### 29.1b AI 回复排版体系（★ 0.302.2 用户拍板——借鉴豆包/DeepSeek 优点组合）
+
+1. **字体**：正文走系统默认 **HarmonyOS Sans**（鸿蒙自带，免费商用，零包体）；不引入第三方字体文件（豆包体=字节自研未开放商用，禁用）。正文 `letterSpacing = fs(0.3)`（字距微松，豆包观感）。
+2. **块级间距分级**（`ChatPage.blockMargin(blk)` 单一出口，与父 Column `space:4` 叠加）：标题 top 12 / 段落 bottom 4 / 列表项 bottom 2 / 引用 top2·bottom4 / 分隔线 top6·bottom6——原"所有块统一 space:4 无层次"作废。
+3. **列表符号分层**：一级 `• `（实心圆）/ 二级 `◦ `（空心圆）/ 三级+ `▪ `（方块）——`MdInline.listMarker(depth)` 单一真相源。
+4. **标题图标**：h1 `📌 ` / h2 `🔹 ` / h3 `🔸 `，h4 以下不加——`MdInline.headingIcon(kind)` 单一真相源。
+5. **划词基准铁律**：任何"渲染层加的前缀"（列表符号/标题 emoji）**必须同步进 `blockRenderedText`**（划词/全选偏移按渲染 Span 序列计，两处漂移=划词整体错位）；改符号只改 `listMarker/headingIcon` 一处，ohosTest 断言须同步（0.302.2 已加 list_marker_depth_tiers / heading_icon_prefix 两组）。
+6. **不改动**：代码块、表格、折叠行、思考卡摘要（11/17）、思维链弹窗（13/21）维持原样。
 
 ### 29.2 PC 划词菜单（右键工具栏）定宽 180vp
 
