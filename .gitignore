@@ -68,3 +68,7 @@ testing/console/keepalive.json
 # AGC Service Account 私钥（模式 B 凭证，绝不提交）
 *private.json
 agc-credential.json
+
+# 测试台 node_modules 不入库
+testing/console/node_modules/
+testing/console/watchdog.log
