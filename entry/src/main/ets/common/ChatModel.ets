@@ -29,6 +29,7 @@ import { deviceInfo } from '@kit.BasicServicesKit';
  import { siyiGateReady, siyiGateBlockReason, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
  import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.293.0：新用户礼包仪式感弹窗桥（AppConfirmDialog 不引 ChatModel 不成环）
 import { trackUidAuto, setDailyLdProvider } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）；★ 0.273.0：setDailyLdProvider（app_daily 日活行的 ld 字段注入位——TrackUtil 禁 import ChatModel，由本模块单向注入）
+import { isWelcomeGiftIssued, markWelcomeGiftIssued, clearWelcomeGiftIssued } from '../utils/WelcomeGiftShadow'; // ★ bug6：礼包「已发放」本地影子（防冷启水合竞态导致重复弹窗）；★ 0.303.1：clearWelcomeGiftIssued（debug 重置）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
@@ -1064,10 +1065,16 @@ export function stampFreeTrialOnLogin(subscription: SubscriptionStore): boolean 
 function detectAccountSwitchAndResetAssets(): void {
   const account = connectHuaweiAccount();
   const mark = account.unionID !== '' ? account.unionID : account.openID;
-  if (mark === '' || account.lastAccountMark === mark) {
-    if (mark !== '') {
-      account.lastAccountMark = mark; // 首次登录（新装）落标记
-    }
+  if (mark === '') {
+    return;
+  }
+  if (account.lastAccountMark === '') {
+    // ★ bug6-b：无基线 ≠ 换号——首登/影子空值/水合竞态一律只补基线，绝不重置资产。
+    //   （反例：影子 lastAccountMark='' 回写 P2 → 此处误判换号 → SP 清零并上报 0，2026-10-23 实锤）
+    account.lastAccountMark = mark;
+    return;
+  }
+  if (account.lastAccountMark === mark) {
     return;
   }
   account.lastAccountMark = mark; // 换登新账号——落新标记后重置
@@ -1110,6 +1117,60 @@ function resetAccountAssetsOnAccountSwitch(): void {
   bridge.pendingLevel = 0;
   bridge.pendingMakeupGrant = 0;
   welcomeCheckDone = false; // 新账号重新走礼包判定（其云端无发放记录=其自己是新用户）
+}
+
+// ★ 0.303.1：调试专用——重置为新用户资产（保留聊天记录/词库/知识库等内容行）
+//   入口：仅 debug 包（BuildProfile.DEBUG）设置-关于页显示；正式包不暴露。
+//   范围：只覆盖 cfg:siyi-points（SP三池/welcomeGranted/签到/里程碑/IAP/新手任务两集合）
+//        + cfg:stat-days（学习统计）；node/tab/word/card/文件夹/API配置等内容与设置行一律不动。
+//   latch：本会话跳过 SP 行下行合并，防旧云端值把重置冲掉；进程重启后自动失效。
+let debugResetLatched: boolean = false;
+
+export async function debugResetNewUserAssets(): Promise<boolean> {
+  if (!siyiGateReady()) {
+    return false; // 云同步未就绪：先登录+开云同步+首拉完成再重置
+  }
+  debugResetLatched = true;
+  const siyi = connectSiyiPoints();
+  siyi.permanentSp = 0;
+  siyi.bonusSp = 0;
+  siyi.giftSp = 0;
+  siyi.giftSpExpireAt = 0;
+  siyi.welcomeGranted = false;
+  siyi.consumedGiftSp = 0;
+  siyi.consumedBonusSp = 0;
+  siyi.consumedPermanentSp = 0;
+  siyi.signedDates = '[]';
+  siyi.milestoneStreakGranted = 0;
+  siyi.iapPackages = '[]';
+  siyi.rookieDoneJson = '[]';
+  siyi.rookieGrantedJson = '[]';
+  connectStatistics().raw = '{"days":[]}';
+  const signIn = connectSignIn();
+  signIn.signDates = [];
+  signIn.lastSignDate = '';
+  signIn.streak = 0;
+  signIn.maxStreak = 0;
+  signIn.guideShown = false;
+  signIn.autoShownDate = '';
+  signIn.makeupVouchers = 0;
+  signIn.makeupGrantedLevel = 0;
+  signIn.makeupDates = [];
+  const bridge = connectLevelUpBridge();
+  bridge.lastLevel = 0;
+  bridge.pendingLevel = 0;
+  bridge.pendingMakeupGrant = 0;
+  clearWelcomeGiftIssued(spAccountMark());
+  // 立即覆盖云端两行（内容行本轮不参与 diff，不会被删）
+  upsertIfChanged('cfg:siyi-points', siyiPointsToJson());
+  upsertIfChanged('cfg:stat-days', connectStatistics().raw);
+  try {
+    await flushCloudRowsNow();
+    reportSpAdminMirror(); // 数据台镜像同步归零（便于核对）
+    return true;
+  } catch (_e) {
+    return false;
+  }
 }
 
 // ★ 0.194.0：VIP 判断——免费期内 或 权益期内（到期只锁云同步，其他功能全开放）
@@ -1601,9 +1662,19 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
   if (store.welcomeGranted) {
     return 0;
   }
+  // ★ bug6 根治：两点自愈——①本地池已有礼包（giftSp>0）②影子标记该账号已发过。
+  //   命中即补 welcomeGranted=true 并静默返回，杜绝「重启又弹礼包」重复仪式弹窗；
+  //   影子独立于 P2 水合，专门兜住冷启动「判定早于水合/云端下行」的竞态。
+  const mark = currentAccountMark();
+  if (store.giftSp > 0 || isWelcomeGiftIssued(mark)) {
+    store.welcomeGranted = true;
+    scheduleRowFlush();
+    return 0;
+  }
   store.welcomeGranted = true;
   const amount = Date.now() < SIYI_FIRST_MONTH_END ? SIYI_WELCOME_FIRST_MONTH : SIYI_WELCOME_NORMAL;
   store.giftSp += amount;
+  markWelcomeGiftIssued(mark, amount); // 同步落盘：即便随即杀进程，下次启动也不再弹
   // ★ 0.248.5：有效期取消——不再设置 giftSpExpireAt（礼包永久）
   scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
   const _gp: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（发放收口单一挂点）
@@ -1613,6 +1684,12 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
   trackUidAuto('sp_grant', _gp);
   recordSpLedger('grant', 'welcome', amount, `gift:${amount}`); // ★ 0.302.0 流水
   return amount;
+}
+
+// 当前账号唯一标记（unionID 优先，退化 openID；未登录空串）
+function currentAccountMark(): string {
+  const account = connectHuaweiAccount();
+  return account.unionID !== '' ? account.unionID : account.openID;
 }
 
 // ★ 0.293.0：新用户礼包首拉判定（挂 reconcileWithRows 闸门开启点——会话级判一次）：
@@ -1859,6 +1936,58 @@ export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string):
   trackUidAuto('sp_grant', p);
   recordSpLedger('grant', src, amount, `bonus:${amount}`); // ★ 0.302.0 流水
   return true;
+}
+
+// ★ 0.302.3.2：充能池发放（运营数据台专用——后台指令 grant_perm；充值走 IapUtil 不入此口）
+export function grantPermanentSp(siyi: SiyiPointStore, amount: number, src: string): boolean {
+  if (amount <= 0 || !siyiGateReady()) {
+    return false;
+  }
+  siyi.permanentSp += amount;
+  scheduleRowFlush();
+  const p: Record<string, string> = {};
+  p['src'] = src;
+  p['sp'] = `${amount}`;
+  p['bal'] = `${siyiTotalSp(siyi)}`;
+  p['pool'] = 'permanent';
+  trackUidAuto('sp_grant', p);
+  recordSpLedger('grant', src, amount, 'perm', `perm:${amount}`);
+  return true;
+}
+
+// ★ 0.302.3.2：充能池定向扣减（运营数据台 deduct_perm）——只动充能池、按 FIFO 同步扣包账本；
+//   返回实扣额（不足=扣到该池可用为止；与 consumeSiyiSp 的 perm 分支口径一致）
+function consumePermanentSp(siyi: SiyiPointStore, amount: number): number {
+  if (amount <= 0 || !siyiGateReady()) {
+    return 0;
+  }
+  const avail = Math.max(0, siyi.permanentSp - siyi.consumedPermanentSp - frozenAvailableSp(siyi));
+  const p = Math.min(amount, avail);
+  if (p <= 0) {
+    return 0;
+  }
+  siyi.consumedPermanentSp += p;
+  const now = Date.now();
+  const list = parseIapPackages(siyi.iapPackages);
+  let left = p;
+  for (let i = 0; i < list.length && left > 0; i++) {
+    const pkg = list[i];
+    if (pkg.frozenUntil > now) {
+      continue;
+    }
+    const take = Math.min(left, Math.max(0, pkg.amt - pkg.cons));
+    if (take > 0) {
+      pkg.cons += take;
+      left -= take;
+    }
+  }
+  if (list.length > 0) {
+    siyi.iapPackages = JSON.stringify(list);
+  }
+  recordSpUsed(p);
+  recordSpLedger('consume', 'admin_perm', -p, `perm:-${p}`);
+  scheduleRowFlush();
+  return p;
 }
 
 // ★ 0.294.0 每日首开自动弹签到（用户拍板：自然时间 0 点后第一次打开 app 且今日未签 → 自动弹；
@@ -4089,6 +4218,9 @@ function parseRookieIds(v: string): string[] {
 //   （当前 SP 只有发放没有消耗，单调增=max 安全；缺字段 undefined 比较恒 false 天然兜底）
 //   ★ 0.248.7：三消耗字段同 max（发放/消耗双侧单调——扣减不会被对端旧值回填复活）
 function mergeSiyiPointsRow(v: string | undefined): void {
+  if (debugResetLatched) {
+    return; // ★ 0.303.1：调试重置后本会话不再合并旧 SP 行（防旧值回填），进程重启后 latch 自然失效
+  }
   if (v === undefined) {
     return;
   }
@@ -4370,7 +4502,7 @@ function recordSpLedger(event: string, src: string, amount: number, pool: string
 // 指令结构（云函数 fetch 返回的 plain 结构——非持久化类，仅本区块解析用）
 class SpAdminCommand {
   id: string = '';   // commandId
-  type: string = ''; // grant / deduct
+  type: string = ''; // grant / deduct / grant_perm / deduct_perm（_perm=充能池；无后缀=嘉奖池）
   amount: number = 0;
   note: string = '';
 }
@@ -4487,17 +4619,29 @@ function executeSpAdminCommand(siyi: SiyiPointStore, cmd: SpAdminCommand): void 
   if (!siyiGateReady()) {
     return; // 云同步未就绪：不执行也不 confirm——超时回收重派（SP 铁律：账本云端对齐才动 SP）
   }
+  // ★ 0.302.3.2：type 后缀 _perm=充能池定向操作；无后缀=嘉奖池（旧指令零迁移）
+  const permIdx = cmd.type.indexOf('_perm');
+  const isPerm = permIdx > 0;
+  const baseType = isPerm ? cmd.type.substring(0, permIdx) : cmd.type;
   let result = 0;
-  if (cmd.type === 'grant' && cmd.amount > 0) {
-    if (grantBonusSp(siyi, cmd.amount, 'admin')) {
+  if (baseType === 'grant' && cmd.amount > 0) {
+    if (isPerm) {
+      if (grantPermanentSp(siyi, cmd.amount, 'admin')) {
+        result = cmd.amount;
+      }
+    } else if (grantBonusSp(siyi, cmd.amount, 'admin')) {
       result = cmd.amount; // src='admin' 埋点可追溯
     }
-  } else if (cmd.type === 'deduct' && cmd.amount > 0) {
-    const before = siyiTotalSp(siyi);
-    if (!consumeSiyiSp(siyi, cmd.amount) && siyiTotalSp(siyi) >= before) {
-      result = 0; // 余额 0 一分未扣——confirm 终结（重派无意义）
+  } else if (baseType === 'deduct' && cmd.amount > 0) {
+    if (isPerm) {
+      result = consumePermanentSp(siyi, cmd.amount); // 已返回实扣额
     } else {
-      result = before - siyiTotalSp(siyi); // 全额或部分实扣
+      const before = siyiTotalSp(siyi);
+      if (!consumeSiyiSp(siyi, cmd.amount) && siyiTotalSp(siyi) >= before) {
+        result = 0; // 余额 0 一分未扣——confirm 终结（重派无意义）
+      } else {
+        result = before - siyiTotalSp(siyi); // 全额或部分实扣
+      }
     }
   }
   spAdminConfirm(cmd.id, spAccountMark(), result); // 回报实发/实扣额（含 0——终结防空转）

@@ -50,12 +50,12 @@ import { buildWidgetState } from '../utils/WidgetHostBridge'; // ★ 0.204.0：�
 import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3：卸载重装后残留卡片推送自愈
 import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.204.0：每日量（快照按量截断）；★ 0.274.0 外提件（原居 ReviewPage）
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
-import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：阅读并同意弹窗（首启/边栏/云同步三入口共用）
-import { ImproveDataDialog } from '../components/ImproveDataDialog'; // ★ 0.226.0：体验改进计划引导弹窗
+import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：华为协议登录门禁（非首启路径）
+import { OnboardingGate } from '../components/OnboardingGate'; // ★ 0.303.0：首启合并门禁（协议三项勾选+华为账号登录一屏）
 import { AgreementBridge, connectAgreementBridge, connectAgreement, needsAgreement, markAgreed, needsHwAgreement, markHwAgreed, markImprovePromptShown, AGREEMENT_CHECK_PREFIX, AgreementStore, AGREEMENT_VERSION } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分；★ 0.279.5：markImprovePromptShown 落盘收口（存储层已迁 preferences）
 import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
 import { ThemeChooseDialog } from '../components/ThemeChooseDialog'; // ★ 0.262.0：新用户首启主题选择弹窗（协议同意后弹）
-import { AppTheme, connectAppTheme, connectThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员
+import { AppTheme, connectAppTheme, connectThemeMode, ThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员；★ 0.303.0：ThemeMode 外观页回调
 
 // 首页入口 — V2 全量迁移
 @Entry
@@ -68,6 +68,8 @@ struct Index {
   @Local isProcessing: boolean = false;
   // ★ 0.164：登录/退出的结果提示（空串 = 无提示）
   @Local loginTip: string = '';
+  // ★ 0.303.0：首启合并门禁的登录失败/取消提示（与首页 loginTip 分开——首启一屏独立展示）
+  @Local onboardingTip: string = '';
 
   // ★ 0.164：获取华为账号登录态（PersistenceV2 单例）
   getHuaweiAccount(): HuaweiAccountStore {
@@ -158,9 +160,7 @@ struct Index {
     if (this.isProcessing) {
       return;
     }
-    // ★ 0.226.0：未同意协议 → 先弹同意弹窗（记待执行动作，同意后由 onAgreementAgree 续跑登录）
-    //   首页 PC/Pad 勾选路径已先 markAgreed，不会再进此分支
-    // ★ 0.264.0：基础门禁只含《用户协议》《隐私政策》两份（华为协议拆到登录门禁单独征求）
+    // ★ 0.303.0：首启由 OnboardingGate 一屏收口；此处仅保留非首启路径（边栏/设置/AI 引导）的两段式门禁
     if (needsAgreement()) {
       this.agreementBridge.pendingAction = fromSyncEntry ? 'sync' : 'login';
       this.agreementBridge.promptVisible = true;
@@ -173,35 +173,84 @@ struct Index {
       this.agreementBridge.hwPromptVisible = true;
       return;
     }
+    this.loginCore(fromSyncEntry, false);
+  }
+
+  // ★ 0.303.0：登录核心（门禁检查由调用方完成——首启合并屏 / 常规入口共用同一条链路）
+  loginCore(fromSyncEntry: boolean, fromOnboarding: boolean): void {
     this.isProcessing = true;
     this.loginTip = '';
+    if (fromOnboarding) {
+      this.onboardingTip = '';
+    }
     const context = this.getUIContext().getHostContext() as common.Context;
     loginWithHuaweiID(context).then((tip: string) => {
       this.isProcessing = false;
-      // ★ 0.196.9：用户主动取消登录——静默返回（原红字「已取消授权【code=1001502012…」
-      //   常驻首页，用户实测报 bug；取消是正常行为非错误，不显示不打日志）
+      // ★ 0.196.9：用户主动取消登录——静默返回（取消是正常行为非错误）
       if (tip === AUTH_CANCELLED_TIP) {
+        if (fromOnboarding) {
+          this.onboardingTip = '已取消登录，可重试或选择「先本地使用」';
+        }
         return;
       }
       if (tip !== '') {
-        this.loginTip = tip;
-      }
-      // ★ 0.194.0：登录成功（无错误提示）→ 统一打点（30 天免费试用起点，逻辑收敛到 stampFreeTrialOnLogin）
-      // ★ 0.248.1：首登欢迎弹窗已按用户要求移除；打戳保留（stampFreeTrialOnLogin 幂等，重复登录不动）
-      if (tip === '') {
-        stampFreeTrialOnLogin(this.subscription);
-      }
-      if (tip === '') {
-        if (fromSyncEntry) {
-          // ★ 0.293.0：订阅退役——云同步是 SP 体系强制前提（SiyiGate），不再设 VIP 墙，入口即意图直接开
-          enableCloudSyncNow(this.getUIContext());
-        } else if (shouldPromptCloudSyncAfterLogin(true)) {
-          // ★ 0.196.8：普通路径登录成功 → 弹「是否开启云同步」；★ 0.196.9：AppConfirmDialog 暗紫
-          // ★ 0.293.0：订阅退役——恒传 true（不再按 isVip 过滤，全员引导开同步）
-          this.confirmDialog.cloudSyncPromptVisible = true;
+        if (fromOnboarding) {
+          this.onboardingTip = tip;
+        } else {
+          this.loginTip = tip;
         }
+        return;
+      }
+      // ★ 0.194.0：登录成功→统一打点（30 天免费试用起点，幂等）
+      stampFreeTrialOnLogin(this.subscription);
+      if (fromOnboarding) {
+        // ★ 0.303.0：首启登录成功=同意全部协议 + 入口即意图开启云同步 → 外观选择
+        markHwAgreed();
+        markAgreed();
+        this.agreementBridge.promptVisible = false;
+        enableCloudSyncNow(this.getUIContext());
+        setTimeout(() => {
+          this.maybeShowThemeChoose();
+        }, 300);
+        return;
+      }
+      if (fromSyncEntry) {
+        enableCloudSyncNow(this.getUIContext());
+      } else if (shouldPromptCloudSyncAfterLogin(true)) {
+        this.confirmDialog.cloudSyncPromptVisible = true;
       }
     });
+  }
+
+  // ★ 0.303.0：首启合并门禁——勾选协议后点「华为账号登录」
+  onOnboardingLogin(): void {
+    if (this.isProcessing) {
+      return;
+    }
+    markHwAgreed(); // 勾选即同意《华为账号用户认证协议》（登录失败不重复征求）
+    this.loginCore(true, true);
+  }
+
+  // ★ 0.303.0：首启「暂不登录，先本地使用」——协议已同意，本地三板块照用
+  onOnboardingLocalOnly(): void {
+    markHwAgreed();
+    markAgreed();
+    this.agreementBridge.promptVisible = false;
+    this.onboardingTip = '';
+    setTimeout(() => {
+      this.maybeShowThemeChoose();
+    }, 200);
+  }
+
+  // ★ 0.303.0：不同意=直接退出（官方 FAQ：不得通过多次弹窗强制用户操作）
+  onOnboardingExit(): void {
+    this.agreementBridge.promptVisible = false;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      context.terminateSelf();
+    } catch (_e) {
+      // 退出失败静默——用户重进再走门禁
+    }
   }
 
   // ★ 0.164：点击退出账号；★ 0.263.0：wipe=true 一并清空本机数据（借给他人前场景）
@@ -467,45 +516,14 @@ struct Index {
   }
 
   // ============================================================
-  // ★ 0.226.0：阅读并同意机制（三入口共用同一弹窗 + 一份全局同意状态）
+  // ★ 0.303.0：首启合并门禁（OnboardingGate）+ 非首启两段式门禁（AgreementDialog hw 形态）
   // ============================================================
-
-  // 同意弹窗——同意并继续（先落全局同意态，再按 pendingAction 续跑登录/云同步）
-  onAgreementAgree(): void {
-    this.agreementBridge.promptVisible = false;
-    markAgreed();
-    const action = this.agreementBridge.pendingAction;
-    this.agreementBridge.pendingAction = '';
-    if (action === 'login') {
-      this.doLogin(false);
-    } else if (action === 'sync') {
-      this.doLogin(true);
-    }
-    this.maybeShowThemeChoose(); // ★ 0.262.0：协议同意后弹主题选择（新用户哨兵：theme-mode-v1 未落盘）
-    // 同意协议后**首次**引导体验改进计划（单独、非捆绑、默认关——合规红线）
-    if (!connectAgreement().improvePromptShown) {
-      this.agreementBridge.improveVisible = true;
-    }
-  }
 
   // ★ 0.262.0：新用户主题选择弹窗判定——mode 空串=从未落盘（新用户首启待选择；
   //   老用户已静默落盘 dark 不弹；用户选择后落盘、此后永不弹）
   maybeShowThemeChoose(): void {
     if (connectThemeMode().mode === '') {
       this.themeChooseVisible = true;
-    }
-  }
-
-  // ★ 0.226.0→0.264.0 语义升级：基础门禁「不同意」=退出应用（总门槛；2026-10-19 用户二次拍板
-  //   推翻「不同意不退出」旧案）。仅当二次挽留「仍不同意，退出」才走到这里——防误触直接退出
-  onAgreementReject(): void {
-    this.agreementBridge.promptVisible = false;
-    this.agreementBridge.pendingAction = '';
-    try {
-      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      context.terminateSelf(); // 退出应用（0.263.0 清空数据自退同款 API）
-    } catch (_e) {
-      // 退出失败静默——弹窗已关，用户重进再走门禁
     }
   }
 
@@ -526,20 +544,6 @@ struct Index {
   onHwAgreementReject(): void {
     this.agreementBridge.hwPromptVisible = false;
     this.agreementBridge.pendingAction = '';
-  }
-
-  // 体验改进计划——加入（开启匿名埋点上报）
-  onImproveJoin(): void {
-    this.agreementBridge.improveVisible = false;
-    markImprovePromptShown(); // ★ 0.279.5：收口函数落盘（原直接字段赋值不触发 preferences 持久化）
-    setTrackingEnabled(this.getUIContext().getHostContext() as common.UIAbilityContext, true);
-    trackFirstAuto(); // ★ 0.260.0：开关已开，补报 app_first（同意时开关未开未报的场景；幂等恰 1 行）
-  }
-
-  // 体验改进计划——暂不加入（保持关闭；仅记账，此后不再弹）
-  onImproveSkip(): void {
-    this.agreementBridge.improveVisible = false;
-    markImprovePromptShown(); // ★ 0.279.5：同上收口
   }
 
   // 首页未勾选点登录的抖动负反馈（逐帧 setTimeout 偏移，末尾归零）
@@ -1037,16 +1041,20 @@ struct Index {
         this.confirmDialog.welcomeBonusVisible = false;
       }
     })
-    // ★ 0.226.0：阅读并同意弹窗（首启自动弹 / 边栏登录 / 设置云同步 三入口共用；同意后按 pendingAction 续跑登录）
-    // ★ 0.264.0：基础门禁（两份协议，不同意=挽留后退出应用）
-    // ★ 0.279.2：visible 改接 @Computed（水合迟到翻真时弹窗自动消失——已同意用户不再被误弹卡门）
-    AgreementDialog({
+    // ★ 0.303.0：首启合并门禁（协议三项勾选 + 华为账号登录一屏；不同意=直接退出）
+    // ★ 0.279.2：visible 接 @Computed（水合迟到翻真时自动消失——已同意用户不被误弹）
+    OnboardingGate({
       visible: this.showAgreementPrompt,
-      onAgree: () => {
-        this.onAgreementAgree();
+      busy: this.isProcessing,
+      tip: this.onboardingTip,
+      onLogin: () => {
+        this.onOnboardingLogin();
       },
-      onReject: () => {
-        this.onAgreementReject();
+      onLocalOnly: () => {
+        this.onOnboardingLocalOnly();
+      },
+      onExit: () => {
+        this.onOnboardingExit();
       }
     })
     // ★ 0.264.0：华为协议登录门禁弹窗（hw 形态；同意=markHwAgreed+续跑登录，不同意=仅取消登录）
@@ -1061,21 +1069,16 @@ struct Index {
         this.onHwAgreementReject();
       }
     })
-    // ★ 0.226.0：体验改进计划引导（同意协议后首次弹一次；单独、非捆绑、默认关）
-    ImproveDataDialog({
-      visible: this.agreementBridge.improveVisible,
-      onJoin: () => {
-        this.onImproveJoin();
-      },
-      onSkip: () => {
-        this.onImproveSkip();
-      }
-    })
-    // ★ 0.262.0：新用户主题选择弹窗（协议同意后弹；选择即确认即落盘，后于体验改进引导渲染=顶层）
+    // ★ 0.262.0：新用户主题选择弹窗（★ 0.303.0：内置体验改进计划开关，默认关；选择即确认即落盘）
     ThemeChooseDialog({
       visible: this.themeChooseVisible,
-      onChoose: (_mode) => {
+      onChoose: (_mode: ThemeMode, improve: boolean) => {
         this.themeChooseVisible = false;
+        markImprovePromptShown();
+        if (improve) {
+          setTrackingEnabled(this.getUIContext().getHostContext() as common.Context, true);
+          trackFirstAuto();
+        }
       }
     })
     // ★ 0.256.0：签到弹窗（边栏签到入口/首登引导判定触发——SignInDialogBridge 驱动）

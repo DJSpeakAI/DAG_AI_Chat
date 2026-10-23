@@ -79,7 +79,12 @@ export function restoreAccountFromShadow(): void {
       store.avatarUri = `${d['avatarUri'] ?? ''}`;
       store.openID = `${d['openID'] ?? ''}`;
       store.unionID = `${d['unionID'] ?? ''}`;
-      store.lastAccountMark = `${d['lastAccountMark'] ?? ''}`;
+      // ★ bug6-b：影子里的 lastAccountMark 可能是「登录时先写影子、后落标记」的空值——
+      //   空串回写会伪造「换号」导致资产重置（SP 清零事故）。空值一律不覆盖 P2 盘值。
+      const shadowMark = `${d['lastAccountMark'] ?? ''}`;
+      if (shadowMark !== '') {
+        store.lastAccountMark = shadowMark;
+      }
     }
   } catch (_e) {
     // 影子损坏静默（走正常未登录态，用户重新登录即重建影子）

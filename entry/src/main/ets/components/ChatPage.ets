@@ -55,6 +55,7 @@ import { localTts } from '../utils/LocalTtsEngine'; // ★ 0.189.0：本地 TTS 
   import { MdSpan, MdBlock, parseInlineMd, blockPlainText, blockRenderedText, headerFontSize, listMarker, headingIcon, mdToSpeakableText, stripAnchorMarks, breathThreshold, FoldItem, FoldSection, insertLocalAnchors, splitFoldSections, initExpandedSet, PlanFrame, PlanHook, sanitizePlan, mergeSectionHooks, planFrameJson, planToneLine, buildTableMarkdown, buildTablePlainText } from '../utils/MdInline'; // ★ 0.231.0：Markdown 行内/块级渲染纯函数模块；★ 0.232.0：mdToSpeakableText；★ 0.234.0：锚点+分章折叠全家桶；★ 0.237.1：blockRenderedText；★ 0.290.0：司枢 2.0 框架四件（PlanFrame/sanitizePlan/mergeSectionHooks/planFrameJson/planToneLine）——旧 0.269.0 合成器四件（HookSpec/parseHookJsonResponse/scanBlockSpans/mergeHooksIntoContent）随②段伴读退役移除；★ 0.285.5：表格整表工具两件；★ 拆分：renderMathText/parseBlockMd 随 ChatMdParser 迁出
 import { cloudTts } from '../utils/CloudTtsEngine'; // ★ 0.232.0：云端 TTS 引擎（火山 openspeech 回归——云端优先，失败回退本地）
 import { qianwenTts } from '../utils/QianwenTtsEngine'; // ★ 0.236.0：千问 TTS 引擎（百炼 CosyVoice 复刻音色——ttsProvider='qianwen' 时优先，失败回退本地）
+import { beginTtsPlayback, endTtsPlayback, setTtsStopHandler } from '../utils/TtsBackgroundGuard'; // ★ 0.304.0：朗读后台保活（audioPlayback 长时任务+AVSession——切后台/熄屏续读）
 import { CodeToken, tokenizeCode } from '../utils/SyntaxHighlight'; // ★ 0.149：代码块语法高亮（MVP 正则分词）
 // ★ 0.251.0：AppLifecycleStore import 随 0.153「切后台中断提炼」策略反转删除（后台保活见 utils/AiStreamGuard.ets）
 import { upsertCloudData } from '../utils/CloudSyncUtil'; // ★ 0.165.1：云同步桥接（持久化点追加写 RDB 快照行，autoSync 自动上云）
@@ -2864,6 +2865,9 @@ export struct ChatPage {
     }
     this.playingMessageId = msg.messageId;
     this.ttsLoadingMessageId = msg.messageId;
+    // ★ 0.304.0：朗读会话开始——挂后台保活（audioPlayback 长时任务+AVSession 播控），
+    //   云端/本地/云端失败回退本地三路径共用此入口（会话边界=startTTS→stopTTS）
+    beginTtsPlayback(speakText.substring(0, 24));
     // ★ 0.272.0：本地语音档（TTS 1.0 默认档）——零成本直发本地引擎，不碰云端三档
     //   （云端三档保留可用：volcano/qianwen/custom 逻辑零改动，未配置/失败兜底链照旧）
     if (this.apiConfig.ttsProvider === 'local') {
@@ -2962,6 +2966,7 @@ export struct ChatPage {
     cloudTts.stop();
     qianwenTts.stop();
     localTts.stop();
+    endTtsPlayback(); // ★ 0.304.0：朗读会话结束——停长时任务+AVSession 置暂停（结束即停红线）
     this.playingMessageId = '';
     this.ttsLoadingMessageId = '';
   }
@@ -3222,6 +3227,7 @@ export struct ChatPage {
     setTimeout(() => {
       this.restoreReadingPosition(); // ★ 0.191.0：阅读位置恢复（A 高度记忆 → B 书签 → 底部），替代原固定滚底
     }, 100);
+    setTtsStopHandler((): void => { this.stopTTS(); }); // ★ 0.304.0：播控中心暂停/停止命令 → 停读收敛（UI+三引擎+守卫一体）
   }
 
   // 页面退出：终止正在进行的 SSE 请求，防止内存泄漏
@@ -3257,6 +3263,7 @@ export struct ChatPage {
     this.contractByMsg.clear(); // 会话级契约随页销毁回收
     this.correctPendingByMsg.clear();
     this.stopTTS(); // ★ 0.133：退出对话页停止朗读（现有交互下切气泡必经 pop，一个钩子覆盖退页+切气泡两种情况）
+    setTtsStopHandler(null); // ★ 0.304.0：注销播控命令回调（防闭包悬挂——页面销毁后播控中心命令走守卫兜底直停引擎）
     this.stopExtractTimer(); // ★ 0.153：组件销毁清除提炼计时器，防内存泄漏
     this.cleanupWebRender(); // ★ 0.286.1：渲染通道清理（清超时定时器+resolve 挂起 Promise+卸载隐形 Web，防泄漏）
     // ★ 0.249.3：查看器延迟关闭计时器随缩放/双击判定一起回滚删除，此处不再清理

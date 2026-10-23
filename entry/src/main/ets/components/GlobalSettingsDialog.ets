@@ -36,6 +36,7 @@ import deviceInfo from '@ohos.deviceInfo'; // ★ 0.190.6：反馈邮件预填�
 import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
+import BuildProfile from 'BuildProfile'; // ★ 0.303.1：仅 debug 包显示「重置为新用户资产」测试入口
   import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL, connectSishuClassic, SishuClassicStore } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）；★ 0.300.0：connectSishuClassic（司枢经典模式灰度开关）
 import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil';
 import { writeCloudSwitchShadow } from '../utils/CloudSwitchShadow'; // ★ 0.301.1 bug8：关闭同步时同步影子=不自动复活 // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
@@ -44,7 +45,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
-import { SubscriptionStore, connectSubscription, isVip, SP_TTS_PER_KCHAR } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）；★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费小字与播报扣点同源常量）
+import { SubscriptionStore, connectSubscription, isVip, SP_TTS_PER_KCHAR, debugResetNewUserAssets } from '../common/ChatModel'; // ★ 0.194.0：云同步 VIP 守卫（到期只锁云同步）；★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费小字与播报扣点同源常量）；★ 0.303.1：debugResetNewUserAssets（debug 包测试重置）
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
 import {
@@ -202,7 +203,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.302.2'; // ★ 0.302.2：AI 回复排版优化（列表分层+标题 emoji+分级段距+字距行距） // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
+export const APP_VERSION: string = 'v0.304.0'; // ★ 0.304.0：TTS 朗读后台/熄屏续读 // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -3394,6 +3395,27 @@ export struct GlobalSettingsDialog {
     .width('100%')
   }
 
+  // ★ 0.303.1：debug 包测试入口——重置为新用户资产（内容行不动）
+  confirmDebugReset(): void {
+    this.getUIContext().showAlertDialog({
+      title: '重置为新用户（测试）',
+      message: '将清零 SP 三池、签到、新手任务、学习统计与礼包标记，并覆盖云端资产两行；聊天记录、词库、知识库、API 配置全部保留。重置后请彻底退出应用再重开。',
+      autoCancel: true,
+      cancel: () => {
+        // 点遮罩/返回=取消
+      },
+      confirm: {
+        value: '确认重置',
+        fontColor: this.theme.danger,
+        action: () => {
+          debugResetNewUserAssets().then((ok: boolean) => {
+            this.showToastSafe(ok ? '已重置，请彻底退出应用后重开' : '云同步未就绪，请稍后重试', 3000);
+          });
+        }
+      }
+    });
+  }
+
   // ★ 0.190.6：Tab5 关于——版本号 + 反馈与联系（邮箱复制 / mailto 预填设备信息）+ 隐私政策入口
   // ★ 0.222.9：关于页 UI 卡片化重排——品牌信息卡（Logo+应用名+版本号+版权）+ 体验改进 + 反馈 + 隐私
   @Builder
@@ -3505,6 +3527,34 @@ export struct GlobalSettingsDialog {
       .borderRadius(RADIUS_CONTROL)
       .backgroundColor(this.theme.surfaceSoft)
       .alignItems(HorizontalAlign.Center)
+
+      // ★ 0.303.1：仅 debug 包——重置为新用户资产测试入口（正式包不渲染）
+      if (BuildProfile.DEBUG) {
+        Column({ space: 8 }) {
+          Text('调试工具（仅测试包）')
+            .fontSize(FONT_SIZE_CARD_TITLE_SM)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.theme.textSecondary)
+            .width('100%')
+          Text('重置为新用户资产（保留对话/词库/知识库）')
+            .fontSize(14)
+            .fontColor(this.theme.danger)
+            .width('100%')
+            .padding({ top: 6, bottom: 6 })
+            .onClick(() => {
+              this.confirmDebugReset();
+            })
+          Text('清零 SP/签到/新手任务/学习统计与礼包标记，覆盖云端资产两行；内容行不动。重置后请彻底退出重开。')
+            .fontSize(11)
+            .lineHeight(17)
+            .fontColor(this.theme.textTertiary)
+            .width('100%')
+        }
+        .width('100%')
+        .padding(16)
+        .borderRadius(RADIUS_CONTROL)
+        .backgroundColor(this.theme.surfaceSoft)
+      }
 
       // ★ 0.206.0：体验改进计划（埋点隐私开关，默认关——用户拍板）
       Column({ space: 10 }) {

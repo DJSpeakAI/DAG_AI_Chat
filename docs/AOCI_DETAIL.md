@@ -135,6 +135,8 @@ entryformability/ widget/ entrybackupability/  桌面卡片进程与系统备份
 
 **SpAdminUtil.ets（utils）★ 0.301.0 新增** ｜ F: SP 数据台传输层——sp-admin 云函数纯封装三 action：spAdminReport（SpMirror 镜像 upsert）/spAdminFetch（指令拉取，'[]' 兜底三态同形）/spAdminConfirm（执行回报实发/实扣额） ｜ R: ChatModel 尾部 SP 数据台区块（唯一消费方）；云函数 docs/cloud/sp-admin/handler.js（Cloud DB SpMirror/SpCommand 两表） ｜ A: spAdminReport/spAdminFetch/spAdminConfirm ｜ S: **零 import ChatModel——0.223.0 防环军律（本文件只收基础类型参数，业务层快照构建/指令执行全在 ChatModel，反向依赖即成环）**；云函数未部署/无网=全静默降级（fetch 返 '[]'、report/confirm 返 false，调用方零分支）；响应读取=JSON.stringify 整响应双路径（顶层+responseBody 嵌套互为兜底，IapUtil.pullRefundMarks 308 定式同源）；payload 值全字符串（track-events 埋点铁律——number 不入 Record<string,Object>）
 
+**WelcomeGiftShadow.ets（utils）★ 0.302.3 新增（bug6 根治）** ｜ F: 新用户礼包「已发放」本地影子——preferences 轻通道按账号 mark（unionID 优先/openID）记 issued；启动时若影子为空则直读 P2 盘文件 persistent_storage（siyi-points-v1 的 welcomeGranted/giftSp + huawei-account 的 lastAccountMark 匹配）补种存量用户 ｜ R: ChatModel.grantSiyiWelcomeBonus（发放前查影子+池值，命中即补 welcomeGranted=true 自愈静默）、EntryAbility.onCreate（登录态恢复后初始化） ｜ A: initWelcomeGiftMarker/isWelcomeGiftIssued/markWelcomeGiftIssued ｜ S: 病灶=P2 水合晚于首拉判定→明明已领又弹窗（余额因 merge max 不变，体感「领了没用」）；**凡一次性发放逻辑必须 preferences 影子+池值自愈双保险**；影子写失败静默退化；账号切换天然隔离；P2 盘值双层转义解析（&quot;→" 后 JSON.parse 两次）
+
 ## entryformability/ + widget/ + entrybackupability/
 
 **EntryFormAbility.ets [F U7 S]** 35 行 ｜ F: 桌面卡片 FormExtensionAbility 生命周期（onAdd/onUpdate/onSizeChanged 记 formId 自愈）+call 消息入口 ｜ R: WidgetReviewUtil ｜ A: 生命周期分发 ｜ S: 卡片进程与主进程分离——卡片进程只碰 WidgetReviewUtil 安全层（writeWidgetStateForHost 等），业务数据经 filesDir 文件交接

@@ -37,6 +37,21 @@ const { cloud, Region, CloudDBZoneGenericObject } = require('@hw-agconnect/cloud
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
+const ALIAS_FILE = path.join(DATA_DIR, 'aliases.json'); // ★ 0.302.4.2 手机号→账号ID 别名（运营绑定，仅服务器本地）
+
+function loadAliases() {
+  try {
+    const j = JSON.parse(fs.readFileSync(ALIAS_FILE, 'utf-8'));
+    return j && typeof j === 'object' ? j : {};
+  } catch (_e) { return {}; }
+}
+function saveAliases(m) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(ALIAS_FILE, JSON.stringify(m, null, 2));
+    return true;
+  } catch (_e) { return false; }
+}
 let CFG = {
   port: 8766,
   password: 'changeme',        // ★ 部署后必改（部署指引第 3 步）
@@ -139,6 +154,8 @@ async function pullAllReports() {
   const out = { ok: true, pulledAt: Date.now(), appDownload: null, userAnalysis: null, error: null };
   try { out.appDownload = await pullReport('appDownloadAnalysisExport', start, end); } catch (e) { out.error = String(e.message || e); }
   try { out.userAnalysis = await pullReport('userAnalysisExport', start, end); } catch (e) { if (out.error) out.error += ' | '; out.error = (out.error || '') + String(e.message || e); }
+  // ★ 报表目录兜底：两接口都失败时 pullReport 不会建目录，直接写 last.json 会 ENOENT 崩服务（重启风暴）
+  if (!fs.existsSync(path.join(DATA_DIR, 'reports'))) fs.mkdirSync(path.join(DATA_DIR, 'reports'), { recursive: true });
   fs.writeFileSync(path.join(DATA_DIR, 'reports', 'last.json'), JSON.stringify(out));
   return out;
 }
@@ -788,8 +805,14 @@ const server = http.createServer(async (req, res) => {
       // ★ 0.302.1.3 SP 数据台·账号镜像查询（自测试台 0.301.0.2 平移——直连 Cloud DB 同实例）
       const qi2 = req.url.indexOf('?');
       const sp = new URLSearchParams(qi2 >= 0 ? req.url.slice(qi2 + 1) : '');
-      const accountId = sp.get('accountId') || '';
+      let accountId = sp.get('accountId') || '';
       if (!accountId) { sendJson(res, 400, { ok: false, err: 'accountId 必填（或 __recent__ 看最近 50 行）' }); return; }
+      // ★ 0.302.4.2：手机号别名解析（华为个人开发者拿不到账号手机号——由运营在数据台绑定一次）
+      if (/^1\d{10}$/.test(accountId)) {
+        const mapped = loadAliases()[accountId];
+        if (!mapped) { sendJson(res, 200, { ok: false, err: '该手机号未绑定账号——先用账号 ID(unionID/openID) 查询，再点账号卡片里的「绑定手机号」', code: 'alias_missing' }); return; }
+        accountId = String(mapped);
+      }
       try {
         const coll = getDb().collection('SpMirror');
         const q = accountId === '__recent__' ? coll.query().orderByDesc('reportedAt').limit(50) : coll.query().equalTo('objectId', accountId);
@@ -798,6 +821,26 @@ const server = http.createServer(async (req, res) => {
         for (const o of rows) out.push(o.getObject ? o.getObject() : o);
         sendJson(res, 200, { ok: true, mirrors: out });
       } catch (e) { sendJson(res, 200, { ok: false, err: '查询失败：' + (e && e.message ? e.message : String(e)) }); }
+    } else if (url === '/api/sp/alias' && req.method === 'POST') {
+      // ★ 0.302.4.2 绑定手机号→账号 ID（一次绑定，此后手机号可直接查询；仅服务器本地 aliases.json）
+      let abody = '';
+      req.on('data', c => abody += c);
+      req.on('end', () => {
+        try {
+          const b = JSON.parse(abody || '{}');
+          const phone = String(b.phone || '').trim();
+          const accountId = String(b.accountId || '').trim();
+          if (!/^1\d{10}$/.test(phone)) { sendJson(res, 400, { ok: false, err: '手机号必须为 11 位数字' }); return; }
+          if (accountId.length < 10) { sendJson(res, 400, { ok: false, err: '账号 ID 不合法' }); return; }
+          const m = loadAliases();
+          m[phone] = accountId;
+          if (!saveAliases(m)) { sendJson(res, 500, { ok: false, err: '别名保存失败（服务器写盘异常）' }); return; }
+          sendJson(res, 200, { ok: true });
+        } catch (e) { sendJson(res, 400, { ok: false, err: '绑定失败：' + (e && e.message ? e.message : String(e)) }); }
+      });
+      return;
+    } else if (url === '/api/sp/aliases' && req.method === 'GET') {
+      sendJson(res, 200, { ok: true, aliases: loadAliases() });
     } else if (url === '/api/sp/command' && req.method === 'POST') {
       // ★ 0.302.1.3 SP 数据台·下发指令（写 SpCommand pending 行，app 拉取执行）
       let cbody = '';
@@ -808,14 +851,19 @@ const server = http.createServer(async (req, res) => {
           const targets = Array.isArray(b.targets) ? b.targets : [];
           if (targets.length === 0) { sendJson(res, 400, { ok: false, err: 'targets 必填（账号 ID 数组）' }); return; }
           if (b.type !== 'grant' && b.type !== 'deduct') { sendJson(res, 400, { ok: false, err: 'type 必须 grant/deduct' }); return; }
+          // ★ 0.302.3.2：池类型（嘉奖/充能）用 type 后缀承载——零表结构变更（Cloud DB 不新增字段）：
+          //   bonus=嘉奖（默认，兼容旧端 grant/deduct）；permanent=充能 → grant_perm / deduct_perm
+          const pool = String(b.pool || 'bonus');
+          if (pool !== 'bonus' && pool !== 'permanent') { sendJson(res, 400, { ok: false, err: 'pool 必须 bonus/permanent' }); return; }
           if (!(parseInt(b.amount, 10) > 0)) { sendJson(res, 400, { ok: false, err: 'amount 必须为正整数' }); return; }
+          const effType = pool === 'permanent' ? b.type + '_perm' : b.type;
           const now = Math.floor(Date.now() / 1000); // 表时间戳秒级（Integer 32 位坑）
           const rows = [];
           for (const t of targets) {
             const o = CloudDBZoneGenericObject.build('SpCommand');
             o.addFieldValue('objectId', 'c' + Date.now() + Math.floor(Math.random() * 100000));
             o.addFieldValue('target', String(t));
-            o.addFieldValue('type', b.type);
+            o.addFieldValue('type', effType);
             o.addFieldValue('amount', parseInt(b.amount, 10));
             o.addFieldValue('note', String(b.note || ''));
             o.addFieldValue('status', 'pending');
@@ -839,6 +887,40 @@ const server = http.createServer(async (req, res) => {
         for (const o of rows) out.push(o.getObject ? o.getObject() : o);
         sendJson(res, 200, { ok: true, commands: out });
       } catch (e) { sendJson(res, 200, { ok: false, err: '查询失败：' + (e && e.message ? e.message : String(e)) }); }
+    } else if (url === '/api/sp/command/cancel' && req.method === 'POST') {
+      // ★ 0.302.4：撤销未执行指令（pending/claimed → cancelled；已 done 不动）——防测试残留指令事后补账
+      let xbody = '';
+      req.on('data', c => xbody += c);
+      req.on('end', async () => {
+        try {
+          const b = JSON.parse(xbody || '{}');
+          const id = String(b.id || '');
+          if (!id) { sendJson(res, 400, { ok: false, err: 'id 必填' }); return; }
+          const rows = await getDb().collection('SpCommand').query().equalTo('objectId', id).get();
+          if (!rows.length) { sendJson(res, 404, { ok: false, err: '指令不存在' }); return; }
+          let n = 0;
+          for (const r of rows) {
+            const o = r.getObject ? r.getObject() : r;
+            if (o.status === 'done' || o.status === 'cancelled') continue;
+            const g = CloudDBZoneGenericObject.build('SpCommand');
+            g.addFieldValue('objectId', o.objectId);
+            g.addFieldValue('target', String(o.target || ''));
+            g.addFieldValue('type', String(o.type || ''));
+            g.addFieldValue('amount', parseInt(o.amount, 10) || 0);
+            g.addFieldValue('note', String(o.note || ''));
+            g.addFieldValue('status', 'cancelled');
+            g.addFieldValue('claimedBy', String(o.claimedBy || ''));
+            g.addFieldValue('claimedAt', parseInt(o.claimedAt, 10) || 0);
+            g.addFieldValue('confirmedAt', parseInt(o.confirmedAt, 10) || 0);
+            g.addFieldValue('resultAmount', parseInt(o.resultAmount, 10) || 0);
+            g.addFieldValue('createdAt', parseInt(o.createdAt, 10) || 0);
+            await getDb().collection('SpCommand').upsert([g]);
+            n++;
+          }
+          sendJson(res, 200, { ok: true, cancelled: n });
+        } catch (e) { sendJson(res, 400, { ok: false, err: '撤销失败：' + (e && e.message ? e.message : String(e)) }); }
+      });
+      return;
     } else if (url === '/api/sp/ledger' && req.method === 'GET') {
       // ★ 0.302.1.3 SP 数据台·事件流水（该账号最近 N 条）
       const qi3 = req.url.indexOf('?');

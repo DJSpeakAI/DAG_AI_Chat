@@ -29,6 +29,7 @@ import { initialize } from '@hw-agconnect/hmcore'; // 0.206.0 埋点：AGC 核�
 import { flushTrackQueue, initTrackContext } from '../utils/TrackUtil'; // 0.206.0 埋点：退后台上报；★ 0.260.0：模块级 context 注入（ChatModel 发放/消耗收口埋点用）
 import { pullRefundMarks } from '../utils/IapUtil'; // ★ 0.291.0：退款标记云端拉取（启动/回前台静默核销）
 import { initAiStreamGuard, setAiStreamBackground } from '../utils/AiStreamGuard'; // ★ 0.251.0：AI 流式后台保活守卫（上下文注入+前后台标志）
+import { initTtsGuard } from '../utils/TtsBackgroundGuard'; // ★ 0.304.0：TTS 朗读后台保活守卫（上下文注入）
 import { refreshReviewReminder } from '../utils/ReminderUtil'; // ★ 0.299.0：每日复习提醒退后台刷新（文案动态化主时机；权益未开通静默）
 import { flushHeadsOnBackground } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：退后台短时任务续跑摘要头 flush
 import { AppTheme, ThemeMode, connectAppTheme, connectThemeMode, setChromeSyncHook, toThemeMode } from '../common/AppTheme'; // ★ 0.262.0：三态主题初始化与系统联动
@@ -37,6 +38,7 @@ import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil';
 import { initCloudSwitchShadow, writeCloudSwitchShadow, readCloudSwitchShadow, restoreShadowFromP2File } from '../utils/CloudSwitchShadow'; // ★ 0.301.1：bug8 云同步开关影子（P2 水合失败兜底） // ★ 0.279.5：协议同意态 preferences 同步初始化（onCreate 最早同步点——此后任意时刻读到的即磁盘真值）
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 import { initAccountShadow, restoreAccountFromShadow } from '../utils/HuaweiAccountUtil'; // ★ 0.299.2：登录态影子持久化（P2 'huawei-account' 水合黑盒根治——bug5）
+import { initWelcomeGiftMarker } from '../utils/WelcomeGiftShadow'; // ★ bug6：新用户礼包已发影子（防冷启水合竞态重复弹窗）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -63,6 +65,9 @@ export default class EntryAbility extends UIAbility {
     //   影子 preferences 实测可靠；恢复先于任何 UI 读取，侧边栏首屏即正确登录态）
     initAccountShadow(this.context);
     restoreAccountFromShadow();
+    // ★ bug6：礼包已发影子同步初始化（须在登录态恢复后——按当前账号种子；存量用户从 P2 盘值补种）
+    const _welcomeAcc = connectHuaweiAccount();
+    initWelcomeGiftMarker(this.context, _welcomeAcc.unionID !== '' ? _welcomeAcc.unionID : _welcomeAcc.openID);
     // ★ 0.279.5：过渡期持久化异常排查（华为官方建议）——知识库卡 base64 图或触发 API<23 单 key
     //   8KB 配额静默失败（quota）或序列化失败（serialization），有日志才能定位「写不进去」类表象
     try {
@@ -77,6 +82,7 @@ export default class EntryAbility extends UIAbility {
     this.initAgc(); // ★ 0.206.0：AGC 初始化（埋点云函数通道——rawfile/agconnect-services.json）
     initTrackContext(this.context); // ★ 0.260.0：埋点模块级 context 注入（trackAuto/trackUidAuto/trackFirstAuto）
     initAiStreamGuard(this.context); // ★ 0.251.0：AI 后台保活守卫初始化（长时任务/通知需 UIAbilityContext）
+    initTtsGuard(this.context); // ★ 0.304.0：TTS 朗读后台保活守卫初始化（audioPlayback 长时任务+AVSession 需 UIAbilityContext）
     // ★ 0.291.0：启动即拉云端退款标记（无包账本=零请求；AGC 未初始化完成/失败均静默，
     //   onForeground 是主拉取点——冷启动极早期这次碰运气，成则赚到）
     pullRefundMarks();

@@ -166,7 +166,7 @@
 <div id="dataView" class="wrap" style="display:none">
   <div class="panel" id="dashPanel" style="display:flex;flex-direction:column">
     <h2>📈 后台数据 <span style="font-size:11px;color:var(--dim);font-weight:400">行为埋点 · SP 消耗与发放 · 毛利财务 · 规模质量 · ⑥ AI 问答（问「注册多少/完成新手任务多少/一个月按周表格」）· ⑦ SP 数据台（查账号/下指令/流水）——数据每 10 分钟云端同步</span></h2>
-    <iframe id="dashFrame" src="http://8.152.216.55:8766" loading="lazy" title="DAGAI 后台数据"></iframe>
+    <iframe id="dashFrame" src="http://8.152.216.55:8766" loading="lazy" aria-label="DAGAI 后台数据"></iframe>
   </div>
 </div>
 <div id="app" class="wrap" style="display:none">
@@ -949,7 +949,7 @@ async function stopRun() {
 function loadVersion() {
   const el = $('appVer');
   const name = APP_CFG && APP_CFG.appVersionName;
-  el.innerHTML = name ? esc(name) : '<span style="color:var(--dim)">（读不到 Index.ets 版本）</span>';
+  el.innerHTML = name ? esc(name) : '<span style="color:var(--dim)">（读不到版本：请重启测试台服务加载新版）</span>';
 }
 function showDetail(run) {
   $('modalBg').style.display = 'block'; $('detail').style.display = 'block';

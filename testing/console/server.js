@@ -137,7 +137,7 @@ if (CFG.localBuild) {
 const RESULTS_PATH = path.join(ROOT, 'results.json');
 const ART_DIR = path.join(ROOT, 'artifacts');
 const HAP_PATH = path.resolve(PROJECT, CFG.hap);
-const VERSION = '0.302.1.4'; // ★ 0.302.1.4：与页面同步（内容区全宽自适应；服务行为零改动）；0.302.1.3：SP 三路由随迁删除 // 更早历史见 MEMORY.md 版本表
+const VERSION = '0.302.4.1'; // ★ 0.302.4.1：顶栏读 GSD 版本 + 去掉 iframe title 悬浮提示（消息最多 5 秒）；0.302.3.1：修版本读取；0.302.1.4：与页面同步 // 更早历史见 MEMORY.md 版本表
 const AUDIT = require('./auditRules'); // ★ 0.229.26 UI 规范审计引擎（组件族断言函数库）
 // ★ 0.229.23 旧服务盲区守卫：启动时记正本 server.js 的 mtime；/api/health 实时比对磁盘正本——
 //   正本被更新（AI 改码/git pull）而服务未重启 → stale:true（前端标红顶栏+开跑前置确认）。
@@ -147,9 +147,18 @@ function isStale() {
   try { return fs.statSync(__filename).mtimeMs > SELF_MTIME; } catch (_) { return false; }
 }
 
-// ---------- 应用界面版本号（顶栏展示用；读 APP 首页 Index.ets 的 Text('vX.Y.Z')，发版自动跟读无需手工同步） ----------
+// ---------- 应用界面版本号（顶栏展示用） ----------
+// ★ 0.302.3.1：版本真相源自 0.301.1 起迁到 GSD export const APP_VERSION（Index 只 import）——
+//   旧逻辑仍去 Index.ets 找 Text('vX.Y.Z')，迁版后永远读不到（顶栏「读不到 Index.ets 版本」根因）。
+//   现优先读 GSD APP_VERSION，旧 Index 写法仅作历史兜底。
 const INDEX_ETS = path.join(PROJECT, 'entry', 'src', 'main', 'ets', 'pages', 'Index.ets');
+const GSD_ETS = path.join(PROJECT, 'entry', 'src', 'main', 'ets', 'components', 'GlobalSettingsDialog.ets');
 function readAppVersionName() {
+  try {
+    const src = fs.readFileSync(GSD_ETS, 'utf8');
+    const m = src.match(/APP_VERSION:\s*string\s*=\s*'v([\d.]+)'/);
+    if (m) return 'v' + m[1];
+  } catch (_) {}
   try {
     const src = fs.readFileSync(INDEX_ETS, 'utf8');
     const m = src.match(/Text\('v(\d+\.\d+\.\d+)'\)/);

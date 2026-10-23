@@ -96,18 +96,18 @@
 <!-- ============ ★ 0.302.1.3 Tab7 SP 数据台（自测试台平移：查账号/下指令/盯执行） ============ -->
 <div class="page" id="p7">
   <div class="card">
-    <h2>账号查询（任意华为账号 SP 全貌——unionID/openID；最近账号列表点行自动带入）</h2>
+    <h2>账号查询（任意华为账号 SP 全貌——unionID/openID；账号 ID 直接粘贴）</h2>
     <div class="controls">
-      <input id="spAcc" placeholder="华为账号 ID" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
+      <input id="spAcc" placeholder="手机号或华为账号 ID（手机号需先绑定一次）" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
       <button class="btn active" onclick="spQuery()">查询</button>
-      <button class="btn" onclick="spRecent()">最近账号</button>
     </div>
     <div id="spCard" class="hint">快照滞后性：设备不开 app 不刷新，以 reportedAt 为准。</div>
   </div>
   <div class="card">
-    <h2>⬇ 下发指令（发放 / 扣减——app 回前台/进账单页时拉取执行；扣减建议只扣嘉奖口径）</h2>
+    <h2>⬇ 下发指令（发放 / 扣减——选好 SP 池；app 回前台/进账单页时拉取执行）</h2>
     <div class="controls">
-      <select id="spCmdType" style="background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px"><option value="grant">发放 grant</option><option value="deduct">扣减 deduct</option></select>
+      <select id="spCmdType" style="background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px"><option value="grant">发放</option><option value="deduct">扣减</option></select>
+      <select id="spCmdPool" style="background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px"><option value="bonus">嘉奖 SP</option><option value="permanent">充能 SP</option></select>
       <input id="spCmdAmount" type="number" placeholder="数额（如 10000）" style="width:140px;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
       <input id="spCmdNote" placeholder="备注（如：活动奖励）" style="width:180px;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
       <button class="btn active" onclick="spSendCommand()">提交指令（目标=上方查询框账号）</button>
@@ -743,50 +743,71 @@ function spRenderMirror(m) {
     '<div style="font-size:22px;font-weight:700;margin:6px 0">可用余额 <span style="color:' + SP_C.ok + '">' + spFmtSp(m.availableSp) + '</span> SP' + (Number(m.frozenSp) > 0 ? ' <span style="font-size:12px;color:' + SP_C.warn + '">（冻结 ' + spFmtSp(m.frozenSp) + '）</span>' : '') + '</div>' +
     '<div class="hint">充能池 ' + spFmtSp(m.permSp - m.permCons) + '（发' + spFmtSp(m.permSp) + '/耗' + spFmtSp(m.permCons) + '） · 嘉奖池 ' + spFmtSp(m.bonusSp - m.bonusCons) + ' · 赠送池 ' + spFmtSp(m.giftSp - m.giftCons) + '</div>' +
     '<div style="margin-top:6px">' + spPkgRows(m.pkgJson) + '</div>' +
-    '<button class="btn" style="margin-top:6px" onclick="spFill(\'' + m.objectId + '\')">填入查询框（对它下指令）</button></div>';
+    '<button class="btn" style="margin-top:6px" onclick="spFill(\'' + m.objectId + '\')">填入查询框（对它下指令）</button>' +
+    '<button class="btn" style="margin-top:6px;margin-left:6px" onclick="spBindPhone(\'' + m.objectId + '\')">绑定手机号</button></div>';
+}
+const SP_HINT = '快照滞后性：设备不开 app 不刷新，以 reportedAt 为准。';
+let spMsgTimer = null;
+function spShowTransient(html, ms) {
+  const card = document.getElementById('spCard');
+  card.innerHTML = html;
+  if (spMsgTimer) { clearTimeout(spMsgTimer); }
+  spMsgTimer = setTimeout(function () {
+    card.innerHTML = SP_HINT;
+    spMsgTimer = null;
+  }, ms || 5000);
+}
+function spCancelTransient() {
+  if (spMsgTimer) { clearTimeout(spMsgTimer); spMsgTimer = null; }
 }
 function spFill(id) { document.getElementById('spAcc').value = id; }
+async function spBindPhone(id) {
+  const phone = prompt('输入要绑定的手机号（11 位）\n绑定后可直接用手机号查询该账号');
+  if (!phone) return;
+  try {
+    const r = await fetch('/api/sp/alias', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim(), accountId: id }) });
+    const j = await r.json();
+    if (!j.ok) { alert(j.err || '绑定失败'); return; }
+    spShowTransient('<span style="color:' + SP_C.ok + '">✓ 已绑定 ' + phone.trim() + ' → ' + id.slice(0, 12) + '…（以后直接输手机号查询）</span>', 5000);
+  } catch (e) { alert('绑定失败：' + e.message); }
+}
 async function spQuery() {
   const id = document.getElementById('spAcc').value.trim();
   const card = document.getElementById('spCard');
-  if (!id) { card.innerHTML = '先填账号 ID（或点「最近账号」从列表带入）'; return; }
+  if (!id) { spShowTransient('先填账号 ID（华为账号 unionID/openID）', 5000); return; }
   card.innerHTML = '查询中…';
   spLoadLedger(id);
   try {
-    const r = await fetch('/api/sp/query?accountId=' + encodeURIComponent(id));
+    const ctrl = new AbortController();
+    const tid = setTimeout(function () { ctrl.abort(); }, 10000);
+    const r = await fetch('/api/sp/query?accountId=' + encodeURIComponent(id), { signal: ctrl.signal });
+    clearTimeout(tid);
     const j = await r.json();
-    if (!j.ok) { card.innerHTML = '<span style="color:' + SP_C.bad + '">' + (j.err || '查询失败') + '</span>'; return; }
-    if (!j.mirrors || !j.mirrors.length) { card.innerHTML = '<span style="color:' + SP_C.warn + '">该账号无上报记录（未登录过 / app 侧 0.301.0+ 未装机）——app 里发条 AI 消息等 10 秒再查</span>'; return; }
+    if (!j.ok) { spShowTransient('<span style="color:' + SP_C.bad + '">' + (j.err || '查询失败') + '</span>', 5000); return; }
+    if (!j.mirrors || !j.mirrors.length) { spShowTransient('<span style="color:' + SP_C.warn + '">该 ID 无上报记录。查询键必须是华为账号的 unionID/openID（一长串字母数字），<b>不是手机号/QQ 号</b>；若确实没上报，app 冷启/退后台会自动上报，等 10 秒再查</span>', 5000); return; }
+    spCancelTransient();
     card.innerHTML = j.mirrors.map(spRenderMirror).join('');
-  } catch (e) { card.innerHTML = '<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>'; }
-}
-async function spRecent() {
-  const card = document.getElementById('spCard');
-  card.innerHTML = '拉取最近账号…';
-  try {
-    const r = await fetch('/api/sp/query?accountId=__recent__');
-    const j = await r.json();
-    if (!j.ok) { card.innerHTML = '<span style="color:' + SP_C.bad + '">' + (j.err || '查询失败') + '</span>'; return; }
-    if (!j.mirrors || !j.mirrors.length) { card.innerHTML = '<span style="color:' + SP_C.warn + '">还没有任何账号上报过</span>'; return; }
-    card.innerHTML = j.mirrors.map(spRenderMirror).join('');
-  } catch (e) { card.innerHTML = '<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>'; }
+  } catch (e) {
+    spShowTransient('<span style="color:' + SP_C.bad + '">请求失败：' + (e && e.name === 'AbortError' ? '超时（10 秒无响应）' : e.message) + '</span>', 5000);
+  }
 }
 async function spSendCommand() {
   const id = document.getElementById('spAcc').value.trim();
   const type = document.getElementById('spCmdType').value;
+  const pool = document.getElementById('spCmdPool').value;
   const amount = parseInt(document.getElementById('spCmdAmount').value, 10);
   const note = document.getElementById('spCmdNote').value.trim();
-  const card = document.getElementById('spCard');
-  if (!id) { card.innerHTML = '<span style="color:' + SP_C.bad + '">先在查询框填目标账号 ID</span>'; return; }
-  if (!amount || amount <= 0) { card.innerHTML = '<span style="color:' + SP_C.bad + '">数额必须为正整数</span>'; return; }
-  if (!confirm('确认对账号 ' + id + ' ' + (type === 'grant' ? '发放' : '扣减') + ' ' + spFmtSp(amount) + ' SP？')) return;
+  if (!id) { spShowTransient('<span style="color:' + SP_C.bad + '">先在查询框填目标账号 ID</span>', 5000); return; }
+  if (!amount || amount <= 0) { spShowTransient('<span style="color:' + SP_C.bad + '">数额必须为正整数</span>', 5000); return; }
+  const poolName = pool === 'permanent' ? '充能 SP' : '嘉奖 SP';
+  if (!confirm('确认对账号 ' + id + ' ' + (type === 'grant' ? '发放' : '扣减') + ' ' + spFmtSp(amount) + '（' + poolName + '）？')) return;
   try {
-    const r = await fetch('/api/sp/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targets: [id], type: type, amount: amount, note: note }) });
+    const r = await fetch('/api/sp/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targets: [id], type: type, pool: pool, amount: amount, note: note }) });
     const j = await r.json();
-    if (!j.ok) { card.innerHTML = '<span style="color:' + SP_C.bad + '">' + (j.err || '下发失败') + '</span>'; return; }
-    card.innerHTML = '<span style="color:' + SP_C.ok + '">✓ 指令已下发（' + j.count + ' 条）——目标设备下次回前台/进账单页时执行（下方流水盯状态）</span>';
+    if (!j.ok) { spShowTransient('<span style="color:' + SP_C.bad + '">' + (j.err || '下发失败') + '</span>', 5000); return; }
+    spShowTransient('<span style="color:' + SP_C.ok + '">✓ 指令已下发（' + j.count + ' 条 · ' + poolName + '）——目标设备下次回前台/进账单页时执行（下方流水盯状态）</span>', 5000);
     spLoadCommands();
-  } catch (e) { card.innerHTML = '<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>'; }
+  } catch (e) { spShowTransient('<span style="color:' + SP_C.bad + '">请求失败：' + e.message + '</span>', 5000); }
 }
 async function spLoadLedger(id) {
   const box = document.getElementById('spLedger');
@@ -816,12 +837,32 @@ async function spLoadCommands() {
     if (!j.ok) { box.innerHTML = '<span style="color:' + SP_C.dim + '">' + (j.err || '暂无') + '</span>'; return; }
     if (!j.commands || !j.commands.length) { box.innerHTML = '（暂无指令）'; return; }
     const stColor = { pending: SP_C.warn, claimed: SP_C.acc, done: SP_C.ok };
-    let h = '<table class="tb" style="width:100%"><tr><th align="left">创建</th><th align="left">目标</th><th align="left">类型</th><th align="right">数额</th><th align="right">实发扣</th><th align="left">状态</th><th align="left">备注</th></tr>';
+    let h = '<table class="tb" style="width:100%"><tr><th align="left">创建</th><th align="left">目标</th><th align="left">类型</th><th align="left">SP 池</th><th align="right">数额</th><th align="right">实发扣</th><th align="left">状态</th><th align="left">备注</th><th align="left">操作</th></tr>';
     for (const c of j.commands) {
-      h += '<tr><td>' + spFmtTime(c.createdAt) + '</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + c.target + '</td><td>' + (c.type === 'grant' ? '发放' : '扣减') + '</td><td align="right">' + spFmtSp(c.amount) + '</td><td align="right">' + (c.status === 'done' ? spFmtSp(c.resultAmount) : '—') + '</td><td style="color:' + (stColor[c.status] || SP_C.dim) + '">' + c.status + (c.status === 'claimed' ? '（执行中/待设备确认）' : '') + '</td><td>' + (c.note || '') + '</td></tr>';
+      // ★ 0.302.3.2：type 后缀 _perm=充能池（零表结构变更）；发放红 / 扣减绿（用户拍板）
+      const t = String(c.type || '');
+      const isGrant = t.indexOf('grant') === 0;
+      const isPerm = t.indexOf('_perm') > 0;
+      const tColor = isGrant ? SP_C.bad : SP_C.ok;
+      const tBg = isGrant ? 'rgba(224,122,122,0.16)' : 'rgba(122,208,154,0.16)';
+      const badge = '<span style="color:' + tColor + ';background:' + tBg + ';border:1px solid ' + tColor + '55;border-radius:10px;padding:1px 8px;font-weight:600">' + (isGrant ? '发放' : '扣减') + '</span>';
+      const pool = isPerm ? '充能' : '嘉奖';
+      const canCancel = c.status === 'pending' || c.status === 'claimed';
+      const op = canCancel ? '<button class="btn" style="padding:2px 8px;font-size:12px" onclick="spCancelCommand(\'' + c.objectId + '\')">撤销</button>' : '';
+      h += '<tr><td>' + spFmtTime(c.createdAt) + '</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + c.target + '</td><td>' + badge + '</td><td>' + pool + '</td><td align="right">' + spFmtSp(c.amount) + '</td><td align="right">' + (c.status === 'done' ? spFmtSp(c.resultAmount) : '—') + '</td><td style="color:' + (stColor[c.status] || SP_C.dim) + '">' + c.status + (c.status === 'claimed' ? '（执行中/待设备确认）' : '') + '</td><td>' + (c.note || '') + '</td><td>' + op + '</td></tr>';
     }
     box.innerHTML = h + '</table>';
   } catch (e) { box.innerHTML = '<span style="color:' + SP_C.dim + '">加载失败：' + e.message + '</span>'; }
+}
+
+async function spCancelCommand(id) {
+  if (!confirm('撤销这条未执行指令？（已执行的不受影响）')) return;
+  try {
+    const r = await fetch('/api/sp/command/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
+    const j = await r.json();
+    if (!j.ok) { alert(j.err || '撤销失败'); return; }
+    spLoadCommands();
+  } catch (e) { alert('撤销失败：' + e.message); }
 }
 
 async function loadAiCfg() {

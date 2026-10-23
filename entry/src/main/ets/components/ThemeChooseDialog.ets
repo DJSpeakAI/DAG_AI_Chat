@@ -20,11 +20,20 @@ import { RADIUS_CONTROL, RADIUS_NODE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION
 @ComponentV2
 export struct ThemeChooseDialog {
   @Param visible: boolean = false;
-  @Event onChoose: (mode: ThemeMode) => void = () => {
+  @Event onChoose: (mode: ThemeMode, improve: boolean) => void = (_mode: ThemeMode, _improve: boolean) => {
   };
   @Local selected: ThemeMode = 'system'; // 默认高亮「跟随系统」（任务书定稿）
+  // ★ 0.303.0：体验改进计划并入外观页（单独控件、默认关、不与必选协议混排）
+  @Local improveOn: boolean = false;
   theme: AppTheme = connectAppTheme();
   windowMode: WindowMode = connectWindowMode();
+
+  @Monitor('visible')
+  onVisibleChange(): void {
+    if (this.visible) {
+      this.improveOn = false;
+    }
+  }
 
   build() {
     if (this.visible) {
@@ -44,6 +53,31 @@ export struct ThemeChooseDialog {
           }
           .width('100%')
 
+          // ★ 0.303.0：体验改进计划（单独同意、默认关——不与必选协议混排）
+          Row({ space: 10 }) {
+            Column({ space: 2 }) {
+              Text('加入体验改进计划')
+                .fontSize(FONT_SIZE_BODY)
+                .fontColor(this.theme.textPrimary)
+              Text('仅收集匿名功能使用频次，不含对话与学习内容，可随时在设置中关闭')
+                .fontSize(FONT_SIZE_CAPTION)
+                .lineHeight(16)
+                .fontColor(this.theme.textTertiary)
+                .width('100%')
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+            Toggle({ type: ToggleType.Switch, isOn: this.improveOn })
+              .onChange((on: boolean) => {
+                this.improveOn = on;
+              })
+          }
+          .width('100%')
+          .padding(10)
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(this.theme.surfaceSoft)
+          .alignItems(VerticalAlign.Center)
+
           // 主按钮（进入 DAG AI Chat——选择即确认即落盘）
           Text('进入 DAG AI Chat')
             .fontSize(FONT_SIZE_CARD_TITLE_SM)
@@ -56,7 +90,7 @@ export struct ThemeChooseDialog {
             .backgroundColor(this.theme.brandPrimary)
             .onClick(() => {
               chooseThemeMode(this.selected);
-              this.onChoose(this.selected);
+              this.onChoose(this.selected, this.improveOn);
             })
         }
         .padding(20)

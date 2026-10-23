@@ -30,13 +30,19 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:layered_image",
         "label": "$string:app_short_name",
+        // ★ 0.303.0：首启「不同意，退出」按要求 terminateSelf 后同时清除任务列表快照
+        //   （HarmonyOS 隐私 FAQ 方式二：拒绝隐私政策后强制终止实例并从任务列表移除）
+        "removeMissionAfterTerminate": true,
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         // ★ 0.251.0：dataTransfer 长时任务声明（AI 流式后台保活——用户拍板，用户触发、
         //   进度可见（实况窗 3s 更新）、结束即停三原则过审；KEEP_BACKGROUND_RUNNING 权限
         //   0.204.1 已声明（桌面卡片），此处只补 backgroundModes 声明）
+        // ★ 0.304.0：audioPlayback 补声明（TTS 朗读后台/熄屏续读——用户拍板需求；
+        //   走 API21+ ContinuousTaskRequest 独立任务+AVSession 接控，结束即停）
         "backgroundModes": [
-          "dataTransfer"
+          "dataTransfer",
+          "audioPlayback"
         ],
         "exported": true,
         "skills": [
