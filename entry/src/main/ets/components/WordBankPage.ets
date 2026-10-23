@@ -1642,7 +1642,7 @@ export struct WordBankPage {
           Row() {
             Text(this.voicePackLabel())
               .fontSize(13)
-              .fontColor(this.voicePackStatus === 'installed' && !this.voicePackDownloading ? '#4CAF50' : this.theme.textSecondary)
+              .fontColor(this.voicePackStatus === 'installed' && !this.voicePackDownloading ? this.theme.success : this.theme.textSecondary)
               .layoutWeight(1)
             if (this.voicePackStatus === 'downloadable' && !this.voicePackDownloading) {
               Button('下载')

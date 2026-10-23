@@ -13,7 +13,7 @@
 //   theme token 即可）；点选后随 applyMode 即时切换深浅（0.296.0）。
 // ============================================================
 
-import { AppTheme, ThemeMode, connectAppTheme, chooseThemeMode } from '../common/AppTheme';
+import { AppTheme, ThemeMode, connectAppTheme, chooseThemeMode, THEME_PREVIEW_DARK_BG, THEME_PREVIEW_LIGHT_BG } from '../common/AppTheme'; // ★ 0.305.1：主题样张色常量（AppTheme 单一真相源）
 import { WindowMode, connectWindowMode } from '../common/WindowMode';
 import { RADIUS_CONTROL, RADIUS_NODE, FONT_SIZE_CARD_TITLE_SM, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 
@@ -111,14 +111,14 @@ export struct ThemeChooseDialog {
       Stack() {
         if (half) {
           Row() {
-            Column().backgroundColor('#160D26').layoutWeight(1).height('100%')
-            Column().backgroundColor('#F2EEF8').layoutWeight(1).height('100%')
+            Column().backgroundColor(THEME_PREVIEW_DARK_BG).layoutWeight(1).height('100%')
+            Column().backgroundColor(THEME_PREVIEW_LIGHT_BG).layoutWeight(1).height('100%')
           }
           .width('100%')
           .height('100%')
         } else {
           Column()
-            .backgroundColor(mode === 'dark' ? '#160D26' : '#F2EEF8')
+            .backgroundColor(mode === 'dark' ? THEME_PREVIEW_DARK_BG : THEME_PREVIEW_LIGHT_BG)
             .width('100%')
             .height('100%')
         }

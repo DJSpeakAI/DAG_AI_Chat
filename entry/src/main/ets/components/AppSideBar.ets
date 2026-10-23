@@ -982,7 +982,7 @@ export struct AppSideBar {
               Circle()
                 .width(6)
                 .height(6)
-                .fill('#FF4D4F')
+                .fill(this.theme.danger)
                 .offset({ x: 3, y: -2 })
             }
           }

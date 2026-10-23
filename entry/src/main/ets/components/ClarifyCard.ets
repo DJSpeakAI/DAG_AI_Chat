@@ -141,7 +141,7 @@ export struct ClarifyCard {
                   Text(this.optionLabel(oi))
                     .fontSize(11)
                     .fontWeight(FontWeight.Medium)
-                    .fontColor(this.isSel(qi, oi) ? '#FFFFFF' : this.theme.textSecondary)
+                    .fontColor(this.isSel(qi, oi) ? this.theme.onBrand : this.theme.textSecondary)
                     .width(22)
                     .height(22)
                     .textAlign(TextAlign.Center)
@@ -176,7 +176,7 @@ export struct ClarifyCard {
                 Row({ space: 10 }) {
                   Text('…')
                     .fontSize(13)
-                    .fontColor(this.customSelByQ[qi] ? '#FFFFFF' : this.theme.textSecondary)
+                    .fontColor(this.customSelByQ[qi] ? this.theme.onBrand : this.theme.textSecondary)
                     .width(22)
                     .height(22)
                     .textAlign(TextAlign.Center)
@@ -229,7 +229,7 @@ export struct ClarifyCard {
           if (this.toastTip.length > 0) {
             Text(this.toastTip)
               .fontSize(11)
-              .fontColor('#FF6B6B')
+              .fontColor(this.theme.danger)
               .width('100%')
           }
         }

@@ -9,6 +9,7 @@
 //     自动高密度 8s → 之后静默等点击；点击任何时候都立即响应（自动+手动可同时存在）。
 // 物理算法不变（桌面 123.txt 移植）：发射体底部飞向目标 → 到达爆 55 粒（随机方向·初速
 // 65~210vp/s）→ 重力 65 / 指数阻力 exp(-0.6·dt) / 寿命 1.2~1.8s。
+import { AppTheme, connectAppTheme } from '../common/AppTheme'; // ★ 0.305.1：语义色 token
 const FW_ROCKET_MAX = 14;      // 发射体并发上限（0.255.1：4→14 密度×3）
 const FW_PARTICLE_MAX = 1400;  // 粒子上限（0.255.1：440→1400；超限暂缓/减量）
 const FW_BURST_COUNT = 55;     // 每束粒子数（123.txt）
@@ -100,6 +101,7 @@ function fwHueColor(hue: number, light: number, alpha: number): string {
 
 @ComponentV2
 export struct FireworksOverlay {
+  theme: AppTheme = connectAppTheme(); // ★ 0.305.1：语义色 token（火箭白点 onBrand）
   private ctxSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.ctxSettings);
   private rockets: FwRocket[] = [];
@@ -259,7 +261,7 @@ export struct FireworksOverlay {
       ctx.moveTo(r.x - r.vx * 0.03, r.y - r.vy * 0.03); // 30ms 尾迹
       ctx.lineTo(r.x, r.y);
       ctx.stroke();
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = this.theme.onBrand;
       ctx.beginPath();
       ctx.arc(r.x, r.y, 2, 0, Math.PI * 2);
       ctx.fill();

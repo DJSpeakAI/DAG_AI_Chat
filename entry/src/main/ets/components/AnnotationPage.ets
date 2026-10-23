@@ -46,7 +46,7 @@ class StrokePoint {
 }
 
 // 画笔参数（红色圆头粗线——暗紫底截图上醒目）
-const PEN_COLOR = '#F44336';
+// ★ 0.305.1：画笔色改主题 danger token（PEN_COLOR 硬编码常量删除）
 const PEN_WIDTH = 4;
 
 @ComponentV2
@@ -142,7 +142,7 @@ export struct AnnotationPage {
 
   // 重绘全部已提交笔画
   redrawAllStrokes(): void {
-    this.ctx.strokeStyle = PEN_COLOR;
+    this.ctx.strokeStyle = this.theme.danger;
     this.ctx.lineWidth = PEN_WIDTH;
     this.ctx.lineCap = 'round'; // CanvasLineCap 字面量（round = 圆头，笔画衔接自然）
     this.ctx.lineJoin = 'round'; // CanvasLineJoin 字面量（round = 圆角拐点）
@@ -156,7 +156,7 @@ export struct AnnotationPage {
     if (points.length === 1) {
       // 单点（轻点一下）：画一个笔宽圆点
       this.ctx.beginPath();
-      this.ctx.fillStyle = PEN_COLOR;
+      this.ctx.fillStyle = this.theme.danger;
       this.ctx.arc(points[0].x, points[0].y, PEN_WIDTH / 2, 0, Math.PI * 2);
       this.ctx.fill();
       return;
@@ -179,14 +179,14 @@ export struct AnnotationPage {
       this.currentStroke = [new StrokePoint(pt.x, pt.y)];
       // 落笔即画一个圆点（单击也能留痕）
       this.ctx.beginPath();
-      this.ctx.fillStyle = PEN_COLOR;
+      this.ctx.fillStyle = this.theme.danger;
       this.ctx.arc(pt.x, pt.y, PEN_WIDTH / 2, 0, Math.PI * 2);
       this.ctx.fill();
     } else if (event.type === TouchType.Move) {
       const prev = this.currentStroke[this.currentStroke.length - 1];
       this.currentStroke.push(new StrokePoint(pt.x, pt.y));
       // 增量描线：只画 prev → cur 这一段（实时跟手）
-      this.ctx.strokeStyle = PEN_COLOR;
+      this.ctx.strokeStyle = this.theme.danger;
       this.ctx.lineWidth = PEN_WIDTH;
       this.ctx.lineCap = 'round'; // CanvasLineCap 字面量
       this.ctx.lineJoin = 'round'; // CanvasLineJoin 字面量

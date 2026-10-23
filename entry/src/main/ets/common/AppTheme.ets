@@ -92,6 +92,12 @@ export class AppTheme {
   @Trace shadowColor: string = 'rgba(0,0,0,0.40)'; // ★ 0.262.0 新增：卡片/菜单阴影基色（暗=黑系，浅=深紫黑 8%）
   @Trace shadowColorSoft: string = 'rgba(0,0,0,0.25)'; // 轻阴影档（浮层小阴影——浅色同挂浅基色）
   @Trace hookBg: string = 'rgba(124,77,255,0.08)'; // ★ 0.269.0 新增：钩子竖线块背景（品牌紫 8% 透明叠加——深浅色各自基色，禁硬编码）
+  // ★ 0.305.1 语义色补齐（零技术债军令：全项目页面散落硬编码色值归位到本真相源）
+  @Trace onBrand: string = '#FFFFFF';       // 品牌底上文字/图标/恒白粒子（深浅同值——紫底恒白字）
+  @Trace glassTint: string = '#03FFFFFF';   // 1% 白玻璃底（0.280.6 用户拍板「1%」；深浅同值氛围效果）
+  @Trace glassStroke: string = '#33FFFFFF'; // 20% 白高光描边（0.280.3 官方玻璃参数；深浅同值）
+  @Trace successBg: string = 'rgba(59,178,115,0.15)'; // 成功态底（成功绿 15%——对齐 reviewEasyBg 透明度档）
+  @Trace glowBg: string = 'rgba(124,77,255,0.12)';    // 术语荧光底（0.237.0 用户拍板 12% 品牌紫）
 
   // 切换主题：重算生效态 + 整表赋值 + 落盘（persist=false 用于新用户「暂 dark 待弹窗」不落盘）
   applyMode(m: ThemeMode, sysDark: boolean, persist: boolean = true): void {
@@ -168,6 +174,12 @@ export class AppTheme {
     this.shadowColor = 'rgba(0,0,0,0.40)';
     this.shadowColorSoft = 'rgba(0,0,0,0.25)';
     this.hookBg = 'rgba(124,77,255,0.08)'; // ★ 0.269.0：钩子竖线块背景（深色档紫基 8%）
+    // ★ 0.305.1 语义色深色档
+    this.onBrand = '#FFFFFF';
+    this.glassTint = '#03FFFFFF';
+    this.glassStroke = '#33FFFFFF';
+    this.successBg = 'rgba(59,178,115,0.15)';
+    this.glowBg = 'rgba(124,77,255,0.12)';
   }
 
   // 浅色=新设计一套（0.262.0 终值表：紫味浅灰底/白卡；主紫加深达标；透明度基色统一 29,18,48）
@@ -209,8 +221,19 @@ export class AppTheme {
     this.shadowColor = 'rgba(29,18,48,0.08)';
     this.shadowColorSoft = 'rgba(29,18,48,0.08)';
     this.hookBg = 'rgba(108,62,232,0.08)'; // ★ 0.269.0：钩子竖线块背景（浅色档浅紫基 8%）
+    // ★ 0.305.1 语义色浅色档（onBrand/glass 恒值不变；successBg/glowBg 换浅色基）
+    this.onBrand = '#FFFFFF';
+    this.glassTint = '#03FFFFFF';
+    this.glassStroke = '#33FFFFFF';
+    this.successBg = 'rgba(46,150,96,0.15)';
+    this.glowBg = 'rgba(108,62,232,0.12)';
   }
 }
+
+// ★ 0.305.1：主题样张色（ThemeChooseDialog 预览块用——语义=「选完该主题长这样」的快照展示，
+//   不随当前主题走；与上方 applyXxxPalette 的 bgCanvas 值同步维护）
+export const THEME_PREVIEW_DARK_BG: string = '#160D26';
+export const THEME_PREVIEW_LIGHT_BG: string = '#F2EEF8';
 
 export function connectAppTheme(): AppTheme {
   return AppStorageV2.connect(AppTheme, 'app-theme-v1', () => new AppTheme()) as AppTheme;

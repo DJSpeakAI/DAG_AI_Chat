@@ -646,7 +646,7 @@ export struct ChatPage {
           Span(sp.text)
             .fontSize(this.fs(fontSize))
             .fontWeight(600)
-            .textBackgroundStyle({ color: glowHighlight ? 'rgba(124,77,255,0.12)' : Color.Transparent, radius: glowHighlight ? 2 : 0 }) // ★ 0.237.0 术语荧光底（12% 品牌紫底——治「一大片白」；heading 走品牌色文字不加底，避免叠加；glowHighlight 一键回退纯加粗）
+            .textBackgroundStyle({ color: glowHighlight ? this.theme.glowBg : Color.Transparent, radius: glowHighlight ? 2 : 0 }) // ★ 0.237.0 术语荧光底（12% 品牌紫底——治「一大片白」；heading 走品牌色文字不加底，避免叠加；glowHighlight 一键回退纯加粗）
         } else if (sp.italic) {
           Span(sp.text)
             .fontSize(this.fs(fontSize))
@@ -4630,7 +4630,7 @@ export struct ChatPage {
     if (this.reviewRatedMap.get(key) !== undefined) {
       Text(`下次复习：${formatNextReviewLabel(w.nextReviewAt, Date.now())}`)
         .fontSize(11)
-        .fontColor(this.reviewRatedMap.get(key) === 'hard' ? this.theme.danger : (this.reviewRatedMap.get(key) === 'easy' ? '#3BB273' : '#F5A623'))
+        .fontColor(this.reviewRatedMap.get(key) === 'hard' ? this.theme.danger : (this.reviewRatedMap.get(key) === 'easy' ? this.theme.reviewEasy : this.theme.reviewGood))
         .margin({ top: 3 })
     } else if (this.reviewExpandKey === key) {
       // ★ 0.198.5 对齐终修（真机 density 实锤定案）：手机全屏 density=3.0（▲10vp=30px/Wisdom 13vp 字宽/
@@ -7489,10 +7489,10 @@ export struct ChatPage {
             radius: 24,          // 模糊半径，小面积组件官方建议 20~40
             saturation: 1.1,     // 轻微提饱和，增强「透光」质感
             brightness: 1.05,    // 轻微提亮，模拟玻璃反光
-            color: '#03FFFFFF'   // ★ 0.280.6：1% 白玻璃（用户指定「1%」；alpha 0x03≈1.2%，极限透）
+            color: this.theme.glassTint   // ★ 0.280.6：1% 白玻璃（用户指定「1%」；alpha 0x03≈1.2%，极限透）
           })
-          .border({ width: 0.5, color: '#33FFFFFF' }) // ★ 0.280.3 官方参数：20% 白高光描边（玻璃边缘反光）
-          .shadow({ radius: 12, color: '#66000000', offsetX: 0, offsetY: 4 }) // ★ 0.280.3 官方参数：40% 黑浮起阴影
+          .border({ width: 0.5, color: this.theme.glassStroke }) // ★ 0.280.3 官方参数：20% 白高光描边（玻璃边缘反光）
+          .shadow({ radius: 12, color: this.theme.shadowColor, offsetX: 0, offsetY: 4 }) // ★ 0.280.3 官方参数：40% 黑浮起阴影
           .offset({ y: -44 })
           .transition(TransitionEffect.OPACITY.animation({ duration: 150 }))
           .onClick(() => {

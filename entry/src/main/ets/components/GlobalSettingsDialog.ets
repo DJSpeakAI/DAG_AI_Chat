@@ -1888,7 +1888,7 @@ export struct GlobalSettingsDialog {
         .fontColor(this.theme.textPrimary)
       Text(PROVIDER_PRESETS[index].desc)
         .fontSize(11)
-        .fontColor(this.editProvider === PROVIDER_PRESETS[index].id ? 'rgba(255,255,255,0.8)' : this.theme.textTertiary)
+        .fontColor(this.editProvider === PROVIDER_PRESETS[index].id ? this.theme.textPrimary : this.theme.textTertiary)
         .margin({ top: 2 })
     }
     .layoutWeight(1)
@@ -1911,7 +1911,7 @@ export struct GlobalSettingsDialog {
         .fontColor(this.theme.textPrimary)
       Text('DeepSeek 服务通道 · 开箱即用')
         .fontSize(11)
-        .fontColor(this.editProvider === PROVIDER_CUSTOM ? 'rgba(255,255,255,0.8)' : this.theme.textTertiary)
+        .fontColor(this.editProvider === PROVIDER_CUSTOM ? this.theme.textPrimary : this.theme.textTertiary)
         .margin({ top: 2 })
     }
     .layoutWeight(1)
@@ -2668,13 +2668,13 @@ export struct GlobalSettingsDialog {
           Text('✓')
             .fontSize(13)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.syncOn ? '#4CAF50' : this.theme.textTertiary)
+            .fontColor(this.syncOn ? this.theme.success : this.theme.textTertiary)
         }
         .width(22)
         .height(22)
         .borderRadius(11)
-        .border({ width: 1.5, color: this.syncOn ? '#4CAF50' : this.theme.strokeCard })
-        .backgroundColor(this.syncOn ? 'rgba(76,175,80,0.12)' : Color.Transparent)
+        .border({ width: 1.5, color: this.syncOn ? this.theme.success : this.theme.strokeCard })
+        .backgroundColor(this.syncOn ? this.theme.successBg : Color.Transparent)
         Column() {
           Text(this.syncOn ? '云同步已开启' : '云同步未开启')
             .fontSize(14)
@@ -2697,7 +2697,7 @@ export struct GlobalSettingsDialog {
       .padding(12)
       .borderRadius(RADIUS_CONTROL)
       .backgroundColor(this.syncOn
-        ? ('rgba(76,175,80,0.12)')
+        ? (this.theme.successBg)
         : (this.theme.surfaceSoft))
       .margin({ bottom: 16 })
 

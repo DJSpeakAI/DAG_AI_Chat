@@ -838,7 +838,7 @@ export struct BBTreeCanvas {
       },
       secondaryButton: {
         value: '删除',
-        fontColor: '#F44336',
+        fontColor: this.theme.danger,
         action: () => {
           const current = parseTabs(this.tabForest.tabsJson);
           const idx = current.findIndex((t: TabMeta): boolean => t.id === tabId);
@@ -1200,10 +1200,10 @@ export struct BBTreeCanvas {
               : (this.isBubbleSelected(bubble) ? this.theme.strokeBrand : this.theme.strokeCard)
           })
           .shadow(this.isImportGlow(bubble)
-            ? { radius: 12 + this.importGlow * 60, color: 'rgba(124,77,255,0.65)', offsetX: 0, offsetY: 0 } // ★ 0.200.2：×22→×60 光晕随夸张弹跳同步放大
+            ? { radius: 12 + this.importGlow * 60, color: this.theme.edgeColor, offsetX: 0, offsetY: 0 } // ★ 0.200.2：×22→×60 光晕随夸张弹跳同步放大
             : (this.isBubbleSelected(bubble)
               ? { radius: 24, color: this.theme.shadowColor, offsetX: 0, offsetY: 10 }
-              : { radius: 0, color: 'rgba(0,0,0,0)', offsetX: 0, offsetY: 0 }))
+              : { radius: 0, color: 'rgba(0,0,0,0)', offsetX: 0, offsetY: 0 })) // 透明=关闭阴影的机制哨兵（非 UI 用色，全项目唯一豁免）
           .position({
             x: this.c2sX(bubble.x),
             y: this.c2sY(bubble.y)
@@ -1551,7 +1551,7 @@ export struct BBTreeCanvas {
                           .constraintSize({ maxWidth: 72 })
                         Text('✕')
                           .fontSize(11)
-                          .fontColor(tab.id === this.tabForest.activeTabId ? 'rgba(255,255,255,0.75)' : this.theme.textTertiary)
+                          .fontColor(tab.id === this.tabForest.activeTabId ? this.theme.textPrimary : this.theme.textTertiary)
                           .margin({ left: 4 })
                           .onClick(() => {
                             this.deleteTab(tab.id);
@@ -1687,7 +1687,7 @@ export struct BBTreeCanvas {
               .backgroundColor(this.theme.brandPrimary)
               .opacity(0.7 + this.quizBreath * 0.3)
               .scale({ x: 1 + this.quizBreath * 0.4, y: 1 + this.quizBreath * 0.4 })
-              .shadow({ radius: 6 + this.quizBreath * 16, color: 'rgba(124,77,255,0.85)', offsetX: 0, offsetY: 0 })
+              .shadow({ radius: 6 + this.quizBreath * 16, color: this.theme.edgeColor, offsetX: 0, offsetY: 0 })
           }
           .width(48)
           .height(48)
@@ -1865,7 +1865,7 @@ export struct BBTreeCanvas {
             Text('删除气泡')
               .fontSize(FONT_SIZE_CARD_TITLE)
               .fontFamily(FONT_INTER)
-              .fontColor('#F44336') // 删除项警示红（UI_GUIDELINES 无 token，保留）
+              .fontColor(this.theme.danger) // 删除项警示红（UI_GUIDELINES 无 token，保留）
               .width('100%')
               .textAlign(TextAlign.Center)
               .padding({ top: 14, bottom: 14 })
@@ -1936,7 +1936,7 @@ export struct BBTreeCanvas {
                 .height(38)
                 .layoutWeight(1)
                 .backgroundColor(this.theme.brandPrimary)
-                .fontColor('#FFFFFF')
+                .fontColor(this.theme.onBrand)
                 .onClick(() => {
                   this.saveNodeTitle();
                 })
@@ -2003,7 +2003,7 @@ export struct BBTreeCanvas {
                 .height(38)
                 .layoutWeight(1)
                 .backgroundColor(this.theme.brandPrimary)
-                .fontColor('#FFFFFF')
+                .fontColor(this.theme.onBrand)
                 .onClick(() => {
                   this.saveTabRename();
                 })
