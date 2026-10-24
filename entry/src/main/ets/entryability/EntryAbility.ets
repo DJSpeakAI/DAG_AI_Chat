@@ -57,6 +57,12 @@ export class AppLifecycleStore {
   @Trace isBackground: boolean = false;
 }
 
+// ★ 0.305.5：setColorMode 回声哨兵（arkts 禁对象字面量类型——显式 interface）
+interface EchoGuard {
+  value: number;   // 刚 setColorMode 的目标值（回声比对）
+  until: number;   // 哨兵失效时间戳（150ms 窗口）
+}
+
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     initAgreementPrefs(this.context);
@@ -280,8 +286,8 @@ export default class EntryAbility extends UIAbility {
     //   PersistenceV2 首连必须在 loadContent 之后（0.240.2 FAQ-1084 铁律，先连=盘值被无视恒 factory）；
     //   三分支：已落盘→按盘值 / 新用户（未同意协议）→暂深色不落盘待弹窗 / 老用户→静默落盘深色（Q4 终裁）
     try {
-      setChromeSyncHook((isDark: boolean): void => {
-        this.syncSystemChrome(windowStage, isDark);
+      setChromeSyncHook((isDark: boolean, mode: ThemeMode): void => { // ★ 0.305.5：带 mode——system 档恢复 FOLLOW_SYSTEM
+        this.syncSystemChrome(windowStage, isDark, mode);
       });
       this.initAppTheme();
     } catch (err) {
@@ -321,11 +327,26 @@ export default class EntryAbility extends UIAbility {
 
   // ★ 0.262.0：系统级联动（chromeSync 钩子回调）——setColorMode 让系统组件（权限弹窗/
   //   输入法候选栏/系统 Toast）与 app 主题同色系；状态栏文字色跟随（浅色下白字看不清）
-  private syncSystemChrome(windowStage: window.WindowStage, isDark: boolean): void {
+  // ★ 0.305.5：加 mode 参数——'system' 档 setColorMode(FOLLOW_SYSTEM) 恢复跟随（随后系统
+  //   深浅变化实时回调）；dark/light 二值设置时记回声哨兵，onConfigurationUpdate 窗口内
+  //   同值回声直接忽略（根治自污染 systemDark 快照——浅色→跟随系统不切深 bug 根因）
+  // ★ 0.305.5：回声哨兵类型（arkts 禁对象字面量类型——显式 interface）
+  private echoGuard: EchoGuard | undefined = undefined;
+
+  private syncSystemChrome(windowStage: window.WindowStage, isDark: boolean, mode: ThemeMode): void {
     try {
-      this.context.getApplicationContext().setColorMode(isDark
-        ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK
-        : ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      const appCtx = this.context.getApplicationContext();
+      if (mode === 'system') {
+        this.echoGuard = undefined; // 跟随档：回声即系统真值，放行刷新
+        // 恢复跟随系统=NOT_SET（官方 faqs-ability-156：setColorMode 枚举仅 NOT_SET/DARK/LIGHT）
+        appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      } else {
+        const target = isDark
+          ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+          : ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
+        this.echoGuard = { value: target, until: Date.now() + 150 }; // 回声哨兵（150ms 窗）
+        appCtx.setColorMode(target);
+      }
     } catch (_e) {
       // 设置失败静默（页面 token 色不受影响）
     }
@@ -346,8 +367,14 @@ export default class EntryAbility extends UIAbility {
 
   // ★ 0.262.0：系统深浅色变化——mode='system' 时实时跟随（module.json5 configChanges
   //   已配 colorMode，系统切换不销毁重建、走本回调无缝切换）
+  // ★ 0.305.5：回声过滤——自身 setColorMode(DARK/LIGHT) 触发的 configuration 变化在哨兵
+  //   窗内且值相同=回声，直接忽略（否则 refreshFromSystem 会用 app 值覆写 systemDark 快照）
   onConfigurationUpdate(newConfig: Configuration): void {
     try {
+      const g = this.echoGuard;
+      if (g !== undefined && Date.now() < g.until && newConfig.colorMode === g.value) {
+        return; // setColorMode 回声——非系统真实变化，不污染 systemDark
+      }
       const sysDark = newConfig.colorMode !== ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
       connectAppTheme().refreshFromSystem(sysDark);
     } catch (_e) {

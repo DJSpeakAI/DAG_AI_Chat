@@ -53,6 +53,7 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.305.5|✅**三测四项（全案 docs/真人测试流程参考.md 流程03）**：①**主题「跟随系统」不切深 bug 根治**——根因=app 自身 setColorMode(LIGHT/DARK) 触发 onConfigurationUpdate 回声污染 systemDark 快照；修复=回声哨兵（150ms 窗内同值回声忽略）+跟随档 setColorMode(**COLOR_MODE_NOT_SET**，官方 faqs-ability-156：无 FOLLOW_SYSTEM 枚举，恢复跟随=NOT_SET）②门禁布局三调（顶部弹性 1.6→2.0/中部 1→1.4/底部 0.4→0.3）③协议正文不满屏时段落 SpaceBetween 舒展铺满（minHeight('100%')）④**本地模式一次性告知弹窗**（用户理念：暂不登录=仅词库建立/知识卡手动录入/卡片复习三功能；AppConfirmDialog 承载「登录华为账号/直接进入」双出口；**合规已核官方《Account Kit 登录管理细则》——单次告知+可跳过出口不违规**；agreement_store preferences 加 localModeNoticeShown 键每设备一次）。**S 坑：setColorMode 会自触发 onConfigurationUpdate——凡读 configuration.colorMode 做「系统深浅」判定的链路必须防回声**。四台（含 Pura）冷装 1000458|
 |0.305.4|✅**门禁视觉+负反馈修订（用户二测拍板，全案 docs/真人测试流程参考.md 流程02）**：①抖动锚点统一迁到「我已阅读并同意」协议勾选行（未勾选点登录/暂不登录任一按钮=协议行抖两抖，红色提示文字「请先勾选并同意协议」退役——抖"要去勾的地方"最直观）②视觉重心下沉：顶部弹性 1→1.6 上部整块下移；下块缩小一圈（协议行/不同意退出 13→12 行高 20→18、版本号 12→11）+底部 Blank(0.4) 缓冲不贴底。**连带清债**：onboardingHint 状态/onboardingLocalShakeX 双抖动/shakeOnboardingLocal 全链删（回归单一 shakeOnboarding）。**S 坑：大段 edit 替换函数区时先查同名函数旧体是否还在（Duplicate function 编译错——本次 shakeOnboarding 双体实锤）**。三台 1000457|
 |0.305.3|✅**首页正常态退役（用户拍板「同意协议后直进气泡树」）**：删 Index 首页正常态整段（进入气泡树按钮/华为账号登录区/loginTip 文本位/首页版本号）→ 三落点直达画布：①冷启已同意（aboutToAppear setTimeout(0)——pathStack aboutToAppear 时未附着立即 push 会静默丢）②暂不登录同意完成 ③首启登录成功；home 已同意态=品牌衬底（Blank+brandHeader+Blank，pop 落回再按返回退出 app）。**连带清债**：getHuaweiAccount/getDisplayName/onHomeAccountClick/loginTip 状态全链删；常规登录/退出失败提示改 toast（删 UI 不删反馈）；HuaweiAccountStore/connectHuaweiAccount unused import 清；app.media.user 图标 base+dark 双份删（零引用）。三台 1000456。**测试台连带待核对：冷启用例/登录入口/版本号核对路径（见 docs/真人测试流程参考.md 0.305.3 连带变更节；testing/ 红线 CLI 未动）**|
 |0.305.2|✅**首启门禁合规漏洞修复（用户手机实测报障）**：「暂不登录，先本地使用」原实现（Index.onOnboardingLocalOnly）无勾选守卫直接 markAgreed()=未同意协议静默放行，后续进气泡树/开云同步/性格测试全失守；补 onboardingChecked 守卫+抖动负反馈（新状态 onboardingLocalShakeX）；文案「请先勾选同意上述协议」→「请先勾选并同意协议」（协议在按钮下方无上述关系）；连带清 Index 两处 unused import（refreshSiyiGatePerm/FONT_SIZE_META）。**S 坑再证：check_ets_files 对刚改文件缓存失真，unused 判定必须 grep 现文件复核**。三台已装 1000455。**遗留待用户拍板：首页正常态（进入气泡树+登录华为账号页）去留——用户倾向删（同意协议后直进气泡树），待确认**|
@@ -61,7 +62,7 @@
 |0.304.2|（已迁 docs/MEMORY_HISTORY.md）|
 |0.304.1|（已迁 docs/MEMORY_HISTORY.md）|
 
-- 版本号纪律：当前 **v0.305.4（versionCode 1000457）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
+- 版本号纪律：当前 **v0.305.5（versionCode 1000458）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
 - 迭代文档命名：版本号 变更内容.md（详见 project_rule §7）
 - 真机测试设备（阵容与账号分工定稿）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S（hdc 7HZUN26330G02209）+ 畅享90Pro Max（WiFi 192.168.2.17:38611）**，同测同装机；第四台 Pura X View（192.168.2.4:39421）=用户工作机默认不测不装；**手机+Pad 登 180 测试账户、PC+Pura 登 181 主账号**；设备 IP 会变，连不上先问用户；`param get const.product.model` 验身份
 

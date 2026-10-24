@@ -74,7 +74,7 @@
 
 **UndoStack.ets** 75 行 ｜ F: 操作撤销栈（命令模式 UndoEntry，50 步裁头，Ctrl+Z 全局键） ｜ ⚠S: 闭包只捕获应用级单例+数据快照禁捕获页面 this（页面销毁=定时炸弹）；undo 放回复用 add* 路径=云上行自然触发零碰红线；不进栈=设置/发送/新建/导入/Tab 重命名；key 'undo-stack-v1' 内存不落盘（闭包不可序列化恰好）
 
-**AppTheme.ets** 186 行 ｜ F: 主题色真相源+三态主题（跟随/亮/暗）+ThemeBadgeStore；★0.305.1 补语义色 token（onBrand 恒白/glassTint 玻璃/glassStroke 高光描边/successBg 成功底/glowBg 荧光底+静态样张常量 THEME_PREVIEW_*_BG） ｜ ⚠S: theme-mode-v1 空串=新用户未选择哨兵；色值真相源在此，UI 常量在 DesignTokens；**全项目禁散落硬编码色值（零技术债军令——widget 卡片进程自有常量表是唯一架构豁免）**
+**AppTheme.ets** 186 行 ｜ F: 主题色真相源+三态主题（跟随/亮/暗）+ThemeBadgeStore；★0.305.1 语义色 token；★0.305.5 chromeSync 钩子带 mode（system 档恢复 setColorMode(NOT_SET)——根治跟随系统不生效） ｜ ⚠S: theme-mode-v1 空串=新用户未选择哨兵；色值真相源在此，UI 常量在 DesignTokens；**全项目禁散落硬编码色值（零技术债军令——widget 卡片进程自有常量表是唯一架构豁免）**；**setColorMode 会自触发 onConfigurationUpdate 污染 systemDark 快照——回声哨兵在 EntryAbility（0.305.5 血泪）**
 
 **ReviewReminderStore.ets**（common） ｜ F: 每日提醒偏好单通道（key 'review-reminder-v1'：on/hour/minute/reminderId/lastDoneDate）——双入口消费：ReviewPage ⚙ 弹窗+GSD 司忆区 Tab（0.302.1，代理提醒 AGC 补场景） ｜ ⚠S: lastDoneDate 格式=yyyy-m-d 不垫零，与 ReviewPage.todayKey 字节级绑定——改任一处必须同步另一处（漂移=恒「未完成」）
 

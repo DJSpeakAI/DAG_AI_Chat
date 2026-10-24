@@ -50,7 +50,7 @@ import { ensureWidgetFormIds } from '../utils/WidgetReviewUtil'; // ★ 0.204.3�
 import { connectDailyReviewCount } from '../common/DailyReviewCountStore'; // ★ 0.204.0：每日量（快照按量截断）；★ 0.274.0 外提件（原居 ReviewPage）
 import { buildBackupPayload, writeInternalBackup, readInternalBackup, restoreFromPayload, maybeAutoBackup, BackupPayload } from '../utils/BackupUtil'; // ★ 0.205.0：数据安全三道防线（启动备份链+空库恢复弹窗）
 import { AgreementDialog } from '../components/AgreementDialog'; // ★ 0.226.0：华为协议登录门禁（非首启路径）
-import { AgreementBridge, connectAgreementBridge, connectAgreement, markAgreed, needsAgreement, needsHwAgreement, markHwAgreed, markImprovePromptShown, AGREEMENT_CHECK_PREFIX, AGREEMENT_USER_NAME, AGREEMENT_PRIVACY_NAME, AGREEMENT_HUAWEI_NAME, HUAWEI_ACCOUNT_AGREEMENT_URL, USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, isPrivacySensitiveSection, AgreementStore, AGREEMENT_VERSION } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分；★ 0.279.5：markImprovePromptShown 落盘收口（存储层已迁 preferences）；★ 0.305.0：门禁并入首页——协议正文/协议名常量全量迁入；★ 0.305.3：needsAgreement（冷启直达画布判定）
+import { AgreementBridge, connectAgreementBridge, connectAgreement, markAgreed, needsAgreement, needsHwAgreement, markHwAgreed, markImprovePromptShown, markLocalModeNoticeShown, AGREEMENT_CHECK_PREFIX, AGREEMENT_USER_NAME, AGREEMENT_PRIVACY_NAME, AGREEMENT_HUAWEI_NAME, HUAWEI_ACCOUNT_AGREEMENT_URL, USER_AGREEMENT_SECTIONS, PRIVACY_SECTIONS, isPrivacySensitiveSection, AgreementStore, AGREEMENT_VERSION } from '../utils/Agreement'; // ★ 0.226.0：同意状态 + 首页勾选框文案；★ 0.264.0：华为协议登录门禁拆分；★ 0.279.5：markImprovePromptShown 落盘收口；★ 0.305.0：门禁并入首页；★ 0.305.3：needsAgreement（冷启直达画布判定）；★ 0.305.5：markLocalModeNoticeShown（本地模式告知弹窗记忆）
 import { setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // ★ 0.226.0：体验改进计划加入；★ 0.260.0：加入后补报 app_first
 import { ThemeChooseDialog } from '../components/ThemeChooseDialog'; // ★ 0.262.0：新用户首启主题选择弹窗（协议同意后弹）
 import { AppTheme, connectAppTheme, connectThemeMode, ThemeMode } from '../common/AppTheme'; // ★ 0.262.0：theme-mode-v1 空串哨兵（未落盘=新用户待选择）+ 色值真相源成员；★ 0.303.0：ThemeMode 外观页回调
@@ -131,6 +131,7 @@ struct Index {
     return this.agreementBridge.hwPromptVisible && !this.agreement.hwAgreed;
   }
   @Local themeChooseVisible: boolean = false; // ★ 0.262.0：新用户主题选择弹窗（协议同意后、theme-mode-v1 未落盘时弹）
+  @Local localModeNoticeVisible: boolean = false; // ★ 0.305.5：本地模式功能告知弹窗（每设备一次，agreement store 记忆）
 
   // ★ 0.164：点击华为账号登录
   // ★ 0.196.11：fromSyncEntry 参数——登录来源分流（用户实测反馈：从设置页「开启云同步」
@@ -222,7 +223,22 @@ struct Index {
     this.pathStack.pushPath({ name: 'BBTreeCanvas' }); // ★ 0.305.3：同意完成直进气泡树（首页正常态已退役）
     setTimeout(() => {
       this.maybeShowThemeChoose();
+      // ★ 0.305.5：本地模式一次性功能告知（用户三测拍板——未登录可用范围提前告知）；
+      //   主题弹窗弹着时让位（onChoose 回调收尾再弹），没弹（老用户撤回重走）即时弹
+      if (!this.themeChooseVisible) {
+        this.maybeShowLocalModeNotice();
+      }
     }, 200);
+  }
+
+  // ★ 0.305.5：本地模式功能告知弹窗（每设备一次）——合规依据：Account Kit 管理细则仅要求
+  //   「支持第三方登录须提供华为账号登录选项」；单次告知+「直接进入」出口不构成强制操作
+  maybeShowLocalModeNotice(): void {
+    if (this.agreement.localModeNoticeShown) {
+      return;
+    }
+    markLocalModeNoticeShown();
+    this.localModeNoticeVisible = true;
   }
 
   // ★ 0.303.0：不同意=直接退出（官方 FAQ：不得通过多次弹窗强制用户操作）
@@ -583,7 +599,7 @@ struct Index {
   @Builder
   onboardingPanel() {
     Column() {
-      Blank().layoutWeight(1.6) // ★ 0.305.4：顶部弹性 1→1.6（用户拍板上部整块下移，视觉重心下沉）
+      Blank().layoutWeight(2.0) // ★ 0.305.4：1→1.6；★ 0.305.5：1.6→2.0（用户三测：上部再下移一点）
       this.brandHeader()
 
       // 主按钮（未勾选=品牌描边透底 + 抖动负反馈；已勾选=品牌实底白字）
@@ -629,7 +645,7 @@ struct Index {
           }
         })
 
-      Blank().layoutWeight(1)
+      Blank().layoutWeight(1.4) // ★ 0.305.4：1；★ 0.305.5：1→1.4（用户三测：下块再下移两倍距离）
 
       // 协议勾选行（固定两行：用户/隐私协议一行 + 华为认证协议另起；整组 X 轴居中、
       //   勾选框与两行文字块纵向居中；协议名点击不改变勾选态）
@@ -705,7 +721,8 @@ struct Index {
         .margin({ top: 12 })
 
       // ★ 0.305.4：底部弹性缓冲——下块（协议行/不同意退出/版本号）随内容整体下沉且不贴底
-      Blank().layoutWeight(0.4)
+      // ★ 0.305.5：0.4→0.3（微收防贴底——下沉量让给中部弹性）
+      Blank().layoutWeight(0.3)
     }
     .width('100%')
     .height('100%')
@@ -747,11 +764,16 @@ struct Index {
           }, (_sec: string, idx: number) => `${idx}`)
         }
         .width('100%')
+        // ★ 0.305.5：正文不满屏时段落间距舒展铺满全屏（用户三测「下面空一段拉到全屏」）；
+        //   超屏时 minHeight 失效、间距回落 margin 自然滚动——两态兼容
+        .constraintSize({ minHeight: '100%' })
+        .justifyContent(FlexAlign.SpaceBetween)
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
+      .align(Alignment.TopStart)
     }
     .width('100%')
     .height('100%')
@@ -1069,6 +1091,22 @@ struct Index {
           setTrackingEnabled(this.getUIContext().getHostContext() as common.Context, true);
           trackFirstAuto();
         }
+        this.maybeShowLocalModeNotice(); // ★ 0.305.5：主题选择收尾后接力弹本地模式告知（仅首次）
+      }
+    })
+    // ★ 0.305.5：本地模式功能告知弹窗（用户三测拍板——「暂不登录」进入后一次性告知可用范围）
+    AppConfirmDialog({
+      visible: this.localModeNoticeVisible,
+      title: '当前为本地模式',
+      message: '您未登录华为账号、未开启云同步，现可使用以下功能：\n\n· 单词库建立\n· 知识卡片手动录入\n· 卡片复习（含复习记录）\n\nAI 对话、云同步等功能，登录华为账号后即可使用。',
+      confirmText: '登录华为账号',
+      cancelText: '直接进入',
+      onConfirm: () => {
+        this.localModeNoticeVisible = false;
+        this.doLogin(false); // 走常规登录链（hwAgreed 已同意，成功后询问开启云同步）
+      },
+      onCancel: () => {
+        this.localModeNoticeVisible = false;
       }
     })
     // ★ 0.256.0：签到弹窗（边栏签到入口/首登引导判定触发——SignInDialogBridge 驱动）

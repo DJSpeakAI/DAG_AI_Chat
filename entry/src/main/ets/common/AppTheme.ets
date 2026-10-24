@@ -38,10 +38,13 @@ export function connectThemeBadge(): ThemeBadgeStore {
 
 // 系统级联动钩子（setColorMode + 状态栏文字色）——由 EntryAbility 注入
 // （Ability 层持有 windowStage/applicationContext；组件层无法反向获取，走注入先例：
-//  同 EntryAbility.initRowBridgeProviders 的 provider 注入模式）
-let chromeSync: ((isDark: boolean) => void) | undefined = undefined;
+//   同 EntryAbility.initRowBridgeProviders 的 provider 注入模式）
+// ★ 0.305.5：签名带 mode——'system' 档须 setColorMode(FOLLOW_SYSTEM) 恢复跟随（根治
+//   浅色→跟随系统不切深 bug：二值 setColorMode 的回声会触发 onConfigurationUpdate 污染
+//   systemDark 快照，跟随档即时切换拿的是被污染的假值）
+let chromeSync: ((isDark: boolean, mode: ThemeMode) => void) | undefined = undefined;
 
-export function setChromeSyncHook(fn: (isDark: boolean) => void): void {
+export function setChromeSyncHook(fn: (isDark: boolean, mode: ThemeMode) => void): void {
   chromeSync = fn;
 }
 
@@ -113,7 +116,7 @@ export class AppTheme {
       connectThemeMode().mode = m;
     }
     if (chromeSync !== undefined) {
-      chromeSync(this.isDark);
+      chromeSync(this.isDark, m); // ★ 0.305.5：带 mode（system 档恢复 FOLLOW_SYSTEM）
     }
   }
 
@@ -131,7 +134,7 @@ export class AppTheme {
       this.applyLightPalette();
     }
     if (wasDark !== this.isDark && chromeSync !== undefined) {
-      chromeSync(this.isDark);
+      chromeSync(this.isDark, this.mode); // ★ 0.305.5：带 mode
     }
   }
 

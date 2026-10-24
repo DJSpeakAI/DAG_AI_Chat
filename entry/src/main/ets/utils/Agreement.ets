@@ -53,6 +53,7 @@ function prefsLoadOnce(store: AgreementStore): void {
     store.agreedVersion = prefs().getSync('agreedVersion', 0) as number;
     store.improvePromptShown = prefs().getSync('improvePromptShown', false) as boolean;
     store.hwAgreed = prefs().getSync('hwAgreed', false) as boolean;
+    store.localModeNoticeShown = prefs().getSync('localModeNoticeShown', false) as boolean;
   } catch (_e) {
     // 初始化缺失按未同意（onCreate 必注入，理论不可达）
   }
@@ -65,6 +66,7 @@ function prefsPersist(store: AgreementStore): void {
     p.putSync('agreedVersion', store.agreedVersion);
     p.putSync('improvePromptShown', store.improvePromptShown);
     p.putSync('hwAgreed', store.hwAgreed);
+    p.putSync('localModeNoticeShown', store.localModeNoticeShown);
     p.flushSync(); // 同步落盘——关键合规标志，进程被杀不丢
   } catch (_e) {
     // 静默（下次写再试；读侧内存态仍正确）
@@ -148,6 +150,7 @@ export class AgreementStore {
   @Trace agreedVersion: number = 0;         // 已同意的协议版本（落后则重新弹）
   @Trace improvePromptShown: boolean = false; // 体验改进计划引导是否已弹过（仅弹一次）
   @Trace hwAgreed: boolean = false;         // ★ 0.264.0：华为账号用户认证协议同意态（登录门禁，与基础协议分开征求）
+  @Trace localModeNoticeShown: boolean = false; // ★ 0.305.5：本地模式功能告知弹窗是否已弹过（每设备一次）
   @Trace loaded: boolean = false;           // ★ 0.279.5：preferences 真值已载入标记（幂等防重复载）
 }
 
@@ -211,6 +214,13 @@ export function needsHwAgreement(): boolean {
 export function markHwAgreed(): void {
   const ag = connectAgreement();
   ag.hwAgreed = true;
+  prefsPersist(ag);
+}
+
+// ★ 0.305.5：本地模式功能告知弹窗已弹（每设备一次——preferences 容器内加键，非 P2 Schema 变更）
+export function markLocalModeNoticeShown(): void {
+  const ag = connectAgreement();
+  ag.localModeNoticeShown = true;
   prefsPersist(ag);
 }
 
