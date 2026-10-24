@@ -125,9 +125,7 @@ struct Index {
   // 门禁态交互状态（原 OnboardingGate 组件内状态迁入——组件文件删除）
   @Local onboardingChecked: boolean = false;   // 默认未勾选（合规红线）
   @Local onboardingViewing: number = -1;       // -1=门禁主态 0=用户协议正文 1=隐私政策正文
-  @Local onboardingShakeX: number = 0;         // 未勾选点登录的抖动偏移
-  @Local onboardingLocalShakeX: number = 0;    // ★ 0.305.2：未勾选点「暂不登录」的抖动偏移
-  @Local onboardingHint: string = '';          // 未勾选提示（与登录失败 tip 分开）
+  @Local onboardingShakeX: number = 0;         // 未勾选点登录/暂不登录=协议勾选行抖动偏移（★0.305.4 锚点自按钮迁到协议行；文字提示 hint 随之退役）
   // ★ 0.279.2 华为协议门禁弹窗同款校正（hwAgreed 水合迟到同理）
   @Computed get showHwAgreementPrompt(): boolean {
     return this.agreementBridge.hwPromptVisible && !this.agreement.hwAgreed;
@@ -211,13 +209,11 @@ struct Index {
   }
 
   // ★ 0.303.0：首启「暂不登录，先本地使用」——协议已同意，本地三板块照用
-  // ★ 0.305.2：未勾选协议不得放行（用户实测报障合规漏洞——原实现无勾选守卫直接
-  //   markAgreed()，「暂不登录」变成静默同意通道，门禁整体失效；本地使用同样以
-  //   同意协议为前提，与登录按钮同款抖动负反馈）
+  // ★ 0.305.2：未勾选协议不得放行（合规守卫——「暂不登录」≠「不同意协议」）
+  // ★ 0.305.4：负反馈=协议勾选行抖动（不再抖按钮+文字提示，用户二次实测拍板）
   onOnboardingLocalOnly(): void {
     if (!this.onboardingChecked) {
-      this.onboardingHint = '请先勾选并同意协议';
-      this.shakeOnboardingLocal();
+      this.shakeOnboarding();
       return;
     }
     markHwAgreed();
@@ -539,7 +535,7 @@ struct Index {
     }
   }
 
-  // 未勾选点登录的抖动负反馈（逐帧偏移，末尾归零）
+  // 未勾选点登录/暂不登录=协议勾选行抖动负反馈（★0.305.4 唯一抖动锚点——逐帧偏移末尾归零）
   shakeOnboarding(): void {
     const seq: number[] = [8, -8, 6, -6, 3, -3, 0];
     for (let i = 0; i < seq.length; i++) {
@@ -549,37 +545,22 @@ struct Index {
     }
   }
 
-  // ★ 0.305.2：「暂不登录」未勾选抖动（与登录按钮同款序列，驱动各自偏移字段）
-  shakeOnboardingLocal(): void {
-    const seq: number[] = [8, -8, 6, -6, 3, -3, 0];
-    for (let i = 0; i < seq.length; i++) {
-      setTimeout(() => {
-        this.onboardingLocalShakeX = seq[i];
-      }, 40 * i);
-    }
-  }
-
   toggleOnboardingChecked(): void {
     if (this.isProcessing) {
       return;
     }
     this.onboardingChecked = !this.onboardingChecked;
-    if (this.onboardingChecked) {
-      this.onboardingHint = '';
-    }
   }
 
-  // 门禁态点「华为账号登录」：未勾选=提示+抖动（不发任何请求），勾选=走登录
+  // 门禁态点「华为账号登录」：未勾选=协议勾选行抖动（不发任何请求），勾选=走登录
   requestOnboardingLogin(): void {
     if (this.isProcessing) {
       return;
     }
     if (!this.onboardingChecked) {
-      this.onboardingHint = '请先勾选并同意协议'; // ★ 0.305.2：「上述协议」改「协议」（协议在按钮下方，无上述关系）
       this.shakeOnboarding();
       return;
     }
-    this.onboardingHint = '';
     this.onOnboardingLogin();
   }
 
@@ -602,7 +583,7 @@ struct Index {
   @Builder
   onboardingPanel() {
     Column() {
-      Blank().layoutWeight(1)
+      Blank().layoutWeight(1.6) // ★ 0.305.4：顶部弹性 1→1.6（用户拍板上部整块下移，视觉重心下沉）
       this.brandHeader()
 
       // 主按钮（未勾选=品牌描边透底 + 抖动负反馈；已勾选=品牌实底白字）
@@ -622,7 +603,6 @@ struct Index {
       .backgroundColor(this.onboardingChecked ? this.theme.brandPrimary : this.theme.surfaceSoft)
       .border({ width: 1, color: this.onboardingChecked ? Color.Transparent : this.theme.strokeBrand })
       .alignItems(HorizontalAlign.Center)
-      .translate({ x: this.onboardingShakeX })
       .enabled(!this.isProcessing)
       .onClick(() => {
         this.requestOnboardingLogin();
@@ -637,19 +617,12 @@ struct Index {
           .textAlign(TextAlign.Center)
           .constraintSize({ maxWidth: 420 })
           .margin({ top: 12 })
-      } else if (this.onboardingHint !== '') {
-        Text(this.onboardingHint)
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .fontColor(this.theme.danger)
-          .textAlign(TextAlign.Center)
-          .margin({ top: 12 })
       }
 
       Text('暂不登录，先本地使用')
         .fontSize(FONT_SIZE_CARD_TITLE_SM)
         .fontColor(this.theme.textSecondary)
         .margin({ top: 20 })
-        .translate({ x: this.onboardingLocalShakeX })
         .onClick(() => {
           if (!this.isProcessing) {
             this.onOnboardingLocalOnly();
@@ -660,6 +633,8 @@ struct Index {
 
       // 协议勾选行（固定两行：用户/隐私协议一行 + 华为认证协议另起；整组 X 轴居中、
       //   勾选框与两行文字块纵向居中；协议名点击不改变勾选态）
+      // ★ 0.305.4：未勾选点「华为账号登录/暂不登录」的抖动负反馈统一锚定在本行（用户二次实测
+      //   拍板——抖"要去勾的地方"比抖按钮+文字提示更直观；onboardingHint 提示文字随之退役）
       Row({ space: 8 }) {
         if (this.onboardingChecked) {
           Image($r('app.media.checkbox_on'))
@@ -694,8 +669,8 @@ struct Index {
                 this.onboardingViewing = 1;
               })
           }
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .lineHeight(20)
+          .fontSize(12) // ★ 0.305.4：下块缩字号 13→12+行高 20→18（用户拍板下块整体缩小一圈下移）
+          .lineHeight(18)
           Text() {
             Span('《' + AGREEMENT_HUAWEI_NAME + '》')
               .fontColor(this.theme.brandPrimary)
@@ -703,17 +678,18 @@ struct Index {
                 this.openHuaweiAgreement();
               })
           }
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .lineHeight(20)
+          .fontSize(12)
+          .lineHeight(18)
         }
         .alignItems(HorizontalAlign.Start)
       }
       .constraintSize({ maxWidth: 460 })
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .translate({ x: this.onboardingShakeX })
 
       Text('不同意，退出')
-        .fontSize(FONT_SIZE_CARD_TITLE_SM)
+        .fontSize(12)
         .fontColor(this.theme.textTertiary)
         .margin({ top: 20 })
         .onClick(() => {
@@ -724,9 +700,12 @@ struct Index {
 
       // 门禁态也显示版本号（装机验收/反馈报障定位用）
       Text(APP_VERSION)
-        .fontSize(12)
+        .fontSize(11)
         .fontColor(this.theme.textTertiary)
         .margin({ top: 12 })
+
+      // ★ 0.305.4：底部弹性缓冲——下块（协议行/不同意退出/版本号）随内容整体下沉且不贴底
+      Blank().layoutWeight(0.4)
     }
     .width('100%')
     .height('100%')

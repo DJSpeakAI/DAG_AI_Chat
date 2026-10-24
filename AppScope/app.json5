@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.dagaichat.app",
     "vendor": "example",
-    "versionCode": 1000456, // ★ 0.305.3：首页正常态退役（同意协议后直进气泡树）；0.305.2：首启门禁合规漏洞修复（更早历史见 MEMORY.md）
+    "versionCode": 1000457, // ★ 0.305.4：门禁视觉修订（抖动锚点迁协议行+下块缩小下移）；0.305.3：首页正常态退役（更早历史见 MEMORY.md）
     "versionName": "1.0.0",
     "buildVersion": "1",
     // ★ 0.165.1：接入云空间端云数据同步——true 后「设置-云空间」出现应用开关；

@@ -32,7 +32,7 @@
 
 ## pages/
 
-**Index.ets** ~1090 行 ｜ F: 主页面：Navigation 路由壳+全局弹窗唯一挂载区+启动链（备份恢复询问/卡片快照）+★0.305.0 首启门禁=首页双态（@Computed needsOnboarding；协议正文=首页内切换页；合规逻辑守卫=未同意不渲染边栏/sideBarNav 拦截；★0.305.2 暂不登录/登录两按钮均前置 onboardingChecked 勾选守卫+抖动负反馈）+★0.305.3 首页正常态退役（同意完成三落点+冷启已同意 setTimeout(0) 直达 BBTreeCanvas；home 已同意态=品牌衬底，pop 落回再按返回退出 app；登录入口走设置/边栏）+loginCore（门禁检查分离）+SiyiGate 引导弹窗+新用户礼包+侧边栏版本号（读 GSD APP_VERSION 单一来源） ｜ R: 几乎全部 components/common；BackupUtil、CloudSyncUtil、HuaweiAccountUtil、SiyiGate ｜ ⚠S: 满屏必须 Stack 包 Navigation+expandSafeArea；根 Stack 顶层=全部弹窗桥唯一挂载点；畅享 600.6vp 踩线须 deviceInfo 兜底恒手机模式；主题空串=新用户未选择哨兵；**首启登录必须走 loginCore 直通（走 doLogin 会撞 needsAgreement 弹回同一门禁成死循环）**；**首启门禁=首页双态禁回退成覆盖层/延迟判定；门禁态任何放行按钮（登录/暂不登录）都必须先过勾选守卫——漏一处=协议静默同意合规漏洞（0.305.2 实锤）**；**aboutToAppear 里 pathStack 未附着，push 必须包 setTimeout(0) 否则静默丢（0.305.3）**
+**Index.ets** ~1090 行 ｜ F: 主页面：Navigation 路由壳+全局弹窗唯一挂载区+启动链（备份恢复询问/卡片快照）+★0.305.0 首启门禁=首页双态（@Computed needsOnboarding；协议正文=首页内切换页；合规逻辑守卫=未同意不渲染边栏/sideBarNav 拦截；★0.305.2 暂不登录/登录两按钮均前置 onboardingChecked 勾选守卫（★0.305.4 负反馈=协议勾选行抖动单一锚点，红色提示文字退役））+★0.305.3 首页正常态退役（同意完成三落点+冷启已同意 setTimeout(0) 直达 BBTreeCanvas；home 已同意态=品牌衬底，pop 落回再按返回退出 app；登录入口走设置/边栏）+loginCore（门禁检查分离）+SiyiGate 引导弹窗+新用户礼包+侧边栏版本号（读 GSD APP_VERSION 单一来源） ｜ R: 几乎全部 components/common；BackupUtil、CloudSyncUtil、HuaweiAccountUtil、SiyiGate ｜ ⚠S: 满屏必须 Stack 包 Navigation+expandSafeArea；根 Stack 顶层=全部弹窗桥唯一挂载点；畅享 600.6vp 踩线须 deviceInfo 兜底恒手机模式；主题空串=新用户未选择哨兵；**首启登录必须走 loginCore 直通（走 doLogin 会撞 needsAgreement 弹回同一门禁成死循环）**；**首启门禁=首页双态禁回退成覆盖层/延迟判定；门禁态任何放行按钮（登录/暂不登录）都必须先过勾选守卫——漏一处=协议静默同意合规漏洞（0.305.2 实锤）**；**aboutToAppear 里 pathStack 未附着，push 必须包 setTimeout(0) 否则静默丢（0.305.3）**
 
 ## components/
 
