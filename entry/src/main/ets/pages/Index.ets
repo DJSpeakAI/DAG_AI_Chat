@@ -222,11 +222,13 @@ struct Index {
     this.onboardingTip = '';
     this.pathStack.pushPath({ name: 'BBTreeCanvas' }); // ★ 0.305.3：同意完成直进气泡树（首页正常态已退役）
     setTimeout(() => {
-      this.maybeShowThemeChoose();
-      // ★ 0.305.5：本地模式一次性功能告知（用户三测拍板——未登录可用范围提前告知）；
-      //   主题弹窗弹着时让位（onChoose 回调收尾再弹），没弹（老用户撤回重走）即时弹
-      if (!this.themeChooseVisible) {
+      // ★ 0.305.6：本地模式告知弹窗**前置**（用户四测拍板「暂不登录点击进去立即弹」——
+      //   原排在主题选择之后接力，用户在主题弹窗阶段感知=「没弹」）；主题选择改由
+      //   告知弹窗「直接进入」收尾后接力。已弹过（每设备一次）直落主题选择。
+      if (!this.agreement.localModeNoticeShown) {
         this.maybeShowLocalModeNotice();
+      } else {
+        this.maybeShowThemeChoose();
       }
     }, 200);
   }
@@ -1091,10 +1093,10 @@ struct Index {
           setTrackingEnabled(this.getUIContext().getHostContext() as common.Context, true);
           trackFirstAuto();
         }
-        this.maybeShowLocalModeNotice(); // ★ 0.305.5：主题选择收尾后接力弹本地模式告知（仅首次）
       }
     })
     // ★ 0.305.5：本地模式功能告知弹窗（用户三测拍板——「暂不登录」进入后一次性告知可用范围）
+    // ★ 0.305.6：前置到暂不登录进入即刻弹（用户四测拍板）；「直接进入」收尾后接力主题选择
     AppConfirmDialog({
       visible: this.localModeNoticeVisible,
       title: '当前为本地模式',
@@ -1107,6 +1109,7 @@ struct Index {
       },
       onCancel: () => {
         this.localModeNoticeVisible = false;
+        this.maybeShowThemeChoose(); // ★ 0.305.6：告知收尾接力主题选择（原暂不登录直弹让位告知）
       }
     })
     // ★ 0.256.0：签到弹窗（边栏签到入口/首登引导判定触发——SignInDialogBridge 驱动）
