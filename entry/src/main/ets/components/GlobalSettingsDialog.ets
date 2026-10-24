@@ -203,7 +203,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.308.1'; // ★ 0.308.1：探针响应语义修复 // ★ 0.301.1：版本三处同步制（app.json5+GSD+Index 自动跟）
+export const APP_VERSION: string = 'v0.309.0'; // ★ 0.309.0：我的账号 ID // ★ 0.301.1：版本三处同步制（app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2701,6 +2701,51 @@ export struct GlobalSettingsDialog {
         : (this.theme.surfaceSoft))
       .margin({ bottom: 16 })
 
+      // ★ 0.309.0：我的账号 ID 卡（用户拍板——客服/活动领奖场景用户报 ID 的入口；
+      //   脱敏显示前 8 后 4，复制走模板带手机号占位；华为官方 UnionID/OpenID 为标准
+      //   标识符（客户端/服务端均可获取，FAQ faqs-account-22 明示），展示给用户本人合规）
+      Row() {
+        Column() {
+          Text('我的账号 ID')
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.theme.textPrimary)
+          if (this.myAccountId().length > 8) {
+            Text(`${this.myAccountId().substring(0, 8)}…${this.myAccountId().substring(this.myAccountId().length - 4)}`)
+              .fontSize(12)
+              .fontColor(this.theme.textSecondary)
+              .margin({ top: 2 })
+            Text('客服处理 / 活动领奖时提供此 ID')
+              .fontSize(10)
+              .fontColor(this.theme.textTertiary)
+              .margin({ top: 2 })
+          } else {
+            Text('登录华为账号后可查看')
+              .fontSize(11)
+              .fontColor(this.theme.textTertiary)
+              .margin({ top: 2 })
+          }
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        if (this.myAccountId().length > 8) {
+          Button('复制')
+            .height(34)
+            .fontSize(12)
+            .backgroundColor(this.theme.surfaceHover)
+            .fontColor(this.theme.textPrimary)
+            .borderRadius(RADIUS_CONTROL)
+            .onClick(() => {
+              this.copyMyAccountId();
+            })
+        }
+      }
+      .width('100%')
+      .padding(12)
+      .borderRadius(RADIUS_CONTROL)
+      .backgroundColor(this.theme.surfaceSoft)
+      .margin({ bottom: 16 })
+
       // ★ 0.242.0：已开启(syncOn)不显示开启钮——补齐缺失条件（注释自 0.196 起写「已开启则不显示」
       //   但代码漏 !syncOn，实锤状态卡绿色「已开启」时按钮仍渲染，语义冲突；真机截图+用户实测）
       // ★ 0.196.8：未登录时按钮点击拦截——云同步与华为账号绑定，先登录（用户拍板）
@@ -2791,6 +2836,29 @@ export struct GlobalSettingsDialog {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
+  }
+
+  // ★ 0.309.0：当前账号 ID（unionID 优先退化 openID——currentAccountMark 同语义；空串=未登录）
+  myAccountId(): string {
+    return this.account.unionID !== '' ? this.account.unionID : this.account.openID;
+  }
+
+  // ★ 0.309.0：复制「账号 ID+手机号占位」模板——客服/活动领奖场景用户报 ID 的标准件。
+  //   华为隐私设计：app 拿不到账号绑定的手机号——占位行让用户自填，复制件即完整回执
+  copyMyAccountId(): void {
+    const id = this.myAccountId();
+    if (id.length === 0) {
+      this.showToastSafe('请先登录华为账号');
+      return;
+    }
+    try {
+      const text = `DAG AI Chat 账号 ID：${id}\n我的手机号（请填写，便于客服快速定位账号）：\n`;
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      pasteboard.getSystemPasteboard().setData(data).catch(() => {});
+      this.showToastSafe('已复制，请填写手机号后发送至反馈邮箱');
+    } catch (_e) {
+      this.showToastSafe('复制失败，请截图本页');
+    }
   }
 
   // ★ 0.190.6：复制反馈邮箱到剪贴板

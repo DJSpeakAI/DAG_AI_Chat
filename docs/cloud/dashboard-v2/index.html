@@ -100,6 +100,7 @@
     <div class="controls">
       <input id="spAcc" placeholder="手机号或华为账号 ID（手机号需先绑定一次）" style="flex:1;background:#2c2440;color:#cfc2f5;border:1px solid #4a3d75;border-radius:6px;padding:7px 10px;font-size:13px">
       <button class="btn active" onclick="spQuery()">查询</button>
+      <button class="btn" onclick="spRecent()" title="列出最近上报过镜像的全部账号——新账号只要开过 app 且 SP 有变动就会出现">最近上报的账号</button>
     </div>
     <div id="spCard" class="hint">快照滞后性：设备不开 app 不刷新，以 reportedAt 为准。</div>
   </div>
@@ -787,6 +788,25 @@ async function spQuery() {
     if (!j.mirrors || !j.mirrors.length) { spShowTransient('<span style="color:' + SP_C.warn + '">该 ID 无上报记录。查询键必须是华为账号的 unionID/openID（一长串字母数字），<b>不是手机号/QQ 号</b>；若确实没上报，app 冷启/退后台会自动上报，等 10 秒再查</span>', 5000); return; }
     spCancelTransient();
     card.innerHTML = j.mirrors.map(spRenderMirror).join('');
+  } catch (e) {
+    spShowTransient('<span style="color:' + SP_C.bad + '">请求失败：' + (e && e.name === 'AbortError' ? '超时（10 秒无响应）' : e.message) + '</span>', 5000);
+  }
+}
+// ★ 0.309.0 最近上报的账号（用户口述恢复「刷新 ID」——运营捡 ID 主通道：有上报即出现，
+//   每行自带「填入查询框/绑定手机号」；新账号冷启+SP 变动即上报，等 10 秒刷新可见）
+async function spRecent() {
+  const card = document.getElementById('spCard');
+  card.innerHTML = '加载最近上报的账号…';
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(function () { ctrl.abort(); }, 10000);
+    const r = await fetch('/api/sp/query?accountId=__recent__', { signal: ctrl.signal });
+    clearTimeout(tid);
+    const j = await r.json();
+    if (!j.ok) { spShowTransient('<span style="color:' + SP_C.bad + '">' + (j.err || '加载失败') + '</span>', 5000); return; }
+    if (!j.mirrors || !j.mirrors.length) { spShowTransient('<span style="color:' + SP_C.warn + '">暂无账号上报过——设备开 app 且 SP 有变动才上报，稍后再点</span>', 5000); return; }
+    spCancelTransient();
+    card.innerHTML = '<div class="hint" style="margin-bottom:6px">最近上报的 ' + j.mirrors.length + ' 个账号（点行内按钮可查询 / 绑手机号 / 下指令）：</div>' + j.mirrors.map(spRenderMirror).join('');
   } catch (e) {
     spShowTransient('<span style="color:' + SP_C.bad + '">请求失败：' + (e && e.name === 'AbortError' ? '超时（10 秒无响应）' : e.message) + '</span>', 5000);
   }
