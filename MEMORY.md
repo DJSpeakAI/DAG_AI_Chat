@@ -53,17 +53,12 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.306.0|✅**四测四项+清债**：①SiyiGate 引导弹窗双态化（未登录=标题「登录华为账号后可用」+「暂不使用」左「登录华为账号」右；已登录未开=「前往开启」保持左——用户拍板「文案说登录，按钮就得是登录」）②debug 重置成功=关云同步+登出华为账号+1.2s 自动 terminateSelf（重开=未登录全新用户态；两 Promise 契约永不 reject 不加 catch 死分支）③新用户礼包单按钮化（AppConfirmDialog **cancelText 空串=单按钮模式**：不渲染取消钮+遮罩点击不关）④fitViewport 单根小树（flat 且唯一根且渲染高<剩余区 70%）垂直中心 0.5→0.45 上移（纯视口偏移不碰坐标，排列零影响）。**连带清债**：GSD 订阅死分支（else if(true) 哨兵+「订阅后开启」+会员 toast，0.305.1 漏网）+unused import×4+unused 参数 _ 前缀×2。**S 坑三证：check_ets_files 缓存失真报编辑前快照——unused 判定以 grep 现文件+编译为真相**。三台冷装 1000460 ✓（Pura 休眠待补装）|
 |0.305.6|✅**本地模式告知弹窗前置（用户四测「没弹」定性=时序偏差非链路坏）**：原 0.305.5 把告知排在主题选择之后接力弹，用户在主题弹窗阶段感知=「没弹」；改**暂不登录进入 200ms 即刻弹告知**，「直接进入」收尾后接力主题选择（onChoose 里的接力删除）。**S 坑：①「弹窗没出现」先核对弹窗在时序链的哪一站——排在其他弹窗之后的接力弹窗，用户在前一站就下结论=实测永远「没弹」②PC 桌面多窗口下 uitest uiInput click 会点穿到 z 序更高层的浏览器等窗口（把别窗点置顶+app 文本从 dump 消失）——PC 自动化须先把 app 窗口置顶并限定 bundleName 子树，否则别抢用户正在用的 PC**。四台（含 Pura）冷装 1000459|
-|0.305.5|✅**三测四项（全案 docs/真人测试流程参考.md 流程03）**：①**主题「跟随系统」不切深 bug 根治**——根因=app 自身 setColorMode(LIGHT/DARK) 触发 onConfigurationUpdate 回声污染 systemDark 快照；修复=回声哨兵（150ms 窗内同值回声忽略）+跟随档 setColorMode(**COLOR_MODE_NOT_SET**，官方 faqs-ability-156：无 FOLLOW_SYSTEM 枚举，恢复跟随=NOT_SET）②门禁布局三调（顶部弹性 1.6→2.0/中部 1→1.4/底部 0.4→0.3）③协议正文不满屏时段落 SpaceBetween 舒展铺满（minHeight('100%')）④**本地模式一次性告知弹窗**（用户理念：暂不登录=仅词库建立/知识卡手动录入/卡片复习三功能；AppConfirmDialog 承载「登录华为账号/直接进入」双出口；**合规已核官方《Account Kit 登录管理细则》——单次告知+可跳过出口不违规**；agreement_store preferences 加 localModeNoticeShown 键每设备一次）。**S 坑：setColorMode 会自触发 onConfigurationUpdate——凡读 configuration.colorMode 做「系统深浅」判定的链路必须防回声**。四台（含 Pura）冷装 1000458|
 |0.305.4|✅**门禁视觉+负反馈修订（用户二测拍板，全案 docs/真人测试流程参考.md 流程02）**：①抖动锚点统一迁到「我已阅读并同意」协议勾选行（未勾选点登录/暂不登录任一按钮=协议行抖两抖，红色提示文字「请先勾选并同意协议」退役——抖"要去勾的地方"最直观）②视觉重心下沉：顶部弹性 1→1.6 上部整块下移；下块缩小一圈（协议行/不同意退出 13→12 行高 20→18、版本号 12→11）+底部 Blank(0.4) 缓冲不贴底。**连带清债**：onboardingHint 状态/onboardingLocalShakeX 双抖动/shakeOnboardingLocal 全链删（回归单一 shakeOnboarding）。**S 坑：大段 edit 替换函数区时先查同名函数旧体是否还在（Duplicate function 编译错——本次 shakeOnboarding 双体实锤）**。三台 1000457|
-|0.305.3|（已迁 docs/MEMORY_HISTORY.md）|
-|0.305.2|（已迁 docs/MEMORY_HISTORY.md）|
 |0.305.1|✅**技术债三连清零（用户军令"技术债绝对不允许存在"）+零技术债军令入档（project_rule 新节+收尾六件套⑥+AGENTS）**：①订阅退役残留全链删（ReminderDialog 组件+Index 挂载/isVip/vipExpire/vipDaysLeft/stampFreeTrial 打戳/到期提醒引擎；**stampFreeTrialOnLogin→改名 onLoginAccountHooks()**——它 0.293/0.256 被塞了账号切换检测+签到引导活职责不能整删，改名留活职删打戳；SubscriptionStore 类与字段按 **Schema 铁律保留占位**（现役=兑换码/IAP 账本载体，freeTrialStart 等退役字段永不写入））②硬编码色值 33 处全量 token 化（AppTheme 补 onBrand/glassTint/glassStroke/successBg/glowBg+样张常量；#4CAF50→success 等语义归位；唯一豁免=透明哨兵注释）③unused 参数 _ 前缀 5 处（存量已随①大部消解）。**S 坑：codelinter 报 deep-clone/Date 复用=性能建议非债（JSON 往返具名化是 arkts 防御定式勿改）；check_ets_files 对刚改过的文件缓存严重失真——unused 清理须 grep 现文件验证后再修**。三债各编译+git 分批上传；四端冷装 1000454|
-|0.305.0|（已迁 docs/MEMORY_HISTORY.md；全案 docs/0.165+/0.305.0）|
-|0.304.2|（已迁 docs/MEMORY_HISTORY.md）|
-|0.304.1|（已迁 docs/MEMORY_HISTORY.md）|
 
-- 版本号纪律：当前 **v0.305.6（versionCode 1000459）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
+- 版本号纪律：当前 **v0.306.0（versionCode 1000460）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
 - 迭代文档命名：版本号 变更内容.md（详见 project_rule §7）
 - 真机测试设备（阵容与账号分工定稿）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S（hdc 7HZUN26330G02209）+ 畅享90Pro Max（WiFi 192.168.2.17:38611）**，同测同装机；第四台 Pura X View（192.168.2.4:39421）=用户工作机默认不测不装；**手机+Pad 登 180 测试账户、PC+Pura 登 181 主账号**；设备 IP 会变，连不上先问用户；`param get const.product.model` 验身份
 

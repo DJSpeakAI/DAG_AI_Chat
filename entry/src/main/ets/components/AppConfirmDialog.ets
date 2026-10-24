@@ -43,6 +43,8 @@ export struct AppConfirmDialog {
   @Param title: string = '';
   @Param message: string = '';
   @Param confirmText: string = '确定';
+  // ★ 0.306.0：cancelText 传空串=单按钮模式（不渲染取消钮+遮罩点击不关闭——
+  //   新用户礼包等「唯一出口」仪式弹窗用；全项目现有调用点均传非空文案零波及）
   @Param cancelText: string = '取消';
   // ★ 0.196.10：确认钮放左侧（用户拍板：登录引导弹窗「左下角登录华为账号，右边取消」；
   //   默认 false = 取消左/确认右标准序）
@@ -114,7 +116,8 @@ export struct AppConfirmDialog {
 
   build() {
     if (this.visible) {
-      // 遮罩（点击 = 取消——确认类弹窗防误触，点空白不执行确认动作）
+      // 遮罩（点击 = 取消——确认类弹窗防误触，点空白不执行确认动作；
+      //   ★ 0.306.0 单按钮模式（cancelText 空串）遮罩点击不关闭——唯一出口=确认钮）
       Column() {
         Blank()
       }
@@ -122,7 +125,9 @@ export struct AppConfirmDialog {
       .height('100%')
       .backgroundColor(this.theme.overlay)
       .onClick(() => {
-        this.onCancel();
+        if (this.cancelText !== '') {
+          this.onCancel();
+        }
       })
 
       // 面板（AppConfirmDialog 同款：88% 宽 + padding 20 + RADIUS_NAV + this.theme.surfaceNode + this.theme.strokeCard）
@@ -157,9 +162,12 @@ export struct AppConfirmDialog {
           })
         }
 
-        // 双按钮：默认取消左/确认右；confirmOnLeft 时确认左/取消右（0.196.10 登录引导）
+        // 双按钮：默认取消左/确认右；confirmOnLeft 时确认左/取消右（0.196.10 登录引导）；
+        // ★ 0.306.0 单按钮模式（cancelText 空串）只渲染确认钮满宽（layoutWeight(1)）
         Row({ space: 10 }) {
-          if (this.confirmOnLeft) {
+          if (this.cancelText === '') {
+            this.confirmButtonBuilder()
+          } else if (this.confirmOnLeft) {
             this.confirmButtonBuilder()
             this.cancelButtonBuilder()
           } else {

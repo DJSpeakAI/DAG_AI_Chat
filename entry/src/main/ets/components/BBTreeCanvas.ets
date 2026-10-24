@@ -650,9 +650,23 @@ export struct BBTreeCanvas {
     //   缩放与居中都基于剩余区；★ 0.167.7：底板 padding top 24→8 后高度重算——
     //   flat 底板 8+40+8=56 取 64；tabs 再加 space 8 + Tab 栏 36 = 100 取 108
     const topSafe = this.canvasModeStore.mode === 'tabs' ? 108 : 64;
+    const availH = this.viewH - topSafe;
     const treeW = maxX - minX + NODE_W + 32;
     const treeH = maxY - minY + NODE_H + 32;
-    this.canvasScale = Math.min(this.viewW / treeW, (this.viewH - topSafe) / treeH, 1.0);
+    this.canvasScale = Math.min(this.viewW / treeW, availH / treeH, 1.0);
+
+    // ★ 0.306.0：单根小树垂直中心 0.5→0.45 上移（用户四测拍板「默认首根气泡在正中偏下，
+    //   稍微往上移一点好看」）——仅 flat 模式且全池唯一根且渲染树高<剩余区 70% 生效；
+    //   多根/大树保持剩余区正中不受影响；只动视口偏移不碰节点坐标，后续自动排列零影响
+    let rootCount = 0;
+    for (const node of this.store.nodeList) {
+      if (node.parentID === null) {
+        rootCount++;
+      }
+    }
+    const liftSingleRoot = this.canvasModeStore.mode === 'flat' && rootCount === 1
+      && treeH * this.canvasScale < availH * 0.7;
+    const vCenter = liftSingleRoot ? 0.45 : 0.5;
 
     // ★ 树几何中心对齐画布正中，-NODE_W/2 / -NODE_H/2 气泡左上角→中心补偿；去掉 Math.max 截断，树再大中心也对齐（0.130）
     // ★ 0.151-bugfix5：补偿必须乘 scale——treeCenterX 是气泡左上角坐标中心，视觉中心 = treeCenterX + NODE_W/2，
@@ -661,7 +675,7 @@ export struct BBTreeCanvas {
     this.canvasOffsetX = this.viewW / 2 - treeCenterX * this.canvasScale - NODE_W / 2 * this.canvasScale;
     // ★ 0.248.1：垂直居中回归剩余区正中——0.215.6 的 +6% 下移在当前 UI（信息条/导航条布局迭代后）
     //   被用户实测判「整体偏下」（截图实锤），偏移项移除；若复测偏上再按 1~2% 步进微调
-    this.canvasOffsetY = topSafe + (this.viewH - topSafe) / 2 - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
+    this.canvasOffsetY = topSafe + availH * vCenter - treeCenterY * this.canvasScale - NODE_H / 2 * this.canvasScale;
     this.redrawEdges(); // ★ 0.167.2：视口变化 → 连线重绘
   }
 

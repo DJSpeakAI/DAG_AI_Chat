@@ -41,7 +41,7 @@ import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默；★ 0.305.3：HuaweiAccountStore/connectHuaweiAccount 随首页正常态账号区退役清 unused import
 import { clearAllLocalUserData } from '../utils/DataWipeUtil'; // ★ 0.263.0：退出登录「同时清空本机数据」（借给他人前场景）
-import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_CONTROL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens'; // ★ 0.306.0：RADIUS_NAV 未消费清出（0.305.1 清 import 漏网）
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启动构建桌面卡片快照
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204.0：同上
@@ -298,11 +298,31 @@ struct Index {
 
   // ============================================================
   // ★ 0.293.0：SP 云同步门卫引导弹窗（SiyiGate——文案与确认动作按阻塞原因分支）
+  // ★ 0.306.0：标题/按钮文字/按钮位次同步分支（用户四测拍板）——
+  //   r=1 未登录：标题「登录华为账号后可用」，左「暂不使用」右「登录华为账号」
+  //   （与本地模式告知弹窗同款位次）；r=2 已登录未开：标题「开启云同步后可用」，
+  //   确认「前往开启」保持左位；r=3：确认「前往云空间」。
   // ============================================================
+  syncGateTitle(): string {
+    return siyiGateBlockReason() === 1 ? '登录华为账号后可用' : '开启云同步后可用';
+  }
+
+  syncGateConfirmText(): string {
+    const r = siyiGateBlockReason();
+    if (r === 1) {
+      return '登录华为账号';
+    }
+    return r === 2 ? '前往开启' : '前往云空间';
+  }
+
+  syncGateCancelText(): string {
+    return siyiGateBlockReason() === 1 ? '暂不使用' : '取消';
+  }
+
   syncGateMessage(): string {
     const r = siyiGateBlockReason();
     if (r === 1) {
-      return '此功能涉及司忆点（SP），需登录华为账号并开启云同步使账本在云端对齐后使用。点击下方按钮登录。';
+      return '此功能涉及司忆点（SP），需登录华为账号并开启云同步使账本在云端对齐后使用。点击下方按钮登录华为账号。';
     }
     if (r === 2) {
       return '此功能涉及司忆点（SP），需开启云同步使账本在云端对齐后使用（防多端账目不一致）。点击下方按钮一键开启。';
@@ -838,7 +858,7 @@ struct Index {
               onNavClick: (kind: string) => {
                 this.sideBarNav(kind);
               },
-              onFolderClick: (folderId: string) => {
+              onFolderClick: (_folderId: string) => { // ★ 0.306.0：参数未消费 _ 前缀（视图切换走共享 store，见内注释）
                 // ★ 0.220.0：文件夹树点击——视图切换已由共享 store（folderNav.folderId）生效，
                 //   此处只需确保路由在当前库页（树仅在库页显示，正常恒在；兜底 pushPath）
                 // ★ 0.222.19：按当前路由区分知识库/单词库
@@ -1040,13 +1060,14 @@ struct Index {
     })
     // ★ 0.293.0：SP 云同步门卫引导（SiyiGate——AI 发送/重生成/划词/圈注/签到/充值在云同步
     //   未就绪时触发；文案与确认动作按 siyiGateBlockReason 三分支：登录/一键开启/跳系统云空间）
+    // ★ 0.306.0：标题/按钮文字/位次随阻塞原因动态化（未登录=「暂不使用」左+「登录华为账号」右）
     AppConfirmDialog({
       visible: this.confirmDialog.syncGatePromptVisible,
-      title: '开启云同步后可用',
+      title: this.syncGateTitle(),
       message: this.syncGateMessage(),
-      confirmText: '前往开启',
-      cancelText: '取消',
-      confirmOnLeft: true,
+      confirmText: this.syncGateConfirmText(),
+      cancelText: this.syncGateCancelText(),
+      confirmOnLeft: siyiGateBlockReason() !== 1,
       onConfirm: () => {
         this.onSyncGateConfirm();
       },
@@ -1056,16 +1077,15 @@ struct Index {
     })
     // ★ 0.293.0：新用户礼包仪式感弹窗（云首拉完成+云端确认无发放记录才发放——发放即弹窗
     //   明示赠送，绝不后台默默到账；用户拍板「您是新用户，免费赠送您 200 万 SP」）
+    // ★ 0.306.0：单按钮化（cancelText 空串=单按钮模式——SP 已入账，关闭/收下结果相同，
+    //   关闭出口纯属误导；点遮罩也不关，唯一出口「开心收下」——用户四测拍板）
     AppConfirmDialog({
       visible: this.confirmDialog.welcomeBonusVisible,
       title: '🎁 新用户礼包',
       message: `您是新用户，免费赠送您 ${(this.confirmDialog.welcomeBonusAmount / 10000).toLocaleString()} 万 SP，已入账。祝学习愉快！`,
       confirmText: '开心收下',
-      cancelText: '关闭',
+      cancelText: '',
       onConfirm: () => {
-        this.confirmDialog.welcomeBonusVisible = false;
-      },
-      onCancel: () => {
         this.confirmDialog.welcomeBonusVisible = false;
       }
     })

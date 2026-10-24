@@ -37,22 +37,22 @@ import pasteboard from '@ohos.pasteboard'; // ★ 0.190.6：复制反馈邮箱
 import componentUtils from '@ohos.arkui.componentUtils'; // ★ 0.251.2：Tab 选中居中量测（getRectangleById——选中胶囊自动滚到轨道中部，根治滚动中段两侧胶囊贴边被裁）
 import Want from '@ohos.app.ability.Want'; // ★ 0.251.2：授权被拒后跳系统应用详情页（引导手动开「跨设备同步」）
 import BuildProfile from 'BuildProfile'; // ★ 0.303.1：仅 debug 包显示「重置为新用户资产」测试入口
-  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, normalizeAnchorMode, normalizeThinkingMode, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL, connectSishuClassic, SishuClassicStore } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.269.0：normalizeAnchorMode（anchorMode 三态归一）；★ 0.271.0：normalizeThinkingMode（thinkingMode 三态归一）；★ 0.300.0：connectSishuClassic（司枢经典模式灰度开关）
-import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil';
+  import { ApiConfig, AiPreference, connectApiConfig, connectAiPreference, AnchorPref, connectAnchorPref, inferProviderFromEndpoint, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, connectTtsHint, getBuiltinQwenTtsKey, getBuiltinTencentChatKey, getBuiltinVolcanoChatKey, getBuiltinVolcanoTtsKey, getBuiltinVolcanoTtsVoice, snapshotApiConfig, refreshApiCfg, TENCENT_CHAT_ENDPOINT, TENCENT_CHAT_MODEL, connectSishuClassic, SishuClassicStore } from '../common/ChatModel'; // ★ 0.238.1：ModelAliasStore/connectModelAlias 已随 0.247.1 别名机制下线移除；★ 0.240.1：snapshotApiConfig（保存双写配置快照——自愈真相源）；★ 0.240.2：refreshApiCfg（开弹窗主动补灌 v5 盘值——水合竞态双保险第二通道）；★ 2026-10-17：腾讯云三件套预填（TENCENT_CHAT_* + getBuiltinTencentChatKey）与火山档 key 回填（getBuiltinVolcanoChatKey）；★ 0.306.0：normalizeAnchorMode/normalizeThinkingMode 已随调用点内联化清出 import；★ 0.300.0：connectSishuClassic（司枢经典模式灰度开关）
+import { requestSyncPermission, CloudSyncStore, connectCloudSync, activateCloudSync, setCloudSyncEnabled, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil';
 import { writeCloudSwitchShadow } from '../utils/CloudSwitchShadow'; // ★ 0.301.1 bug8：关闭同步时同步影子=不自动复活 // ★ 0.165.2：云同步 Tab（权限弹窗 + 状态查询）；★ 0.196.10：状态改响应式——permGranted（权限，开弹窗时查）&& cloudSwitch.enabled（@Trace 开关，实时）；★ 0.259.2：activateCloudSync（权限面板上开权限后当场激活云同步）；★ 0.266.0：setCloudSyncEnabled（关闭云同步入口）
 import { SiyiGateStore, connectSiyiGate, refreshSiyiGatePerm, requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：permGranted 单一真值源（SiyiGate 共享 store——任意处刷新 GSD 即时可见，0.229.24 根治）；★ 0.298.0 requireSiyiGate（重做性格测试=SP 获得前置云同步门卫）
 import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未登录点「开启云同步」→ 登录引导弹窗（Index 根挂载）
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
-import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫
+import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud, logoutHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫；★ 0.306.0：debug 重置后登出账号
 import { SP_TTS_PER_KCHAR, debugResetNewUserAssets } from '../common/ChatModel'; // ★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费同源常量）；★ 0.303.1：debug 重置；★ 0.305.1：isVip/subscription 随订阅退役清除
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
 import {
   buildBackupPayload, writeInternalBackup, restoreFromPayload,
   getBackupSettings, setAutoBackupEnabled, setExternalUri, pickBackupFile, pickAndReadBackupFile,
-  writeExternalBackup, maybeAutoBackup, BackupPayload
-} from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）
+  writeExternalBackup, BackupPayload
+} from '../utils/BackupUtil'; // ★ 0.205.0数据安全三道防线；★ 0.205.3：删 readInternalBackup/getLastInternalTime（设置页内部备份卡随删）；★ 0.306.0：maybeAutoBackup 未消费清出（调用方在 EntryAbility）
 import { track, isTrackingEnabled, setTrackingEnabled, trackFirstAuto } from '../utils/TrackUtil'; // 0.206.0 埋点+隐私开关；★ 0.260.0：迟加入补报 app_first
 import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折叠指示器（军令统一）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.232.1：弹窗宽度断点制（PC/Pad 固定 560 不做屏宽自适应——用户拍板「配置类 UI 自适应宽度难看」）
@@ -203,7 +203,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.305.6'; // ★ 0.305.6：告知弹窗前置即刻弹 // ★ 0.301.1：版本三处同步制（app.json5+GSD+Index 自动跟）
+export const APP_VERSION: string = 'v0.306.0'; // ★ 0.306.0：四测四项 // ★ 0.301.1：版本三处同步制（app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -2684,7 +2684,7 @@ export struct GlobalSettingsDialog {
             ? '本设备对话数据将自动与云端保持一致'
             : (!this.account.isLoggedIn
               ? '云同步与华为账号绑定——请先登录华为账号' // ★ 0.196.8：未登录优先提示（用户拍板：先登录再开同步）
-              : '开启后，登录同一华为账号的多台设备共享对话数据')) // ★ 0.194.0：非 VIP 提示
+              : '开启后，登录同一华为账号的多台设备共享对话数据'))
             .fontSize(11)
             .fontColor(this.theme.textTertiary)
             .margin({ top: 2 })
@@ -2701,14 +2701,13 @@ export struct GlobalSettingsDialog {
         : (this.theme.surfaceSoft))
       .margin({ bottom: 16 })
 
-      // ★ 0.242.0：已开启(syncOn)不显示——补齐缺失条件（注释自 0.196 起写「已开启则不显示」
+      // ★ 0.242.0：已开启(syncOn)不显示开启钮——补齐缺失条件（注释自 0.196 起写「已开启则不显示」
       //   但代码漏 !syncOn，实锤状态卡绿色「已开启」时按钮仍渲染，语义冲突；真机截图+用户实测）
-      // ★ 0.194.0：非 VIP 时按钮替换为「订阅后开启」——云同步是唯一会员功能，到期只锁这里
       // ★ 0.196.8：未登录时按钮点击拦截——云同步与华为账号绑定，先登录（用户拍板）
       // ★ 0.196.10：拦截 toast 升级登录引导弹窗——「登录华为账号」直拉登录（用户拍板：
       //   原让用户回主页/边栏登录多此一举）；弹窗 Index 根挂载
-      // ★ 0.196.12：未登录/VIP 两分支按钮样式完全相同——合并为一个 Button，onClick 内分流
-      //   （原两分支重复 12 行样式代码；非 VIP 分支样式不同保持独立）
+      // ★ 0.306.0：订阅 VIP 门槛死分支当轮清零（0.305.1 else-if(true) 哨兵漏网——
+      //   「订阅后开启」按钮+会员 toast 不可达死代码，零技术债军令）
       if (this.syncOn) {
         // ★ 0.266.0：关闭云同步入口（用户需求——此前页面只有「开」没有「关」，想停同步只能退出账号）
         //   直接关+toast（用户拍板：可逆操作、登录态保持、云端数据不删，随时可重开）
@@ -2726,7 +2725,7 @@ export struct GlobalSettingsDialog {
             setCloudSyncEnabled(false); // 0.196.8 现成函数：enabled=false + deactivate（登录态保持，与退出账号无关）
             this.showToastSafe('云同步已关闭，数据仅保存在本设备，可随时重新开启');
           })
-      } else if (true) { // ★ 0.305.1：未开启即显示开启按钮（订阅 VIP 门槛已退役——人人可用）
+      } else {
         Button('开启云同步')
           .width('100%')
           .height(48)
@@ -2743,7 +2742,7 @@ export struct GlobalSettingsDialog {
               connectConfirmDialog().loginPromptVisible = true;
               return;
             }
-            // 已登录 VIP：直接弹系统授权窗（授权即开；开关侧 enabled 已在 requestSyncPermission 内落 true）
+            // 已登录：直接弹系统授权窗（授权即开；开关侧 enabled 已在 requestSyncPermission 内落 true）
             const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
             if (context === undefined || context === null) {
               this.showToastSafe('获取上下文失败，请重试');
@@ -2760,19 +2759,6 @@ export struct GlobalSettingsDialog {
               //   还要用户手点「权限」）
               this.openPermissionPanelFlow(context);
             });
-          })
-      } else {
-        Button('订阅后开启')
-          .width('100%')
-          .height(48)
-          .fontSize(FONT_SIZE_CARD_TITLE_SM)
-          .fontWeight(FontWeight.Medium)
-          .backgroundColor(this.theme.surfaceHover)
-          .fontColor(this.theme.textSecondary)
-          .borderRadius(RADIUS_CONTROL)
-          .margin({ bottom: 16 })
-          .onClick(() => {
-            this.showToastSafe('云同步为会员功能，请到边栏「账单」页订阅');
           })
       }
 
@@ -3392,10 +3378,13 @@ export struct GlobalSettingsDialog {
   }
 
   // ★ 0.303.1：debug 包测试入口——重置为新用户资产（内容行不动）
+  // ★ 0.306.0：重置成功=登出华为账号+关云同步+自动退出应用（用户四测拍板「重置=全部重来，
+  //   账号也不在里面；重置完系统帮我关掉 APP」——此前只 toast 提示手动重开，重启前内存旧态
+  //   与半初始化状态易被误用；退出由 terminateSelf 完成，数据已 flush 落盘/云端）
   confirmDebugReset(): void {
     this.getUIContext().showAlertDialog({
       title: '重置为新用户（测试）',
-      message: '将清零 SP 三池、签到、新手任务、学习统计与礼包标记，并覆盖云端资产两行；聊天记录、词库、知识库、API 配置全部保留。重置后请彻底退出应用再重开。',
+      message: '将清零 SP 三池、签到、新手任务、学习统计与礼包标记，并覆盖云端资产两行；聊天记录、词库、知识库、API 配置全部保留。确认后自动退出华为账号并关闭应用，重新打开即全新用户状态。',
       autoCancel: true,
       cancel: () => {
         // 点遮罩/返回=取消
@@ -3404,8 +3393,27 @@ export struct GlobalSettingsDialog {
         value: '确认重置',
         fontColor: this.theme.danger,
         action: () => {
+          // 两个 Promise 契约均「内部全捕获、永不 reject」（返回 boolean/空串错误提示）——不加 catch 死分支
           debugResetNewUserAssets().then((ok: boolean) => {
-            this.showToastSafe(ok ? '已重置，请彻底退出应用后重开' : '云同步未就绪，请稍后重试', 3000);
+            if (!ok) {
+              this.showToastSafe('云同步未就绪，请稍后重试', 3000);
+              return;
+            }
+            // 云端已覆盖+本地已清零：先关云同步再断账号会话（DataWipe 顺序铁律同款），
+            // 落盘完成后自退——重开=未登录空资产全新状态
+            const uiContext = this.getUIContext();
+            disableCloudSyncOnLogout(uiContext);
+            const context = uiContext.getHostContext() as common.UIAbilityContext;
+            logoutHuaweiID(context).then(() => {
+              this.showToastSafe('已重置，应用即将退出', 1200);
+              setTimeout(() => {
+                try {
+                  context.terminateSelf();
+                } catch (_e) {
+                  // 自退失败静默——数据已清+账号已登出，用户手动重开同样干净
+                }
+              }, 1200);
+            });
           });
         }
       }
@@ -3540,7 +3548,7 @@ export struct GlobalSettingsDialog {
             .onClick(() => {
               this.confirmDebugReset();
             })
-          Text('清零 SP/签到/新手任务/学习统计与礼包标记，覆盖云端资产两行；内容行不动。重置后请彻底退出重开。')
+          Text('清零 SP/签到/新手任务/学习统计与礼包标记，覆盖云端资产两行；内容行不动。确认后自动退出账号并关闭应用。')
             .fontSize(11)
             .lineHeight(17)
             .fontColor(this.theme.textTertiary)
@@ -4016,7 +4024,7 @@ export struct GlobalSettingsDialog {
                     ? FontWeight.Medium : FontWeight.Normal)
                   .margin({ bottom: 10 })
                   .width('100%')
-              }, (section: string, idx: number) => `${idx}`)
+              }, (_section: string, idx: number) => `${idx}`)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
