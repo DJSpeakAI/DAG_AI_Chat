@@ -22,7 +22,7 @@ export class ConfirmDialogStore {
   @Trace aiLoginPromptVisible: boolean = false; // ★ 0.248.2：未登录发消息问 AI → 登录引导（上架合规：AI 生成内容限实名华为账号用户——ChatPage 发送/重生成等入口触发）
   @Trace spRechargePromptVisible: boolean = false; // ★ 0.248.7：SP 余额为 0 发消息 → 充能引导（实扣链路上线；ChatPage 发送/重生成触发，确认跳账单页充能）
   // ★ 0.293.0：SP 云同步门卫引导（SiyiGate——消耗/增加 SP 的功能在云同步未就绪时触发；
-  //   确认动作按 siyiGateBlockReason 分支：登录/一键开启/跳系统云空间，Index 根 Stack 消费）
+  //   确认动作按 siyiGateBlockReason 分支：未登录/网络重试/账本同步（0.313.0 起不再需要开云空间），Index 根 Stack 消费）
   @Trace syncGatePromptVisible: boolean = false;
   // ★ 0.293.0：新用户礼包发放仪式感弹窗（云首拉完成+云端确认无发放记录才发放——发放即弹窗
   //   明示「您是新用户，免费赠送 N 万 SP」，绝不做后台默默到账；用户拍板）

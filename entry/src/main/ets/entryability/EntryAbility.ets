@@ -18,7 +18,7 @@ import { loadBuiltinApiConfig, setupCloudDownlink, initRowBridgeProviders, flush
 import { initCloudDb, forceCloudSyncNow, connectCloudSync, setCloudSyncEnabled } from '../utils/CloudSyncUtil'; // ★ 0.165.1：启动时初始化云同步 RDB；★ 0.223.0：回前台强制端云同步；★ 0.228.0 行模式传输层；★ 0.230.1：wipeCloudRows 临时钩子已删（止血由 initCloudDb 幂等清洗接管）
 import { settleRookieTasks } from '../common/RookieTask'; // ★ 0.294.0：新手任务结算（回前台对账差集补发）
 import { maybeAutoShowSignIn } from '../common/ChatModel'; // ★ 0.294.0：每日首开自动弹签到（gate ready 才弹）
-import { pullSpAdminCommands, reportSpAdminMirror } from '../common/ChatModel'; // ★ 0.301.0：SP 数据台——回前台拉运营指令（发放/扣减）+ 退后台镜像快照碰运气上报
+import { pullSpAdminCommands, ensureSpAuth, flushPendingSp } from '../common/ChatModel'; // ★ 0.301.0：SP 数据台——回前台拉运营指令（发放/扣减）；★ 0.313.0：账本通道初始化/刷新 + 待扣队列重试（端侧镜像上报已退役）
 import { refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫——启动/回前台刷新 DISTRIBUTED_DATASYNC 权限缓存（系统设置改权限回来即校正）
 import { handleWidgetRate, handleWidgetSwitch, handleWidgetContinue, handleWidgetSpeak } from '../utils/WidgetHostBridge'; // 0.204.1 widget call; 0.204.2 continue; ★ 0.255.0 speak
 import { handleWidgetFlip } from '../utils/WidgetReviewUtil'; // ★ 0.224.0：卡面翻面（纯显示态——卡片安全工具层处理）
@@ -98,6 +98,15 @@ export default class EntryAbility extends UIAbility {
     // ★ 0.293.0：SP 云同步门卫——启动即刷权限缓存（SiyiGate permGranted 单一真值源，
     //   GSD 云同步 Tab 状态卡与门卫判定共用）
     refreshSiyiGatePerm();
+    // ★ 0.313.0：SP 账本权威通道初始化（登录态恢复后立即拉权威余额/首次迁移），
+    //   随后重试待扣队列（上轮弱网/杀进程遗留事务，txId 幂等不双扣）
+    ensureSpAuth().then((ok: boolean) => {
+      if (ok) {
+        flushPendingSp();
+      }
+    }).catch(() => {
+      // 静默（未登录/网络未就绪——门卫弹窗按 spAuthErr 分支提示）
+    });
     // ★ 0.301.1 bug8：云同步开关影子——enabled=true 则记影子；P2 水合失败时按影子恢复
     if (connectHuaweiAccount().isLoggedIn) {
       if (connectCloudSync().enabled) {
@@ -479,6 +488,17 @@ export default class EntryAbility extends UIAbility {
     pullRefundMarks();
     // ★ 0.301.0：回前台拉 SP 数据台运营指令（发放/扣减——云函数未部署返 '[]' 静默零影响）
     pullSpAdminCommands();
+    // ★ 0.313.0：回前台刷新权威余额 + 重试待扣队列（30s 缓存内不重复请求）
+    ensureSpAuth().then((ok: boolean) => {
+      if (ok) {
+        flushPendingSp();
+        // 账本通道就绪后补跑新手任务结算/每日首开签到（上面同步调用时 gate 可能还没就绪）
+        settleRookieTasks();
+        maybeAutoShowSignIn();
+      }
+    }).catch(() => {
+      // 静默
+    });
   }
 
   onBackground(): void {
@@ -521,12 +541,7 @@ export default class EntryAbility extends UIAbility {
     } catch (_e) {
       // 静默（提醒是增强能力，绝不阻断退后台链）
     }
-    // ★ 0.301.0：SP 镜像快照退后台兜底上报（碰运气语义——0.206.2 教训退后台网络大概率被掐，
-    //   失败静默指纹不置位，下次变更/回前台 pull 顺带再报）
-    try {
-      reportSpAdminMirror();
-    } catch (_e) {
-      // 静默
-    }
+    // ★ 0.301.0：SP 镜像快照退后台兜底上报（★ 0.313.0 已删除——SpMirror 由云函数事务维护，
+    //   端侧上报会覆盖权威余额，零技术债军令：通道整体退役）
   }
 }

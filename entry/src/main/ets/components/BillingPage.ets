@@ -14,7 +14,7 @@ import { SubscriptionStore, connectSubscription, redeemCode, onLoginAccountHooks
   freezePackageUntil, REFUND_FREEZE_MS, frozenAvailableSp,
 
   StatisticsStore, connectStatistics, getStatDays,
-  pullSpAdminCommands } from '../common/ChatModel';
+  pullSpAdminCommands, ensureSpAuth } from '../common/ChatModel';
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.194.0：兑换前置登录；★ 0.196.9：取消登录静默
 import { needsHwAgreement, connectAgreementBridge } from '../utils/Agreement'; // ★ 0.264.0：华为协议门禁（基础协议由首页未同意态承担，0.305.0）
 import { IapOutcome, purchaseSp, queryIapSpPrices, recoverPendingPurchases, detectRefundedIapPurchases, pullRefundMarks } from '../utils/IapUtil';
@@ -50,6 +50,7 @@ export struct BillingPage {
   // ★ 0.261.0：进场静默拉商品展示价 + 补单（登录态才有未完成单；均不阻塞 UI）
   // ★ 0.289.0：包账本迁移重建（旧池级账拆成独立包）+ 退款自动感知核销（用户零操作）
   aboutToAppear(): void {
+    ensureSpAuth(); // ★ 0.313.0：进场预热账本通道（资产卡余额以云端镜像为准）
     const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
     queryIapSpPrices(ctx).then((prices: Record<string, string>) => {
       const p1 = prices[IAP_PRODUCT_SP_200W];

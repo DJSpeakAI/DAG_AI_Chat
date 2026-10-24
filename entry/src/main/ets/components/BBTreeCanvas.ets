@@ -29,7 +29,7 @@ import { PersonalityQuizStore, connectPersonalityQuiz, QuizLaunchStore, connectQ
 import { PersonalityQuizDialog } from './PersonalityQuizDialog'; // ★ 0.288.0：性格测试弹窗（信号灯唤起）
 import { RookieTaskDialog, RookieRewardDialog } from './RookieTaskDialog'; // ★ 0.294.0：好奇宝宝任务面板+奖励到账弹窗（右上角入口唤起）
 import { rookieUndoneCount, rookieAllSettled, settleRookieTasks, connectRookieBridge } from '../common/RookieTask'; // ★ 0.294.0：任务角标/入口消失/结算时机/奖励弹窗桥
-import { SiyiPointStore, connectSiyiPoints } from '../common/ChatModel'; // ★ 0.294.0：任务 done/granted 集合真相源（cfg:siyi-points）
+import { SiyiPointStore, connectSiyiPoints, ensureSpAuth } from '../common/ChatModel'; // ★ 0.294.0：任务 done/granted 集合真相源（cfg:siyi-points）
 import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.298.0：信号灯入口前置云同步门卫（答题=SP 获得）
 import { ContinueBridgeStore, connectContinueBridge } from '../utils/ContinueBridge'; // ★ 0.307.0：应用接续——目标端导航消费（pending→交棒三连进 ChatPage）
 
@@ -296,6 +296,7 @@ export struct BBTreeCanvas {
   }
 
   aboutToAppear(): void {
+    ensureSpAuth(); // ★ 0.313.0：画布预热账本通道（性格测试/新手任务 = SP 发放入口）
     // ★ 0.168：断点判断（≥600vp 平板走宽边栏，否则手机抽屉窄栏）。
     // ★ 0.196.4：isTablet 屏宽检测删除——改读 WindowMode 共享真相源（Index 根 onAreaChange
     //   按窗口实宽写入；分屏/悬浮窗实时切换手机/平板布局）

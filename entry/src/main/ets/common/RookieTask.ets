@@ -15,7 +15,7 @@
 // ============================================================
 
 import { AppStorageV2 } from '@kit.ArkUI';
-import { SiyiPointStore, connectSiyiPoints, grantBonusSp } from './ChatModel';
+import { SiyiPointStore, connectSiyiPoints, grantBonusSp, spAccountId, noteSpStateMutation } from './ChatModel';
 import { siyiGateReady } from '../utils/SiyiGate';
 import { trackAuto } from '../utils/TrackUtil';
 
@@ -81,11 +81,13 @@ export function rookieGrantedIds(siyi: SiyiPointStore): string[] {
 }
 
 function writeDoneIds(siyi: SiyiPointStore, ids: string[]): void {
-  siyi.rookieDoneJson = JSON.stringify(ids); // PersistenceV2 即时落盘；云上行由 grantBonusSp/结算的 scheduleRowFlush 带
+  siyi.rookieDoneJson = JSON.stringify(ids); // PersistenceV2 即时落盘
+  noteSpStateMutation(); // ★0.314.0：状态标记显式上行（不再依赖发放链路的隐式 flush）
 }
 
 function writeGrantedIds(siyi: SiyiPointStore, ids: string[]): void {
   siyi.rookieGrantedJson = JSON.stringify(ids);
+  noteSpStateMutation(); // ★0.314.0：状态标记显式上行
 }
 
 function pushUnique(ids: string[], id: string): boolean {
@@ -132,7 +134,9 @@ function grantOne(siyi: SiyiPointStore, id: string, amount: number): boolean {
   if (granted.indexOf(id) >= 0) {
     return false; // 已发过（幂等）
   }
-  if (!grantBonusSp(siyi, amount, `rookie_${id === ROOKIE_BONUS_ID ? 'bonus' : id}`)) {
+  // ★ 0.313.0：txId=账号+任务 id（云端 SpLedger 幂等——跨端/重装重复领取拦截）
+  if (!grantBonusSp(siyi, amount, `rookie_${id === ROOKIE_BONUS_ID ? 'bonus' : id}`,
+    `rookie:${spAccountId()}:${id}`)) {
     return false; // gate 未就绪——保留挂账，结算时机再试
   }
   granted.push(id);

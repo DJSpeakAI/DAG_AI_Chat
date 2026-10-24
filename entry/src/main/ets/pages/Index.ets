@@ -27,7 +27,7 @@ import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单
 import { APP_VERSION } from '../components/GlobalSettingsDialog'; // ★ 0.301.0：版本号单一来源（GSD export 常量——修 Index 硬编码漏更七版 bug，版本同步点从两处制回三处制）
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
-import { BubbleNode, BubbleTree, ApiConfig, PersistData, generateNodeId, deserializeBubbleTree, serializeBubbleTree, migrateLegacyDemoSeed, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, onLoginAccountHooks, wipeHistoricalTestStats, maybeShowSignInAfterGateReady } from '../common/ChatModel'; // ★ 0.305.1：订阅语义清零（stampFreeTrialOnLogin→onLoginAccountHooks；ReminderDialog/isVip/倒计时引擎随订阅退役删除）；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计；★ 0.310.1：ChatMessage/generateMessageId 随默认示例气泡退役删除；serializeBubbleTree/migrateLegacyDemoSeed=示例气泡一次性迁移；★ 0.311.0：maybeShowSignInAfterGateReady（礼包关闭后补弹首日签到）
+import { BubbleNode, BubbleTree, ApiConfig, PersistData, generateNodeId, deserializeBubbleTree, serializeBubbleTree, migrateLegacyDemoSeed, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, onLoginAccountHooks, wipeHistoricalTestStats, maybeShowSignInAfterGateReady, ensureSpAuth } from '../common/ChatModel'; // ★ 0.305.1：订阅语义清零（stampFreeTrialOnLogin→onLoginAccountHooks；ReminderDialog/isVip/倒计时引擎随订阅退役删除）；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计；★ 0.310.1：ChatMessage/generateMessageId 随默认示例气泡退役删除；serializeBubbleTree/migrateLegacyDemoSeed=示例气泡一次性迁移；★ 0.311.0：maybeShowSignInAfterGateReady（礼包关闭后补弹首日签到）
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）；★ 0.311.1：开启动作统一走 CloudSyncPermissionGuide
@@ -298,20 +298,18 @@ struct Index {
   }
 
   // ============================================================
-  // ★ 0.293.0：SP 云同步门卫引导弹窗（SiyiGate——文案与确认动作按阻塞原因分支）
-  // ★ 0.306.0：标题/按钮文字/按钮位次同步分支（用户四测拍板）——
+  // ★ 0.293.0：SP 云服务门卫引导弹窗（文案与确认动作按阻塞原因分支）
+  // ★ 0.313.0（Phase2）：门卫改为「登录 ∧ 云函数账本通道就绪」——云空间开关不再是 SP 闸门
   //   r=1 未登录：标题「登录华为账号后可用」，确认「登录华为账号」；
-  //   r=2 已登录未开：标题「开启云同步后可用」，确认「前往开启」；r=3：确认「前往云空间」。
-  // ★ 0.310.1：确认钮（主行动）恒在左、取消在右（用户拍板——与首启门禁同向）。
-  // ★ 0.308.0：r=4 假开启实锤（探针/本地标记证据确凿）：标题「云同步未真正生效」，
-  //   确认「前往云空间开启」直跳系统设置（用户拍板——新用户不知道开关在哪必须带过去）。
+  //   r=2 网络不可用：确认「重试连接」；r=3 账本同步/服务升级中：确认「重试」。
+  //   确认钮（主行动）恒在左、取消在右（0.310.1 用户拍板）。
   // ============================================================
   syncGateTitle(): string {
     const r = siyiGateBlockReason();
-    if (r === 4) {
-      return '云同步未真正生效'; // ★ 0.308.0：假开启实锤（探针/本地标记证据确凿）
+    if (r === 1) {
+      return '登录华为账号后可用';
     }
-    return r === 1 ? '登录华为账号后可用' : '开启云同步后可用';
+    return r === 2 ? '云服务连接失败' : '司忆点服务准备中';
   }
 
   syncGateConfirmText(): string {
@@ -319,10 +317,7 @@ struct Index {
     if (r === 1) {
       return '登录华为账号';
     }
-    if (r === 4) {
-      return '前往云空间开启'; // ★ 0.308.0：直跳系统云空间（用户拍板——新用户不知道开关在哪，必须带过去）
-    }
-    return r === 2 ? '前往开启' : '前往云空间';
+    return '重试';
   }
 
   syncGateCancelText(): string {
@@ -332,45 +327,22 @@ struct Index {
   syncGateMessage(): string {
     const r = siyiGateBlockReason();
     if (r === 1) {
-      return '此功能涉及司忆点（SP），需登录华为账号并开启云同步使账本在云端对齐后使用。点击下方按钮登录华为账号。';
+      return '此功能涉及司忆点（SP），需登录华为账号后使用。点击下方按钮登录华为账号。';
     }
     if (r === 2) {
-      return '此功能涉及司忆点（SP），需开启云同步使账本在云端对齐后使用（防多端账目不一致）。点击下方按钮一键开启。';
+      return '司忆点账本需要连接云端服务，当前网络不可用。请检查网络后点击「重试」。';
     }
-    if (r === 4) {
-      // ★ 0.308.0：假开启实锤——app 内开关已开但系统云空间未放行本应用（cloudSync 静默无操作）
-      return '检测到本应用的云同步未真正生效：应用内开关已开启，但系统「设置 → 华为账号 → 云空间 → 应用数据同步」中未允许本应用同步，SP 功能已冻结以防账目错乱。请点击下方按钮前往云空间，在「应用数据同步」中开启 DAG AI Chat 的同步后返回本应用。';
-    }
-    // r === 3：通路未就绪（网络异常/首拉未完成——华为无 API 细分，文案覆盖引导）
-    return '云同步链路尚未就绪：请检查网络，并确认系统「设置 → 华为账号 → 云空间 → 应用数据同步」中已允许本应用同步。点击下方按钮前往云空间检查。';
+    // r === 3：账本初始化/服务升级中（新账号建账、旧账号迁移尚未完成）
+    return '司忆点账本正在与云端同步，请稍后点击「重试」。';
   }
 
   onSyncGateConfirm(): void {
     this.confirmDialog.syncGatePromptVisible = false;
     const r = siyiGateBlockReason();
     if (r === 1) {
-      this.doLogin(true); // 未登录→登录（fromSyncEntry=true 登录后直接开云同步）
-    } else if (r === 2) {
-      enableCloudSyncWithGuide(this.getUIContext()); // app 开关/权限未开→一键开启（含权限弹窗）
+      this.doLogin(true); // 未登录→登录
     } else {
-      this.jumpToCloudSpace(); // r=3 通路未就绪 / r=4 假开启实锤 → 跳系统云空间（Deeplink 官方 uri）
-    }
-  }
-
-  // ★ 0.293.0：跳转系统云空间首页（华为官方 Deeplink——不能精确到本 app 开关页，
-  //   弹窗文案已引导用户找「应用数据同步」下本应用名开开关；失败 toast 兜底）
-  jumpToCloudSpace(): void {
-    try {
-      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      context.startAbility({ uri: 'hicloud://cloudDrive/getInfo?path=MainActivity' }).catch(() => {
-        try {
-          this.getUIContext().getPromptAction().showToast({ message: '跳转失败，请手动前往 设置 → 华为账号 → 云空间', duration: 2000 });
-        } catch (_e2) {
-          // 静默
-        }
-      });
-    } catch (_e) {
-      // 静默
+      ensureSpAuth(true); // 网络重试 / 账本重建（成功后再点原功能即可）
     }
   }
 
@@ -1092,11 +1064,10 @@ struct Index {
         this.confirmDialog.spRechargePromptVisible = false;
       }
     })
-    // ★ 0.293.0：SP 云同步门卫引导（SiyiGate——AI 发送/重生成/划词/圈注/签到/充值在云同步
-    //   未就绪时触发；文案与确认动作按 siyiGateBlockReason 三分支：登录/一键开启/跳系统云空间）
+    // ★ 0.313.0：SP 云服务门卫引导（SiyiGate——AI 发送/重生成/划词/圈注/签到/充值在账本通道
+    //   未就绪时触发；文案与确认动作按 siyiGateBlockReason 三分支：未登录/网络/账本同步中）
     // ★ 0.306.0：标题/按钮文字/位次随阻塞原因动态化
-    // ★ 0.310.1：确认钮（登录/前往开启/前往云空间）恒左位——用户拍板「主行动放左边」，
-    //   与首启登录门禁（华为账号登录在左、暂不登录在右）统一手势习惯
+    // ★ 0.310.1：确认钮（主行动）恒左位——用户拍板「主行动放左边」，与首启登录门禁统一手势习惯
     AppConfirmDialog({
       visible: this.confirmDialog.syncGatePromptVisible,
       title: this.syncGateTitle(),

@@ -28,7 +28,7 @@
 
 import { PersistenceV2, AppStorageV2 } from '@kit.ArkUI';
 import { ProfileStore, ProfileObservation, appendObservation } from './ProfileModel';
-import { generateMessageId, connectSiyiPoints, grantBonusSp, ApiConfig } from './ChatModel';
+import { generateMessageId, connectSiyiPoints, grantBonusSp, spAccountId, ApiConfig } from './ChatModel';
 import { streamChat } from '../utils/ApiClient';
 import { ChatMessage } from './ChatModel';
 import { completeRookieTask } from './RookieTask'; // ★ 0.294.0：新手任务第 7 条完成信号（writeQuizProfile 内调用）
@@ -371,8 +371,10 @@ export function claimQuizSp(store: PersonalityQuizStore): number {
   }
   // ★ 0.294.0 置位顺序反转：先发放、成功才置 claimed——gate 未就绪时 grantBonusSp 返 false 不置位，
   //   差额保留、下轮（节点推进/结算钩子）自然补发（0.293.0 丢弃语义下的挂账修复）
-  if (grantBonusSp(connectSiyiPoints(), amount, 'quiz')) {
-    store.claimed = quizNodeReached(total);
+  // ★ 0.313.0：txId=账号+节点档（云端 SpLedger 幂等——跨端/重装重复领取拦截）
+  const nodeReached = quizNodeReached(total);
+  if (grantBonusSp(connectSiyiPoints(), amount, 'quiz', `quiz:${spAccountId()}:${nodeReached}`)) {
+    store.claimed = nodeReached;
     return amount;
   }
   return 0;

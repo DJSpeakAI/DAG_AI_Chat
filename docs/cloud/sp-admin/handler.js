@@ -50,56 +50,39 @@ function rowsToPlain(rows) {
   return out;
 }
 
-// ── app: report 镜像上报（同主键 upsert 覆盖=幂等）──
+// ── app: report 镜像上报（★ 0.313.0 Phase2：SpMirror 已是权威账本，端侧上报降级为
+//    「首次建行种子」——行已存在则绝不改余额（防弱网/旧版端把云端已扣余额上报冲回；
+//    余额唯一写入方=sp_init/sp_spend/sp_grant）；流水同样由云函数事务写 SpLedger）──
 async function handleReport(event) {
   const accountId = String(event.accountId || '');
   if (!accountId) {
     return { ok: 'n' };
   }
-  await mirrorCol.upsert(buildRow('SpMirror', {
+  let existing = null;
+  try {
+    existing = await readMirror(accountId);
+  } catch (_e) {
+    existing = null;
+  }
+  if (existing !== null) {
+    return { ok: 'y' }; // 权威行已存在：忽略端侧上报（幂等成功，零写入）
+  }
+  const frozenSp = toInt(event.frozenSp);
+  const m = {
     objectId: accountId,
-    availableSp: toInt(event.availableSp),
-    frozenSp: toInt(event.frozenSp),
     permSp: toInt(event.permSp),
     permCons: toInt(event.permCons),
     bonusSp: toInt(event.bonusSp),
     bonusCons: toInt(event.bonusCons),
     giftSp: toInt(event.giftSp),
     giftCons: toInt(event.giftCons),
+    frozenSp: frozenSp,
     pkgJson: String(event.pkgJson || '[]'),
     deviceModel: String(event.deviceModel || ''),
     reportedAt: nowSec(),
-  }));
-  // ★ 0.302.0：事件流水批量入库（搭镜像便车；表未建/失败不影响镜像主链）
-  try {
-    let ledger = [];
-    try {
-      ledger = JSON.parse(String(event.ledger || '[]'));
-    } catch (_e) {
-      ledger = [];
-    }
-    if (Array.isArray(ledger) && ledger.length > 0) {
-      const rows = [];
-      for (let i = 0; i < ledger.length && i < 20; i++) {
-        const e = ledger[i];
-        rows.push(buildRow('SpLedger', {
-          objectId: String(e.id || ('L' + Date.now() + i)),
-          accountId: accountId,
-          ts: toInt(e.ts) || nowSec(),
-          event: String(e.event || ''),
-          src: String(e.src || ''),
-          amount: toInt(e.amount),
-          pool: String(e.pool || ''),
-          balAfter: toInt(e.bal),
-          deviceModel: String(event.deviceModel || ''),
-          note: String(e.note || ''),
-        }));
-      }
-      await ledgerCol.upsert(rows);
-    }
-  } catch (_e) {
-    // 流水失败静默——下次上报随镜像重带（端侧成功即清，此处失败=丢本批，可接受：镜像余额仍准）
-  }
+  };
+  m.availableSp = Math.max(0, availableOf(m) - frozenSp);
+  await mirrorCol.upsert(buildRow('SpMirror', m));
   return { ok: 'y' };
 }
 
@@ -127,7 +110,9 @@ async function readLedgerRow(txId) {
 }
 
 // 余额快照返回体（客户端镜像的唯一来源）
-function balanceOut(m) {
+// ★ 0.313.0：welcomeGranted 不再写 SpMirror 字段（线上对象类型无此字段——0.313.0 本地直调实锤
+//   3037004），改由 SpLedger 的 welcome:<accountId> 幂等流水判定；客户端仍按原字段名读取。
+function balanceOut(m, welcomeGranted) {
   return {
     ok: true,
     bal: availableOf(m),
@@ -137,8 +122,18 @@ function balanceOut(m) {
     bonusCons: toInt(m.bonusCons),
     giftSp: toInt(m.giftSp),
     giftCons: toInt(m.giftCons),
-    welcomeGranted: !!m.welcomeGranted,
+    welcomeGranted: welcomeGranted === true,
   };
+}
+
+// 礼包已发判定（SpLedger 幂等键 'welcome:<accountId>' 存在即已发；Phase3 礼包走 sp_grant 后天然成立）
+async function welcomeGrantedOf(accountId) {
+  try {
+    const row = await readLedgerRow('welcome:' + accountId);
+    return row !== null;
+  } catch (_e) {
+    return false;
+  }
 }
 
 // ── sp_balance：查权威余额（客户端门卫/展示）──
@@ -151,7 +146,7 @@ async function handleSpBalance(event) {
   if (m === null) {
     return { ok: false, err: 'no-account' }; // 客户端走 sp_init 初始化
   }
-  return balanceOut(m);
+  return balanceOut(m, await welcomeGrantedOf(accountId));
 }
 
 // ── sp_init：旧账号/新账号初始化（云端已有记录绝不覆盖——数据安全第一）──
@@ -162,7 +157,7 @@ async function handleSpInit(event) {
   }
   const existing = await readMirror(accountId);
   if (existing !== null) {
-    return balanceOut(existing); // 已有权威账本：忽略入参（防本地伪造覆盖云端）
+    return balanceOut(existing, await welcomeGrantedOf(accountId)); // 已有权威账本：忽略入参（防本地伪造覆盖云端）
   }
   const m = {
     objectId: accountId,
@@ -172,13 +167,14 @@ async function handleSpInit(event) {
     bonusCons: Math.max(0, toInt(event.bonusCons)),
     giftSp: Math.max(0, toInt(event.giftSp)),
     giftCons: Math.max(0, toInt(event.giftCons)),
-    welcomeGranted: !!event.welcomeGranted,
+    frozenSp: 0,
     pkgJson: '[]',
     deviceModel: String(event.deviceModel || ''),
     reportedAt: nowSec(),
   };
+  m.availableSp = Math.max(0, availableOf(m));
   await mirrorCol.upsert(buildRow('SpMirror', m));
-  return balanceOut(m);
+  return balanceOut(m, false);
 }
 
 // ── sp_spend：事务扣点（gift→bonus→perm；幂等 txId）──
@@ -240,11 +236,12 @@ async function handleSpSpend(event) {
     permSp: p, permCons: pc,
     bonusSp: b, bonusCons: bc,
     giftSp: g, giftCons: gc,
-    welcomeGranted: !!m0.welcomeGranted,
+    frozenSp: toInt(m0.frozenSp),
     pkgJson: String(m0.pkgJson || '[]'),
     deviceModel: String(m0.deviceModel || event.deviceModel || ''),
     reportedAt: nowSec(),
   };
+  m1.availableSp = Math.max(0, availableOf(m1) - toInt(m1.frozenSp));
   await mirrorCol.upsert(buildRow('SpMirror', m1));
   await ledgerCol.upsert(buildRow('SpLedger', {
     objectId: txId,
@@ -292,11 +289,12 @@ async function handleSpGrant(event) {
     bonusCons: toInt(m0.bonusCons),
     giftSp: toInt(m0.giftSp) + (pool === 'gift' ? amount : 0),
     giftCons: toInt(m0.giftCons),
-    welcomeGranted: !!m0.welcomeGranted,
+    frozenSp: toInt(m0.frozenSp),
     pkgJson: String(m0.pkgJson || '[]'),
     deviceModel: String(m0.deviceModel || ''),
     reportedAt: nowSec(),
   };
+  m1.availableSp = Math.max(0, availableOf(m1) - toInt(m1.frozenSp));
   await mirrorCol.upsert(buildRow('SpMirror', m1));
   await ledgerCol.upsert(buildRow('SpLedger', {
     objectId: txId,

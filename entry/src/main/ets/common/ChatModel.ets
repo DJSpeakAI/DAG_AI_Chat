@@ -24,9 +24,9 @@ import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, revive
 import { connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode；★ 0.311.2 零债清理：FaceModeStore 类型符号未用移除
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.305.1：onLoginAccountHooks 登录后账号钩子（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
-import { spAdminReport, spAdminFetch, spAdminConfirm, spAdminProbe } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）；★ 0.308.0 spAdminProbe（云同步假开启探针）
+import { spAdminFetch, spAdminConfirm, spAdminProbe, spAuthBalance, spAuthInit, spAuthSpend, spAuthGrant, SpAuthResult } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）；★ 0.308.0 spAdminProbe（云同步假开启探针）；★ 0.312.0/0.313.0 四接口权威记账（Phase2 消耗/余额/初始化接入）
 import { deviceInfo } from '@kit.BasicServicesKit';
- import { siyiGateReady, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
+ import { siyiGateReady, connectSiyiGate, registerSpAuthRefresher } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）；★ 0.313.0 registerSpAuthRefresher（门卫未就绪时催账本刷新）
  import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.293.0：新用户礼包仪式感弹窗桥（AppConfirmDialog 不引 ChatModel 不成环）
 import { trackUidAuto, setDailyLdProvider } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）；★ 0.273.0：setDailyLdProvider（app_daily 日活行的 ld 字段注入位——TrackUtil 禁 import ChatModel，由本模块单向注入）
 import { isWelcomeGiftIssued, markWelcomeGiftIssued, clearWelcomeGiftIssued } from '../utils/WelcomeGiftShadow'; // ★ bug6：礼包「已发放」本地影子（防冷启水合竞态导致重复弹窗）；★ 0.311.4 恢复 clear（重置=完整新用户终稿）
@@ -1071,6 +1071,14 @@ export function onLoginAccountHooks(): void {
   if (account.isLoggedIn) {
     detectAccountSwitchAndResetAssets(); // ★ 0.293.0：先于一切发放/同步合并（重置后闸门重开等新账号首拉）
     maybeShowSignInGuide(); // ★ 0.256.0：首登签到引导（挂此=四登录入口全覆盖；guideShown 只弹一次）
+    // ★ 0.313.0：登录/换号后强制重建账本通道（换号必须按新账号拉权威余额），并补跑待扣队列
+    ensureSpAuth(true).then((ok: boolean) => {
+      if (ok) {
+        flushPendingSp();
+      }
+    }).catch(() => {
+      // 静默（门卫弹窗按 spAuthErr 分支提示）
+    });
   }
 }
 
@@ -1102,6 +1110,9 @@ function detectAccountSwitchAndResetAssets(): void {
 }
 
 function resetAccountAssetsOnAccountSwitch(): void {
+  // ★ 0.313.0：换号先作废旧账号的账本通道与待处理事务（新账号不背旧账）
+  saveSpPending([]);
+  invalidateSpAuth();
   const siyi = connectSiyiPoints();
   siyi.permanentSp = 0;
   siyi.bonusSp = 0;
@@ -1141,8 +1152,9 @@ function resetAccountAssetsOnAccountSwitch(): void {
 
 // ★ 0.303.1：调试专用——重置为新用户资产（保留聊天记录/词库/知识库等内容行）
 //   入口：仅 debug 包（BuildProfile.DEBUG）设置-关于页显示；正式包不暴露。
-//   范围：只覆盖 cfg:siyi-points（SP三池/签到/里程碑/IAP/新手任务两集合）
-//        + cfg:stat-days（学习统计）；node/tab/word/card/文件夹/API配置等内容与设置行一律不动。
+//   范围：只覆盖 cfg:siyi-points **状态标记行**（签到/里程碑/充能包账本/新手任务两集合）
+//        + cfg:stat-days（学习统计）；三池余额在云函数 SpMirror（走全额 sp_spend 清零）。
+//        node/tab/word/card/文件夹/API配置等内容与设置行一律不动。
 //   ★ 0.311.4 语义终稿（用户两轮实测拍板）：重置=**完整新用户**——welcomeGranted/影子礼包标记/
 //        签到引导全部清零，真下行落地后可重领礼包+重走首签；发放守卫=证真分支「拉到行才判」
 //        （未落地/假开启绝不发，0.308.0/0.311.1 防线保持）。0.311.2 曾改「保留标记」——修反了
@@ -1154,6 +1166,19 @@ export async function debugResetNewUserAssets(): Promise<boolean> {
   // ★ 0.308.0 两态化（用户拍板「随时随地可用」）：云同步就绪=清本地+覆盖云端两行（原路径）；
   //   未就绪（未登录/未开同步/假开启）=纯本地清零——云端无账或留给就绪态再重置，不阻断。
   debugResetLatched = true;
+  const wasGateReady = siyiGateReady();
+  saveSpPending([]); // 重置=完整新用户：旧待扣/待发事务一律不背（本机队列清空）
+  // ★ 0.313.0：云端权威账本同步归零——否则下次 sp_balance 刷新会把本地重置冲回旧值
+  //   （无 reset 接口：用一笔「全额消耗」事务把可见余额清 0，流水留痕可追溯；debug 包专用）
+  if (wasGateReady) {
+    const acc = spAccountMark();
+    const cloudBal = await spAuthBalance(acc);
+    if (cloudBal.ok && cloudBal.bal > 0) {
+      await spAuthSpend(acc, `debugreset:${acc}:${Date.now()}`, cloudBal.bal,
+        'debug_reset', 'debug reset', deviceInfo.productModel);
+    }
+  }
+  invalidateSpAuth(); // 账本通道状态作废（重启/下次门卫刷新按新账号重建）
   const siyi = connectSiyiPoints();
   siyi.permanentSp = 0;
   siyi.bonusSp = 0;
@@ -1184,17 +1209,16 @@ export async function debugResetNewUserAssets(): Promise<boolean> {
   bridge.pendingLevel = 0;
   bridge.pendingMakeupGrant = 0;
   clearWelcomeGiftIssued(spAccountMark()); // ★ 0.311.4 恢复：清影子（重置=完整新用户）
-  if (siyiGateReady()) {
+  if (wasGateReady) {
     // 立即覆盖云端两行（内容行本轮不参与 diff，不会被删）；flush 失败不阻断（本地已清，
     // 云端残留=账号资产语义，就绪态再重置一次即可覆盖）
-    upsertIfChanged('cfg:siyi-points', siyiPointsToJson());
+    upsertIfChanged('cfg:siyi-points', siyiStateToJson());
     upsertIfChanged('cfg:stat-days', connectStatistics().raw);
     try {
       await flushCloudRowsNow();
     } catch (_e) {
       // 静默——见上
     }
-    reportSpAdminMirror(); // 数据台镜像同步归零（便于核对）
   } else {
     // 纯本地清（resetAccountAssetsOnAccountSwitch 同款）：RDB 行删除 + diff-cache 清 +
     //   闸门重开（防 cache 旧值被 flush 重写、防重置 0 值 LWW 压云端）
@@ -1233,17 +1257,18 @@ export class SiyiPointStore {
   @Trace consumedPermanentSp: number = 0;
   // ★ 0.277.0 签到幂等标记下沉云端行（任务书方案 B——多端重复签到/里程碑重复发放根治）：
   //   signDates/lastSignDate/streak 本是本地数据不上云，换设备后签到状态清零可重复领；
-  //   两字段随本行（cfg:siyi-points）max/并集合并多端收敛，doSignIn 签到前校验。
+  //   两字段随状态标记行（cfg:siyi-points）max/并集合并多端收敛，doSignIn 签到前校验。
   //   存 String 字段而非数组（与 redeemedCodes 同款模式，规避旧快照缺字段坑——Schema 铁律尾部追加）
   @Trace signedDates: string = '[]';       // 已签到日期并集（JSON 数组 'YYYY-MM-DD'，保留最近 400 天）
   @Trace milestoneStreakGranted: number = 0; // 已发里程碑的最高连击档（max 合并单调递增，防跨端重发）
   // ★ 0.289.0 充能包账本（用户拍板：按包记账+购买顺序 FIFO 扣+包级退款）——JSON 数组字符串
   //   （同 signedDates 模式规避旧快照坑，Schema 尾部追加铁律）；池级 permanentSp/consumedPermanentSp
-  //   保留=包级汇总（云同步 max 合并兼容、余额口径不变）；包级才是退款判定的唯一真相（cons===0=可退）
+  //   保留=包级汇总（余额真相在云函数 SpMirror，池级字段仅镜像）；包级才是退款判定的唯一真相（cons===0=可退）
+  //   ★ 0.314.0：包账本随状态标记行同步（资金链路 Phase3 不动，待云端包账本接口再迁）
   @Trace iapPackages: string = '[]';
   // ★ 0.294.0 好奇宝宝新手任务（尾部追加，同 signedDates 模式规避旧快照坑）：done=已完成任务 id 并集
-  //   （含未开云服务期间挂账完成的）；granted=已发放 SP 的任务 id 并集——两集合随本行（cfg:siyi-points）
-  //   并集合并多端收敛；done−granted 差集=待发放（云服务开通后 settleRookieTasks 自动补发）
+  //   （含未开云服务期间挂账完成的）；granted=已发放 SP 的任务 id 并集——两集合随状态标记行
+  //   （cfg:siyi-points）并集合并多端收敛；done−granted 差集=待发放（云服务开通后 settleRookieTasks 自动补发）
   @Trace rookieDoneJson: string = '[]';
   @Trace rookieGrantedJson: string = '[]';
 }
@@ -1302,7 +1327,7 @@ export function parseIapPackages(raw: string): IapPackage[] {
 }
 
 // ★ 0.290.2 一次性旧测试充能账写销（0.289.1「归零」方案实测失败根因=写减法违反 0.248.7 单调军令，
-//   云同步 mergeSiyiPointsRow 下行 max 直接把云端旧值 600 万复活回本地；且触发条件「history 充能行」
+//   云同步旧 SP 行 max 合并直接把云端旧值 600 万复活回本地；且触发条件「history 充能行」
 //   首轮清零已删、purchaseHistory 不云同步永不复活=条件永久失效——181 账号实测 SP 一直 600 万）：
 //   改用写销语义（writeOffRefundedPackage 同族）：permanentSp 不动，consumedPermanentSp 写满至
 //   permanentSp → 余额=0 且发放/消耗双侧单调只增——上行覆盖云端后，任何端旧值顶回（600 万/0）在
@@ -1366,7 +1391,10 @@ export function writeOffRefundedPackage(store: SiyiPointStore, token: string): n
   if (writtenOff > 0) {
     store.consumedPermanentSp += writtenOff;
     store.iapPackages = JSON.stringify(list);
+    markSpLocalMutation(); // ★ 0.313.0：本地返还/核销后保护镜像（防云端旧值回填）
     scheduleRowFlush();
+    // ★ 0.313.0：退款核销同步云端扣减（txId=退款 token 级幂等；总额口径与本地一致）
+    settleSpCloud(`refund:${token}`, writtenOff, 'refund', token);
   }
   return writtenOff;
 }
@@ -1415,15 +1443,447 @@ export function siyiTotalSp(store: SiyiPointStore): number {
     + Math.max(0, store.giftSp - store.consumedGiftSp);
 }
 
+// ============================================================
+// ★ 0.313.0（Phase2）SP 云端权威记账——客户端接入层
+// ============================================================
+// 架构（0.312.0 B 方案）：云端 SpMirror 是唯一账本真相，SpLedger 是流水+幂等键；
+//   本地三池字段降级为「云端返回值的镜像」。消耗链路：
+//     ①ensureSpAuth：sp_balance 查权威余额（no-account → sp_init 一次性迁移 → 再镜像）
+//     ②consumeSiyiSp：本地镜像先行扣减（UI 即时响应）→ 入待扣队列（持久化）→ sp_spend 事务扣
+//     ③网络失败：队列保留，前台/启动重试（txId 幂等，绝不静默丢账）
+//     ④门卫 siyiGateReady 改为「登录 ∧ 账本通道就绪」（SiyiGate.ets）
+// 不可回退本地：云端返回 unknown（旧版函数/对象类型未就绪）时直接拦截，不回退本地扣点
+//   ——否则「系统关云空间→本地照扣→重装恢复」的白嫖漏洞照旧（用户拍板最高优先）。
+// 全案：docs/0.165+/0.312.0 SP云函数权威记账.md
+// ============================================================
+
+const SP_AUTH_TTL_MS: number = 30000;      // 账本刷新节流（30s 内存缓存）
+const SP_MIRROR_GRACE_MS: number = 20000;  // 本地发放/返还后的镜像保护窗（等数据台镜像上行落地）
+const SP_PENDING_KEEP: number = 100;       // 待扣队列有界（断网兜底不无限涨）
+
+// 待扣/待发队列（P2 新 key：断网/异常时事务不丢——前台重试靠 txId 幂等，不双扣）
+@ObservedV2
+export class SpPendingStore {
+  @Trace itemsJson: string = '[]';
+}
+
+export function connectSpPending(): SpPendingStore {
+  return PersistenceV2.connect(SpPendingStore, 'sp-pending-spend-v1',
+    () => new SpPendingStore()) as SpPendingStore;
+}
+
+// 队列项（plain class——stringify 可枚举）
+class SpPendingItem {
+  txId: string = '';
+  kind: string = 'spend'; // spend / grant（grant 预留 Phase3 发放迁云）
+  amount: number = 0;
+  scene: string = '';
+  pool: string = '';
+  note: string = '';
+  ts: number = 0;
+}
+
+function parseSpPending(raw: string): SpPendingItem[] {
+  const out: SpPendingItem[] = [];
+  try {
+    const arr = JSON.parse(raw) as Record<string, Object>[];
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      const tx = r['txId'];
+      if (typeof tx !== 'string' || tx.length === 0) {
+        continue;
+      }
+      const item = new SpPendingItem();
+      item.txId = tx;
+      const kind = r['kind'];
+      item.kind = typeof kind === 'string' && kind.length > 0 ? kind : 'spend';
+      item.amount = Number(r['amount'] ?? 0);
+      const scene = r['scene'];
+      item.scene = typeof scene === 'string' ? scene : '';
+      const pool = r['pool'];
+      item.pool = typeof pool === 'string' ? pool : '';
+      const note = r['note'];
+      item.note = typeof note === 'string' ? note : '';
+      item.ts = Number(r['ts'] ?? 0);
+      if (item.amount > 0) {
+        out.push(item);
+      }
+    }
+  } catch (_e) {
+    // 坏队列当空（本地镜像仍在，云端余额下次刷新校准）
+  }
+  return out;
+}
+
+function saveSpPending(list: SpPendingItem[]): void {
+  connectSpPending().itemsJson = JSON.stringify(list);
+}
+
+function enqueueSpPending(item: SpPendingItem): void {
+  const list = parseSpPending(connectSpPending().itemsJson);
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].txId === item.txId) {
+      return; // 同 txId 不重复入队（幂等）
+    }
+  }
+  if (list.length >= SP_PENDING_KEEP) {
+    list.splice(0, list.length - SP_PENDING_KEEP + 1);
+  }
+  list.push(item);
+  saveSpPending(list);
+}
+
+function removeSpPending(txId: string): void {
+  const list = parseSpPending(connectSpPending().itemsJson);
+  const kept: SpPendingItem[] = [];
+  let removed = false;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].txId === txId) {
+      removed = true;
+    } else {
+      kept.push(list[i]);
+    }
+  }
+  if (removed) {
+    saveSpPending(kept);
+  }
+}
+
+export function hasPendingSpTxn(): boolean {
+  return parseSpPending(connectSpPending().itemsJson).length > 0;
+}
+
+let spAuthLastMs: number = 0;
+let spAuthAccount: string = '';
+let spAuthPending: Promise<boolean> | null = null;
+let spMirrorGraceUntil: number = 0;
+let spTxSeq: number = 0;
+let spPendingBusy: boolean = false;
+
+// 事务号（业务唯一键——同一笔结算重试必用同一 txId；云端 SpLedger 幂等）
+function spAutoTx(prefix: string): string {
+  spTxSeq++;
+  return `${prefix}:${Date.now()}:${spTxSeq}`;
+}
+
+// ★ 本地账本变动（发放/返还/兑换/充值等）后调用：保护窗内镜像刷新取并集，
+//   防「本地刚发、数据台镜像未上行」时被云端旧值覆盖掉（0.313.0 数据安全护栏）
+export function markSpLocalMutation(): void {
+  spMirrorGraceUntil = Date.now() + SP_MIRROR_GRACE_MS;
+}
+
+// 账号切换/重置：作废账本通道状态（下次 ensureSpAuth 重新按新账号建账）
+export function invalidateSpAuth(): void {
+  const g = connectSiyiGate();
+  g.spAuthReady = false;
+  g.spAuthErr = '';
+  spAuthAccount = '';
+  spAuthLastMs = 0;
+  spAuthPending = null;
+}
+
+function setSpAuthReady(ok: boolean, err: string): void {
+  const g = connectSiyiGate();
+  g.spAuthReady = ok;
+  g.spAuthErr = ok ? '' : err;
+  spAuthLastMs = ok ? Date.now() : 0;
+}
+
+// 本机快照是否空账（用于区分「真新账号」与「老账号重装尚未首拉」——后者绝不能用 0 初始化云端）
+function localSpSnapshotEmpty(s: SiyiPointStore): boolean {
+  return s.permanentSp === 0 && s.bonusSp === 0 && s.giftSp === 0
+    && s.consumedPermanentSp === 0 && s.consumedBonusSp === 0 && s.consumedGiftSp === 0
+    && !s.welcomeGranted && parseIapPackages(s.iapPackages).length === 0;
+}
+
+// 充能包账本与池级消耗对齐（云端扣点不感知包级账本）：池级 consumed 更大时按 FIFO 补包级 cons，
+//   保证「包剩余」展示与退款判定不虚高。只增不减（数据安全），冻结/已退款包跳过。
+function reconcileIapPackagesToPool(store: SiyiPointStore): void {
+  const list = parseIapPackages(store.iapPackages);
+  if (list.length === 0) {
+    return;
+  }
+  let pkgCons = 0;
+  for (let i = 0; i < list.length; i++) {
+    pkgCons += list[i].cons;
+  }
+  let delta = store.consumedPermanentSp - pkgCons;
+  if (delta <= 0) {
+    return;
+  }
+  const now = Date.now();
+  let changed = false;
+  for (let i = 0; i < list.length && delta > 0; i++) {
+    const pkg = list[i];
+    if (pkg.ref === 1 || pkg.frozenUntil > now) {
+      continue;
+    }
+    const take = Math.min(delta, Math.max(0, pkg.amt - pkg.cons));
+    if (take > 0) {
+      pkg.cons += take;
+      delta -= take;
+      changed = true;
+    }
+  }
+  if (changed) {
+    store.iapPackages = JSON.stringify(list);
+  }
+}
+
+// 云端余额 → 本地镜像。两种模式：
+//   ①常规（无待处理事务、无本地新发放）：全量覆盖（云端唯一真相）
+//   ②保护窗/有待处理事务：逐字段取 max（本地刚发/尚未入云的消耗不能被云端旧值冲掉；
+//     待队列清空 + 保护窗过后，下一次刷新恢复全量覆盖）
+function applyCloudBalance(r: SpAuthResult, acc: string, hard: boolean = false): void {
+  if (!r.hasPools) {
+    return; // spend/grant 响应只有 bal，没有四池明细——绝不能覆盖本地镜像
+  }
+  if (acc !== spAccountMark()) {
+    return; // ★ 0.313.0：换号后旧账号在途响应迟到——绝不写进新账号镜像
+  }
+  if (debugResetLatched) {
+    return; // ★ 0.313.0：调试重置后的本会话不接收云端旧账（进程重启 latch 失效，届时按云端重建）
+  }
+  const s = connectSiyiPoints();
+  const mergeMode = !hard && (Date.now() < spMirrorGraceUntil
+    || parseSpPending(connectSpPending().itemsJson).length > 0);
+  if (mergeMode) {
+    s.permanentSp = Math.max(s.permanentSp, r.permSp);
+    s.bonusSp = Math.max(s.bonusSp, r.bonusSp);
+    s.giftSp = Math.max(s.giftSp, r.giftSp);
+    s.consumedPermanentSp = Math.max(s.consumedPermanentSp, r.permCons);
+    s.consumedBonusSp = Math.max(s.consumedBonusSp, r.bonusCons);
+    s.consumedGiftSp = Math.max(s.consumedGiftSp, r.giftCons);
+    s.welcomeGranted = s.welcomeGranted || r.welcomeGranted;
+  } else {
+    s.permanentSp = r.permSp;
+    s.bonusSp = r.bonusSp;
+    s.giftSp = r.giftSp;
+    s.consumedPermanentSp = r.permCons;
+    s.consumedBonusSp = r.bonusCons;
+    s.consumedGiftSp = r.giftCons;
+    s.welcomeGranted = r.welcomeGranted;
+  }
+  reconcileIapPackagesToPool(s);
+  spAuthAccount = acc;
+  scheduleRowFlush(); // ★0.314.0：充能包账本随池级消耗对齐后上行（SP 余额不再进本行）
+}
+
+// 账本通道初始化/刷新（幂等；30s 缓存；并发调用共享同一 Promise）
+export function ensureSpAuth(force: boolean = false): Promise<boolean> {
+  const acc = spAccountMark();
+  if (acc.length === 0) {
+    invalidateSpAuth();
+    connectSiyiGate().spAuthErr = 'no-account';
+    return Promise.resolve(false);
+  }
+  const g = connectSiyiGate();
+  if (!force && g.spAuthReady && spAuthAccount === acc && Date.now() - spAuthLastMs < SP_AUTH_TTL_MS) {
+    return Promise.resolve(true);
+  }
+  if (!force && spAuthPending !== null && spAuthAccount === acc) {
+    return spAuthPending;
+  }
+  spAuthAccount = acc;
+  const p = doEnsureSpAuth(acc);
+  spAuthPending = p;
+  p.then((_ok: boolean) => {
+    if (spAuthPending === p) {
+      spAuthPending = null;
+    }
+  }).catch(() => {
+    if (spAuthPending === p) {
+      spAuthPending = null;
+    }
+  });
+  return p;
+}
+
+async function doEnsureSpAuth(acc: string): Promise<boolean> {
+  const bal = await spAuthBalance(acc);
+  if (bal.ok) {
+    applyCloudBalance(bal, acc);
+    setSpAuthReady(true, '');
+    return true;
+  }
+  if (bal.err === 'no-account') {
+    // 首次接入/旧账号迁移：先探针判「账号是否有任何资产史」——
+    //   有史且本机空账（重装/尚未首拉）=绝不能用 0 覆盖云端，催同步等下行；
+    //   真新账号（probe=no）才用本机快照（空）建账。
+    const probe = await spAdminProbe(acc, '');
+    if (probe === 'err') {
+      setSpAuthReady(false, 'unknown'); // 通道异常：不建账，下次重试
+      return false;
+    }
+    const s = connectSiyiPoints();
+    if (probe === 'yes' && localSpSnapshotEmpty(s)) {
+      setSpAuthReady(false, 'sync');
+      try {
+        forceCloudSyncNow(); // 老账号：催一次云空间下行，本地快照就绪后再迁移
+      } catch (_e) {
+        // 静默（未激活/网络未就绪——下次前台再试）
+      }
+      return false;
+    }
+    const init = await spAuthInit(acc, s.permanentSp, s.consumedPermanentSp, s.bonusSp, s.consumedBonusSp,
+      s.giftSp, s.consumedGiftSp, s.welcomeGranted, deviceInfo.productModel);
+    if (init.ok) {
+      applyCloudBalance(init, acc); // 云端已有记录=返回现有余额（绝不覆盖）；新账号=入参快照
+      setSpAuthReady(true, '');
+      return true;
+    }
+    setSpAuthReady(false, init.err === 'network' ? 'network' : 'unknown');
+    return false;
+  }
+  setSpAuthReady(false, bal.err === 'network' ? 'network' : (bal.err === 'sync' ? 'sync' : 'unknown'));
+  return false;
+}
+
+// 消耗结算（本地已扣后调用）：先入队再请求——进程被杀也不丢账；成功才出队。
+function settleSpCloud(txId: string, cost: number, scene: string, note: string): void {
+  const acc = spAccountMark();
+  if (acc.length === 0 || cost <= 0) {
+    return;
+  }
+  // txId 全局命名空间：SpLedger 主键是全局的——必须掺账号，防不同账号同 messageId 撞幂等键
+  const uniqueTx = `${acc}:${txId}`;
+  const item = new SpPendingItem();
+  item.txId = uniqueTx;
+  item.kind = 'spend';
+  item.amount = cost;
+  item.scene = scene;
+  item.note = note;
+  item.ts = Date.now();
+  enqueueSpPending(item);
+  spAuthSpend(acc, uniqueTx, cost, scene, note, deviceInfo.productModel).then((r: SpAuthResult) => {
+    if (r.ok) {
+      removeSpPending(uniqueTx);
+      if (r.hasPools) {
+        applyCloudBalance(r, acc);
+      }
+      return;
+    }
+    if (r.err === 'insufficient') {
+      removeSpPending(uniqueTx); // 云端判定不足=本笔不成立（并发多端花光）——以云端余额盖回并引导充能
+      refreshSpAuthority(acc);
+      connectConfirmDialog().spRechargePromptVisible = true;
+      return;
+    }
+    // network / unknown / no-account：保留队列，前台/启动重试（txId 幂等）
+    if (r.err === 'no-account') {
+      ensureSpAuth(true); // 账本行缺失：重建后队列自动补扣
+    } else if (r.err === 'unknown') {
+      setSpAuthReady(false, 'unknown'); // 云函数旧版/对象类型未就绪：拦截后续 SP，不静默退本地账
+    }
+  }).catch(() => {
+    // 保留队列（异常不丢账）
+  });
+}
+
+// 权威余额强制刷新（duplicate 命中时用：本端乐观加账可能加多了，必须以云端盖回）
+function refreshSpAuthority(acc: string): void {
+  spAuthBalance(acc).then((r: SpAuthResult) => {
+    if (r.ok) {
+      applyCloudBalance(r, acc, true);
+    }
+  }).catch(() => {
+    // 静默（下次刷新校准）
+  });
+}
+
+// 发放结算（本地已加后调用）：txId 必须跨端稳定（welcome:/sign:/quiz:/rookie:/iap:/redeem:），
+//   云端 SpLedger 幂等。duplicate=该笔历史已发（另一台设备/重装前）——回滚本端乐观加账。
+function settleSpGrant(txId: string, amount: number, src: string, pool: string, note: string): void {
+  const acc = spAccountMark();
+  if (acc.length === 0 || amount <= 0) {
+    return;
+  }
+  const item = new SpPendingItem();
+  item.txId = txId;
+  item.kind = 'grant';
+  item.amount = amount;
+  item.scene = src;
+  item.pool = pool;
+  item.note = note;
+  item.ts = Date.now();
+  enqueueSpPending(item);
+  spAuthGrant(acc, txId, src, amount, pool, note, deviceInfo.productModel).then((r: SpAuthResult) => {
+    if (r.ok) {
+      removeSpPending(txId);
+      if (r.duplicate) {
+        refreshSpAuthority(acc); // 已发过：本地多加的额度按云端盖回
+      } else if (r.hasPools) {
+        applyCloudBalance(r, acc);
+      }
+      return;
+    }
+    // no-account/network/unknown：保留队列（建账完成/网络恢复后自动补发；txId 幂等不重发）
+    if (r.err === 'no-account') {
+      ensureSpAuth(true);
+    } else if (r.err === 'unknown') {
+      setSpAuthReady(false, 'unknown');
+    }
+  }).catch(() => {
+    // 保留队列（异常不丢发放）
+  });
+}
+
+// 待处理事务重试（EntryAbility.onForeground/onCreate 挂点；单飞，成功/不足才继续下一条）
+export function flushPendingSp(): void {
+  if (spPendingBusy) {
+    return;
+  }
+  const acc = spAccountMark();
+  if (acc.length === 0 || !connectSiyiGate().spAuthReady) {
+    return;
+  }
+  const list = parseSpPending(connectSpPending().itemsJson);
+  if (list.length === 0) {
+    return;
+  }
+  spPendingBusy = true;
+  const item = list[0];
+  const call = item.kind === 'grant'
+    ? spAuthGrant(acc, item.txId, item.scene, item.amount,
+      item.pool.length > 0 ? item.pool : 'bonus', item.note, deviceInfo.productModel)
+    : spAuthSpend(acc, item.txId, item.amount, item.scene, item.note, deviceInfo.productModel);
+  call.then((r: SpAuthResult) => {
+    spPendingBusy = false;
+    if (r.ok || r.err === 'insufficient') {
+      removeSpPending(item.txId);
+      if (r.duplicate && item.kind === 'grant') {
+        refreshSpAuthority(acc); // 补发命中历史发放：本端乐观加账按云端盖回
+      }
+      if (r.hasPools) {
+        applyCloudBalance(r, acc);
+      }
+      setTimeout(() => {
+        flushPendingSp();
+      }, 200);
+    }
+    // 其余错误：保留队列等下一轮前台（防弱网死循环）
+  }).catch(() => {
+    spPendingBusy = false;
+  });
+}
+
+// 账本通道未就绪时由门卫触发刷新（requireSiyiGate → 本函数；失败静默提示走弹窗分支）
+registerSpAuthRefresher((): void => {
+  ensureSpAuth().catch(() => {
+    // 静默（门卫弹窗已按 spAuthErr 分支提示）
+  });
+});
+
 // ★ 0.248.7 SP 实扣（AI 回复完成按实扣口径结算）——消耗顺序=先嘉奖（gift→bonus）→充能（permanent，
 //   0.248.5 军令）；只记累计消耗不回退发放值（云同步 max 合并下单调安全）；余额不足时扣到 0 为止；
 //   返回是否扣到账（false=余额已为 0 一分未扣，调用方以此决定是否引导充值）
-export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
+export function consumeSiyiSp(store: SiyiPointStore, amount: number, txId: string = '',
+  scene: string = 'ai', mid: string = ''): boolean {
   if (amount <= 0) {
     return true;
   }
   if (!siyiGateReady()) {
-    return false; // ★ 0.293.0 gate 防御：云同步未就绪禁扣（UI 层 requireSiyiGate 已引导，此处兜底）
+    return false; // ★ 0.293.0 gate 防御：云服务未就绪禁扣（UI 层 requireSiyiGate 已引导，此处兜底）
   }
   let remain = Math.min(amount, siyiTotalSp(store));
   if (remain <= 0) {
@@ -1463,12 +1923,9 @@ export function consumeSiyiSp(store: SiyiPointStore, amount: number): boolean {
     }
   }
   recordSpUsed(g + b + p); // ★ 0.259.0：SP 消耗统计埋点（单一收口——一切新扣点场景自动带上；实扣额才计）
-  const poolParts: string[] = [];
-  if (g > 0) { poolParts.push(`gift:-${g}`); }
-  if (b > 0) { poolParts.push(`bonus:-${b}`); }
-  if (p > 0) { poolParts.push(`perm:-${p}`); }
-  recordSpLedger('consume', 'consume', -(g + b + p), poolParts.join(',')); // ★ 0.302.0 流水
-  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
+  scheduleRowFlush(); // ★0.314.0：充能包 FIFO 消耗后上行包账本（三池余额走云函数，不再上行）
+  // ★ 0.313.0：本地镜像先行扣减后立即入队并发起云端事务扣（txId 幂等/失败重试/不足回滚）
+  settleSpCloud(txId.length > 0 ? txId : spAutoTx(scene.length > 0 ? scene : 'ai'), g + b + p, scene, mid);
   return true;
 }
 
@@ -1658,8 +2115,8 @@ export const SIYI_WELCOME_NORMAL: number = 1000000;
 
 
 // 新用户礼包发放（一次性）：★ 0.293.0 改「云下行后发放」——唯一合法触发点=首拉完成回调
-//   maybeGrantWelcomeAfterFirstPull（云端 cfg:siyi-points 行已对齐：老账号重装由云端
-//   welcomeGranted=true 拦截不重发；云端无行/无标记=真新用户此刻才发）。
+//   maybeGrantWelcomeAfterFirstPull（云端账本已对齐：老账号重装由云端 welcome 流水/镜像拦截不重发；
+//   云端无标记=真新用户此刻才发）。
 //   返回发放额（0=未发——gate 未就绪/已发过）；发放即由调用方弹仪式感弹窗（用户拍板）。
 export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
   if (!siyiGateReady()) {
@@ -1674,21 +2131,22 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
   const mark = currentAccountMark();
   if (store.giftSp > 0 || isWelcomeGiftIssued(mark)) {
     store.welcomeGranted = true;
-    scheduleRowFlush();
     return 0;
   }
   store.welcomeGranted = true;
   const amount = Date.now() < SIYI_FIRST_MONTH_END ? SIYI_WELCOME_FIRST_MONTH : SIYI_WELCOME_NORMAL;
   store.giftSp += amount;
   markWelcomeGiftIssued(mark, amount); // 同步落盘：即便随即杀进程，下次启动也不再弹
+  markSpLocalMutation(); // ★ 0.313.0：本地发放后保护镜像（防云端旧值回填礼包）
   // ★ 0.248.5：有效期取消——不再设置 giftSpExpireAt（礼包永久）
-  scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  // ★ 0.314.0：三池余额不再上行状态行（welcomeGranted 由云函数 welcome:<账号> 流水判定）
   const _gp: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（发放收口单一挂点）
   _gp['src'] = 'welcome';
   _gp['sp'] = `${amount}`;
   _gp['bal'] = `${siyiTotalSp(store)}`;
   trackUidAuto('sp_grant', _gp);
-  recordSpLedger('grant', 'welcome', amount, `gift:${amount}`); // ★ 0.302.0 流水
+  // ★ 0.313.0：礼包发放同步云端权威记账（txId 账号级稳定——重装/多端重复触发由 SpLedger 幂等拦截）
+  settleSpGrant(`welcome:${spAccountMark()}`, amount, 'welcome', 'gift', '');
   return amount;
 }
 
@@ -1706,12 +2164,12 @@ function currentAccountMark(): string {
 //   reconcile 空表无缺片照样开闸（rowInitDone=true），门卫被骗过 → 签到/礼包照发 →
 //   本地假账待真开启后上行 LWW 压制云端 = 乱账（2026-10-24 手机 180 实锤：welcome 200 万）。
 // 证据链（零误拦原则：只信「真下行」与「他设备流水」，fail-open 兜底）：
-//   ①本地标记 spRow：本机历史任一 reconcile 真下行收到过 cfg:siyi-points 行（持久化，
+//   ①本地标记 spRow：本机历史任一 reconcile 真下行收到过 cfg:siyi-points 状态行（持久化，
 //     只可能由真下行置位）——有此标记而本轮拉不到 = 假开启实锤；
 //   ②云函数探针 spAdminProbe：default zone SpMirror+SpLedger 双表查「他设备」资产痕迹
 //     （他设备报过=云端大概率有 SP 行）——本机拉不到 SP 行 + 探针 yes = 假开启实锤。
 //   实锤动作：cloudBlocked=true（SiyiGate 第⑤条件，SP 增耗全拦）+ 弹引导（跳系统云空间）。
-//   解除：后续任一 reconcile 收到 cfg:siyi-points 行（用户在系统设置放行后真下行到达）。
+//   解除：后续任一 reconcile 收到 cfg:siyi-points 状态行（用户在系统设置放行后真下行到达）。
 // ============================================================
 
 // 本地证据：SP 云行见过标记（持久化——跨会话存活；置位只走真下行路径）
@@ -1726,11 +2184,11 @@ function connectSpCloudSeen(): SpCloudSeenStore {
 
 let cloudVerifyLastMs: number = 0; // 探针节流（60s——reconcile 可能被前台切换反复触发）
 
-// 假开启实锤落锤（弹窗只在 false→true 跳变时弹一次，防骚扰）
+// 假开启实锤落锤（★ 0.313.0：SP 账本已迁云函数——cloudBlocked 只作内容同步证据，
+//   不再弹 SP 门卫引导框（那会误导用户去开云空间，而 SP 已不需要它）
 function markCloudBlocked(): void {
   if (!connectSiyiGate().cloudBlocked) {
     connectSiyiGate().cloudBlocked = true;
-    connectConfirmDialog().syncGatePromptVisible = true; // 引导弹窗 r=4：跳系统云空间开同步
   }
 }
 
@@ -1754,13 +2212,14 @@ function retryCloudVerifyLater(): void {
 //   无行场景双问探针——他设备痕迹（own）+账号任何历史（''），有历史却拉不到 SP 行 = 假开启/
 //   非新账号，锁门卫/挂账不发；'err' 通道失败不 fail-open——挂账有界重试。
 // ★ 0.311.4 证真分支定稿（用户同日二次实测拍板「气泡都落地了为什么不送我」）：
-//   **拉到行=云通路证真=行内容即真相**——行带 welcomeGranted=true=老账号拦；行无标记=真新/
-//   重置账号（重置覆盖的就是无标记空行）→ 直发，不再问探针（0.311.2 曾在证真分支加「任何历史」
-//   探针防御——把重置用户全拦了，与用户「重置=完整新用户」语义冲突，已拆）。发放时机恒=真下行
-//   落地之后（0.308.0 假开启防线：拉不到行绝不发）。
+//   **拉到行=云通路证真**——礼包真伪改看云端账本（sp_balance.welcomeGranted 来自 SpLedger
+//   `welcome:<账号>`；本机 giftSp>0/影子标记双保险），行本身不再承载 welcomeGranted
+//   （★0.314.0 状态标记行：三池/礼包字段已停写）。0.311.2 曾在证真分支加「任何历史」探针防御——
+//   把重置用户全拦了，与用户「重置=完整新用户」语义冲突，已拆。发放时机恒=真下行落地之后
+//   （0.308.0 假开启防线：拉不到行绝不发）。
 function afterFirstPullGateOpen(spRowSeen: boolean): void {
   if (spRowSeen) {
-    // 通路证真：真下行收到 SP 行——落本地标记（P2+影子双写）+解除假开启锁；行内容即礼包真相
+    // 通路证真：真下行收到 cfg:siyi-points 状态行——落本地标记（P2+影子双写）+解除假开启锁
     connectSpCloudSeen().spRow = true;
     markSpCloudRowSeen();
     connectSiyiGate().cloudBlocked = false;
@@ -1864,6 +2323,9 @@ function maybeGrantWelcomeAfterFirstPull(): void {
   if (welcomeCheckDone) {
     return;
   }
+  if (!siyiGateReady()) {
+    return; // ★ 0.313.0：账本通道未就绪不判定（不置 welcomeCheckDone——通道就绪后的 reconcile 再判）
+  }
   if (!connectHuaweiAccount().isLoggedIn) {
     return; // 未登录不判不发——登录后的 forceCloudSyncNow→reconcile 会再进本函数
   }
@@ -1954,7 +2416,7 @@ export function nextStreak(lastSignDate: string, streak: number, today: string):
 }
 
 // ============================================================
-// ★ 0.277.0：签到状态跨端共享纯函数组（任务书方案 B——幂等标记下沉 cfg:siyi-points）
+// ★ 0.277.0：签到状态跨端共享纯函数组（任务书方案 B——幂等标记下沉云空间状态行）
 // ============================================================
 // 云端已签日期保留窗口（天）：100 天里程碑最多需 100 天连续记录，400 窗口充裕；
 //   一年 365 项 JSON 约 4KB，RDB value 承载无碍（截断控体积）
@@ -2034,7 +2496,7 @@ export function isSignedToday(store: SignInStore): boolean {
 
 // 签到执行（完整链：防重复→连击→发 SP→云上行；today 由调用方统一走 todayStrWithOffset 传入——
 //   显式参数化=纯函数可测）：返回本次发放总额（0=今日已签未发）
-//   里程碑与当日奖励一并入 bonusSp 嘉奖池（scheduleRowFlush 走 cfg:siyi-points 同款上行）
+//   里程碑与当日奖励一并入 bonusSp 嘉奖池（★0.314.0：余额走云函数账本；签到标记经状态行上行）
 //   ★ 0.277.0 多端幂等（任务书方案 B）：幂等/连击/里程碑三处改查云端标记（siyi.signedDates 并集 +
 //   milestoneStreakGranted 档位）——换设备本地清零不再重复发放/重新数连击/重发里程碑
 export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string): number {
@@ -2070,19 +2532,25 @@ export function doSignIn(store: SignInStore, siyi: SiyiPointStore, today: string
   }
   const total = signInRewardSp(store.streak) + milestone;
   siyi.bonusSp += total;
-  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端余额+签到标记一致）
+  if (total > 0) {
+    markSpLocalMutation(); // ★ 0.313.0：本地发放后保护镜像
+  }
+  scheduleRowFlush(); // ★0.314.0：签到日期/里程碑标记防抖上行（余额走云函数账本）
   const _sg: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（签到发放）
   _sg['src'] = 'sign';
   _sg['sp'] = `${total}`;
   _sg['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', _sg);
-  recordSpLedger('grant', 'sign', total, `bonus:${total}`); // ★ 0.302.0 流水
+  // ★ 0.313.0：签到发放同步云端（txId=账号+日期——跨端同日重复签到由 SpLedger 幂等拦截）
+  if (total > 0) {
+    settleSpGrant(`sign:${spAccountMark()}:${today}`, total, 'sign', 'bonus', '');
+  }
   return total;
 }
 
 // ★ 0.288.0：嘉奖 SP 发放统一收口（性格测试等一次性奖励场景；签到仍走 doSignIn 不改）——
-//   发放入 bonusSp 嘉奖池 + 云上行防抖（cfg:siyi-points）+ sp_grant 埋点，与 doSignIn 同款三件套
-export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string): boolean {
+//   发放入 bonusSp 嘉奖池 + sp_grant 埋点（★0.314.0：余额走云端账本，状态行只由调用方标记变动触发上行）
+export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string, txId: string = ''): boolean {
   // ★ 0.294.0 起返回 boolean：true=已发放；false=被拦截/零额——调用方（claimQuizSp 等）据此
   //   决定幂等标记是否置位，gate 未就绪时不置位、后续可自然补发（挂账语义的前提）
   if (amount <= 0) {
@@ -2092,36 +2560,37 @@ export function grantBonusSp(siyi: SiyiPointStore, amount: number, src: string):
     return false; // ★ 0.293.0 gate 防御：一切 SP 发放口（签到/性格测试/未来做题奖励）未就绪不发
   }
   siyi.bonusSp += amount;
-  scheduleRowFlush();
+  markSpLocalMutation(); // ★ 0.313.0：本地发放后保护镜像
   const p: Record<string, string> = {};
   p['src'] = src;
   p['sp'] = `${amount}`;
   p['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', p);
-  recordSpLedger('grant', src, amount, `bonus:${amount}`); // ★ 0.302.0 流水
+  // ★ 0.313.0：发放同步云端（txId 业务唯一键——quiz/rookie/admin 各自幂等）
+  settleSpGrant(txId.length > 0 ? txId : spAutoTx(`grant:${src}`), amount, src, 'bonus', '');
   return true;
 }
 
 // ★ 0.302.3.2：充能池发放（运营数据台专用——后台指令 grant_perm；充值走 IapUtil 不入此口）
-export function grantPermanentSp(siyi: SiyiPointStore, amount: number, src: string): boolean {
+export function grantPermanentSp(siyi: SiyiPointStore, amount: number, src: string, txId: string = ''): boolean {
   if (amount <= 0 || !siyiGateReady()) {
     return false;
   }
   siyi.permanentSp += amount;
-  scheduleRowFlush();
+  markSpLocalMutation(); // ★ 0.313.0：本地发放后保护镜像
   const p: Record<string, string> = {};
   p['src'] = src;
   p['sp'] = `${amount}`;
   p['bal'] = `${siyiTotalSp(siyi)}`;
   p['pool'] = 'permanent';
   trackUidAuto('sp_grant', p);
-  recordSpLedger('grant', src, amount, 'perm', `perm:${amount}`);
+  settleSpGrant(txId.length > 0 ? txId : spAutoTx(`grant_perm:${src}`), amount, src, 'perm', '');
   return true;
 }
 
 // ★ 0.302.3.2：充能池定向扣减（运营数据台 deduct_perm）——只动充能池、按 FIFO 同步扣包账本；
 //   返回实扣额（不足=扣到该池可用为止；与 consumeSiyiSp 的 perm 分支口径一致）
-function consumePermanentSp(siyi: SiyiPointStore, amount: number): number {
+function consumePermanentSp(siyi: SiyiPointStore, amount: number, txId: string = ''): number {
   if (amount <= 0 || !siyiGateReady()) {
     return 0;
   }
@@ -2131,6 +2600,7 @@ function consumePermanentSp(siyi: SiyiPointStore, amount: number): number {
     return 0;
   }
   siyi.consumedPermanentSp += p;
+  markSpLocalMutation(); // ★ 0.313.0：运营定向扣减后保护镜像（防云端旧值回填）
   const now = Date.now();
   const list = parseIapPackages(siyi.iapPackages);
   let left = p;
@@ -2149,8 +2619,9 @@ function consumePermanentSp(siyi: SiyiPointStore, amount: number): number {
     siyi.iapPackages = JSON.stringify(list);
   }
   recordSpUsed(p);
-  recordSpLedger('consume', 'admin_perm', -p, `perm:-${p}`);
-  scheduleRowFlush();
+  scheduleRowFlush(); // ★0.314.0：包账本 FIFO 消耗后上行（余额走云函数）
+  // ★ 0.313.0：运营定向扣减同步云端事务（sp_spend 按 gift→bonus→perm 扣；总额口径一致）
+  settleSpCloud(txId.length > 0 ? txId : spAutoTx('admin_perm'), p, 'admin_perm', '');
   return p;
 }
 
@@ -2366,6 +2837,7 @@ export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPoi
   store.redeemedCodes = JSON.stringify(used);
   // ★ 0.248.0：入嘉奖池（永久；消耗顺序=★ 0.248.5 先扣嘉奖→充能，由消耗链路执行）
   siyi.bonusSp += SIYI_REDEEM_SP;
+  markSpLocalMutation(); // ★ 0.313.0：兑码发放后保护镜像（防云端旧值回填）
   // 记账（文案不泄露兑换码权益构成——用户拍板「不让用户知道兑换码能获得什么」）
   let history: string[] = [];
   try {
@@ -2375,12 +2847,14 @@ export function redeemCode(store: SubscriptionStore, code: string, siyi: SiyiPoi
   }
   history.push(`兑换码 ${code.substring(0, 4)}****｜+${SIYI_REDEEM_SP / 10000} 万司忆点｜${new Date().toLocaleDateString()}`);
   store.purchaseHistory = JSON.stringify(history);
-  scheduleRowFlush(); // ★ 0.248.4：SP 变动防抖上行（cfg:siyi-points——多端余额一致）
+  // ★ 0.314.0：兑码入账只走云函数 sp_grant（余额不再上行状态行）
   const _rd: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（兑码发放）
   _rd['src'] = 'redeem';
   _rd['sp'] = `${SIYI_REDEEM_SP}`;
   _rd['bal'] = `${siyiTotalSp(siyi)}`;
   trackUidAuto('sp_grant', _rd);
+  // ★ 0.313.0：兑码发放同步云端（txId=码值——同一码重复兑换/多端兑换由 SpLedger 幂等拦截）
+  settleSpGrant(`redeem:${spAccountMark()}:${code.trim().toUpperCase()}`, SIYI_REDEEM_SP, 'redeem', 'bonus', '');
   return true;
 }
 
@@ -2426,6 +2900,7 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   tokens.push(purchaseToken);
   subscription.iapConsumedTokens = JSON.stringify(tokens);
   siyi.permanentSp += amount; // 充能池发放累计，只增不减（数据安全军令）
+  markSpLocalMutation(); // ★ 0.313.0：IAP 到账后保护镜像（防云端旧值回填充值）
   // ★ 0.290.2 删除此处清零调用——0.289.1 在新购链路调清零，而新购 history 行同为「充能 +」前缀，
   //   第二笔购买会把第一笔新购账误清；清零只保留 BillingPage 进场单一触发点
   // 建包（token 幂等已挡上，此处必为新包）：ts=Date.now() 精确到秒（账本要求）
@@ -2445,7 +2920,7 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   }
   history.push(`充能 +${amount / 10000} 万司忆点｜华为应用内支付 ${purchaseToken.substring(0, 8)}…｜${new Date().toLocaleDateString()}`);
   subscription.purchaseHistory = JSON.stringify(history);
-  scheduleRowFlush(); // SP 变动防抖上行（cfg:siyi-points——多端一致）
+  scheduleRowFlush(); // ★0.314.0：新充能包上行包账本（余额走云函数账本）
   const _ip: Record<string, string> = {}; // ★ 0.260.0：sp_grant 埋点（IAP 发放）
   _ip['src'] = 'iap';
   _ip['sp'] = `${amount}`;
@@ -2453,7 +2928,8 @@ export function grantSiyiSpFromIap(subscription: SubscriptionStore, siyi: SiyiPo
   _ip['amt'] = amountCny; // ★ 0.273.0：实际成交价 ¥（充值流水求和数据源）
   _ip['pid'] = productId; // ★ 0.273.0：商品 ID
   trackUidAuto('sp_grant', _ip);
-  recordSpLedger('grant', 'iap', amount, `perm:${amount}`, productId); // ★ 0.302.0 流水
+  // ★ 0.313.0：IAP 到账同步云端（txId=purchaseToken——回放/补单/多端重复入账由 SpLedger 幂等拦截）
+  settleSpGrant(`iap:${spAccountMark()}:${purchaseToken}`, amount, 'iap', 'perm', productId);
   return true;
 }
 
@@ -3309,7 +3785,6 @@ function cfgFaceModeApply(v: string): boolean {
 let flushTimerId: number = -1;
 
 function scheduleRowFlush(): void {
-  markSpAdminDirty(); // ★ 0.301.0：SP 数据台统一挂点（任何云行变更都过一遍——非 SP 变更由快照指纹比对拦截省配额）
   if (flushTimerId >= 0) {
     clearTimeout(flushTimerId);
   }
@@ -3609,9 +4084,10 @@ export async function flushCloudRowsNow(): Promise<void> {
     upsertIfChanged('cfg:api-config', cfgApiToJson());
     upsertIfChanged('cfg:ai-pref', cfgAiPrefToJson());
     upsertIfChanged('cfg:face-mode', cfgFaceModeToJson());
-    // ★ 0.248.4：账号级资产两行（等级数据源+SP——并集/max 合并语义见 mergeStatDaysRow/mergeSiyiPointsRow）
+    // ★ 0.248.4：账号级资产两行（统计 = 等级数据源；SP 状态标记行——并集语义见
+    //   mergeStatDaysRow/mergeSiyiStateRow。★ 0.314.0：SP 余额账本已迁云函数，本行只同步状态标记）
     upsertIfChanged('cfg:stat-days', connectStatistics().raw);
-    upsertIfChanged('cfg:siyi-points', siyiPointsToJson());
+    upsertIfChanged('cfg:siyi-points', siyiStateToJson());
     // ★ 0.228.1：flat 模式写 layout 原子行（整套坐标单行——并发重排不再混排）
     if (connectCanvasMode().mode === 'flat') {
       upsertIfChanged('layout:flat', localLayoutJson());
@@ -4197,11 +4673,11 @@ function mergeCfgs(cloudCfg: Map<string, string>): void {
   apply('cfg:api-config', cfgApiApply, cfgApiToJson());
   apply('cfg:ai-pref', cfgAiPrefApply, cfgAiPrefToJson());
   apply('cfg:face-mode', cfgFaceModeApply, cfgFaceModeToJson());
-  // ★ 0.248.4：账号级资产两行——专用并集/max 合并（刻意不走上方 apply LWW 通道：
-  //   LWW 整行覆盖会让新装机空态/云端全量互相毁灭对方；统计只增不减+SP 只发放无消耗
-  //   语义下 max/并集数学上单调收敛、幂等、无乒乓。⚠️ SP 消耗链路上线时此语义须重审）
+  // ★ 0.248.4：账号级资产两行——统计专用并集合并；SP 行 0.314.0 起只合状态标记
+  //   （刻意不走上方 apply LWW 通道：LWW 整行覆盖会让新装机空态/云端全量互相毁灭对方；
+  //   统计只增不减、签到/任务标记并集，数学上单调收敛、幂等、无乒乓）
   mergeStatDaysRow(cloudCfg.get('cfg:stat-days'));
-  mergeSiyiPointsRow(cloudCfg.get('cfg:siyi-points'));
+  mergeSiyiStateRow(cloudCfg.get('cfg:siyi-points'));
 }
 
 // ★ 0.248.4：cfg:stat-days 下行合并——本地∪云端按 date 键并集，同日各数值取 max。
@@ -4285,41 +4761,35 @@ function mergeStatDaysRow(v: string | undefined): void {
   notifyLevelUp(merged.length); // ★ 0.256.0：云下行天数吸收后检头衔升级（对端学习路径）
 }
 
-// ★ 0.248.4：cfg:siyi-points 行 payload（普通 class——非 @ObservedV2，stringify 可枚举无 0.205.4 坑）
-//   ★ 0.248.7：尾部追加三消耗字段（发放/消耗双侧单调——max 合并语义自洽）
-class SiyiRowPayload {
-  permanentSp: number = 0;
-  bonusSp: number = 0;
-  giftSp: number = 0;
-  giftSpExpireAt: number = 0;
-  welcomeGranted: boolean = false;
-  consumedGiftSp: number = 0;
-  consumedBonusSp: number = 0;
-  consumedPermanentSp: number = 0;
+// ★ 0.314.0（Phase3）：cfg:siyi-points = **跨端状态标记行**（不再是账本）。
+//   SP 三池余额/消耗/礼包标记=云函数 SpMirror/SpLedger 唯一权威（0.313.0 已落地）；
+//   本行只承载云空间同步的状态：签到日期并集/里程碑档/新手任务两集合/充能包账本。
+//   旧行残留的三池字段（permanentSp/bonusSp/giftSp/consumed*/welcomeGranted）一律不读不写——
+//   0.248.4 的 max 合并会把旧端高值复活成本地镜像（0.290.2 旧测试账复活同族隐患），Phase3 根除。
+//   （普通 class——非 @ObservedV2，stringify 可枚举无 0.205.4 坑）
+class SiyiStateRowPayload {
   signedDates: string = '[]';        // ★ 0.277.0：已签日期并集（旧云端行缺字段=undefined 走兜底，零迁移）
   milestoneStreakGranted: number = 0; // ★ 0.277.0：已发里程碑最高档
-  iapPackages: string = '[]';        // ★ 0.289.0：充能包账本（union+包级 max 合并）
+  iapPackages: string = '[]';        // ★ 0.289.0：充能包账本（union+包级 max 合并；资金链路，Phase3 暂留本行）
   rookieDoneJson: string = '[]';     // ★ 0.294.0：新手任务完成 id 并集（并集合并；旧云端行缺字段=undefined 走兜底）
   rookieGrantedJson: string = '[]';  // ★ 0.294.0：新手任务已发放 id 并集（并集合并防跨端重发）
 }
 
-function siyiPointsToJson(): string {
+function siyiStateToJson(): string {
   const s = connectSiyiPoints();
-  const p = new SiyiRowPayload();
-  p.permanentSp = s.permanentSp;
-  p.bonusSp = s.bonusSp;
-  p.giftSp = s.giftSp;
-  p.giftSpExpireAt = s.giftSpExpireAt;
-  p.welcomeGranted = s.welcomeGranted;
-  p.consumedGiftSp = s.consumedGiftSp;
-  p.consumedBonusSp = s.consumedBonusSp;
-  p.consumedPermanentSp = s.consumedPermanentSp;
+  const p = new SiyiStateRowPayload();
   p.signedDates = s.signedDates;
   p.milestoneStreakGranted = s.milestoneStreakGranted;
   p.iapPackages = s.iapPackages;
   p.rookieDoneJson = s.rookieDoneJson;       // ★ 0.294.0：新手任务两集合随行上行
   p.rookieGrantedJson = s.rookieGrantedJson;
   return JSON.stringify(p);
+}
+
+// ★ 0.314.0：状态标记变动显式上行口（签到/新手任务标记写入后调用；
+//   三池变动不再触发本行上行——余额走云函数镜像）
+export function noteSpStateMutation(): void {
+  scheduleRowFlush();
 }
 
 // ★ 0.294.0：新手任务 id 并集解析（坏 JSON 兜底空数组，与 parseSignedDates 同款防御）
@@ -4332,56 +4802,23 @@ function parseRookieIds(v: string): string[] {
   }
 }
 
-// ★ 0.248.4：cfg:siyi-points 下行合并——三池+到期戳各自取 max、welcomeGranted 取或
-//   （当前 SP 只有发放没有消耗，单调增=max 安全；缺字段 undefined 比较恒 false 天然兜底）
-//   ★ 0.248.7：三消耗字段同 max（发放/消耗双侧单调——扣减不会被对端旧值回填复活）
-function mergeSiyiPointsRow(v: string | undefined): void {
+// ★ 0.314.0（Phase3）：cfg:siyi-points 下行合并——**只合状态标记**（签到日期/里程碑/新手任务/充能包）；
+//   三池字段（含旧版写上的）一律忽略：余额真相在云函数 SpMirror，旧行高值绝不复活本地镜像。
+function mergeSiyiStateRow(v: string | undefined): void {
   if (debugResetLatched) {
     return; // ★ 0.303.1：调试重置后本会话不再合并旧 SP 行（防旧值回填），进程重启后 latch 自然失效
   }
   if (v === undefined) {
     return;
   }
-  let cloud: SiyiRowPayload | null = null;
+  let cloud: SiyiStateRowPayload | null = null;
   try {
-    cloud = JSON.parse(v) as SiyiRowPayload;
+    cloud = JSON.parse(v) as SiyiStateRowPayload;
   } catch (_e) {
     return; // 云端坏行——保持本地，flush 上行好值自愈
   }
   const s = connectSiyiPoints();
   let changed = false;
-  if (cloud.permanentSp > s.permanentSp) {
-    s.permanentSp = cloud.permanentSp;
-    changed = true;
-  }
-  if (cloud.bonusSp > s.bonusSp) {
-    s.bonusSp = cloud.bonusSp;
-    changed = true;
-  }
-  if (cloud.giftSp > s.giftSp) {
-    s.giftSp = cloud.giftSp;
-    changed = true;
-  }
-  if (cloud.giftSpExpireAt > s.giftSpExpireAt) {
-    s.giftSpExpireAt = cloud.giftSpExpireAt;
-    changed = true;
-  }
-  if (cloud.welcomeGranted && !s.welcomeGranted) {
-    s.welcomeGranted = true;
-    changed = true;
-  }
-  if (cloud.consumedGiftSp > s.consumedGiftSp) {
-    s.consumedGiftSp = cloud.consumedGiftSp;
-    changed = true;
-  }
-  if (cloud.consumedBonusSp > s.consumedBonusSp) {
-    s.consumedBonusSp = cloud.consumedBonusSp;
-    changed = true;
-  }
-  if (cloud.consumedPermanentSp > s.consumedPermanentSp) {
-    s.consumedPermanentSp = cloud.consumedPermanentSp;
-    changed = true;
-  }
   // ★ 0.277.0：签到标记下行合并——已签日期取并集（跨端接续/幂等的数据源），
   //   里程碑档取 max（单调递增防重发）。云端行并集更大才落盘（幂等收敛，防 flush 上行乒乓）。
   const mergedDates = mergeSignedDates(parseSignedDates(s.signedDates), parseSignedDates(cloud.signedDates));
@@ -4567,55 +5004,18 @@ function refreshWorkspaceFromPools(): void {
 }
 
 // ============================================================
-// ★ 0.301.0 SP 数据台端侧区块（方案 A 运营旁路——全案 docs/0.165+/0.301.0）
-//   架构：SP 账本主链（cloudSync cfg:siyi-points）零触碰；本区块=旁路三件：
-//   ①scheduleRowFlush 统一挂点 → markSpAdminDirty（快照指纹比对 + 8s 防抖）→ 镜像上报 SpMirror
-//   ②pullSpAdminCommands（EntryAbility.onForeground / BillingPage 进场）→ fetch →
-//     端侧执行（grantBonusSp / consumeSiyiSp 既有收口——gate 防御/埋点/云上行三件套全继承）→ confirm 回实发/实扣
-//   ③云函数未部署 = 全链静默零影响（fetch '[]' / report false，零报错零阻塞）
+// ★ 0.301.0/0.313.0 SP 数据台端侧区块（运营旁路——全案 docs/0.165+/0.301.0）
+//   架构（0.313.0 起）：账本真相在云函数 SpMirror/SpLedger（sp_init/sp_spend/sp_grant 事务写），
+//   端侧不再上报镜像/流水（旧 report 通道已删除，防端侧旧值覆盖云端权威余额）。本区块只保留：
+//   pullSpAdminCommands（EntryAbility.onForeground / BillingPage 进场）→ fetch → 端侧执行
+//   （grantBonusSp / consumeSiyiSp 既有收口——gate 防御/埋点/云事务三件套全继承）→ confirm 回实发/实扣。
+//   云函数未部署 = 全链静默零影响（fetch '[]'，零报错零阻塞）。
 //   幂等与竞态：claim 竞态窗口毫秒级（同账号双设备同秒拉同一指令理论双领）——一期已知边界；
 //   云函数 fetch 侧回收 claimed 超 10 分钟未 confirm 的指令回 pending 兜底重派（grant 被 gate
 //   拦截时不 confirm=挂起重派，余额不足实扣 0 也 confirm=终结防空转重派）。
 // ============================================================
 
-let spAdminTimerId: number = -1;
-let spAdminLastReportedKey: string = '';
 let spAdminGateRetry: number = 0; // ★ 0.301.1 闸门未就绪重试计数
-
-// ★ 0.302.0 SpLedger 事件流水（运营侧事件级账目——「内容看不到、动作全有数」）
-//   内存缓冲搭镜像上报便车批量上行；云函数侧 upsert SpLedger 表；未登录不记。
-class SpLedgerEntry {
-  id: string = '';   // L+毫秒+序号（云端主键）
-  ts: number = 0;    // 秒级（表时间戳 Integer 32 位坑）
-  event: string = ''; // grant / consume
-  src: string = '';  // sign/welcome/iap/admin/rookie_xxx/quiz/consume
-  amount: number = 0; // 正=发放 负=消耗
-  pool: string = ''; // gift:-5000,bonus:-3000（只记非零项）
-  bal: number = 0;   // 事后余额
-  note: string = '';
-}
-let spLedgerBuf: SpLedgerEntry[] = [];
-let spLedgerSeq: number = 0;
-
-function recordSpLedger(event: string, src: string, amount: number, pool: string, note: string = ''): void {
-  if (spAccountMark().length === 0) {
-    return; // 未登录=运营侧无主体
-  }
-  spLedgerSeq++;
-  const e = new SpLedgerEntry();
-  e.id = `L${Date.now()}${spLedgerSeq}`;
-  e.ts = Math.floor(Date.now() / 1000);
-  e.event = event;
-  e.src = src;
-  e.amount = amount;
-  e.pool = pool;
-  e.note = note;
-  e.bal = siyiTotalSp(connectSiyiPoints());
-  spLedgerBuf.push(e);
-  if (spLedgerBuf.length > 50) {
-    spLedgerBuf.splice(0, spLedgerBuf.length - 50); // 有界（断网兜底不无限涨）
-  }
-}
 
 // 指令结构（云函数 fetch 返回的 plain 结构——非持久化类，仅本区块解析用）
 class SpAdminCommand {
@@ -4640,62 +5040,12 @@ function spAccountMark(): string {
   return oid !== undefined ? oid : '';
 }
 
-// ①SP 变更统一挂点（scheduleRowFlush 内调用；词卡等非 SP 行变更由指纹比对拦截）
-function markSpAdminDirty(): void {
-  if (spAccountMark().length === 0) {
-    return; // 未登录=运营侧无主体，零请求
-  }
-  const siyi = connectSiyiPoints();
-  const key = `${siyiTotalSp(siyi)}|${frozenAvailableSp(siyi)}|${siyi.iapPackages}`;
-  if (key === spAdminLastReportedKey && spAdminTimerId < 0) {
-    return; // 快照未变且无在途定时——省配额
-  }
-  if (spAdminTimerId >= 0) {
-    clearTimeout(spAdminTimerId);
-  }
-  spAdminTimerId = setTimeout(() => {
-    spAdminTimerId = -1;
-    reportSpAdminMirror();
-  }, 8000);
+// ★ 0.313.0：账号唯一标记对外只读口（业务层构造云端幂等 txId 用——SpLedger 主键全局唯一，
+//   任何发放/消耗 txId 都必须掺账号，防不同账号同一业务键相撞被误判 duplicate）
+export function spAccountId(): string {
+  return spAccountMark();
 }
 
-// 镜像快照构建+上报（payload 全字符串值——track-events 埋点同款；失败静默指纹不置位下轮再报）
-// export：EntryAbility.onBackground 兜底直调（退后台网络受限大概率失败——0.206.2 教训，失败静默下轮补）
-export function reportSpAdminMirror(): void {
-  const acc = spAccountMark();
-  if (acc.length === 0) {
-    return;
-  }
-  const siyi = connectSiyiPoints();
-  const key = `${siyiTotalSp(siyi)}|${frozenAvailableSp(siyi)}|${siyi.iapPackages}`;
-  const payload: Record<string, Object> = {};
-  payload['action'] = 'report';
-  payload['accountId'] = acc;
-  payload['availableSp'] = `${siyiTotalSp(siyi)}`;
-  payload['frozenSp'] = `${frozenAvailableSp(siyi)}`;
-  payload['permSp'] = `${siyi.permanentSp}`;
-  payload['permCons'] = `${siyi.consumedPermanentSp}`;
-  payload['bonusSp'] = `${siyi.bonusSp}`;
-  payload['bonusCons'] = `${siyi.consumedBonusSp}`;
-  payload['giftSp'] = `${siyi.giftSp}`;
-  payload['giftCons'] = `${siyi.consumedGiftSp}`;
-  payload['pkgJson'] = siyi.iapPackages;
-  payload['deviceModel'] = deviceInfo.productModel;
-  payload['reportedAt'] = `${Date.now()}`;
-  // ★ 0.302.0：流水搭便车（快照长度内成功才清——上报期间新入账条目保留）
-  const ledgerLen = spLedgerBuf.length;
-  if (ledgerLen > 0) {
-    payload['ledger'] = JSON.stringify(spLedgerBuf);
-  }
-  spAdminReport(payload).then((ok: boolean) => {
-    if (ok) {
-      spAdminLastReportedKey = key;
-      if (ledgerLen > 0) {
-        spLedgerBuf.splice(0, ledgerLen);
-      }
-    }
-  });
-}
 
 // ②指令拉取+执行+回报（EntryAbility.onForeground / BillingPage.aboutToAppear 挂点；静默全降级）
 export function pullSpAdminCommands(): void {
@@ -4703,7 +5053,7 @@ export function pullSpAdminCommands(): void {
   if (acc.length === 0) {
     return;
   }
-  // ★ 0.301.1：冷启时闸门（云同步首拉）未就绪——5s 后重试，最多 4 次（否则拉到的指令会卡在 gate 检查）
+  // ★ 0.301.1：冷启时账本通道未就绪——5s 后重试，最多 4 次（否则拉到的指令会卡在 gate 检查）
   if (!siyiGateReady()) {
     if (spAdminGateRetry < 4) {
       spAdminGateRetry++;
@@ -4728,34 +5078,34 @@ export function pullSpAdminCommands(): void {
     for (let i = 0; i < cmds.length; i++) {
       executeSpAdminCommand(siyi, cmds[i]);
     }
-    reportSpAdminMirror(); // 执行后快照立即上报（数据台尽快见新余额）
   });
 }
 
 // 指令执行（发放/扣减全走既有收口；gate 未就绪不 confirm=云端 10 分钟回收重派）
 function executeSpAdminCommand(siyi: SiyiPointStore, cmd: SpAdminCommand): void {
   if (!siyiGateReady()) {
-    return; // 云同步未就绪：不执行也不 confirm——超时回收重派（SP 铁律：账本云端对齐才动 SP）
+    return; // 账本通道未就绪：不执行也不 confirm——超时回收重派（SP 铁律：账本云端对齐才动 SP）
   }
   // ★ 0.302.3.2：type 后缀 _perm=充能池定向操作；无后缀=嘉奖池（旧指令零迁移）
   const permIdx = cmd.type.indexOf('_perm');
   const isPerm = permIdx > 0;
   const baseType = isPerm ? cmd.type.substring(0, permIdx) : cmd.type;
   let result = 0;
+  const cmdTx = `admin:${spAccountMark()}:${cmd.id}`; // ★ 0.313.0：运营指令幂等键（云函数 txId——重复派发不重发/不重扣）
   if (baseType === 'grant' && cmd.amount > 0) {
     if (isPerm) {
-      if (grantPermanentSp(siyi, cmd.amount, 'admin')) {
+      if (grantPermanentSp(siyi, cmd.amount, 'admin', cmdTx)) {
         result = cmd.amount;
       }
-    } else if (grantBonusSp(siyi, cmd.amount, 'admin')) {
+    } else if (grantBonusSp(siyi, cmd.amount, 'admin', cmdTx)) {
       result = cmd.amount; // src='admin' 埋点可追溯
     }
   } else if (baseType === 'deduct' && cmd.amount > 0) {
     if (isPerm) {
-      result = consumePermanentSp(siyi, cmd.amount); // 已返回实扣额
+      result = consumePermanentSp(siyi, cmd.amount, cmdTx); // 已返回实扣额
     } else {
       const before = siyiTotalSp(siyi);
-      if (!consumeSiyiSp(siyi, cmd.amount) && siyiTotalSp(siyi) >= before) {
+      if (!consumeSiyiSp(siyi, cmd.amount, cmdTx, 'admin', '') && siyiTotalSp(siyi) >= before) {
         result = 0; // 余额 0 一分未扣——confirm 终结（重派无意义）
       } else {
         result = before - siyiTotalSp(siyi); // 全额或部分实扣

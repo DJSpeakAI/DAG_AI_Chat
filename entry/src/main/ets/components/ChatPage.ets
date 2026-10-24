@@ -35,7 +35,7 @@ import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除；★ 0.275.0：Ctrl+V 读取剪贴板图片（getData + PasteDataRecord.pixelMap/uri）
 import { unifiedDataChannel } from '@kit.ArkData'; // ★ 0.275.0：onDrop 拖拽图片记录类型（DragEvent.getData → UnifiedData → Image.imageUri）
 
-  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, docPageTokens, connectSishuClassic } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）；★ 0.291.2：docPageTokens（文档页费嫁接——页数折算等效 input token 并账）；★ 0.300.0：connectSishuClassic（经典模式灰度开关）
+  import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, docPageTokens, connectSishuClassic, ensureSpAuth } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）；★ 0.291.2：docPageTokens（文档页费嫁接——页数折算等效 input token 并账）；★ 0.300.0：connectSishuClassic（经典模式灰度开关）
   import { PendingDoc, DocParseResult, DOC_SUFFIX_FILTERS, DOC_CONFIRM_BYTES, DOC_MAX_BYTES, docExtOf, isDocExt, needsCloudParse, fmtDocSize, parseDocsForSend, buildDocContextBlock, docListLabel } from '../utils/DocParseUtil'; // ★ 0.291.2：文档加载（格式路由/腾讯云解析/system 注入——方案 docs/0.165+/0.291.0）；★ 0.310.0：文件入口改文档专用后缀过滤（图片走相册条/拍摄）
   import { PODCAST_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, ANCHOR_MEDIUM_PROMPT, PLAN_PROMPT, buildWritePrompt, PLAN3_PROMPT, buildDeliverPrompt, CENSOR_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）；★ 0.234.0：SECTION/ANCHOR（锚点一期）；★ 0.290.0：PLAN_PROMPT/buildWritePrompt（司枢 2.0 两段式）+ HOOK_SYSTEM_PROMPT/buildAnchorLongPrompt 退役（②段伴读废止、长回复锚点指令并入框架规划）；★ 0.300.0：司枢 3.0 三件（PLAN3_PROMPT 枢机契约/buildDeliverPrompt 交付执笔/CENSOR_PROMPT 御史）
   import { TaskContract, SishuClarifyState, connectSishuClarify, sanitizeContract, contractToneLine, buildContractBrief, recordCorrectEntry, loadCorrectHint, parseCensorVerdict } from '../common/SishuAgent'; // ★ 0.300.0：司枢 Agent 3.0 契约层（会话级不持久化）
@@ -1532,6 +1532,8 @@ export struct ChatPage {
       connectConfirmDialog().aiLoginPromptVisible = true;
       return;
     }
+    // ★ 0.313.0：云函数账本通道就绪检查（30s 缓存）——余额/门卫均以云端镜像为准
+    await ensureSpAuth();
     // ★ 0.311.6：发送前云端通路新鲜度校验（节流 60s 异步触发——系统后台关云空间时尽力让
     //   假开启裁决链尽快生效，本次发送不阻塞；局限见 ChatModel ensureCloudFresh 注释）
     ensureCloudFresh();
@@ -1636,6 +1638,8 @@ export struct ChatPage {
       this.triggerProfileUpdate(); // fire-and-forget（静默降级，不阻塞发送链路）
     }
     const aiMsg = new ChatMessage(generateMessageId(), 'assistant', PLACEHOLDER_LOADING, [], 0, 0, isPodcast); // ★ 0.132：占位常量；★ 0.133：标记播客模式
+    // ★ 0.313.0：本轮 SP 结算事务号（同一次发送的成功/失败路径共用——云端 txId 幂等防双扣）
+    const spTxId = `${aiMsg.messageId}:chat`;
     aiMsg.model = this.apiConfig.model; // ★ 0.224.3：请求发出时打标模型 ID（操作行显示——用户跨模型对比"这个漂亮回复是哪个模型的"）
     // ★ 0.268.0：AI 智慧排序预触发（fire-and-forget——任务书 Q2 终裁：发送瞬间问题+话题标签
     //   已齐备，无需等 AI 回复；AI 回复完成渲染司忆区时消费结果，多数场景已就绪=零闪烁）。
@@ -1945,7 +1949,7 @@ export struct ChatPage {
       const thinkChars = this.thinkingTraceByMsg.get(aiMsg.messageId)?.length ?? 0;
       if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
         const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额（consumeSiyiSp 不足 clamp 到 0）
-        consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg)); // ★ 0.248.7：回复完成实扣 SP（先嘉奖后充能；不足扣到 0）
+        consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg), spTxId, 'chat', aiMsg.messageId); // ★ 0.313.0：云端权威扣点（txId 幂等）
         this.trackSpConsume(aiMsg, false, _bal0 - siyiTotalSp(this.siyiStore), mergedIn, mergedCached, 'chat', mergedOut); // ★ 0.260.0；★ 0.273.0 补 ot；★ 0.290.0 合并口径；★ 0.300.0 三角色全并
         // ★ 0.271.0：thinking_use 埋点（sp=本条实扣；思考生效但零思考 token=网关静默忽略 degraded）
         this.trackThinkingUse(!thinkReqFin.enabled ? 'off' : (lastReasonTok + deliverReasonTok > 0 ? (downgraded ? 'auto_downgrade' : 'use') : 'degrade'),
@@ -2148,7 +2152,7 @@ export struct ChatPage {
           aiMsg.cacheHitTokens = planCachedTok + webCachedTok + deliverCachedTok + censorCachedTok;
           if (!this.spFree()) {
             const bal0 = siyiTotalSp(this.siyiStore);
-            consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg));
+            consumeSiyiSp(this.siyiStore, this.spCostOf(aiMsg), spTxId, 'plan', aiMsg.messageId);
             this.trackSpConsume(aiMsg, false, bal0 - siyiTotalSp(this.siyiStore), planInTok + deliverInTok + censorInTok, planCachedTok, 'plan', planOutTok + deliverOutTok + censorOutTok);
           }
         }
@@ -2517,6 +2521,8 @@ export struct ChatPage {
       connectConfirmDialog().aiLoginPromptVisible = true;
       return;
     }
+    // ★ 0.313.0：云函数账本通道就绪检查（同 sendMessage）
+    await ensureSpAuth();
     // ★ 0.293.0：SP 云同步门卫（同 sendMessage——重生成同属 AI 调用，gate 口径一致）
     if (!requireSiyiGate()) {
       return;
@@ -2594,6 +2600,8 @@ export struct ChatPage {
     let regenPlanCached = 0;
     let regenFrame: PlanFrame | null = null;
     let regenDeliverCorrected = false; // ★ 0.300.0：纠偏切交付型重跑完成→交付卡标记同步
+    // ★ 0.313.0：本轮重生成 SP 结算事务号（每次重生成唯一——同一消息反复重生成必须分别计费）
+    const regenSpTxId = `${msg.messageId}:regen:${Date.now()}`;
     const startRegenStream = (thinkReq: ThinkingRequest, extraMsgs: ChatMessage[]): void => {
     const regenMsgs: ChatMessage[] = extraMsgs.length > 0 ? [...messagesToSend, ...extraMsgs] : messagesToSend;
     this.streamController = streamChat(
@@ -2638,7 +2646,7 @@ export struct ChatPage {
         const regenThinkChars = this.thinkingTraceByMsg.get(msg.messageId)?.length ?? 0;
         if (!this.spFree()) { // ★ 0.249.0：Lv8 司忆令 SP 永久免费——免扣账号跳过实扣
           const _bal0 = siyiTotalSp(this.siyiStore); // ★ 0.260.0：实扣前后余额差=本行实扣额
-          consumeSiyiSp(this.siyiStore, this.spCostOf(msg)); // ★ 0.248.7：重生成实扣 SP（同 sendMessage 口径）
+          consumeSiyiSp(this.siyiStore, this.spCostOf(msg), regenSpTxId, 'regen', msg.messageId); // ★ 0.313.0：云端权威扣点
           this.trackSpConsume(msg, false, _bal0 - siyiTotalSp(this.siyiStore), regenMergedIn, regenMergedCached, 'regen', regenMergedOut); // ★ 0.260.0；★ 0.273.0 补 ot；★ 0.290.0 合并口径
           // ★ 0.271.0：thinking_use 埋点（regen 场景同款五态）
           this.trackThinkingUse(!thinkReq.enabled ? 'off' : (reasoningTokens > 0 ? (regenDowngraded ? 'auto_downgrade' : 'use') : 'degrade'),
@@ -2687,7 +2695,7 @@ export struct ChatPage {
           msg.cacheHitTokens = regenPlanCached;
           if (!this.spFree()) {
             const bal0 = siyiTotalSp(this.siyiStore);
-            consumeSiyiSp(this.siyiStore, this.spCostOf(msg));
+            consumeSiyiSp(this.siyiStore, this.spCostOf(msg), regenSpTxId, 'plan', msg.messageId);
             this.trackSpConsume(msg, false, bal0 - siyiTotalSp(this.siyiStore), regenPlanIn, regenPlanCached, 'plan', regenPlanOut);
           }
         }
@@ -3001,7 +3009,7 @@ export struct ChatPage {
       return;
     }
     const bal0 = siyiTotalSp(this.siyiStore);
-    consumeSiyiSp(this.siyiStore, cost);
+    consumeSiyiSp(this.siyiStore, cost, '', 'tts');
     const actual = bal0 - siyiTotalSp(this.siyiStore);
     trackSpConsumeAuto(this.apiConfig.model, false, actual, 0, 0, 'tts');
     this.showToastSafe(`音频输出 · 消耗 ${actual} SP`);
@@ -4185,11 +4193,13 @@ export struct ChatPage {
   // ============================================================
 
   // 「翻译」：关闭菜单 → 打开浮窗 → 发起 AI 查词（独立请求，不建气泡、不进 DAG）
-  onToolbarTranslate(): void {
+  async onToolbarTranslate(): Promise<void> {
     // ★ 0.248.3：划词翻译守卫（上架合规——翻译走 AI 查词，未登录拦截）
     if (!requireLoginForCloud()) {
       return;
     }
+    // ★ 0.313.0：先刷账本通道（30s 缓存），再走门卫（余额判定以云端镜像为准）
+    await ensureSpAuth();
     // ★ 0.293.0：SP 云同步门卫（翻译扣 SP——账本云端对齐才放行）
     if (!requireSiyiGate()) {
       return;
@@ -4234,7 +4244,7 @@ export struct ChatPage {
           trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'word', outputTokens);
           return;
         }
-        consumeSiyiSp(this.siyiStore, cost);
+        consumeSiyiSp(this.siyiStore, cost, '', 'word');
         this.wordPopupSpText = `消耗 ${cost} SP`;
         trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'word', outputTokens);
       });
@@ -4956,11 +4966,13 @@ export struct ChatPage {
 
   // 「入知识库」：关闭菜单 → 打开编辑弹窗 → 发起 AI 提炼。
   // AI 结果只填充输入框（草稿），不直接入库——用户拥有最终编辑权。
-  onToolbarAddKnowledge(): void {
+  async onToolbarAddKnowledge(): Promise<void> {
     // ★ 0.248.3：划词入知识库守卫（上架合规——AI 多模态提炼，未登录拦截）
     if (!requireLoginForCloud()) {
       return;
     }
+    // ★ 0.313.0：先刷账本通道（同翻译——余额判定以云端镜像为准）
+    await ensureSpAuth();
     // ★ 0.293.0：SP 云同步门卫（AI 提炼扣 SP——账本云端对齐才放行）
     if (!requireSiyiGate()) {
       return;
@@ -5018,7 +5030,7 @@ export struct ChatPage {
           trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract', outputTokens);
           return;
         }
-        consumeSiyiSp(this.siyiStore, cost);
+        consumeSiyiSp(this.siyiStore, cost, '', 'extract');
         this.knowledgeEditSpText = `消耗 ${cost} SP`;
         trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract', outputTokens);
       });
@@ -5585,11 +5597,13 @@ export struct ChatPage {
 
   // ✏️ 画画按钮入口：首次使用先弹说明（需求文案：用于屏幕圈选标注提问，不会后台录制屏幕），
   // 确认后记 flag 永不再弹；非首次直接进入截图流程
-  startAnnotation(): void {
+  async startAnnotation(): Promise<void> {
     // ★ 0.248.3：圈注守卫（上架合规——屏幕圈选后台走 AI 提炼，未登录拦截）
     if (!requireLoginForCloud()) {
       return;
     }
+    // ★ 0.313.0：先刷账本通道（圈注提炼扣 SP）
+    await ensureSpAuth();
     // ★ 0.293.0：SP 云同步门卫（圈注 AI 提炼扣 SP——账本云端对齐才放行）
     if (!requireSiyiGate()) {
       return;
@@ -5786,7 +5800,7 @@ export struct ChatPage {
           trackSpConsumeAuto(this.apiConfig.model, true, 0, inputTokens, cachedTokens, 'extract', outputTokens);
           return;
         }
-        consumeSiyiSp(this.siyiStore, cost);
+        consumeSiyiSp(this.siyiStore, cost, '', 'extract');
         this.knowledgeEditSpText = `消耗 ${cost} SP`;
         trackSpConsumeAuto(this.apiConfig.model, false, cost, inputTokens, cachedTokens, 'extract', outputTokens);
       });

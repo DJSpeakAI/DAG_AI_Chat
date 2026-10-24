@@ -27,12 +27,18 @@ function isNotInitialized(err: Object): boolean {
   return `${err}`.indexOf('not initialized') >= 0;
 }
 
+// 最近一次通道异常原文（★ 0.313.0：权威记账四接口据此区分 network 与 unknown——
+//   云函数旧版/对象类型不匹配（3037004）不能误报成网络问题，门卫文案要准确）
+let lastCallError: string = '';
+
 // 统一调用入口（未初始化重试 1.5s×3；返回原始响应，异常返 null）
 async function callWithRetry(payload: Record<string, Object>): Promise<Object | null> {
+  lastCallError = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await cloud.callFunction({ name: SP_ADMIN_FN_NAME, params: payload } as FunctionOptions);
     } catch (_e) {
+      lastCallError = `${_e}`;
       if (isNotInitialized(_e) && attempt < 2) {
         await sleep(1500);
         continue;
@@ -67,12 +73,6 @@ function readStringField(resp: Object, field: string): string {
     return '';
   }
   return '';
-}
-
-// 镜像上报（SpMirror 同主键 upsert 幂等；payload 全字符串值——track-events 埋点同款铁律）
-export async function spAdminReport(payload: Record<string, Object>): Promise<boolean> {
-  const resp = await callWithRetry(payload);
-  return resp !== null;
 }
 
 // 指令拉取（返回指令 JSON 串；'[]' 兜底=未部署/无待执行/异常三态同形，调用方零分支）
@@ -152,6 +152,8 @@ export class SpAuthResult {
   welcomeGranted: boolean = false;
   amount: number = 0;         // spend 实扣 / grant 实发
   duplicate: boolean = false; // 幂等命中（txId 已记账，本次未重复扣/发）
+  hasPools: boolean = false;  // 响应是否带四池明细（sp_balance/sp_init 才有；spend/grant 只回 bal——
+                              //   无明细时绝不能覆盖本地镜像，否则会把余额清零）
 }
 
 // 字段读取（stringify 定式：Record 值转字符串再解析——绕开 Object 直转 Number/布尔的类型限制）
@@ -209,10 +211,34 @@ function parseAuthResult(resp: Object | null): SpAuthResult {
   out.welcomeGranted = boolOf(obj, 'welcomeGranted');
   out.amount = numOf(obj, 'amount') > 0 ? numOf(obj, 'amount') : numOf(obj, 'cost');
   out.duplicate = boolOf(obj, 'duplicate');
+  // 四池明细存在判定（有任一池字段=balance/init 响应——spend/grant 只回 bal，不能当明细用）
+  out.hasPools = obj['permSp'] !== undefined || obj['bonusSp'] !== undefined || obj['giftSp'] !== undefined;
   if (!out.ok && out.err.length === 0) {
     out.err = 'unknown';
   }
   return out;
+}
+
+// 通道异常归类（★ 0.313.0）：AGC 未初始化已由 callWithRetry 内部重试；走到这里=网络/服务异常。
+//   仅明确的网络类错误归 network（可重试队列），其余（旧版函数/对象类型不匹配/鉴权）归 unknown
+//   ——unknown 不本地降级，门卫提示「服务升级中」，防把配置故障误报成没网。
+function authFailureResult(): SpAuthResult {
+  const out = new SpAuthResult();
+  const e = lastCallError.toLowerCase();
+  const networkLike = e.indexOf('network') >= 0 || e.indexOf('timeout') >= 0 || e.indexOf('timed out') >= 0
+    || e.indexOf('connection') >= 0 || e.indexOf('socket') >= 0 || e.indexOf('econn') >= 0
+    || e.indexOf('unreachable') >= 0 || e.indexOf('dns') >= 0 || e.indexOf('host') >= 0;
+  out.err = networkLike ? 'network' : 'unknown';
+  return out;
+}
+
+// 权威记账统一调用（返回结构化结果，绝不抛）
+async function callAuth(payload: Record<string, Object>): Promise<SpAuthResult> {
+  const resp = await callWithRetry(payload);
+  if (resp === null) {
+    return authFailureResult();
+  }
+  return parseAuthResult(resp);
 }
 
 // 查权威余额（no-account=云端无账本，调用方走 spAuthInit）
@@ -220,7 +246,7 @@ export async function spAuthBalance(accountId: string): Promise<SpAuthResult> {
   const payload: Record<string, Object> = {};
   payload['action'] = 'sp_balance';
   payload['accountId'] = accountId;
-  return parseAuthResult(await callWithRetry(payload));
+  return callAuth(payload);
 }
 
 // 初始化云端账本（云端已有记录则忽略入参返回现有余额——绝不覆盖，数据安全第一）
@@ -238,7 +264,7 @@ export async function spAuthInit(accountId: string, permSp: number, permCons: nu
   payload['giftCons'] = `${Math.max(0, Math.floor(giftCons))}`;
   payload['welcomeGranted'] = welcomeGranted ? '1' : '0';
   payload['deviceModel'] = deviceModel;
-  return parseAuthResult(await callWithRetry(payload));
+  return callAuth(payload);
 }
 
 // 事务扣点（txId 幂等——重试不双扣；不足=insufficient 拦截）
@@ -252,7 +278,7 @@ export async function spAuthSpend(accountId: string, txId: string, cost: number,
   payload['scene'] = scene;
   payload['note'] = note;
   payload['deviceModel'] = deviceModel;
-  return parseAuthResult(await callWithRetry(payload));
+  return callAuth(payload);
 }
 
 // 事务加池（txId 幂等；pool=gift|bonus|perm）
@@ -267,5 +293,5 @@ export async function spAuthGrant(accountId: string, txId: string, src: string,
   payload['pool'] = pool;
   payload['note'] = note;
   payload['deviceModel'] = deviceModel;
-  return parseAuthResult(await callWithRetry(payload));
+  return callAuth(payload);
 }

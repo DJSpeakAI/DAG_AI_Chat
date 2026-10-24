@@ -46,7 +46,7 @@ import { connectConfirmDialog } from './AppConfirmDialog'; // ★ 0.196.10：未
 import { AppConfirmDialog } from './AppConfirmDialog'; // ★ 0.265.0：清空画像二次确认（自带遮罩叠本弹窗顶层）
 import { MemoryPrefStore, connectMemoryPref } from '../common/ProfileModel'; // ★ 0.265.0 记忆引擎：深度记忆总开关；★ 0.290.0 清空画像入口删除（ProfileStore/clearAllObservations 等随 WP3 退役，能力保留 ProfileModel 代码层）
 import { HuaweiAccountStore, connectHuaweiAccount, requireLoginForCloud, logoutHuaweiID } from '../utils/HuaweiAccountUtil'; // ★ 0.196.8：云同步与账号绑定——未登录拦截「开启」；★ 0.248.3：备份导入导出守卫；★ 0.306.0：debug 重置后登出账号
-import { SP_TTS_PER_KCHAR, debugResetNewUserAssets } from '../common/ChatModel'; // ★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费同源常量）；★ 0.303.1：debug 重置；★ 0.305.1：isVip/subscription 随订阅退役清除
+import { SP_TTS_PER_KCHAR, debugResetNewUserAssets, ensureSpAuth } from '../common/ChatModel'; // ★ 0.279.0：SP_TTS_PER_KCHAR（TTS 计费同源常量）；★ 0.303.1：debug 重置；★ 0.305.1：isVip/subscription 随订阅退役清除
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写词库）
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.205.0：备份 Tab（恢复合并写知识库）
 import {
@@ -204,7 +204,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.311.6'; // ★ 0.311.6：关于页通知开关+删引导框+发送前通路校验// ★ 0.311.5：首页回画布入口（更早历史见 MEMORY.md 版本表）
+export const APP_VERSION: string = 'v0.314.0'; // ★ 0.314.0：SP 状态标记行退役（Phase3 收口）// ★ 0.313.0：SP 云端权威记账接入（Phase2+发放迁云）（更早历史见 MEMORY.md 版本表）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -435,6 +435,7 @@ export struct GlobalSettingsDialog {
   // ★ 0.189.1：audioModelDisplayName（音频模型 id→名称映射）已随云端 TTS 配置区移除
 
   aboutToAppear() {
+    ensureSpAuth(); // ★ 0.313.0：设置弹窗预热账本通道（SP 面板余额/重做性格测试门卫）
     // ★ 0.248.0：消费外部「打开指定 Tab」请求（边栏账户区→司忆点 Tab；-1=无请求，打开即复位）
     const shared = connectGlobalSettingsShared();
     if (shared.openTabIndex >= 0) {
