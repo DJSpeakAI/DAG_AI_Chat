@@ -104,3 +104,25 @@ export async function spAdminConfirm(commandId: string, accountId: string, resul
   const resp = await callWithRetry(payload);
   return resp !== null;
 }
+
+// ★ 0.308.0 云同步真值探针：查 default zone Mirror+Ledger 双表有无「他设备」资产痕迹。
+//   返回 'yes'=有他设备痕迹（云端大概率有 SP 行，本机拉不到=假开启实锤）；
+//   'no'=无痕迹（新账号/仅本机——fail-open 放行）；'err'=通道失败（未部署/无网——fail-open 放行）
+export async function spAdminProbe(accountId: string, deviceModel: string): Promise<string> {
+  if (accountId.length === 0) {
+    return 'no';
+  }
+  const payload: Record<string, Object> = {};
+  payload['action'] = 'probe';
+  payload['accountId'] = accountId;
+  payload['deviceModel'] = deviceModel;
+  const resp = await callWithRetry(payload);
+  if (resp === null) {
+    return 'err';
+  }
+  const v = readStringField(resp, 'probe');
+  if (v === 'y') {
+    return 'yes';
+  }
+  return v === 'e' ? 'err' : 'no';
+}

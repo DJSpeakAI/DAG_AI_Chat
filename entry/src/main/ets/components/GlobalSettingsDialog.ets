@@ -203,7 +203,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.307.0'; // ★ 0.307.0：应用接续 // ★ 0.301.1：版本三处同步制（app.json5+GSD+Index 自动跟）
+export const APP_VERSION: string = 'v0.308.0'; // ★ 0.308.0：云同步假开启检测+重置两态 // ★ 0.301.1：版本三处同步制（app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 
@@ -3381,10 +3381,12 @@ export struct GlobalSettingsDialog {
   // ★ 0.306.0：重置成功=登出华为账号+关云同步+自动退出应用（用户四测拍板「重置=全部重来，
   //   账号也不在里面；重置完系统帮我关掉 APP」——此前只 toast 提示手动重开，重启前内存旧态
   //   与半初始化状态易被误用；退出由 terminateSelf 完成，数据已 flush 落盘/云端）
+  // ★ 0.308.0：两态化（用户拍板「随时随地可用」）——云同步就绪=清本地+覆盖云端两行；
+  //   未就绪=纯本地清零（云端无账或留待就绪态再重置），不再弹「云同步未就绪」阻断。
   confirmDebugReset(): void {
     this.getUIContext().showAlertDialog({
       title: '重置为新用户（测试）',
-      message: '将清零 SP 三池、签到、新手任务、学习统计与礼包标记，并覆盖云端资产两行；聊天记录、词库、知识库、API 配置全部保留。确认后自动退出华为账号并关闭应用，重新打开即全新用户状态。',
+      message: '将清零 SP 三池、签到、新手任务、学习统计与礼包标记；聊天记录、词库、知识库、API 配置全部保留。云同步已开启时将同时覆盖云端资产；未开启时仅清空本机。确认后自动退出华为账号并关闭应用，重新打开即全新用户状态。',
       autoCancel: true,
       cancel: () => {
         // 点遮罩/返回=取消
@@ -3393,13 +3395,10 @@ export struct GlobalSettingsDialog {
         value: '确认重置',
         fontColor: this.theme.danger,
         action: () => {
-          // 两个 Promise 契约均「内部全捕获、永不 reject」（返回 boolean/空串错误提示）——不加 catch 死分支
-          debugResetNewUserAssets().then((ok: boolean) => {
-            if (!ok) {
-              this.showToastSafe('云同步未就绪，请稍后重试', 3000);
-              return;
-            }
-            // 云端已覆盖+本地已清零：先关云同步再断账号会话（DataWipe 顺序铁律同款），
+          // debugResetNewUserAssets 契约「内部全捕获、永不 reject、恒返 true」（本地清零必成功；
+          // 云端覆盖失败不阻断——账号资产语义，就绪态再重置一次即可）——then 链不加 catch 死分支
+          debugResetNewUserAssets().then((_ok: boolean) => {
+            // 本地已清零：先关云同步再断账号会话（DataWipe 顺序铁律同款），
             // 落盘完成后自退——重开=未登录空资产全新状态
             const uiContext = this.getUIContext();
             disableCloudSyncOnLogout(uiContext);

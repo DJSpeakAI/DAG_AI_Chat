@@ -24,7 +24,7 @@ import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, revive
 import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.305.1：onLoginAccountHooks 登录后账号钩子（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
-import { spAdminReport, spAdminFetch, spAdminConfirm } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）
+import { spAdminReport, spAdminFetch, spAdminConfirm, spAdminProbe } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）；★ 0.308.0 spAdminProbe（云同步假开启探针）
 import { deviceInfo } from '@kit.BasicServicesKit';
  import { siyiGateReady, siyiGateBlockReason, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
  import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.293.0：新用户礼包仪式感弹窗桥（AppConfirmDialog 不引 ChatModel 不成环）
@@ -1121,9 +1121,8 @@ function resetAccountAssetsOnAccountSwitch(): void {
 let debugResetLatched: boolean = false;
 
 export async function debugResetNewUserAssets(): Promise<boolean> {
-  if (!siyiGateReady()) {
-    return false; // 云同步未就绪：先登录+开云同步+首拉完成再重置
-  }
+  // ★ 0.308.0 两态化（用户拍板「随时随地可用」）：云同步就绪=清本地+覆盖云端两行（原路径）；
+  //   未就绪（未登录/未开同步/假开启）=纯本地清零——云端无账或留给就绪态再重置，不阻断。
   debugResetLatched = true;
   const siyi = connectSiyiPoints();
   siyi.permanentSp = 0;
@@ -1155,16 +1154,27 @@ export async function debugResetNewUserAssets(): Promise<boolean> {
   bridge.pendingLevel = 0;
   bridge.pendingMakeupGrant = 0;
   clearWelcomeGiftIssued(spAccountMark());
-  // 立即覆盖云端两行（内容行本轮不参与 diff，不会被删）
-  upsertIfChanged('cfg:siyi-points', siyiPointsToJson());
-  upsertIfChanged('cfg:stat-days', connectStatistics().raw);
-  try {
-    await flushCloudRowsNow();
+  if (siyiGateReady()) {
+    // 立即覆盖云端两行（内容行本轮不参与 diff，不会被删）；flush 失败不阻断（本地已清，
+    // 云端残留=账号资产语义，就绪态再重置一次即可覆盖）
+    upsertIfChanged('cfg:siyi-points', siyiPointsToJson());
+    upsertIfChanged('cfg:stat-days', connectStatistics().raw);
+    try {
+      await flushCloudRowsNow();
+    } catch (_e) {
+      // 静默——见上
+    }
     reportSpAdminMirror(); // 数据台镜像同步归零（便于核对）
-    return true;
-  } catch (_e) {
-    return false;
+  } else {
+    // 纯本地清（resetAccountAssetsOnAccountSwitch 同款）：RDB 行删除 + diff-cache 清 +
+    //   闸门重开（防 cache 旧值被 flush 重写、防重置 0 值 LWW 压云端）
+    await deleteRowLocal('cfg:siyi-points');
+    await deleteRowLocal('cfg:stat-days');
+    rowCache.delete('cfg:siyi-points');
+    rowCache.delete('cfg:stat-days');
+    connectCloudSyncArbiter().rowInitDone = false;
   }
+  return true;
 }
 
 // ★ 0.305.1：isVip/vipExpireTime/vipDaysLeft（0.194.0 订阅判定）随订阅退役整体删除——
@@ -1656,6 +1666,76 @@ export function grantSiyiWelcomeBonus(store: SiyiPointStore): number {
 function currentAccountMark(): string {
   const account = connectHuaweiAccount();
   return account.unionID !== '' ? account.unionID : account.openID;
+}
+
+// ============================================================
+// ★ 0.308.0：云同步假开启检测（云函数探针 + 本地 SP 行见过标记双证据）
+// ============================================================
+// 背景：华为无「系统设置-云空间-应用数据同步」开关检测 API，且开关未开时 cloudSync()
+//   静默无操作（不报错、0 行下行）——端侧无法区分「云端空」与「假开启」。假开启下首拉
+//   reconcile 空表无缺片照样开闸（rowInitDone=true），门卫被骗过 → 签到/礼包照发 →
+//   本地假账待真开启后上行 LWW 压制云端 = 乱账（2026-10-24 手机 180 实锤：welcome 200 万）。
+// 证据链（零误拦原则：只信「真下行」与「他设备流水」，fail-open 兜底）：
+//   ①本地标记 spRow：本机历史任一 reconcile 真下行收到过 cfg:siyi-points 行（持久化，
+//     只可能由真下行置位）——有此标记而本轮拉不到 = 假开启实锤；
+//   ②云函数探针 spAdminProbe：default zone SpMirror+SpLedger 双表查「他设备」资产痕迹
+//     （他设备报过=云端大概率有 SP 行）——本机拉不到 SP 行 + 探针 yes = 假开启实锤。
+//   实锤动作：cloudBlocked=true（SiyiGate 第⑤条件，SP 增耗全拦）+ 弹引导（跳系统云空间）。
+//   解除：后续任一 reconcile 收到 cfg:siyi-points 行（用户在系统设置放行后真下行到达）。
+// ============================================================
+
+// 本地证据：SP 云行见过标记（持久化——跨会话存活；置位只走真下行路径）
+@ObservedV2
+export class SpCloudSeenStore {
+  @Trace spRow: boolean = false;
+}
+function connectSpCloudSeen(): SpCloudSeenStore {
+  return PersistenceV2.connect(SpCloudSeenStore, 'sp-cloud-seen-v1',
+    () => new SpCloudSeenStore()) as SpCloudSeenStore;
+}
+
+let cloudVerifyLastMs: number = 0; // 探针节流（60s——reconcile 可能被前台切换反复触发）
+
+// 假开启实锤落锤（弹窗只在 false→true 跳变时弹一次，防骚扰）
+function markCloudBlocked(): void {
+  if (!connectSiyiGate().cloudBlocked) {
+    connectSiyiGate().cloudBlocked = true;
+    connectConfirmDialog().syncGatePromptVisible = true; // 引导弹窗 r=4：跳系统云空间开同步
+  }
+}
+
+// 首拉开闸后的统一裁决（挂 reconcileWithRows 闸门开启点）：假开启判定 + 礼包判定收口
+function afterFirstPullGateOpen(spRowSeen: boolean): void {
+  if (spRowSeen) {
+    // 通路证真：真下行收到 SP 行——落本地标记+解除假开启锁，礼包按原逻辑（云端标记拦老账号）
+    connectSpCloudSeen().spRow = true;
+    connectSiyiGate().cloudBlocked = false;
+    maybeGrantWelcomeAfterFirstPull();
+    return;
+  }
+  if (connectSpCloudSeen().spRow) {
+    // 本机历史见过 SP 行而现在拉不到：假开启实锤（本地证据，零误拦）——不发礼包
+    markCloudBlocked();
+    return;
+  }
+  // 无本地证据：探针定夺（节流期内不重复问也不裁决——在途回调统一处理）
+  const now = Date.now();
+  if (now - cloudVerifyLastMs < 60000) {
+    return;
+  }
+  cloudVerifyLastMs = now;
+  spAdminProbe(spAccountMark(), deviceInfo.productModel).then((r: string) => {
+    if (r === 'yes') {
+      // 他设备资产痕迹实锤：云端有账而本机拉不到 = 假开启——锁门卫+不发礼包
+      markCloudBlocked();
+      return;
+    }
+    // 'no'=无他设备痕迹（真新用户）/ 'err'=探针通道失败（未部署/无网）——fail-open
+    if (connectSiyiGate().cloudBlocked) {
+      connectSiyiGate().cloudBlocked = false;
+    }
+    maybeGrantWelcomeAfterFirstPull();
+  });
 }
 
 // ★ 0.293.0：新用户礼包首拉判定（挂 reconcileWithRows 闸门开启点——会话级判一次）：
@@ -3610,7 +3690,8 @@ function reconcileWithRows(rows: CloudRow[]): void {
   } else {
     pullNudgeAttempts = 0;
     arb.rowInitDone = true;
-    maybeGrantWelcomeAfterFirstPull(); // ★ 0.293.0：首拉完成=SP 云端账本已对齐→此刻判新用户礼包（云端标记拦老账号重装）
+    // ★ 0.308.0：开闸后统一走假开启裁决链（有 SP 行=证真；无行=本地标记/探针实锤假开启）
+    afterFirstPullGateOpen(entity.get('cfg:siyi-points') !== undefined);
   }
   // 迁移物化：吸收值只存在于内存 map（reconcile 已把它们播进 cache 令 flush 误判「未变」）——
   //   必须显式落行，否则实体行永远不出生、行模式云端为空（实测实锤：仅 cfg 3 行）

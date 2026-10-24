@@ -137,6 +137,38 @@ async function handleFetch(event) {
   return { commands: JSON.stringify(out) };
 }
 
+// ── app: probe 云同步真值探针（★ 0.308.0 假开启检测）──
+//   端侧 RDB cloudSync 通路在「系统云空间未放行」时静默无操作（华为无检测 API），
+//   端侧无法区分「云端空」与「假开启」。本探针走 AGC callFunction 独立通道查 default
+//   zone 两表：SpMirror 镜像（同主键 upsert，会被最后上报设备覆盖）+ SpLedger 流水
+//   （追加不覆盖）——任一存在**他设备**痕迹 ⇒ 该账号在其他设备有资产史 ⇒ 云端大概率
+//   有 cfg:siyi-points 行；此时端侧若拉不到该行 = 假开启实锤（端侧自行判定）。
+//   返回 probe='y' 有他设备痕迹 / 'n' 无（或仅本机） / 'e' 查询异常（端侧 fail-open）。
+async function handleProbe(event) {
+  const accountId = String(event.accountId || '');
+  const deviceModel = String(event.deviceModel || '');
+  if (!accountId) {
+    return { probe: 'n' };
+  }
+  try {
+    const mirrors = rowsToPlain(await mirrorCol.query().equalTo('objectId', accountId).get());
+    for (let i = 0; i < mirrors.length; i++) {
+      if (String(mirrors[i].deviceModel || '') !== deviceModel) {
+        return { probe: 'y' };
+      }
+    }
+    const ledger = rowsToPlain(await ledgerCol.query().equalTo('accountId', accountId).limit(20).get());
+    for (let i = 0; i < ledger.length; i++) {
+      if (String(ledger[i].deviceModel || '') !== deviceModel) {
+        return { probe: 'y' };
+      }
+    }
+    return { probe: 'n' };
+  } catch (_e) {
+    return { probe: 'e' };
+  }
+}
+
 // ── app: confirm 执行回报 ──
 async function handleConfirm(event) {
   const commandId = String(event.commandId || '');
@@ -258,6 +290,10 @@ exports.myHandler = async function (event, context, callback) {
     }
     if (action === 'confirm') {
       callback(await handleConfirm(ev));
+      return;
+    }
+    if (action === 'probe') {
+      callback(await handleProbe(ev));
       return;
     }
     if (action === 'query' || action === 'command' || action === 'commands') {
