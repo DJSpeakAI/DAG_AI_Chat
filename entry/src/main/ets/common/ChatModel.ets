@@ -17,19 +17,20 @@
 import { AppStorageV2, PersistenceV2 } from '@kit.ArkUI'; // ★ 0.143：connectApiConfig（换 key 迁移）需要 PersistenceV2；★ 0.151：applyCanvasModeSwitch 需要 AppStorageV2
 import { util } from '@kit.ArkTS'; // ★ 0.161.3：rawfile config.json 解码（Uint8Array → string）
 import { common } from '@kit.AbilityKit'; // ★ 0.161.3：loadBuiltinApiConfig 的 context 参数类型
-import { connectCloudSync, CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter, writeTombstone, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）；★ 0.230.1 writeTombstone（显式墓碑唯一出生通道）+ forceCloudSyncNow（缺片 nudge 重拉）
+import { CloudRow, deleteRowLocal, queryAllRows, registerCloudRowsReady, registerRowFlush, upsertRow, upsertCloudData, connectCloudSyncArbiter, writeTombstone, forceCloudSyncNow } from '../utils/CloudSyncUtil'; // ★ 0.165.1 云同步桥接；★ 0.228.0 行模式原语（reconcile/flush/行写）；★ 0.230.1 writeTombstone（显式墓碑唯一出生通道）+ forceCloudSyncNow（缺片 nudge 重拉）
 import { WordItem, WordFolder, WordBankStore } from './WordModel'; // ★ 0.228.0 行桥接（词池序列化/复活）
 import { KnowledgeCard, KFolder, KnowledgeBankStore } from './KnowledgeModel'; // ★ 0.228.0 行桥接
 import { wordToPlain, cardToPlain, folderToPlain, reviveWord, reviveCard, reviveFolder } from '../utils/BackupUtil'; // ★ 0.228.0 plain 流水线复用（0.205.4 纪律）
-import { FaceModeStore, connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode
+import { connectFaceMode } from './FaceModeStore'; // ★ 0.228.0 cfg:face-mode；★ 0.311.2 零债清理：FaceModeStore 类型符号未用移除
  import { cryptoFramework } from '@kit.CryptoArchitectureKit'; // ★ 0.194.0：兑换码 SHA256 离线校验
  import { connectHuaweiAccount } from '../utils/HuaweiAccountUtil'; // ★ 0.305.1：onLoginAccountHooks 登录后账号钩子（无循环依赖：HuaweiAccountUtil 不引 ChatModel）
 import { spAdminReport, spAdminFetch, spAdminConfirm, spAdminProbe } from '../utils/SpAdminUtil'; // ★ 0.301.0：SP 数据台传输层（无循环依赖：SpAdminUtil 不引 ChatModel——0.223.0 防环军令）；★ 0.308.0 spAdminProbe（云同步假开启探针）
 import { deviceInfo } from '@kit.BasicServicesKit';
- import { siyiGateReady, siyiGateBlockReason, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
+ import { siyiGateReady, connectSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（SiyiGate 不引 ChatModel——无循环依赖）
  import { connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.293.0：新用户礼包仪式感弹窗桥（AppConfirmDialog 不引 ChatModel 不成环）
 import { trackUidAuto, setDailyLdProvider } from '../utils/TrackUtil'; // ★ 0.260.0：sp_grant 发放埋点（无循环依赖：TrackUtil 不引 ChatModel）；★ 0.273.0：setDailyLdProvider（app_daily 日活行的 ld 字段注入位——TrackUtil 禁 import ChatModel，由本模块单向注入）
-import { isWelcomeGiftIssued, markWelcomeGiftIssued, clearWelcomeGiftIssued } from '../utils/WelcomeGiftShadow'; // ★ bug6：礼包「已发放」本地影子（防冷启水合竞态导致重复弹窗）；★ 0.303.1：clearWelcomeGiftIssued（debug 重置）
+import { isWelcomeGiftIssued, markWelcomeGiftIssued, clearWelcomeGiftIssued } from '../utils/WelcomeGiftShadow'; // ★ bug6：礼包「已发放」本地影子（防冷启水合竞态导致重复弹窗）；★ 0.311.4 恢复 clear（重置=完整新用户终稿）
+import { isSpCloudRowSeen, markSpCloudRowSeen } from '../utils/SpCloudSeenShadow'; // ★ 0.311.1：SP 云行见过影子（P2 水合失败兜底——假开启证据防丢）
 import { NODE_W, NODE_H } from './DesignTokens'; // ★ 0.167.3：布局几何参数单一来源（气泡宽 150，防布局与 UI 两处漂移）；★ 0.167.4：NODE_H 供多根纵向堆叠的树高计算
 
 // 角色类型：用户 / assistant / system（火山方舟 v3 接口规范）
@@ -250,6 +251,31 @@ export function deserializeBubbleTree(json: string): BubbleTree | null {
   } catch (e) {
     return null;
   }
+}
+
+// ★ 0.310.1：默认示例气泡一次性迁移——老装机（0.310.0 及以前）首启生成的「你好 / 1」示例
+// 改成「用户画像」空气泡（用户拍板：根气泡=用户画像，示例对话退役）。判定极窄：整棵树只有
+// 一个无标题根节点且消息恰为这两条原文，用户动过任何一处都不迁移（绝不碰真实对话数据）。
+// 返回 true=已迁移，调用方负责落盘。
+export function migrateLegacyDemoSeed(tree: BubbleTree): boolean {
+  if (tree.nodeList.length !== 1) {
+    return false;
+  }
+  const root = tree.nodeList[0];
+  if (root.parentID !== null || root.nodeTitle !== '' || root.messages.length !== 2) {
+    return false;
+  }
+  const first = root.messages[0];
+  const second = root.messages[1];
+  if (first.role !== 'user' || first.content !== '你好') {
+    return false;
+  }
+  if (second.role !== 'assistant' || second.content !== '1') {
+    return false;
+  }
+  root.messages = [];
+  root.nodeTitle = '用户画像';
+  return true;
 }
 
 // V2 全局状态：当前选中的气泡 ID + 坐标
@@ -1115,8 +1141,12 @@ function resetAccountAssetsOnAccountSwitch(): void {
 
 // ★ 0.303.1：调试专用——重置为新用户资产（保留聊天记录/词库/知识库等内容行）
 //   入口：仅 debug 包（BuildProfile.DEBUG）设置-关于页显示；正式包不暴露。
-//   范围：只覆盖 cfg:siyi-points（SP三池/welcomeGranted/签到/里程碑/IAP/新手任务两集合）
+//   范围：只覆盖 cfg:siyi-points（SP三池/签到/里程碑/IAP/新手任务两集合）
 //        + cfg:stat-days（学习统计）；node/tab/word/card/文件夹/API配置等内容与设置行一律不动。
+//   ★ 0.311.4 语义终稿（用户两轮实测拍板）：重置=**完整新用户**——welcomeGranted/影子礼包标记/
+//        签到引导全部清零，真下行落地后可重领礼包+重走首签；发放守卫=证真分支「拉到行才判」
+//        （未落地/假开启绝不发，0.308.0/0.311.1 防线保持）。0.311.2 曾改「保留标记」——修反了
+//        （用户实测：气泡都落地了却不送，骂「为什么不检测我是不是第一次」）。
 //   latch：本会话跳过 SP 行下行合并，防旧云端值把重置冲掉；进程重启后自动失效。
 let debugResetLatched: boolean = false;
 
@@ -1129,7 +1159,7 @@ export async function debugResetNewUserAssets(): Promise<boolean> {
   siyi.bonusSp = 0;
   siyi.giftSp = 0;
   siyi.giftSpExpireAt = 0;
-  siyi.welcomeGranted = false;
+  siyi.welcomeGranted = false; // ★ 0.311.4：恢复清零（重置=完整新用户，落地后可重领——0.311.2 保留版已回滚）
   siyi.consumedGiftSp = 0;
   siyi.consumedBonusSp = 0;
   siyi.consumedPermanentSp = 0;
@@ -1153,7 +1183,7 @@ export async function debugResetNewUserAssets(): Promise<boolean> {
   bridge.lastLevel = 0;
   bridge.pendingLevel = 0;
   bridge.pendingMakeupGrant = 0;
-  clearWelcomeGiftIssued(spAccountMark());
+  clearWelcomeGiftIssued(spAccountMark()); // ★ 0.311.4 恢复：清影子（重置=完整新用户）
   if (siyiGateReady()) {
     // 立即覆盖云端两行（内容行本轮不参与 diff，不会被删）；flush 失败不阻断（本地已清，
     // 云端残留=账号资产语义，就绪态再重置一次即可覆盖）
@@ -1704,16 +1734,42 @@ function markCloudBlocked(): void {
   }
 }
 
+// ★ 0.311.1：探针通道失败的重试（有界 3 次）——'err' 不发放、挂账等下一轮对账（SP 铁律：
+//   未证真不发放）；每轮 probe 有 60s 节流，故重试前清零节流戳并主动催一次同步
+let cloudVerifyRetry: number = 0;
+
+function retryCloudVerifyLater(): void {
+  if (cloudVerifyRetry >= 3) {
+    return; // 通道持续不可用：挂账（下轮冷启/网络恢复后重新判定）
+  }
+  cloudVerifyRetry++;
+  setTimeout(() => {
+    cloudVerifyLastMs = 0;
+    forceCloudSyncNow();
+  }, 8000);
+}
+
 // 首拉开闸后的统一裁决（挂 reconcileWithRows 闸门开启点）：假开启判定 + 礼包判定收口
+// ★ 0.311.1 加固（2026-10-24 用户实测「系统云空间没开却弹 200 万礼包」）：
+//   无行场景双问探针——他设备痕迹（own）+账号任何历史（''），有历史却拉不到 SP 行 = 假开启/
+//   非新账号，锁门卫/挂账不发；'err' 通道失败不 fail-open——挂账有界重试。
+// ★ 0.311.4 证真分支定稿（用户同日二次实测拍板「气泡都落地了为什么不送我」）：
+//   **拉到行=云通路证真=行内容即真相**——行带 welcomeGranted=true=老账号拦；行无标记=真新/
+//   重置账号（重置覆盖的就是无标记空行）→ 直发，不再问探针（0.311.2 曾在证真分支加「任何历史」
+//   探针防御——把重置用户全拦了，与用户「重置=完整新用户」语义冲突，已拆）。发放时机恒=真下行
+//   落地之后（0.308.0 假开启防线：拉不到行绝不发）。
 function afterFirstPullGateOpen(spRowSeen: boolean): void {
   if (spRowSeen) {
-    // 通路证真：真下行收到 SP 行——落本地标记+解除假开启锁，礼包按原逻辑（云端标记拦老账号）
+    // 通路证真：真下行收到 SP 行——落本地标记（P2+影子双写）+解除假开启锁；行内容即礼包真相
     connectSpCloudSeen().spRow = true;
+    markSpCloudRowSeen();
     connectSiyiGate().cloudBlocked = false;
+    cloudVerifyRetry = 0;
     maybeGrantWelcomeAfterFirstPull();
+    maybeShowSignInAfterGateReady();
     return;
   }
-  if (connectSpCloudSeen().spRow) {
+  if (connectSpCloudSeen().spRow || isSpCloudRowSeen()) {
     // 本机历史见过 SP 行而现在拉不到：假开启实锤（本地证据，零误拦）——不发礼包
     markCloudBlocked();
     return;
@@ -1724,18 +1780,80 @@ function afterFirstPullGateOpen(spRowSeen: boolean): void {
     return;
   }
   cloudVerifyLastMs = now;
-  spAdminProbe(spAccountMark(), deviceInfo.productModel).then((r: string) => {
-    if (r === 'yes') {
+  const mark = spAccountMark();
+  spAdminProbe(mark, deviceInfo.productModel).then((own: string) => {
+    if (own === 'yes') {
       // 他设备资产痕迹实锤：云端有账而本机拉不到 = 假开启——锁门卫+不发礼包
       markCloudBlocked();
       return;
     }
-    // 'no'=无他设备痕迹（真新用户）/ 'err'=探针通道失败（未部署/无网）——fail-open
+    if (own === 'err') {
+      retryCloudVerifyLater(); // 通道失败：不发放（挂账），有界重试
+      return;
+    }
+    // 第二问：账号是否有任何设备/任何时期的历史（'' 使探针匹配任意 deviceModel）
+    probeAnyHistoryThenGrant();
+  });
+}
+
+// ★ 0.311.2：第二问封装「账号任何历史」探针（仅无行分支使用——假开启判定）；节流戳统一在此管理。
+//   yes=老账号/通路存疑：挂账不发；no=真新账号且云端无行：放行礼包与签到；err=通道失败挂账有界重试
+function probeAnyHistoryThenGrant(): void {
+  const now = Date.now();
+  if (now - cloudVerifyLastMs < 60000) {
+    return; // 近期已问过/在途——挂账等下一轮 reconcile
+  }
+  cloudVerifyLastMs = now;
+  spAdminProbe(spAccountMark(), '').then((anyHistory: string) => {
+    if (anyHistory === 'err') {
+      retryCloudVerifyLater(); // 通道失败：不发放（挂账），有界重试
+      return;
+    }
+    if (anyHistory === 'yes') {
+      // 有历史却拉不到 SP 行：不是纯新账号（或云通路未生效）——绝不发假账礼包/签到。
+      // 不冻结门卫（历史可能只来自云函数旁路，云端 SP 行未必存在——冻结会造成无法自愈的锁死）；
+      // 不发即挂账：后续任一真下行带标记的 SP 行到达后由证真分支正常补判。
+      return;
+    }
+    // 双问均 no = 真新账号且无任何资产史——放行礼包与签到
     if (connectSiyiGate().cloudBlocked) {
       connectSiyiGate().cloudBlocked = false;
     }
+    cloudVerifyRetry = 0;
     maybeGrantWelcomeAfterFirstPull();
+    maybeShowSignInAfterGateReady();
   });
+}
+
+// ★ 0.311.6：AI 发送前云端通路新鲜度校验（节流 60s）——用户实测「系统后台关掉云空间-DAG 同步后
+//   app 仍显示开启且能发送（白嫖）」。华为无系统云空间应用同步开关查询 API（cloudData 模块仅策略/
+//   触发监听，官方文档实锤），只能靠「主动触发一次同步 → reconcile 走假开启裁决链」尽力检测。
+//   ⚠已知局限：本地 RDB 缓存行仍在时该检测存在假阴性（queryAllRows 读本地库）——根治方案=
+//   SP 记账改云函数权威扣点（架构级，MEMORY 待办待用户拍板），本函数为低成本缓解。
+let cloudFreshMs: number = 0;
+export function ensureCloudFresh(): void {
+  const now = Date.now();
+  if (now - cloudFreshMs < 60000) {
+    return;
+  }
+  cloudFreshMs = now;
+  if (connectHuaweiAccount().isLoggedIn) {
+    try {
+      forceCloudSyncNow(); // 未激活/未就绪内部自返——不需要在此判云同步开关（防 ChatModel↔CloudSyncUtil 环）
+    } catch (_e) {
+      // 静默（未激活/网络未就绪——下次再试）
+    }
+  }
+}
+
+// ★ 0.311.0：门卫就绪后的签到补弹（用户实测：登录时云同步未就绪 → 首登签到引导被跳过，
+//   之后 gate 就绪已无入口再弹——首日签到场次丢失）。礼包弹窗优先：礼包可见时不抢，
+//   由 Index 礼包「开心收下」关闭后再回调本函数。
+export function maybeShowSignInAfterGateReady(): void {
+  if (connectConfirmDialog().welcomeBonusVisible) {
+    return;
+  }
+  maybeAutoShowSignIn();
 }
 
 // ★ 0.293.0：新用户礼包首拉判定（挂 reconcileWithRows 闸门开启点——会话级判一次）：
@@ -3650,23 +3768,20 @@ function reconcileWithRows(rows: CloudRow[]): void {
   //   42/42 全为此型）的节点每次下行 LWW 复活入池=用户实测「先弹出整个然后又删掉」的僵尸源；
   //   自愈=重打新墓碑（新戳恒>node 戳，墓碑上行全端收敛根除）+本端当轮即剔（dels 抬戳走剔除分支，
   //   顺带触发 deleteRowLocal 清压制行）。id 已注册 tombstonedIds（下行 del 注册在先）——flush 永不对抗。
-  let revivedDirty = 0;
-  cloudNodes.forEach((v: string, k: string): void => {
+  cloudNodes.forEach((_v: string, k: string): void => {
     const nid = k.substring('node:'.length);
     const ndelT = dels.get(nid);
     if (ndelT !== undefined && ndelT < (ts.get(k) ?? 0)) {
       writeTombstone(nid);
       dels.set(nid, Date.now() + 1);
-      revivedDirty++;
     }
   });
-  cloudTabs.forEach((v: string, k: string): void => {
+  cloudTabs.forEach((_v: string, k: string): void => {
     const tid = k.substring('tab:'.length);
     const tdelT = dels.get(tid);
     if (tdelT !== undefined && tdelT < (ts.get(k) ?? 0)) {
       writeTombstone(tid);
       dels.set(tid, Date.now() + 1);
-      revivedDirty++;
     }
   });
   // 各域合并

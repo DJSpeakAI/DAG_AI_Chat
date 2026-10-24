@@ -28,7 +28,7 @@ import { track, trackUidAuto } from '../utils/TrackUtil'; // 0.206.0 埋点；�
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
 import { photoAccessHelper, PhotoPickerComponent, PickerController, PickerOptions,
-  SingleLineConfig, ItemDisplayRatio, DataType } from '@kit.MediaLibraryKit'; // ★ 0.310.0：内嵌相册条（PhotoPickerComponent 零权限——禁止申请 READ_IMAGEVIDEO 受限权限）
+  SingleLineConfig, ItemDisplayRatio, PickerOrientation, DataType } from '@kit.MediaLibraryKit'; // ★ 0.310.0：内嵌相册条（PhotoPickerComponent 零权限——禁止申请 READ_IMAGEVIDEO 受限权限）；★ 0.310.1：PickerOrientation（相册条横向滑动）
 import { camera, cameraPicker } from '@kit.CameraKit'; // ★ 0.310.0：系统相机（cameraPicker 零相机权限；picker 别名已被 CoreFileKit 占用，故 camera 用本名）
 import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（DocumentViewPicker 保存图片——免权限系统保存对话框）
 import { buffer } from '@kit.ArkTS';
@@ -47,7 +47,7 @@ import { ContentFilter, FilterHit } from '../utils/ContentFilter'; // ★ 0.250.
 import { connectWordBank, addWordToBank } from '../utils/WordStoreUtil'; // ★ 0.145：单词库持久化与操作；★ 0.187.0：pickRandomWords 移除（选词改走记忆算法）
 import { MemoryRating, MemoryItem, pickReviewWords, pickReviewCards, orderedReviewWords, orderedReviewCards, rotateSlice, applyPassiveReview, applyRating, formatNextReviewLabel, previewIntervalDays, formatIntervalDays } from '../utils/MemoryAlgorithm'; // ★ 0.187.0：记忆算法（遗忘曲线选词 + 展示即复习 + 3 档评分）；★ 0.188.0：知识库复刻（pickReviewCards + MemoryItem 联合类型）；★ 0.196.0：评分按钮时间预览（previewIntervalDays + formatIntervalDays）；★ 0.237.3：换一批（orderedReviewWords/Cards 全序视图 + rotateSlice 环绕轮换）
 import { FaceModeStore, connectFaceMode } from '../common/FaceModeStore'; // ★ 0.224.0：司忆区跟随全局卡面模式（单面/双面）
-  import { noteBankMutation, saveBubbleTreePools } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）；★ 0.287.0：saveBubbleTreePools 分池保存公共函数（saveTree 消重+撤销栈闭包安全）
+  import { noteBankMutation, saveBubbleTreePools, ensureCloudFresh } from '../common/ChatModel'; // ★ 0.223.0：评分/展示复习进度上云钩子（3 秒防抖）；★ 0.287.0：saveBubbleTreePools 分池保存公共函数（saveTree 消重+撤销栈闭包安全）；★ 0.311.6：ensureCloudFresh（发送前云端通路新鲜度校验，节流 60s）
 import { connectKnowledgeBank, addKnowledgeCard } from '../utils/KnowledgeStoreUtil'; // ★ 0.146：知识库持久化与操作；★ 0.188.0：pickRandomKnowledgeCards 移除（选卡改走记忆算法）
 import { AnnotationPrefStore, AnnotationDraftStore, AnnotationResultStore, connectAnnotationPref, connectAnnotationDraft, connectAnnotationResult } from '../common/AnnotationModel'; // ★ 0.152：屏幕圈选标注（首次提示 flag + 截图草稿 + 结果回传）
 import { SketchResultStore, connectSketchResult } from '../common/SketchModel'; // ★ 0.297.0：数学证明画板（结果回传）
@@ -327,7 +327,8 @@ export struct ChatPage {
   //   发送恒为正常对话；历史播客消息的 isPodcastMode 字段保留，兼容渲染与重生成。
   // ★ 0.144：回复长度下拉（'short' | 'medium' | 'long'，默认中回复；仅内存状态，重启恢复默认）
   @Local replyLengthMode: string = 'medium';
-  @Local webMode: string = 'auto'; // ★ 0.292.0 联网问答（FC 工具循环；会话态不持久化）；★ 0.300.0 两态化：'auto'=AI 自主（枢机恒挂 tools 自己决定+单段关键词预路由命中才挂）/ 'force'=强制挂（Bing 抽风手动兜底）——禁止决策负担丢给用户（产品军令 5）
+  // ★ 0.310.1：联网开关 UI 退役（用户拍板——不把决策丢给用户，联网一律自动判断：
+  //   单段链路关键词预路由命中才挂 tools，司枢链路由枢机自主决定；原 webMode 会话态随之删除）
   // ★ 0.151-D：⋮ 三点气泡菜单开关（合并原模式下拉 0.133 + 长度下拉 0.144 两个面板为一棵树形菜单）
   // ★ 0.153：代码块放大弹窗状态（代码块左上角「放大」按钮打开，全屏查看 + 换行切换）
   @Local codeZoomVisible: boolean = false;
@@ -477,6 +478,12 @@ export struct ChatPage {
   @Computed
   get currentMessages(): ChatMessage[] {
     return this.currentBubble?.messages ?? [];
+  }
+
+  // ★ 0.310.1：根气泡 = 用户画像气泡（空态提示按根/子气泡分档——只有根气泡引导做自我介绍）
+  @Computed
+  get isRootBubble(): boolean {
+    return this.currentBubble !== undefined && this.currentBubble.parentID === null;
   }
 
   // ★ 0.195.0：输入框动态高度计算整体废弃（原 0.118 条数制 → 0.195.0 measureTextSize 软换行制，
@@ -1476,6 +1483,19 @@ export struct ChatPage {
     }
   }
 
+  // ★ 0.311.1：发送被守卫拦截时的统一失焦（登录/云同步门卫/余额不足）——收起键盘与附件面板，
+  //   避免「弹窗盖在键盘上、点空白也不收」的僵持感；拦截未发送，不违反 PC 发送后保持焦点规则
+  dismissInputForGate(): void {
+    this.plusMenuOpen = false;
+    this.stripReady = false;
+    this.isInputFocused = false;
+    try {
+      this.getUIContext().getFocusController().clearFocus();
+    } catch (_e) {
+      // 焦点控制器不可用：静默（弹窗仍可操作）
+    }
+  }
+
   async sendMessage(): Promise<void> { // ★ 改为 async（0.117）
     this.cancelPlanning('new'); // ★ 0.290.0：发新消息自动取消进行中①段（非阻塞，不挡发送）
     this.streamGen += 1; // ★ 0.300.0：任务代际+1（反问挂起链路恢复后核对——被顶替则静默死亡）
@@ -1504,20 +1524,28 @@ export struct ChatPage {
     if (this.isLoading && this.streamController === null) {
       this.isLoading = false;
     }
+    // ★ 0.311.1：拦截态先收输入焦点（用户实测：未登录点发送→登录弹窗浮起，键盘仍锚在输入框、
+    //   点空白也不收；改成拦截即失焦收起键盘/附件面板，用户直接面对引导弹窗）
     // ★ 0.248.2：AI 登录守卫（上架合规最高优先——未登录发消息拦截 + 引导登录；置于一切 guard 之前）
     if (!connectHuaweiAccount().isLoggedIn) {
+      this.dismissInputForGate();
       connectConfirmDialog().aiLoginPromptVisible = true;
       return;
     }
+    // ★ 0.311.6：发送前云端通路新鲜度校验（节流 60s 异步触发——系统后台关云空间时尽力让
+    //   假开启裁决链尽快生效，本次发送不阻塞；局限见 ChatModel ensureCloudFresh 注释）
+    ensureCloudFresh();
     // ★ 0.293.0：SP 云同步门卫（SiyiGate——账本云端未对齐禁用 AI：防未开同步设备本地小金库白嫖，
     //   引导弹窗按阻塞原因分支：登录/一键开启/跳系统云空间）
     if (!requireSiyiGate()) {
+      this.dismissInputForGate();
       return;
     }
     // ★ 0.248.7：SP 余额闸门（实扣链路上线——余额为 0 拦截发送并引导充能；余额>0 放行，
     //   单次消耗远小于余额不做预估拦截，回复完成按实扣、不足扣到 0 为止）
     //   ★ 0.249.0：Lv8 司忆令「SP 永久免费」豁免（用户拍板真免扣——免扣账号余额 0 照常发送）
     if (!this.spFree() && siyiTotalSp(this.siyiStore) <= 0) {
+      this.dismissInputForGate();
       connectConfirmDialog().spRechargePromptVisible = true;
       return;
     }
@@ -1586,9 +1614,10 @@ export struct ChatPage {
       ? bubbleForThink.topicTags.join('、') : '';
     // ★ 0.300.0：解除联网×深度思考互斥（前置验证①实锤——腾讯云 TokenHub DeepSeek-Flash
     //   tools+thinking 同请求三组全 200；当年一刀切互斥的根因就是没验证，本版纠正）
-    // ★ 0.300.0：联网两态+本地预路由（任务书 §三.1——'force' 强制挂 / 'auto' 单段链路
-    //   关键词宽匹配命中才挂（宁可多挂漏挂=场景整个失效）；司枢链路恒挂由枢机自主）
-    const webPrerouteHit: boolean = this.webMode === 'force' || WEB_PREROUTE_RE.test(this.inputText);
+    // ★ 0.300.0：联网两态+本地预路由（任务书 §三.1）
+    // ★ 0.310.1：强制档 UI 退役——联网一律自动判断：单段链路关键词宽匹配命中才挂
+    //   （宁可多挂不可漏挂=场景整个失效）；司枢链路恒挂由枢机自主
+    const webPrerouteHit: boolean = WEB_PREROUTE_RE.test(this.inputText);
     const webOn: boolean = webPrerouteHit; // 单段直写链路挂 tools 依据（司枢链路独立恒挂）
     const webOffReq: ThinkingRequest = { enabled: false, effort: '' };
     const thinkingReq: ThinkingRequest = resolveThinkingFor('auto', // ★ 0.290.0：深度思考三态随 GSD UI 隐藏恒 auto（司枢开=长回复恒 high）；★ 0.300.0 删 webOn 强制关（兼容已验证）
@@ -3259,6 +3288,7 @@ export struct ChatPage {
     // ★ 0.310.0：附件面板相册条配置——单行模式（API20+，无大图/无顶部搜索栏），零权限
     this.pickerOptions.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
     this.pickerOptions.maxSelectNumber = ATTACH_MAX;
+    this.pickerOptions.orientation = PickerOrientation.HORIZONTAL; // ★ 0.310.1：相册条横向滑动（API20+；默认竖直=用户实机看到上下滑）
     this.pickerOptions.isSearchSupported = false;
     this.pickerOptions.isPhotoTakingSupported = false; // 拍照入口由第二行「拍摄」瓷砖承担
     const singleCfg = new SingleLineConfig();
@@ -6135,10 +6165,23 @@ export struct ChatPage {
         //   内层 List/空态改 100% 高（参照已定高的 Stack，安全——非 0.279.19 未定容器反向测量雷）
         Stack({ alignContent: Alignment.BottomEnd }) {
         if (this.currentMessages.length === 0) {
-          Column() {
-            Text('暂无对话')
-              .fontSize(16)
-              .fontColor(this.theme.textTertiary)
+          // ★ 0.310.1：空态分档——根气泡（用户画像）= 引导做自我介绍；子气泡 = 常规开聊提示
+          Column({ space: 8 }) {
+            if (this.isRootBubble) {
+              Text('没有任何对话')
+                .fontSize(13)
+                .fontColor(this.theme.textTertiary)
+              Text('为了让 AI 更好地认识你，可以先做个简单的自我介绍')
+                .fontSize(15)
+                .fontColor(this.theme.textSecondary)
+                .textAlign(TextAlign.Center)
+                .lineHeight(22)
+                .padding({ left: 32, right: 32 })
+            } else {
+              Text('暂无对话')
+                .fontSize(15)
+                .fontColor(this.theme.textTertiary)
+            }
           }
           .width('100%')
           .height('100%')
@@ -7403,7 +7446,7 @@ export struct ChatPage {
                 ? { top: 9, bottom: 5, left: 12, right: 8 } // ★ 0.287.5：上下 9/5 让提示与光标一起下沉 2vp（用户「竖条加试一试再往下去一点」）；left 8→12=聚焦时提示比光标多缩进 4vp，等于「第一个试字前打一个空格」（只在进入输入模式生效，光标不动）
                 : { top: 7, bottom: 7, left: 8, right: 8 }) // ★ 0.281.5/0.287.4：非聚焦态保持原值——必须与 TextArea 内非聚焦 padding 一致，否则又错位
               .margin({ left: 2, right: 2 }) // ★ 0.287.2：必须与 TextArea 的 margin 2 同值——否则提示起点 5vp、光标起点 7vp，水平差 2vp（用户实机指认「试一试和竖线没对齐」）；盒模型逐项同值才真正同轴
-              .alignItems(VerticalAlign.Top) // ★ 0.281.5：顶部对齐（原 Center 在聚焦态 56 高时把提示压到正文下方约 11vp，用户实机指认与光标不在一行）
+              .alignItems(VerticalAlign.Center) // ★ 0.310.2：顶部对齐改垂直居中（用户实测提示行在输入框内偏高，要求 Y 轴居中；上下 padding 9/5 仍与 TextArea 同值，居中后与光标行视觉同高）
               .hitTestBehavior(HitTestMode.None)
             }
 
@@ -7550,7 +7593,7 @@ export struct ChatPage {
         .width('100%')
         .padding({ left: 4, right: 4, top: 2, bottom: 2 }) // ★ 0.279.15：上下 5→3；★ 0.287.5：3→2（高度再压 2vp，上下对称让内容在卡内居中）
         .opacity(this.importArrived) // ★ 0.200.0：导入落地渐显（L3 末拍 0→1 300ms；常态恒 1 不影响日常输入/截图）
-          if (this.isInputFocused) { // ★ 0.282.0：工具行仅聚焦态弹出（默认态保持 左树杈/中间提示/右圈注 三件）
+          if (this.isInputFocused || this.plusMenuOpen) { // ★ 0.282.0：工具行仅聚焦态弹出（默认态保持 左树杈/中间提示/右圈注 三件）；★ 0.310.2：附件面板展开期间常驻（点相册条会夺焦，避免工具行消失＝用户说的「退回原始未输入状态」）
           // ★ 0.282.0 输入区工具行重构（用户拍板，参考 DeepSeek 布局）；
           // ★ 0.287.3 二次重排（用户对照参考图拍板）：①「深度思考」更名「司枢模式」（司=掌管、枢=中枢，
           //   指在 DeepSeek 深度思考之上再加钩子层的那套模式，避免与 DS 原生「深度思考」混淆）；
@@ -7576,28 +7619,8 @@ export struct ChatPage {
               this.replyLengthMode = this.replyLengthMode === 'long' ? 'medium' : 'long';
             })
 
-            // ★ 0.292.0：联网问答开关——开=AI 可自主搜索/读网页（FC 工具循环，同司枢胶囊视觉语言）
-            // ★ 0.300.0：两态化（任务书 §三.1）——「自动」（默认：枢机自主决定+单段关键词预路由）↔
-            //   「强制」（任何模式恒挂 tools——Bing 抽风时手动兜底）；点击循环切换，不删除
-            Row({ space: 4 }) {
-              Image($r('app.media.globe'))
-                .width(14)
-                .height(14)
-                .objectFit(ImageFit.Contain)
-              Text(this.webMode === 'force' ? '联网·强制' : '联网·自动')
-                .fontSize(12)
-                .fontColor(this.webMode === 'force' ? Color.White : this.theme.textSecondary)
-                .maxLines(1)
-            }
-            .height(28)
-            .padding({ left: 9, right: 11 })
-            .borderRadius(14)
-            .backgroundColor(this.webMode === 'force' ? this.theme.brandPrimary : Color.Transparent)
-            .border({ width: 0.5, color: this.webMode === 'force' ? Color.Transparent : this.theme.strokeCard })
-            .onClick(() => {
-              this.webMode = this.webMode === 'force' ? 'auto' : 'force';
-              this.showToastSafe(this.webMode === 'force' ? '联网已强制：每次回答都先查资料' : '联网自动：AI 按需决定是否查资料');
-            })
+            // ★ 0.310.1：联网开关整块退役（用户拍板——联网能力自动判断，并入司枢语义：
+            //   司枢链路由枢机自主挂 tools，单段链路走关键词预路由；不让用户做额外决策）
 
             Blank()
 
@@ -7617,6 +7640,14 @@ export struct ChatPage {
               if (!this.plusMenuOpen) {
                 // ★ 0.310.0：展开前按当前剩余额度重算相册条上限（组件重建时读取最新 options）
                 this.pickerOptions.maxSelectNumber = this.attachRoom();
+                // ★ 0.311.1 多选修复：先收键盘再展开——PhotoPickerComponent 不支持在输入法框架内使用，
+                //   键盘浮起时会压在相册条上吞手势，表现为「选一张就结束、无法连续多选」
+                this.isInputFocused = false;
+                try {
+                  this.getUIContext().getFocusController().clearFocus();
+                } catch (_e) {
+                  // 焦点控制器不可用：静默
+                }
               } else {
                 this.stripReady = false; // 收起即组件卸载，控制器失效
               }
@@ -7725,6 +7756,13 @@ export struct ChatPage {
                 .height(80)
                 .borderRadius(12)
                 .clip(true)
+              // ★ 0.311.1：多选可发现性——相册条是「点按勾选、可连续多张」，无候选确认按钮；
+              //   用户实测以为选一张就结束（与系统相册「多选」按钮心智不一致），补一行说明
+              Text(`点按图片可连续多选（还能添加 ${this.attachRoom()} 张）`)
+                .fontSize(12)
+                .fontColor(this.theme.textTertiary)
+                .width('100%')
+                .textAlign(TextAlign.Center)
             } else {
               // PC/2in1：内嵌媒体库组件不保证可用 → 不渲染条，四瓷砖保留（相册瓷砖走文件管理器兜底）
               Row() {
@@ -7755,6 +7793,9 @@ export struct ChatPage {
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 4, bottom: 6 })
+          // ★ 0.310.2：面板自身消费点击——否则点相册条缩略图/空白会落到页面根容器 onClick
+          //   （根容器「点空白收键盘 + 收附件面板」），表现为「勾选第一张后面板消失、无法多选」
+          .onClick(() => {})
           .transition(TransitionEffect.OPACITY.animation({ duration: 200, curve: Curve.EaseOut }))
         }
 

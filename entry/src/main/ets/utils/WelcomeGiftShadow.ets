@@ -60,7 +60,8 @@ export function markWelcomeGiftIssued(accountMark: string, amount: number): void
   writeMark(accountMark, amount);
 }
 
-// ★ 0.303.1：调试重置专用——清除当前账号的「已发」影子（仅 debug 包入口调用）
+// ★ 0.303.1 建 / 0.311.4 恢复：调试重置专用——清除当前账号「已发」影子（仅 debug 包入口调用；
+//   0.311.2 曾随「重置保留标记」删除，同日用户定稿「重置=完整新用户」后恢复）
 export function clearWelcomeGiftIssued(accountMark: string): void {
   if (markerPref === null || accountMark === '') {
     return;
@@ -73,7 +74,7 @@ export function clearWelcomeGiftIssued(accountMark: string): void {
     markerPref.deleteSync(KEY_ISSUED);
     markerPref.flushSync();
   } catch (_e) {
-    // 静默：清失败退化为云端标记判定（重置仍会覆盖 welcomeGranted）
+    // 静默：清失败退化为云端标记判定
   }
 }
 

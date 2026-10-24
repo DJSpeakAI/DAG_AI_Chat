@@ -27,10 +27,11 @@ import { BillingPage } from '../components/BillingPage'; // ★ 0.194.0：账单
 import { APP_VERSION } from '../components/GlobalSettingsDialog'; // ★ 0.301.0：版本号单一来源（GSD export 常量——修 Index 硬编码漏更七版 bug，版本同步点从两处制回三处制）
 import { ReviewPage } from '../components/ReviewPage'; // ★ 0.196.1：知识复习页路由（Anki 式单卡，边栏「复习」入口）
 import { WindowMode, connectWindowMode, IndexSidebarState, connectIndexSidebarState } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源；★ 0.219.0：IndexSidebarState 宽屏边栏收起状态；★ 0.220.0：SidebarSectionState 折叠态+KbFolderNavStore 文件夹导航
-import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNodeId, generateMessageId, deserializeBubbleTree, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, onLoginAccountHooks, wipeHistoricalTestStats } from '../common/ChatModel'; // ★ 0.305.1：订阅语义清零（stampFreeTrialOnLogin→onLoginAccountHooks；ReminderDialog/isVip/倒计时引擎随订阅退役删除）；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计
+import { BubbleNode, BubbleTree, ApiConfig, PersistData, generateNodeId, deserializeBubbleTree, serializeBubbleTree, migrateLegacyDemoSeed, TabMeta, connectCanvasMode, connectTabForest, parseTabs, migrateLegacyPoolsIfNeeded, onLoginAccountHooks, wipeHistoricalTestStats, maybeShowSignInAfterGateReady } from '../common/ChatModel'; // ★ 0.305.1：订阅语义清零（stampFreeTrialOnLogin→onLoginAccountHooks；ReminderDialog/isVip/倒计时引擎随订阅退役删除）；★ 0.279.1：wipeHistoricalTestStats 启动清理测试统计；★ 0.310.1：ChatMessage/generateMessageId 随默认示例气泡退役删除；serializeBubbleTree/migrateLegacyDemoSeed=示例气泡一次性迁移；★ 0.311.0：maybeShowSignInAfterGateReady（礼包关闭后补弹首日签到）
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
-import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
+import { shouldPromptCloudSyncAfterLogin, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）；★ 0.311.1：开启动作统一走 CloudSyncPermissionGuide
+import { enableCloudSyncWithGuide } from '../utils/CloudSyncPermissionGuide'; // ★ 0.311.1：云同步授权统一入口（拒绝→直达权限面板+指路，门卫/GSD 同款）
 import { siyiGateBlockReason } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（引导弹窗文案/动作分支；权限刷新在 GSD/EntryAbility——0.305.2 清 unused import）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { SignInDialog, LevelUpDialog } from '../components/SignInDialog'; // ★ 0.256.0：签到弹窗+称号升级弹窗（桥驱动，Index 根唯一挂载点）
@@ -185,7 +186,7 @@ struct Index {
         // ★ 0.303.0：首启登录成功=同意全部协议 + 入口即意图开启云同步 → 外观选择
         markHwAgreed();
         markAgreed();
-        enableCloudSyncNow(this.getUIContext());
+        enableCloudSyncWithGuide(this.getUIContext());
         this.pathStack.pushPath({ name: 'BBTreeCanvas' }); // ★ 0.305.3：登录成功直进气泡树（首页正常态已退役）
         setTimeout(() => {
           this.maybeShowThemeChoose();
@@ -193,7 +194,7 @@ struct Index {
         return;
       }
       if (fromSyncEntry) {
-        enableCloudSyncNow(this.getUIContext());
+        enableCloudSyncWithGuide(this.getUIContext());
       } else if (shouldPromptCloudSyncAfterLogin(true)) {
         this.confirmDialog.cloudSyncPromptVisible = true;
       }
@@ -299,9 +300,9 @@ struct Index {
   // ============================================================
   // ★ 0.293.0：SP 云同步门卫引导弹窗（SiyiGate——文案与确认动作按阻塞原因分支）
   // ★ 0.306.0：标题/按钮文字/按钮位次同步分支（用户四测拍板）——
-  //   r=1 未登录：标题「登录华为账号后可用」，左「暂不使用」右「登录华为账号」
-  //   （与本地模式告知弹窗同款位次）；r=2 已登录未开：标题「开启云同步后可用」，
-  //   确认「前往开启」保持左位；r=3：确认「前往云空间」。
+  //   r=1 未登录：标题「登录华为账号后可用」，确认「登录华为账号」；
+  //   r=2 已登录未开：标题「开启云同步后可用」，确认「前往开启」；r=3：确认「前往云空间」。
+  // ★ 0.310.1：确认钮（主行动）恒在左、取消在右（用户拍板——与首启门禁同向）。
   // ★ 0.308.0：r=4 假开启实锤（探针/本地标记证据确凿）：标题「云同步未真正生效」，
   //   确认「前往云空间开启」直跳系统设置（用户拍板——新用户不知道开关在哪必须带过去）。
   // ============================================================
@@ -350,7 +351,7 @@ struct Index {
     if (r === 1) {
       this.doLogin(true); // 未登录→登录（fromSyncEntry=true 登录后直接开云同步）
     } else if (r === 2) {
-      enableCloudSyncNow(this.getUIContext()); // app 开关/权限未开→一键开启（含权限弹窗）
+      enableCloudSyncWithGuide(this.getUIContext()); // app 开关/权限未开→一键开启（含权限弹窗）
     } else {
       this.jumpToCloudSpace(); // r=3 通路未就绪 / r=4 假开启实锤 → 跳系统云空间（Deeplink 官方 uri）
     }
@@ -507,16 +508,19 @@ struct Index {
       // 平铺模式（现状路径）：尝试从平铺池 JSON 恢复 BubbleTree
       const loaded = deserializeBubbleTree(persist.bubbleTreeJson);
       if (loaded) {
+        // ★ 0.310.1：老装机「你好/1」示例气泡→「用户画像」空气泡（判定极窄，见 ChatModel）
+        if (migrateLegacyDemoSeed(loaded)) {
+          persist.bubbleTreeJson = serializeBubbleTree(loaded); // 迁移即落盘（幂等：迁移后不再命中）
+        }
         AppStorageV2.connect(BubbleTree, 'bubble-tree', () => loaded);
       } else {
         // 首次启动，创建默认气泡树
+        // ★ 0.310.1：默认根气泡改「用户画像」气泡——空对话（原「你好/1」示例退役，用户拍板）；
+        //   标题走 nodeTitle 手动标题位，进入后由 ChatPage 空态引导用户做自我介绍
         AppStorageV2.connect(BubbleTree, 'bubble-tree', () => {
           const rootId = generateNodeId();
           return new BubbleTree([
-            new BubbleNode(rootId, null, [
-              new ChatMessage(generateMessageId(), 'user', '你好'),
-              new ChatMessage(generateMessageId(), 'assistant', '1')
-            ], 200, 200)
+            new BubbleNode(rootId, null, [], 200, 200, 0, 0, '', 0, '用户画像')
           ]);
         });
       }
@@ -901,8 +905,24 @@ struct Index {
         //   华为登录区+版本号」整段删除（登录入口走设置/边栏，版本号门禁态与设置-关于均有）。
         //   本衬底仅两处短暂可见：①冷启已同意用户 pushPath 画布前的首帧衔接；
         //   ②用户从画布按返回 pop 落回（衬底上再按一次返回=退出 app，无空白闪屏）
+        // ★ 0.311.5（用户实测拍板）：pop 落回首页=死路（只有品牌字，无任何入口回气泡树，
+        //   只能杀 app 重开）——补「进入 DAG AI Chat」主按钮，点击直推画布
         Blank().layoutWeight(1)
         this.brandHeader()
+        Text('进入 DAG AI Chat')
+          .fontSize(FONT_SIZE_CARD_TITLE_SM)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Color.White)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .constraintSize({ maxWidth: 260 }) // ★ 0.311.6：用户实测全屏太宽——收窄居中与标题/副标题视觉协调
+          .padding({ top: 14, bottom: 14 })
+          .borderRadius(RADIUS_CONTROL)
+          .backgroundColor(this.theme.brandPrimary)
+          .margin({ top: 28 })
+          .onClick(() => {
+            this.pathStack.pushPath({ name: 'BBTreeCanvas' });
+          })
         Blank().layoutWeight(1)
         }
       }
@@ -1012,7 +1032,7 @@ struct Index {
       cancelText: '暂不开启',
       onConfirm: () => {
         this.confirmDialog.cloudSyncPromptVisible = false;
-        enableCloudSyncNow(this.getUIContext());
+        enableCloudSyncWithGuide(this.getUIContext());
       },
       onCancel: () => {
         this.confirmDialog.cloudSyncPromptVisible = false;
@@ -1040,10 +1060,11 @@ struct Index {
     // ★ 0.248.2：未登录发消息问 AI → 登录引导弹窗（上架合规：AI 生成内容仅限实名华为账号用户；
     //   中国区华为账号注册即强制实名，登录守卫=实名等效闭环。ChatPage 发送/重生成触发；
     //   fromSyncEntry=false 普通路径登录，协议门禁由 doLogin 内 AgreementDialog 链继承）
+    // ★ 0.311.0：文案改「SP 消耗类功能」口径（用户拍板——不在对话页时弹「AI 对话」显得突兀）
     AppConfirmDialog({
       visible: this.confirmDialog.aiLoginPromptVisible,
       title: '需要登录',
-      message: '使用 AI 对话功能需先登录华为账号。',
+      message: 'AI 对话等消耗司忆点（SP）的功能，需先登录华为账号。',
       confirmText: '登录华为账号',
       cancelText: '取消',
       confirmOnLeft: true,
@@ -1073,14 +1094,16 @@ struct Index {
     })
     // ★ 0.293.0：SP 云同步门卫引导（SiyiGate——AI 发送/重生成/划词/圈注/签到/充值在云同步
     //   未就绪时触发；文案与确认动作按 siyiGateBlockReason 三分支：登录/一键开启/跳系统云空间）
-    // ★ 0.306.0：标题/按钮文字/位次随阻塞原因动态化（未登录=「暂不使用」左+「登录华为账号」右）
+    // ★ 0.306.0：标题/按钮文字/位次随阻塞原因动态化
+    // ★ 0.310.1：确认钮（登录/前往开启/前往云空间）恒左位——用户拍板「主行动放左边」，
+    //   与首启登录门禁（华为账号登录在左、暂不登录在右）统一手势习惯
     AppConfirmDialog({
       visible: this.confirmDialog.syncGatePromptVisible,
       title: this.syncGateTitle(),
       message: this.syncGateMessage(),
       confirmText: this.syncGateConfirmText(),
       cancelText: this.syncGateCancelText(),
-      confirmOnLeft: siyiGateBlockReason() !== 1,
+      confirmOnLeft: true,
       onConfirm: () => {
         this.onSyncGateConfirm();
       },
@@ -1100,6 +1123,8 @@ struct Index {
       cancelText: '',
       onConfirm: () => {
         this.confirmDialog.welcomeBonusVisible = false;
+        // ★ 0.311.0：礼包关闭后接力首日签到（gate 就绪时礼包优先，签到让位防双层弹窗叠加）
+        maybeShowSignInAfterGateReady();
       }
     })
     // ★ 0.305.0：首启门禁=首页未同意态（OnboardingGate 独立覆盖层已删除——技术债清理：
@@ -1136,6 +1161,7 @@ struct Index {
       message: '您未登录华为账号、未开启云同步，现可使用以下功能：\n\n· 单词库建立\n· 知识卡片手动录入\n· 卡片复习（含复习记录）\n\nAI 对话、云同步等功能，登录华为账号后即可使用。',
       confirmText: '登录华为账号',
       cancelText: '直接进入',
+      confirmOnLeft: true, // ★ 0.310.2：主行动（登录华为账号）放左，直接进入放右（用户拍板——内心希望用户更多登录）
       onConfirm: () => {
         this.localModeNoticeVisible = false;
         this.doLogin(false); // 走常规登录链（hwAgreed 已同意，成功后询问开启云同步）

@@ -39,6 +39,7 @@ import { initCloudSwitchShadow, writeCloudSwitchShadow, readCloudSwitchShadow, r
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 import { initAccountShadow, restoreAccountFromShadow } from '../utils/HuaweiAccountUtil'; // ★ 0.299.2：登录态影子持久化（P2 'huawei-account' 水合黑盒根治——bug5）
 import { initWelcomeGiftMarker } from '../utils/WelcomeGiftShadow'; // ★ bug6：新用户礼包已发影子（防冷启水合竞态重复弹窗）
+import { initSpCloudSeenShadow } from '../utils/SpCloudSeenShadow'; // ★ 0.311.1：SP 云行见过影子（P2 水合失败兜底——假开启检测证据防丢）
 import { connectContinueBridge } from '../utils/ContinueBridge'; // ★ 0.307.0：应用接续桥（onContinue 源端采集 / CONTINUATION 目标端落 pending）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
@@ -75,6 +76,7 @@ export default class EntryAbility extends UIAbility {
     // ★ bug6：礼包已发影子同步初始化（须在登录态恢复后——按当前账号种子；存量用户从 P2 盘值补种）
     const _welcomeAcc = connectHuaweiAccount();
     initWelcomeGiftMarker(this.context, _welcomeAcc.unionID !== '' ? _welcomeAcc.unionID : _welcomeAcc.openID);
+    initSpCloudSeenShadow(this.context); // ★ 0.311.1：假开启检测证据影子（P2 单 key 水合黑盒兜底）
     // ★ 0.279.5：过渡期持久化异常排查（华为官方建议）——知识库卡 base64 图或触发 API<23 单 key
     //   8KB 配额静默失败（quota）或序列化失败（serialization），有日志才能定位「写不进去」类表象
     try {

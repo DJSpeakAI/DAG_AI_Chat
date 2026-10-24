@@ -145,7 +145,27 @@ export struct ReviewPage {
 
   // ★ 0.196.2 用户拍板（以天为单位）：当天队列=到期（nextReviewAt≤now）+ 新词（reviewCount=0），
   // 未来排期不掺入——「继续复习」才把未来的提前背；当天已完成 → 直接完成页重新生成鼓励
-  buildQueue(): void {
+  // ★ 0.311.0 用户拍板：当天已完成后再进入=完成页（不再自动开新一批），新内容只在用户
+  //   主动点「继续复习」时入队——force=true 为继续复习/显式重建通道，跳过本闸。
+  buildQueue(force: boolean = false): void {
+    if (!force && this.isDoneToday()) {
+      this.queue = [];
+      this.idx = 0;
+      this.ratedHard = 0;
+      this.ratedGood = 0;
+      this.ratedEasy = 0;
+      this.cardFlipped = false;
+      this.aiText = '';
+      this.aiLoading = false;
+      this.aiTextFromAi = false;
+      this.encourageInTok = 0;
+      this.encourageOutTok = 0;
+      this.finished = true;
+      this.requestEncourage();
+      this.markReminderDone(); // 当日无待复习=完成语义——提醒转正反馈文案
+      this.rebuildWidgetState();
+      return;
+    }
     const now = Date.now();
     const dailyN = this.mode === 'word' ? this.dailyCount.wordCount : this.dailyCount.knowledgeCount; // ★ 0.202.0：每日量（⚙ 设置默认 10）
     if (this.mode === 'word') {
@@ -174,19 +194,23 @@ export struct ReviewPage {
   }
 
   // ★ 0.196.2：继续复习——把明天之后的未来内容提前背（pickReview* 的 future 段按 nextReviewAt 升序=最近的先）
+  // ★ 0.311.0：显式继续复习=唯一入队通道之一；未学新卡（reviewCount=0）随后追加，
+  //   防「当日完成后新加卡被完成页挡住」（0.200.1 遗留问题）在显式路径复发。
   continueReview(): void {
     track(this.getUIContext().getHostContext() as common.Context, 'review_continue'); // 0.206.0 埋点：继续复习按钮
     const now = Date.now();
     if (this.mode === 'word') {
       const all = pickReviewWords(this.wordBank, this.wordBank.words.length, now);
-      this.queue = all.filter((w: MemoryItem): boolean => w.reviewCount > 0 && w.nextReviewAt > now);
+      this.queue = all.filter((w: MemoryItem): boolean => w.reviewCount > 0 && w.nextReviewAt > now)
+        .concat(all.filter((w: MemoryItem): boolean => w.reviewCount === 0));
     } else {
       const all = pickReviewCards(this.knowledgeBank, this.knowledgeBank.cards.length, now);
-      this.queue = all.filter((c: MemoryItem): boolean => c.reviewCount > 0 && c.nextReviewAt > now);
+      this.queue = all.filter((c: MemoryItem): boolean => c.reviewCount > 0 && c.nextReviewAt > now)
+        .concat(all.filter((c: MemoryItem): boolean => c.reviewCount === 0));
     }
     if (this.queue.length === 0) {
       // ★ 0.202.0：future 空 → 兜底重拉当日队列（每日量外的剩余到期/新卡）→ 仍空 → 轻提示（永不空转）
-      this.buildQueue();
+      this.buildQueue(true);
       if (this.queue.length === 0) {
         this.getUIContext().getPromptAction().showToast({ message: '今日内容已全部学完，明天再来吧', duration: 2000 });
       }
@@ -730,7 +754,9 @@ export struct ReviewPage {
           .backgroundColor(this.theme.brandPrimary)
           .borderRadius(RADIUS_CONTROL)
           .onClick(() => {
-            this.pathStack.pop();
+            // ★ 0.310.2：完成=回气泡树界面（用户拍板——完成复习的落点就是画布；原 pathStack.pop()
+            //   落到来源页，从边栏进入时会停在原页面，语义不清）
+            navBackToCanvas(this.pathStack);
           })
       }
       .margin({ top: 28 })

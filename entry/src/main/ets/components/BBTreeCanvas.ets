@@ -807,7 +807,7 @@ export struct BBTreeCanvas {
   //   放 maxX+200、y=0，不重排既有根（默认气泡 y=200 与新根 y=0 不同排，用户实测 bug1）；
   //   autoLayout 末尾自带 saveTree，无需单独保存
   addRootBubble(): void {
-    const root = new BubbleNode(generateNodeId(), null, [], 200, 0); // x 初始值无所谓，autoLayout 会重排
+    const root = new BubbleNode(generateNodeId(), null, [], 200, 0, 0, 0, '', 0, '用户画像'); // x 初始值无所谓，autoLayout 会重排；★ 0.310.1：新根气泡默认「用户画像」
     this.store.nodeList.push(root);
     recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——新建树（根气泡）+1
     this.autoLayout();
@@ -855,7 +855,7 @@ export struct BBTreeCanvas {
     this.saveTree(); // 先存回当前 Tab（若有）
     const tabId = `tab_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const tabs = parseTabs(this.tabForest.tabsJson);
-    const root = new BubbleNode(generateNodeId(), null, [], 200, 0);
+    const root = new BubbleNode(generateNodeId(), null, [], 200, 0, 0, 0, '', 0, '用户画像'); // ★ 0.310.1：新根气泡默认「用户画像」
     const tree = new BubbleTree([root]);
     recordStat(this.statStore, 'bubble', 0, 0); // ★ 0.192.0：统计埋点——新增 Tab（自带新树）+1
     tabs.push({ id: tabId, name: getRootDisplayName(root), treeJson: serializeBubbleTree(tree) }); // ★ 0.151-bugfix2：Tab 名 = 树根显示名（空白新根 =「空气泡」，与根气泡文字一致；重命名 Tab 即给树起名）
@@ -1522,35 +1522,42 @@ export struct BBTreeCanvas {
               // 分段控件（★ 0.167.5 用户拍板：全设备放主行 ⚙ 左边——收回 0.167.2 手机挪第二行方案）
               this.SegmentedControl()
               // ★ 0.294.0：好奇宝宝任务入口（画布右上角；未完成数角标；7 条全完+奖励结清整体消失——信号灯同款先例）
-              Stack({ alignContent: Alignment.TopEnd }) {
-                Row() {
-                  Image($r('app.media.sign'))
-                    .width(16)
-                    .height(16)
-                    .objectFit(ImageFit.Contain)
+              // ★ 0.311.0：外层 Stack 垂直居中 + 内层 34×34 TopEnd 角标定位——原 34 高按钮贴 40 高
+              //   容器顶部，与左侧同排图标 Y 轴错位 3vp（用户实测拍板对齐）
+              Stack({ alignContent: Alignment.Center }) {
+                Stack({ alignContent: Alignment.TopEnd }) {
+                  Row() {
+                    Image($r('app.media.sign'))
+                      .width(16)
+                      .height(16)
+                      .objectFit(ImageFit.Contain)
+                  }
+                  .width(34)
+                  .height(34)
+                  .justifyContent(FlexAlign.Center)
+                  .borderRadius(10)
+                  .border({ width: 1, color: this.theme.strokeCard })
+                  .backgroundColor(this.theme.surfaceNode)
+                  .onClick(() => {
+                    this.rookieVisible = true;
+                  })
+                  if (rookieUndoneCount(this.siyiPoints) > 0) {
+                    Text(`${rookieUndoneCount(this.siyiPoints)}`)
+                      .fontSize(9)
+                      .fontWeight(700)
+                      .fontColor(Color.White)
+                      .textAlign(TextAlign.Center)
+                      .width(14)
+                      .height(14)
+                      .borderRadius(7)
+                      .backgroundColor(this.theme.brandPrimary)
+                      .offset({ x: 4, y: -4 })
+                  }
                 }
                 .width(34)
                 .height(34)
-                .justifyContent(FlexAlign.Center)
-                .borderRadius(10)
-                .border({ width: 1, color: this.theme.strokeCard })
-                .backgroundColor(this.theme.surfaceNode)
-                .onClick(() => {
-                  this.rookieVisible = true;
-                })
-                if (rookieUndoneCount(this.siyiPoints) > 0) {
-                  Text(`${rookieUndoneCount(this.siyiPoints)}`)
-                    .fontSize(9)
-                    .fontWeight(700)
-                    .fontColor(Color.White)
-                    .textAlign(TextAlign.Center)
-                    .width(14)
-                    .height(14)
-                    .borderRadius(7)
-                    .backgroundColor(this.theme.brandPrimary)
-                    .offset({ x: 4, y: -4 })
-                }
               }
+              .width(34)
               .height(40)
               .margin({ right: 8 })
               .visibility(this.viewW > 0 && !rookieAllSettled(this.siyiPoints) ? Visibility.Visible : Visibility.None)

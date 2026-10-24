@@ -192,8 +192,10 @@ export function settleRookieTasks(): number {
   }
   if (grantedAny) {
     const bridge = connectRookieBridge();
-    bridge.rewardTitle = total >= ROOKIE_BONUS_SP
-      ? '恭喜！新手任务全部完成' : '新手任务奖励已到账';
+    // ★ 0.311.0：标题判据=完赛奖哨兵是否已发（原按「本次总额≥2万」判定——单个 2 万任务
+    //   到账会误显示「全部完成」，用户实测实锤）。金额行为恒为「+N SP 已入嘉奖池」。
+    const bonusGranted = rookieGrantedIds(siyi).indexOf(ROOKIE_BONUS_ID) >= 0;
+    bridge.rewardTitle = bonusGranted ? '恭喜！新手任务全部完成' : '新手任务奖励已到账';
     bridge.rewardAmount = total;
     bridge.rewardVisible = true;
   }

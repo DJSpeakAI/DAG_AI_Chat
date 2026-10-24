@@ -296,8 +296,18 @@ export struct FireworksOverlay {
         this.canvasH = n.height as number;
         this.startLoop(); // 尺寸变化重启循环节拍（分屏/悬浮窗安全）
       })
-      .onClick((e: ClickEvent) => {
-        this.launchAt(e.x, e.y); // 点击=点击处双发（Transparent 透传下层按钮，不遮蔽）
+      // ★ 0.310.2：onClick→onTouch（华为 FAQ faqs-arkui-component-1 实锤：onClick 是系统手势非冒泡，
+      //   叠层两颗 onClick 竞争时上层赢、下层按钮 onClick 永不触发——完成页三按钮「按一下闪一下就没了」
+      //   的真凶；onTouch 在 HitTestMode.Transparent 下才能透传下层，故改为抬手放烟花）
+      .onTouch((e: TouchEvent) => {
+        if (e.type !== TouchType.Up) {
+          return;
+        }
+        const list: TouchObject[] = e.changedTouches.length > 0 ? e.changedTouches : e.touches;
+        if (list.length === 0) {
+          return;
+        }
+        this.launchAt(list[0].x, list[0].y); // 点击=点击处双发（透传下层按钮，不遮蔽）
       })
   }
 }
