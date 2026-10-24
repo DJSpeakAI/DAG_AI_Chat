@@ -33,6 +33,9 @@
         // ★ 0.303.0：首启「不同意，退出」按要求 terminateSelf 后同时清除任务列表快照
         //   （HarmonyOS 隐私 FAQ 方式二：拒绝隐私政策后强制终止实例并从任务列表移除）
         "removeMissionAfterTerminate": true,
+        // ★ 0.307.0：应用接续（Continuation）——声明本 UIAbility 可跨设备迁移
+        //   （用户指派功能最小必要配置；同 bundle 跨自己设备无需 AGC 接续服务申请）
+        "continuable": true,
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         // ★ 0.251.0：dataTransfer 长时任务声明（AI 流式后台保活——用户拍板，用户触发、

@@ -85,6 +85,7 @@ import { MdSegment, ReviewCacheEntry, KnowledgeReviewCacheEntry, RichPlan, RichP
 import { parseMarkdown, buildFoldItems } from '../utils/ChatMdParser';
 import { WordFolderPicker, CardFolderPicker, QuotePicker } from './FolderPickerDialogs';
 import { ImageViewer } from './ImageViewer';
+import { ContinueBridgeStore, connectContinueBridge } from '../utils/ContinueBridge'; // ★ 0.307.0：应用接续桥（实时草稿/节点上报+接续草稿回填）
 
 // ★ 0.300.0：联网本地预路由关键词宽匹配（任务书 §三.1——宁可多挂声明、不可漏挂：
 // 多挂代价仅几十 token，漏挂=场景整个失效；只作用于单段直写链路，司枢链路恒挂由枢机自主）
@@ -106,6 +107,7 @@ export struct ChatPage {
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
   currentBubbleStore: CurrentBubble = AppStorageV2.connect(CurrentBubble, 'current-bubble', () => new CurrentBubble()) as CurrentBubble;
+  continueBridge: ContinueBridgeStore = connectContinueBridge(); // ★ 0.307.0：接续桥（纯数据通道不驱动 UI，普通字段同 currentBubbleStore 先例）
   apiConfig: ApiConfig = connectApiConfig(); // ★ 0.143：换 key 'api-config-v2'（旧快照无 audioKey 字段致新增属性不落盘，工厂迁移历史配置）
   // ★ 0.247.1：aliasStore 引用删除——别名机制下线（用户拍板），顶栏模型名固定用 apiConfig.model 原名
   bookmarkStore: ChatBookmarkStore = connectChatBookmarks(); // ★ 0.191.0：阅读书签持久化（方案 B，跨重启）
@@ -1315,7 +1317,8 @@ export struct ChatPage {
     return Math.round(base * this.fontScale * 10) / 10;
   }
 
-  /** ★ 0.214.2：草稿写回当前气泡（文字+图片实时进 BubbleNode 内存；退出时 saveTree 持久化） */
+  /** ★ 0.214.2：草稿写回当前气泡（文字+图片实时进 BubbleNode 内存；退出时 saveTree 持久化）
+   *  ★ 0.307.0：顺带同步接续桥（EntryAbility.onContinue 隔页读不到本页 @Local——桥是唯一实时通道） */
   saveDraft(): void {
     const b = this.currentBubble;
     if (!b) {
@@ -1323,6 +1326,7 @@ export struct ChatPage {
     }
     b.draftText = this.inputText;
     b.draftImages = this.pendingImages.length > 0 ? JSON.stringify(this.pendingImages) : '';
+    this.continueBridge.draft = this.inputText;
   }
 
 
@@ -3224,6 +3228,17 @@ export struct ChatPage {
         }
       }
     }
+    // ★ 0.307.0：应用接续——源端实时草稿覆盖回填（wantParam 直达新鲜度 ≥ 云端 draftText，
+    //   宿主气泡匹配才回填防误污染他气泡；一次性消费清空）
+    const cb = this.continueBridge;
+    cb.inChat = true; // 源端采集开关（onContinue 据此判断在对话页）
+    cb.nodeId = this.currentBubbleStore.nodeID;
+    if (cb.pendingDraftFor !== '' && cb.pendingDraftFor === this.currentBubbleStore.nodeID) {
+      this.inputText = cb.pendingDraft;
+      this.imeComposing = false;
+      cb.pendingDraftFor = '';
+      cb.pendingDraft = '';
+    }
     setTimeout(() => {
       this.restoreReadingPosition(); // ★ 0.191.0：阅读位置恢复（A 高度记忆 → B 书签 → 底部），替代原固定滚底
     }, 100);
@@ -3235,6 +3250,7 @@ export struct ChatPage {
     this.teardownKbAvoid(); // ★ 0.281.4：注销键盘监听+恢复系统避让（防泄漏）
     this.saveDraft(); // ★ 0.214.2：草稿写回当前气泡内存
     this.saveTree(); // ★ 0.214.2：草稿随树落盘（一次）
+    this.continueBridge.inChat = false; // ★ 0.307.0：接续源端采集关（回画布后接续落画布语义）
     this.recordReadingPosition(); // ★ 0.191.0：离开前记录阅读高度（方案 A）
     if (this.inputBlurTimer >= 0) { // ★ 0.270.0：清 blur 宽限定时器，防泄漏
       clearTimeout(this.inputBlurTimer);

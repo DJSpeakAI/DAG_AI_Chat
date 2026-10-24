@@ -31,6 +31,7 @@ import { RookieTaskDialog, RookieRewardDialog } from './RookieTaskDialog'; // �
 import { rookieUndoneCount, rookieAllSettled, settleRookieTasks, connectRookieBridge } from '../common/RookieTask'; // ★ 0.294.0：任务角标/入口消失/结算时机/奖励弹窗桥
 import { SiyiPointStore, connectSiyiPoints } from '../common/ChatModel'; // ★ 0.294.0：任务 done/granted 集合真相源（cfg:siyi-points）
 import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.298.0：信号灯入口前置云同步门卫（答题=SP 获得）
+import { ContinueBridgeStore, connectContinueBridge } from '../utils/ContinueBridge'; // ★ 0.307.0：应用接续——目标端导航消费（pending→交棒三连进 ChatPage）
 
 // 气泡树页面 — V2 全量迁移
 @ComponentV2
@@ -120,6 +121,37 @@ export struct BBTreeCanvas {
   siyiPoints: SiyiPointStore = connectSiyiPoints(); // done/granted 集合（@Trace 驱动角标/入口响应）
   rookieBridge = connectRookieBridge(); // 奖励弹窗桥（返回键拦截消费）
   @Local quizBreath: number = 0;        // 信号灯呼吸动画值 0~1（放大+光晕呼吸）
+  // ── ★ 0.307.0：应用接续（目标端导航消费——EntryAbility 落 pending 后由本页交棒进 ChatPage）──
+  continueBridge: ContinueBridgeStore = connectContinueBridge();
+
+  /** ★ 0.307.0：消费接续导航载荷（幂等——pendingNodeId 空串直返；aboutToAppear+onShown
+   *  双保险防 P2 水合时序——aboutToAppear 时树未水合找不到节点，onShown 时通常已就绪）。
+   *  节点找不到（云下行未达/源端刚建几秒/已删）=静默落画布+弃置草稿（宿主不存在） */
+  consumeContinuePayload(): void {
+    const cb = this.continueBridge;
+    if (cb.pendingNodeId === '') {
+      return;
+    }
+    const targetId = cb.pendingNodeId;
+    cb.pendingNodeId = ''; // 一次性消费（防 onShown 重复触发）
+    let target: BubbleNode | undefined = undefined;
+    for (const node of this.store.nodeList) {
+      if (node.nodeID === targetId) {
+        target = node;
+        break;
+      }
+    }
+    if (target === undefined) {
+      cb.pendingDraftFor = ''; // 宿主不存在——草稿一并弃置（防误回填他气泡）
+      cb.pendingDraft = '';
+      return;
+    }
+    // 同双击进对话的「交棒三连」（finishImportNav 同款）
+    this.currentBubbleStore.nodeID = target.nodeID;
+    this.currentBubbleStore.bubbleX = target.x;
+    this.currentBubbleStore.bubbleY = target.y;
+    this.pathStack.pushPath({ name: 'ChatPage' });
+  }
 
   /** ★ 0.288.0：信号灯呼吸动画（0↔1 无限往复——品牌紫光点低频呼吸微光；隐藏态组件不渲染、帧负载趋零） */
   startQuizBreath(): void {
@@ -270,6 +302,7 @@ export struct BBTreeCanvas {
     // ★ 0.214.9：设备类型判定已随传感器方案废弃而删除——滚轮传感器改父容器包裹
     //   （Scroll 套画布：子组件画布 Pan 手势天然优先=触摸拖动不被抢，鼠标滚轮直达父
     //   Scroll 的 onWillScroll；不再需要任何显隐/设备判定补丁）
+    this.consumeContinuePayload(); // ★ 0.307.0：接续导航消费（首道——P2 未水合找不到节点由 onShown 兜底）
   }
 
   // ★ 0.167.2：连线层 Canvas 命令式绘制（弃 Path——Path 无 viewport 属性，未设时 ArkUI 自动把
@@ -2156,6 +2189,9 @@ export struct BBTreeCanvas {
       return false;
     })
     .onShown(() => {
+      // ★ 0.307.0：接续导航消费兜底（aboutToAppear 时 P2 未水合找不到节点的场景——onShown
+      //   时树通常已就绪；幂等：pendingNodeId 已消费即直返）
+      this.consumeContinuePayload();
       // ★ 0.294.0：好奇宝宝任务结算时机（回画布对账差集——云服务开通后挂账自动补发）
       settleRookieTasks();
       // ★ 0.200.0：知识库/复习页发起导入回到画布 → 进入选择模式（action 空 = 普通返回，零副作用）

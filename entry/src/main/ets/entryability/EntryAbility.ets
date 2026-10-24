@@ -39,6 +39,7 @@ import { initCloudSwitchShadow, writeCloudSwitchShadow, readCloudSwitchShadow, r
 import { needsAgreement } from '../utils/Agreement'; // ★ 0.262.0：新/老用户判定哨兵（协议同意状态）
 import { initAccountShadow, restoreAccountFromShadow } from '../utils/HuaweiAccountUtil'; // ★ 0.299.2：登录态影子持久化（P2 'huawei-account' 水合黑盒根治——bug5）
 import { initWelcomeGiftMarker } from '../utils/WelcomeGiftShadow'; // ★ bug6：新用户礼包已发影子（防冷启水合竞态重复弹窗）
+import { connectContinueBridge } from '../utils/ContinueBridge'; // ★ 0.307.0：应用接续桥（onContinue 源端采集 / CONTINUATION 目标端落 pending）
 // 0.204.1 Callee callback must return Parcelable (d.ts enforced) - empty impl
 class EmptyParcelable implements rpc.Parcelable {
   marshalling(_dataOut: rpc.MessageSequence): boolean {
@@ -105,6 +106,48 @@ export default class EntryAbility extends UIAbility {
     }
     // ★ 0.230.1：0.228.4 临时清洗钩子 wipeCloudRows 已删除（伪墓碑止血改由 initCloudDb 内
     //   一次性幂等清洗接管——正本 server 同步；此入口曾是全量 del 行写入口，数据毁灭地雷拆除）
+    this.handleContinueWant(want, launchParam); // ★ 0.307.0：接续目标端恢复（CONTINUATION 分支——非接续启动内部直返）
+  }
+
+  // ============================================================
+  // ★ 0.307.0：应用接续（Continuation）——module.json5 已配 continuable:true
+  // 官方机制（bpta-continue-cast）：源端 onContinue 存 wantParam（<100KB）→ 系统迁移
+  //   → 目标端 onCreate/onNewWant(launchReason=CONTINUATION) 恢复，且迁移启动走
+  //   onWindowStageRestore 不走 onWindowStageCreate——须 restoreWindowStage 触发。
+  // ============================================================
+
+  // 源端：系统发起迁移时采集桥上实时态（ChatPage 每键 saveDraft 已同步写桥）
+  onContinue(wantParam: Record<string, Object>): AbilityConstant.OnContinueResult {
+    const bridge = connectContinueBridge();
+    if (bridge.inChat && bridge.nodeId !== '') {
+      // 自定义 key 禁撞系统预置（version/targetDevice）——dag 前缀
+      wantParam['dagNode'] = bridge.nodeId;
+      wantParam['dagDraft'] = bridge.draft;
+    }
+    return AbilityConstant.OnContinueResult.AGREE;
+  }
+
+  // 目标端：CONTINUATION 分支——落 pending 到桥 + 同步 restoreWindowStage
+  //   （官方铁律：restoreWindowStage 必须在 onCreate/onNewWant 同步执行体内调用，
+  //    异步调可能导致迁移后页面加载失败；正常启动本函数直返零影响）
+  private handleContinueWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    if (launchParam.launchReason !== AbilityConstant.LaunchReason.CONTINUATION) {
+      return;
+    }
+    try {
+      const p = want.parameters;
+      const node = p !== undefined && p !== null ? p['dagNode'] : undefined;
+      const draft = p !== undefined && p !== null ? p['dagDraft'] : undefined;
+      const bridge = connectContinueBridge();
+      if (typeof node === 'string' && node !== '') {
+        bridge.pendingNodeId = node;
+        bridge.pendingDraftFor = node;
+        bridge.pendingDraft = typeof draft === 'string' ? draft : '';
+      }
+      this.context.restoreWindowStage(new LocalStorage());
+    } catch (_e) {
+      // 恢复失败静默降级——正常启动链路（onWindowStageCreate）兜底加载
+    }
   }
 
   // ★ 0.206.0：初始化 AGC 核心（异步不阻塞启动；失败静默——埋点通道降级为仅 hiAppEvent 本地）
@@ -124,6 +167,7 @@ export default class EntryAbility extends UIAbility {
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     this.handleWidgetCallWant(want); // ★ 0.204.1：桌面卡片 call（主应用存活路径——热调用即时处理）
+    this.handleContinueWant(want, launchParam); // ★ 0.307.0：接续目标端恢复（热启动路径——restoreWindowStage 重载主窗口）
   }
 
   // ★ 0.204.1：卡片 call 热路径——UIAbility Callee 注册（真机日志：进程存活时系统的
@@ -212,6 +256,18 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    this.setupMainWindow(windowStage);
+  }
+
+  // ★ 0.307.0：迁移启动生命周期——官方机制：接续目标端（冷/热启动均）只触发
+  //   onWindowStageRestore 不触发 onWindowStageCreate，若不做同等初始化=迁移后白屏。
+  //   故主窗口初始化整体收敛到 setupMainWindow，两生命周期同调（幂等）。
+  onWindowStageRestore(windowStage: window.WindowStage): void {
+    this.setupMainWindow(windowStage);
+  }
+
+  // ★ 0.307.0：主窗口初始化单一来源（onWindowStageCreate/onWindowStageRestore 共用）
+  private setupMainWindow(windowStage: window.WindowStage): void {
     // ★ 0.281.4：键盘避让不再在 EntryAbility 设全局 RESIZE（0.281.2 真机实测 NavDestination
     //   页面仍被软键盘遮挡、输入卡下半截露不出来）——改由 ChatPage 的 onShown/onHidden 自控：
     //   进对话页设 KeyboardAvoidMode.NONE + 监听 keyboardHeightChange 手动给根容器让位，
