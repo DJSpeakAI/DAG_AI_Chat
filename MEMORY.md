@@ -55,13 +55,14 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.308.1|✅探针响应语义修复（云函数未知响应/空串误判 'no'→归 'err'，fail-open 行为不变但语义归位——首次装机验证时发现：手机假开启态礼包照发=线上函数疑未返回 probe 字段，**线上函数版本待用户按部署 TXT 复查重点「提交」环节**）+装机术语定稿（冷安装=卸载重装/热安装=覆盖）。四台冷装 1000463 ✓|
 |0.308.0|✅**云同步假开启检测+重置两态**（手机实测三问题：①重置被"云同步未就绪"阻断②问华为检测API③假开启乱发SP——SpLedger 留有手机 welcome 200 万案底）。**根因实锤：系统「设置→云空间→应用数据同步」未放行时 cloudSync() 静默 resolve（华为无检测 API，官方文档二轮实查确认）→空表 reconcile 无缺片照样开闸 rowInitDone→门卫被骗→签到/礼包照发**。方案=双证据：本地标记 sp-cloud-seen-v1（真下行见过 SP 行，零误拦）+sp-admin 云函数 probe action（default zone Mirror+Ledger 双表查他设备痕迹——**云空间容器服务端不可读：cloud-server 报 2057 Zone invalid 冒烟实锤，只能资产痕迹代理**；Mirror 会被最后上报设备覆盖故加 Ledger 追加表）；实锤=SiyiGate cloudBlocked 第⑤条件锁 SP 增耗+r=4 引导「前往云空间开启」直跳系统设置；解除=真下行 SP 行到达自动证真；礼包判定收口进 afterFirstPullGateOpen 裁决链（fail-open 纪律：探针 no/err 一律放行）。**debug 重置两态化**（就绪=清本地+覆盖云端；未就绪=纯本地清+闸门重开，恒返 true——"云同步未就绪"死分支删除）。云函数更新包+小白部署TXT 在桌面 AI交接/（**待用户部署后我本地跑 probe 冒烟验证**）。三台冷装 1000462 ✓。已知边界：全新装机假开启首签本地挂账（新账号首签合法值不乱账）/单设备老账号探针无他设备痕迹判不出（signDates 幂等兜底）——全案 docs/0.165+/0.308.0|
 |0.307.0|✅**应用接续（Continuation，用户拍板"做呗"）**：手机对话到一半（含草稿）→系统接续到 PC 落同一气泡+草稿回填——免"开 app 找对话框"。方案=wantParam 传「气泡指针+实时草稿」（<100KB 直达秒到）+draftText 云同步双保险；新 utils/ContinueBridge.ets（AppStorageV2 'continue-bridge'：源端 inChat/nodeId/draft——ChatPage saveDraft 每键顺带写；目标端 pendingNodeId/pendingDraftFor/pendingDraft）；EntryAbility onContinue 采集+onCreate/onNewWant CONTINUATION 分支落 pending+**restoreWindowStage 同步调用（官方铁律）**；**onWindowStageCreate 提取 setupMainWindow 与 onWindowStageRestore 共用（迁移启动不走 onWindowStageCreate——不复刻=白屏）**；BBTreeCanvas consumeContinuePayload（aboutToAppear+onShown 双保险幂等，找不到节点=静默落画布弃草稿）；ChatPage 宿主匹配回填。module.json5 仅加 continuable:true 一行（红线知情）。**官方文档实锤：同 bundle 跨自己设备无需 AGC 接续服务申请（申请仅限不同开发者不同 AppID）——交付桌面 AI交接/应用接续指引.txt（设备侧开"多设备协同>接续"）**。**S 坑：接续双端须同账号（手机/Pad=180、PC/Pura=181——跨组接续前须换登同号）**。四台冷装 1000461 ✓|
 |0.306.0|✅**四测四项+清债**：①SiyiGate 引导弹窗双态化（未登录=标题「登录华为账号后可用」+「暂不使用」左「登录华为账号」右；已登录未开=「前往开启」保持左——用户拍板「文案说登录，按钮就得是登录」）②debug 重置成功=关云同步+登出华为账号+1.2s 自动 terminateSelf（重开=未登录全新用户态；两 Promise 契约永不 reject 不加 catch 死分支）③新用户礼包单按钮化（AppConfirmDialog **cancelText 空串=单按钮模式**：不渲染取消钮+遮罩点击不关）④fitViewport 单根小树（flat 且唯一根且渲染高<剩余区 70%）垂直中心 0.5→0.45 上移（纯视口偏移不碰坐标，排列零影响）。**连带清债**：GSD 订阅死分支（else if(true) 哨兵+「订阅后开启」+会员 toast，0.305.1 漏网）+unused import×4+unused 参数 _ 前缀×2。**S 坑三证：check_ets_files 缓存失真报编辑前快照——unused 判定以 grep 现文件+编译为真相**。三台冷装 1000460 ✓（Pura 休眠后补装 ✓）|
 |0.305.6|（已迁 docs/MEMORY_HISTORY.md——告知弹窗前置即刻弹/弹窗时序站判定/PC 多窗口点穿坑）|
 |0.305.1|✅**技术债三连清零（用户军令"技术债绝对不允许存在"）+零技术债军令入档（project_rule 新节+收尾六件套⑥+AGENTS）**：①订阅退役残留全链删（ReminderDialog 组件+Index 挂载/isVip/vipExpire/vipDaysLeft/stampFreeTrial 打戳/到期提醒引擎；**stampFreeTrialOnLogin→改名 onLoginAccountHooks()**——它 0.293/0.256 被塞了账号切换检测+签到引导活职责不能整删，改名留活职删打戳；SubscriptionStore 类与字段按 **Schema 铁律保留占位**（现役=兑换码/IAP 账本载体，freeTrialStart 等退役字段永不写入））②硬编码色值 33 处全量 token 化（AppTheme 补 onBrand/glassTint/glassStroke/successBg/glowBg+样张常量；#4CAF50→success 等语义归位；唯一豁免=透明哨兵注释）③unused 参数 _ 前缀 5 处（存量已随①大部消解）。**S 坑：codelinter 报 deep-clone/Date 复用=性能建议非债（JSON 往返具名化是 arkts 防御定式勿改）；check_ets_files 对刚改过的文件缓存严重失真——unused 清理须 grep 现文件验证后再修**。三债各编译+git 分批上传；四端冷装 1000454|
 
-- 版本号纪律：当前 **v0.308.0（versionCode 1000462）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
+- 版本号纪律：当前 **v0.308.1（versionCode 1000463）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
 - 迭代文档命名：版本号 变更内容.md（详见 project_rule §7）
 - 真机测试设备（阵容与账号分工定稿）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S（hdc 7HZUN26330G02209）+ 畅享90Pro Max（WiFi 192.168.2.17:38611）**，同测同装机；第四台 Pura X View（192.168.2.4:39421）=用户工作机默认不测不装；**手机+Pad 登 180 测试账户、PC+Pura 登 181 主账号**；设备 IP 会变，连不上先问用户；`param get const.product.model` 验身份
 
@@ -76,7 +77,7 @@
 8. **AGC 控制台操作必须用非无痕窗口**：无痕模式「提交」静默失效（0.206.x 真凶）。凡 AGC 后台操作，AI 必须先提醒用户确认非无痕。
 9. 开发机迁移 SOP（如换机）：git 仓库整目录拷贝（含不入 git 的 rawfile/config.json+agconnect-services.json，禁止只 clone）+E:\track-events\ 云函数目录+新机装 DevEco/hdc 重连。MEMORY/project_rule 随仓库迁移无缝续接。
 10. 老机器 codearts 同步三层根治（2026-10-11）：SSH key 仓库级指定+safe.directory+SYSTEM 凭据；验证=触发 /build 后 HEAD 自动 reset。
-11. **装机不负责卸载**：AI 只覆盖安装；需清数据由用户自行卸载后告知再装。
+11. **装机术语与卸载授权（2026-10-24 用户定稿）**：**冷安装=卸载→安装**（清数据全新态）；**热安装=覆盖安装**（install -r 保数据）——用户说"冷安装"=授权 AI 卸载重装；无明确指令时 AI 只热安装不主动卸载（默认保守），需清数据由用户明示。
 12. **本机 GitHub 推送通道**：`GIT_SSH_COMMAND="ssh -F ~/.ssh/gh_config" git push origin main`；勿建 ~/.ssh/config（chmod 600 不生效恒 660，StrictModes 会阻断一切 ssh）。
 13. **rawfile 双配置永不入 git**（Push Protection）：config.json+agconnect-services.json 已净化出库+.gitignore；unblock 链接绝对勿点；backup-dirty-history 分支=回滚锚（含秘密永不推送）。
 14. **用户自觉装机习惯**：「⏳未装机」仅指等用户日常装机消化，不是阻塞待办，AI 不催不盯。

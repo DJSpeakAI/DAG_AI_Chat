@@ -107,7 +107,9 @@ export async function spAdminConfirm(commandId: string, accountId: string, resul
 
 // ★ 0.308.0 云同步真值探针：查 default zone Mirror+Ledger 双表有无「他设备」资产痕迹。
 //   返回 'yes'=有他设备痕迹（云端大概率有 SP 行，本机拉不到=假开启实锤）；
-//   'no'=无痕迹（新账号/仅本机——fail-open 放行）；'err'=通道失败（未部署/无网——fail-open 放行）
+//   'no'=明确无痕迹（云函数确认无——新账号/仅本机）；'err'=通道失败或响应异常
+//   （未部署旧版函数返 unknown action、无网、字段缺失——一律 fail-open 放行但语义归 err，
+//   防「空串误判 no」掩盖部署未生效——0.308.1 实锤修复）
 export async function spAdminProbe(accountId: string, deviceModel: string): Promise<string> {
   if (accountId.length === 0) {
     return 'no';
@@ -124,5 +126,8 @@ export async function spAdminProbe(accountId: string, deviceModel: string): Prom
   if (v === 'y') {
     return 'yes';
   }
-  return v === 'e' ? 'err' : 'no';
+  if (v === 'n') {
+    return 'no';
+  }
+  return 'err'; // 'e' 异常 / 空串（旧版函数 unknown action 等）——无法判定按通道失败处理
 }
