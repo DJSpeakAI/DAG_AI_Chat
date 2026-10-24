@@ -33,12 +33,10 @@ const HTTP_READ_MS: number = 60000;
 const XLSX_MAX_ROWS: number = 3000;
 const XLSX_MAX_COLS: number = 20;
 
-const IMG_EXTS: string[] = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'];
 const CLOUD_EXTS: string[] = ['pdf', 'docx', 'doc']; // 走腾讯云
 const LOCAL_EXTS: string[] = ['txt', 'md', 'xlsx']; // 本地解析
-// +号混选选择器后缀过滤（图片+文档全集）
-export const ATTACH_SUFFIX_FILTERS: string[] = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp',
-  '.txt', '.md', '.pdf', '.docx', '.doc', '.xlsx'];
+// ★ 0.310.0：文档入口专用后缀（+ 号面板「文件」瓷砖——图片改走相册/拍摄，不再混选）
+export const DOC_SUFFIX_FILTERS: string[] = ['.txt', '.md', '.pdf', '.docx', '.doc', '.xlsx'];
 
 // 腾讯 FileType 枚举（防御式：实测错码改此表）
 function tcFileTypeOf(ext: string): number {
@@ -80,10 +78,6 @@ export class DocParseResult {
 export function docExtOf(name: string): string {
   const i = name.lastIndexOf('.');
   return i >= 0 ? name.substring(i + 1).toLowerCase() : '';
-}
-
-export function isImageExt(ext: string): boolean {
-  return IMG_EXTS.indexOf(ext) >= 0;
 }
 
 export function isDocExt(ext: string): boolean {

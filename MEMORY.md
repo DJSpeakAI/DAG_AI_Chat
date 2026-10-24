@@ -28,7 +28,7 @@
 - 测试台交互双轨：用户自用=双击桌面「启动测试台.sh」全自动；AI 驱动=对话里说跑什么，AI 全自动起查盯报；唯一人工=华为授权弹窗
 
 ## PENDING 待办与待验收
-**★ 0.308.0 云函数部署待用户操作**：桌面「AI交接/sp-admin-更新包-0.308.0.zip」+「云函数更新部署步骤-0.308.0.txt」——用户部署完成后 CLI 本地跑 probe 冒烟验证（probe action 返回 y/n/e）；**未部署时探针恒 'err' fail-open=假开启检测仅本地标记证据生效（零回归）**。部署验证通过后删桌面两件套。
+**★ 0.310.0 待装机验收**：+ 展开附件面板（相册条/四瓷砖/满格置灰/9 图发送/草稿恢复）+ PC 端不白屏；测试台主路径用例待补（testing/ 红线本轮未动）。
 **★ 新 key 待补录 redlineKeys**：`sp-cloud-seen-v1`（0.308.0，testing/ 红线不手改，与 personality-quiz-v1 等批量补录）。
 **★ 真人测试流程库（2026-10-24 用户定稿）**：用户口述的人工实测流程结构化沉淀在 docs/真人测试流程参考.md——**测试台新增/更新用例前必须先读它对齐真实用户路径**（真人走查比 AI 编写更真实，冲突时以它为准）；用户会持续口述新流程，收到即追加该档。首条=手机首启全链路（7 场景，0.305.2/0.305.3 均已修复/实施）；**0.308.0 用户口述新流程（重置按钮两态/假开启检测/性格测试登录引导）待追加该档**。
 **★ 代理提醒权益重申（0.302.1）**：首次申请被驳（缺设置场景截图）→ GSD 已补提醒设置区块+截图在桌面「AI交接/代理提醒-设置场景截图.jpeg」；**等用户带截图重新提交 AGC 申请（入口：项目设置→开放能力管理→代理提醒）；通过后必须重建 Profile+重新签名才真正生效**（connect API 通道，见约束#18；获批前 publishReminder 1700002 静默降级零影响）。
@@ -55,9 +55,10 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
-|0.309.1|✅**云函数部署终验通过+直调自证通道固化**：用户重传 ZIP+提交后，本地 Server SDK 直调线上 sp-admin（`new CloudFunction('default').call({name:'sp-admin',version:'$latest',data:{action:'probe',accountId,deviceModel}})`）返回 `{"probe":"y"}`=新版在线 ✓。**坑三枚**：①`inst.function()` 不是调用入口（正确=CloudFunction 类，构造参数=createInstance 实例名）②call 只收一个 FunctionParams（两参=签名错位报 160404 Trigger not exist）③返回值已是业务对象不用解 responseBody。**触发器事实：sp-admin 现有 HTTP 触发器=apigw-client/POST/HDA-SYSTEM/URL=/functions/6aekbicn/sp-admin-$latest；一个函数只能一个 HTTP 触发器（再建需审批）——勿再加**。方法已固化 docs/cloud/sp-admin/部署指引.md §⑥。另：18115530752 恢复绑定 MDEI32OB7B（=手机登录账号，用户口述"181 获得 SP"实为手机做题 quiz5000+签到2000→sp=7000）|
-|0.309.0|✅**我的账号 ID+运营闭环基建**（用户三问：运营怎么拿 ID/用户怎么知道 ID/手机号绑定逻辑）。GSD 云同步 Tab+「我的账号 ID」卡（脱敏前8后4+复制模板带手机号占位——**app 拿不到手机号是华为隐私设计，手机号占位行用户自填**；合规：UnionID/OpenID=官方标准标识符展示本人，FAQ faqs-account-22 依据）；看板+「最近上报的账号」按钮（复用既有 __recent__ 接口，行内自带填入/绑号/下指令=用户记忆中被删的"刷新 ID"强化恢复）。**运营闭环定稿认知：自动上报→用户复制 ID 发邮件→运营绑手机号→手机号直查直下指令**；手机假账 200 万已由 deduct 指令对冲（sp=0 后又被做题打破，用户自测中）。四台热装 1000464 ✓|
-|0.308.2|✅**看板三改（用户测试台反馈）**：①默认 Tab 行为埋点→SP 数据台（测试台「后台数据」iframe 打开直达）；②command 接口补手机号别名解析（未绑定→400 拦截——实锤教训：target=手机号原文落库=pending 永不被拉取的死单，已作废并经别名重下 deduct 200 万清手机假账）；③18115530752 错绑 180 已撤（**待 PC 登 181 首报后抓 ID 改绑**）——**手机号≠账号 ID：华为个人开发者拿不到账号手机号，绑定制=账号ID查一次→卡片「绑定手机号」→此后手机号直查/直下指令**。看板 API 口令=x-dash-token header（sha256(ECS password+'::dagai-dash')，见 ECS config.json）。已部署 ECS 验证 ✓|
+|0.310.0|✅**输入区 DeepSeek 式附件面板**：+ 旋转成 ×，输入卡下方展开两行——①内嵌相册条 PhotoPickerComponent 单行模式（API20+，零权限，**禁申请 READ_IMAGEVIDEO**；勾选回调 setTimeout(0) 旁路读图）②四瓷砖固定序 画板→拍摄→相册→文件（满格仅置灰+小字，不弹框）；待发图预览改横向 Scroll；9 上限收敛 ATTACH_MAX；DocParseUtil 改文档专用后缀。**坑**：PickerOptions **没有 preselectedUris**（勾选回显走 `controller.setData(DataType.SET_SELECTED_URIS, uris)`；preselectedUris 在 UpdatablePickerConfigs）；PC 不渲染内嵌条、相册瓷砖走文件管理器兜底。**未装机验证**；测试台用例待补（testing/ 红线未动）|
+|0.309.1|✅**云函数部署终验通过+直调自证通道固化**：本地 Server SDK 直调线上 sp-admin `new CloudFunction('default').call({name:'sp-admin',version:'$latest',data:{action:'probe',...}})` 返回 `{"probe":"y"}`=新版在线。**坑三枚**：①`inst.function()` 不是调用入口（正确=CloudFunction 类，构造参数=createInstance 实例名）②call 只收一个 FunctionParams（两参=签名错位报 160404）③返回值已是业务对象不用解 responseBody。**sp-admin 已有 HTTP 触发器（apigw-client/POST/HDA-SYSTEM）；一函数只能一个 HTTP 触发器（再建需审批）——勿再加**。方法固化 docs/cloud/sp-admin/部署指引.md §⑥|
+|0.309.0|✅**我的账号 ID+运营闭环基建**。GSD 云同步 Tab「我的账号 ID」卡（脱敏前8后4+复制模板带手机号占位——**app 拿不到手机号是华为隐私设计**；合规=UnionID/OpenID 展示本人，FAQ faqs-account-22）；看板「最近上报的账号」按钮（复用 __recent__，行内填入/绑号/下指令）。**运营闭环定稿：自动上报→用户复制 ID 发邮件→运营绑手机号→手机号直查直下指令**；手机假账 200 万已 deduct 对冲。四台热装 1000464 ✓|
+|0.308.2|✅**看板三改**：①默认 Tab=SP 数据台；②command 补手机号别名解析（未绑定→400 拦截——target=手机号原文落库=pending 死单，已作废）；③18115530752 错绑 180 已撤（**待 PC 登 181 首报后抓 ID 改绑**）——**手机号≠账号 ID：绑定制=账号ID查一次→卡片「绑定手机号」→此后直查/直下指令**。看板 API 口令=x-dash-token header（见 ECS config.json）|
 |0.308.1|✅探针响应语义修复（云函数未知响应/空串误判 'no'→归 'err'，fail-open 行为不变；装机术语定稿：冷安装=卸载重装/热安装=覆盖）。四台冷装 1000463 ✓|
 |0.308.0|✅**云同步假开启检测+重置两态**（三问题：重置阻断/无检测API/假开启乱发SP）。**根因：系统云空间未放行时 cloudSync 静默 resolve（华为无 API）→空表 reconcile 照开闸 rowInitDone→门卫被骗→签到/礼包照发**。方案=本地标记 sp-cloud-seen-v1（真下行零误拦）+云函数 probe 探针（default zone Mirror+Ledger 双表他设备痕迹——云空间容器不可读 2057）→ siyiGateReady 加第⑤条件 cloudBlocked+r4 引导直跳系统设置（解除=真下行 SP 行到达）；礼包判定收口 afterFirstPullGateOpen（fail-open）；debug 重置两态恒返 true。四台装 1000462。全案 docs/0.165+/0.308.0|
 

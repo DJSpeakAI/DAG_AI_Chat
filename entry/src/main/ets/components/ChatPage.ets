@@ -27,14 +27,16 @@ import { common, abilityAccessCtrl } from '@kit.AbilityKit'; // 0.206.0 埋点 g
 import { track, trackUidAuto } from '../utils/TrackUtil'; // 0.206.0 埋点；★ 0.260.0：trackUidAuto（sp_consume）
 import deviceInfo from '@ohos.deviceInfo'; // ★ 0.215.14：设备类型三档（deviceType=phone/tablet/2in1/default，d.ts 实锤）
 // ★ 删除未使用 import common（0.122 清理）
-import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { photoAccessHelper, PhotoPickerComponent, PickerController, PickerOptions,
+  SingleLineConfig, ItemDisplayRatio, DataType } from '@kit.MediaLibraryKit'; // ★ 0.310.0：内嵌相册条（PhotoPickerComponent 零权限——禁止申请 READ_IMAGEVIDEO 受限权限）
+import { camera, cameraPicker } from '@kit.CameraKit'; // ★ 0.310.0：系统相机（cameraPicker 零相机权限；picker 别名已被 CoreFileKit 占用，故 camera 用本名）
 import { fileIo, picker } from '@kit.CoreFileKit'; // ★ 0.246.0：picker（DocumentViewPicker 保存图片——免权限系统保存对话框）
 import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit'; // ★ 0.145：pasteboard（划词复制）；★ 0.189.0：BusinessError 随 TTS 管线移除；★ 0.275.0：Ctrl+V 读取剪贴板图片（getData + PasteDataRecord.pixelMap/uri）
 import { unifiedDataChannel } from '@kit.ArkData'; // ★ 0.275.0：onDrop 拖拽图片记录类型（DragEvent.getData → UnifiedData → Image.imageUri）
 
   import { BubbleNode, ChatMessage, BubbleTree, CurrentBubble, ApiConfig, PersistData, generateMessageId, generateNodeId, serializeBubbleTree, connectApiConfig, AiPreference, connectAiPreference, AnchorPref, connectAnchorPref, CanvasModeStore, connectCanvasMode, TabMeta, TabForestStore, connectTabForest, parseTabs, serializeTabs, getRootDisplayName, LearnCountStore, connectLearnCount, KnowledgeCountStore, connectKnowledgeCount, BookmarkEntry, BookmarkData, ChatBookmarkStore, connectChatBookmarks, StatisticsStore, connectStatistics, recordStat, SiyiPointStore, connectSiyiPoints, siyiTotalSp, consumeSiyiSp, getStatDays, isSiyiSpFree, resolveThinkingFor, isThinkingParamError, ThinkingRequest, spCostOfTokens, trackSpConsumeAuto, SP_INPUT_PRICE_RATIO, SP_HIT_PRICE_RATIO, SP_OUTPUT_PRICE_RATIO, SP_TOKEN_DIVISOR, SP_COST_MULTIPLIER, SP_CACHE_SAVING_RATIO, spCostOfTts, docPageTokens, connectSishuClassic } from '../common/ChatModel'; // ★ 0.143：connectApiConfig；★ 0.150：AiPreference（全局设置弹窗）；★ 0.151：画布模式分池保存；★ 0.151-bugfix2：Tab 名同步；★ 0.161：学习数量设置（单词库 ⚙ 设置，两处复习区共用）；★ 0.161.2：知识卡片数量设置（知识库 ⚙ 设置）；★ 0.191.0：BookmarkEntry/BookmarkData/connectChatBookmarks（阅读位置书签）；★ 0.192.0：StatisticsStore/recordStat（学习统计埋点）；★ 0.234.0：AnchorPref/connectAnchorPref（锚点/折叠偏好 anchor-pref-v1）；★ 0.247.1：ModelAliasStore/connectModelAlias 移除（别名机制下线，用户拍板）；★ 0.271.0：深度思考四件（归一/策略矩阵/降级判定/ThinkingRequest 统一类型）；★ 0.272.0：SP 常量与公式迁回（spCostOfTokens/trackSpConsumeAuto/六常量——单一真相源）；★ 0.291.2：docPageTokens（文档页费嫁接——页数折算等效 input token 并账）；★ 0.300.0：connectSishuClassic（经典模式灰度开关）
-  import { PendingDoc, DocParseResult, ATTACH_SUFFIX_FILTERS, DOC_CONFIRM_BYTES, DOC_MAX_BYTES, docExtOf, isImageExt, isDocExt, needsCloudParse, fmtDocSize, parseDocsForSend, buildDocContextBlock, docListLabel } from '../utils/DocParseUtil'; // ★ 0.291.2：文档加载（+号混选/格式路由/腾讯云解析/system 注入——方案 docs/0.165+/0.291.0）
+  import { PendingDoc, DocParseResult, DOC_SUFFIX_FILTERS, DOC_CONFIRM_BYTES, DOC_MAX_BYTES, docExtOf, isDocExt, needsCloudParse, fmtDocSize, parseDocsForSend, buildDocContextBlock, docListLabel } from '../utils/DocParseUtil'; // ★ 0.291.2：文档加载（格式路由/腾讯云解析/system 注入——方案 docs/0.165+/0.291.0）；★ 0.310.0：文件入口改文档专用后缀过滤（图片走相册条/拍摄）
   import { PODCAST_PROMPT, MEDIUM_REPLY_PROMPT, LONG_REPLY_PROMPT, SUMMARY_PROMPT, SECTION_PROMPT, ANCHOR_MEDIUM_PROMPT, PLAN_PROMPT, buildWritePrompt, PLAN3_PROMPT, buildDeliverPrompt, CENSOR_PROMPT } from '../common/Prompts'; // ★ 0.193.0：prompt 单一真相源（B 项）；★ 0.234.0：SECTION/ANCHOR（锚点一期）；★ 0.290.0：PLAN_PROMPT/buildWritePrompt（司枢 2.0 两段式）+ HOOK_SYSTEM_PROMPT/buildAnchorLongPrompt 退役（②段伴读废止、长回复锚点指令并入框架规划）；★ 0.300.0：司枢 3.0 三件（PLAN3_PROMPT 枢机契约/buildDeliverPrompt 交付执笔/CENSOR_PROMPT 御史）
   import { TaskContract, SishuClarifyState, connectSishuClarify, sanitizeContract, contractToneLine, buildContractBrief, recordCorrectEntry, loadCorrectHint, parseCensorVerdict } from '../common/SishuAgent'; // ★ 0.300.0：司枢 Agent 3.0 契约层（会话级不持久化）
 import { WordItem, WordBankStore, WordQueryResult, WordFolder, WordFolderTreeItem } from '../common/WordModel'; // ★ 0.145：单词库数据模型；★ 0.222.21：WordFolder/WordFolderTreeItem（加词目标文件夹选择弹窗）
@@ -65,7 +67,7 @@ import { FoldChevron } from './FoldChevron'; // ★ 0.237.0：全项目唯一折
 import { TokenInfoChip } from './TokenInfoChip'; // ★ 0.272.0：通用感叹号信息卡（查词/提炼 SP 透明化；主链路 tokenInfoBuilder 不动防回归）
 // ★ 0.181.0：UI 规格化——散落色值/isDark 三元收敛到 DesignTokens（0.166.3 锁暗色后浅色分支是死代码）
 import { WindowMode, connectWindowMode } from '../common/WindowMode'; // ★ 0.196.4：窗口宽度模式共享真相源（分屏/悬浮窗切手机布局）
-import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD, FONT_SIZE_CAPTION } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_NODE, RADIUS_CONTROL, FONT_SIZE_SCREEN_TITLE, FONT_INTER, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { AppTheme, connectAppTheme } from '../common/AppTheme';
 import { connectHuaweiAccount, requireLoginForCloud } from '../utils/HuaweiAccountUtil'; // ★ 0.248.2：AI 登录守卫（上架合规——未登录禁止问 AI）；★ 0.248.3：圈注/划词守卫
 import { requireSiyiGate } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（消耗 SP 的 AI 功能前置闸——账本云端对齐才放行）
@@ -94,6 +96,10 @@ const WEB_PREROUTE_RE: RegExp = /(查一下|查查|搜一下|搜索|帮我查|�
 // 连续 N 轮工具结果全空/失败→停挂 tools 强制落笔；重复打开同一 URL→结果直回已读提示
 const ORCH_EMPTY_ROUNDS_LIMIT: number = 2;
 const ORCH_TOOL_ROUNDS_LIMIT: number = 8;
+// ★ 0.310.0：附件总量上限（图 + 文档合计，用户拍板保留 9 不变——原先 7 处魔数收敛至此）
+const ATTACH_MAX: number = 9;
+// ★ 0.310.0：PC 端相册兜底的后缀过滤（PhotoViewPicker 在 2in1 不保证可用 → 文件管理器选图）
+const IMG_SUFFIX_FILTERS: string[] = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
 
 // 对话页面 — V2 全量迁移
 @ComponentV2
@@ -103,6 +109,12 @@ export struct ChatPage {
   // ★ 0.297.0：数学证明画板——+号展开菜单态 + 画板结果回传（@Local 接管 connect 实例）
   @Local plusMenuOpen: boolean = false;
   @Local sketchResult: SketchResultStore = connectSketchResult();
+  // ★ 0.310.0：输入区 DeepSeek 式附件面板——内嵌相册条（系统勾选框）+ 四瓷砖（画板/拍摄/相册/文件）
+  @Local pickerController: PickerController = new PickerController();
+  @Local stripSelectedUris: string[] = []; // 条内已勾选 uri（仅用于勾选态同步）
+  @Local stripReady: boolean = false; // onPickerControllerReady 之后为 true（控制器接口才可用）
+  pickerOptions: PickerOptions = new PickerOptions();
+  stripUriToData: Map<string, string> = new Map(); // 条内 uri → data URI（删图反查/去重）
   gsShared: GlobalSettingsSharedStore = connectGlobalSettingsShared(); // ★ 0.230.0：设置弹窗共享开态（跨页返回键拦截）
   store: BubbleTree = AppStorageV2.connect(BubbleTree, 'bubble-tree', () => new BubbleTree()) as BubbleTree;
   persistData: PersistData = PersistenceV2.connect(PersistData, 'persist-data', () => new PersistData()) as PersistData;
@@ -170,7 +182,7 @@ export struct ChatPage {
   @Local msgAreaOpacity: number = 1;       // 消息区透明度（1=不透明；动画期间 0↔1 补间）
   @Local branchAnimating: boolean = false; // 分支切换动画进行中（防抖：播完前忽略重复点击）
   @Local pendingImages: string[] = [];
-  // ★ 0.291.2：待发文档（+号混选）——与 pendingImages 合计上限 9；uri 会话级有效不进草稿
+  // ★ 0.291.2：待发文档（文件入口）——与 pendingImages 合计上限 ATTACH_MAX；uri 会话级有效不进草稿
   //   （picker uri 跨会话可能失效，刷新/退出=文档自然丢弃，图片/文字草稿照旧）
   @Local pendingDocs: PendingDoc[] = [];
   // ★ 0.291.2：文档计费首次告知标记（冷启后首次带文档发送弹一次告知；会话级不落盘——
@@ -1618,6 +1630,8 @@ export struct ChatPage {
     this.pendingImages = [];
     const docsToSend: PendingDoc[] = [...this.pendingDocs]; // ★ 0.291.2：发送时刻快照（解析在下文注入块消费；此处清待发区）
     this.pendingDocs = [];
+    this.plusMenuOpen = false; // ★ 0.310.0：发送成功即收附件面板（避免下一轮误触）
+    this.resetStripSelection();
     // ★ 0.214.2：发送即清本气泡草稿（内容已入消息流，草稿使命完成）
     const sb = this.currentBubble;
     if (sb) {
@@ -3242,6 +3256,16 @@ export struct ChatPage {
     setTimeout(() => {
       this.restoreReadingPosition(); // ★ 0.191.0：阅读位置恢复（A 高度记忆 → B 书签 → 底部），替代原固定滚底
     }, 100);
+    // ★ 0.310.0：附件面板相册条配置——单行模式（API20+，无大图/无顶部搜索栏），零权限
+    this.pickerOptions.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    this.pickerOptions.maxSelectNumber = ATTACH_MAX;
+    this.pickerOptions.isSearchSupported = false;
+    this.pickerOptions.isPhotoTakingSupported = false; // 拍照入口由第二行「拍摄」瓷砖承担
+    const singleCfg = new SingleLineConfig();
+    singleCfg.itemDisplayRatio = ItemDisplayRatio.SQUARE_RATIO;
+    singleCfg.itemBorderRadius = 12;
+    singleCfg.itemGap = 8;
+    this.pickerOptions.singleLineConfig = singleCfg;
     setTtsStopHandler((): void => { this.stopTTS(); }); // ★ 0.304.0：播控中心暂停/停止命令 → 停读收敛（UI+三引擎+守卫一体）
   }
 
@@ -3285,53 +3309,181 @@ export struct ChatPage {
     // ★ 0.249.3：查看器延迟关闭计时器随缩放/双击判定一起回滚删除，此处不再清理
   }
 
-  // ★ 0.291.2：选择附件（原 selectImages 升级——用户拍板方案一：+号直接混选图片+文档，
-  //   不加分菜单；DocumentViewPicker 文件管理器视角替代相册九宫格为已知情代价）。
-  //   图片→base64 进 pendingImages（原链路不变）；文档→PendingDoc 进 pendingDocs（不进草稿）。
-  //   合计上限 9（图+文）；云端格式 >6MB 选入即拦截。
-  async selectAttachments(): Promise<void> {
+  // ★ 0.310.0：附件剩余额度/满格判定（ATTACH_MAX 唯一口径，取代散落魔数 9）
+  attachRoom(): number {
+    return ATTACH_MAX - this.pendingImages.length - this.pendingDocs.length;
+  }
+
+  attachFull(): boolean {
+    return this.attachRoom() <= 0;
+  }
+
+  // ★ 0.310.0：条内勾选——官方铁律：勾选回调内禁止同步读大文件（openSync 大图卡 UI），
+  //   故 setTimeout(0) 异步旁路读图；读失败/超额度回滚系统勾选态
+  onStripSelect(uri: string): void {
+    if (this.attachRoom() <= 0 || this.stripUriToData.has(uri)) {
+      return;
+    }
+    this.stripSelectedUris = [...this.stripSelectedUris, uri];
+    setTimeout(() => {
+      this.ingestStripUri(uri);
+    }, 0);
+  }
+
+  async ingestStripUri(uri: string): Promise<void> {
+    if (this.stripSelectedUris.indexOf(uri) < 0) {
+      return; // 异步读图前已被用户取消勾选（竞态：回调里的取消先到）
+    }
+    const data = this.readImageToDataUri(uri);
+    if (data.length === 0) {
+      this.syncStripCheckboxes(true); // 读失败：取消勾选
+      this.showToastSafe('图片读取失败，请重试');
+      return;
+    }
+    if (this.attachRoom() <= 0) {
+      this.syncStripCheckboxes(true); // 异步读图期间额度被占满：回滚勾选
+      return;
+    }
+    this.stripUriToData.set(uri, data);
+    this.pendingImages = [...this.pendingImages, data];
+    this.saveDraft();
+  }
+
+  onStripDeselect(uri: string): void {
+    const data = this.stripUriToData.get(uri);
+    this.stripSelectedUris = this.stripSelectedUris.filter((u: string) => u !== uri);
+    if (data !== undefined) {
+      this.stripUriToData.delete(uri);
+      this.removeImageByData(data);
+    }
+  }
+
+  // ★ 0.310.0：勾选态回同步（读失败/满格回滚/待发区删图时调用；控制器未就绪直接跳过）
+  syncStripCheckboxes(removeMissing: boolean): void {
+    if (!this.stripReady) {
+      return;
+    }
+    const valid: string[] = this.stripSelectedUris.filter((u: string) => this.stripUriToData.has(u));
+    if (removeMissing) {
+      this.stripSelectedUris = valid;
+    }
     try {
-      const room = 9 - this.pendingImages.length - this.pendingDocs.length;
-      if (room <= 0) {
-        this.showToastSafe('图片与文档合计最多 9 个');
-        return;
-      }
+      this.pickerController.setData(DataType.SET_SELECTED_URIS, valid);
+    } catch (_e) {
+      // 面板收起瞬间组件已卸载/控制器失效：静默
+    }
+  }
+
+  // ★ 0.310.0：内嵌相册条可用性（2in1 媒体库能力未明确 → PC 走文件管理器兜底，防白屏）
+  supportsEmbeddedPhotoPicker(): boolean {
+    return !this.isPcDevice() && canIUse('SystemCapability.FileManagement.PhotoAccessHelper.Core');
+  }
+
+  // ★ 0.310.0：清空条内勾选缓存（发送后整体回收；uri 授权随会话走不再需要）
+  resetStripSelection(): void {
+    this.stripSelectedUris = [];
+    this.stripUriToData.clear();
+    this.stripReady = false;
+  }
+
+  // ★ 0.310.0：文件入口——仅文档（图片改走相册条/拍摄）；上限=剩余额度；云端格式 >6MB 选入即拦截。
+  //   文档→PendingDoc 进 pendingDocs（不进草稿）；合计上限 ATTACH_MAX（图+文）
+  async selectDocuments(): Promise<void> {
+    const room = this.attachRoom();
+    if (room <= 0) {
+      return;
+    }
+    try {
       const docPicker = new picker.DocumentViewPicker();
-      const uris: Array<string> = await docPicker.select({
+      const opts: picker.DocumentSelectOptions = {
         maxSelectNumber: room,
-        fileSuffixFilters: ATTACH_SUFFIX_FILTERS
-      } as picker.DocumentSelectOptions);
-      let imgsAdded = false;
+        fileSuffixFilters: DOC_SUFFIX_FILTERS
+      };
+      const uris: Array<string> = await docPicker.select(opts);
       for (let i = 0; i < uris.length; i++) {
         const uri = uris[i];
         const name = decodeURIComponent(uri.substring(uri.lastIndexOf('/') + 1));
         const ext = docExtOf(name);
-        if (isImageExt(ext)) {
-          const dataUri = this.readImageToDataUri(uri);
-          if (dataUri.length > 0) {
-            this.pendingImages = [...this.pendingImages, dataUri];
-            imgsAdded = true;
-          }
-        } else if (isDocExt(ext)) {
-          let size = 0;
-          const f = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
-          try {
-            size = fileIo.statSync(f.fd).size;
-          } finally {
-            fileIo.closeSync(f);
-          }
-          if (needsCloudParse(ext) && size > DOC_MAX_BYTES) {
-            this.showToastSafe(`「${name}」超过 6MB，云端解析暂只支持 6MB 内文件，请拆分后再试`);
-            continue;
-          }
-          this.pendingDocs = [...this.pendingDocs, new PendingDoc(name, ext, size, uri)];
+        if (!isDocExt(ext)) {
+          continue;
         }
+        let size = 0;
+        const f = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+        try {
+          size = fileIo.statSync(f.fd).size;
+        } finally {
+          fileIo.closeSync(f);
+        }
+        if (needsCloudParse(ext) && size > DOC_MAX_BYTES) {
+          this.showToastSafe(`「${name}」超过 6MB，云端解析暂只支持 6MB 内文件，请拆分后再试`);
+          continue;
+        }
+        this.pendingDocs = [...this.pendingDocs, new PendingDoc(name, ext, size, uri)];
       }
-      if (imgsAdded) {
-        this.saveDraft(); // 0.214.2 图片变化实时写回草稿（文档 uri 会话级有效不落草稿）
+    } catch (_e) {
+      // 选择取消/读取失败静默忽略（防崩溃）
+    }
+  }
+
+  // ★ 0.310.0：相册入口——手机/Pad 走系统多选（max=剩余额度）；PC 走文件管理器选图兜底
+  async pickFromAlbum(): Promise<void> {
+    const room = this.attachRoom();
+    if (room <= 0) {
+      return;
+    }
+    if (this.isPcDevice()) {
+      await this.pickImagesFromFiles(room);
+      return;
+    }
+    try {
+      const p = new photoAccessHelper.PhotoViewPicker();
+      const opts: photoAccessHelper.PhotoSelectOptions = {
+        MIMEType: photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE,
+        maxSelectNumber: room
+      };
+      const res = await p.select(opts);
+      for (let i = 0; i < res.photoUris.length; i++) {
+        await this.addImageFromUri(res.photoUris[i]);
       }
-    } catch (err) {
-      // 选择取消/读取失败静默忽略（防崩溃，原 selectImages 同策略）
+    } catch (_e) {
+      // 取消/不支持：静默（PC 已走文件管理器分支）
+    }
+  }
+
+  // ★ 0.310.0：PC 相册兜底（2in1 上 PhotoViewPicker 不保证可用 → 文件管理器选图）
+  async pickImagesFromFiles(room: number): Promise<void> {
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      const opts: picker.DocumentSelectOptions = {
+        maxSelectNumber: room,
+        fileSuffixFilters: IMG_SUFFIX_FILTERS
+      };
+      const uris: Array<string> = await docPicker.select(opts);
+      for (let i = 0; i < uris.length; i++) {
+        await this.addImageFromUri(uris[i]);
+      }
+    } catch (_e) {
+      // 取消/读取失败静默
+    }
+  }
+
+  // ★ 0.310.0：拍摄入口——cameraPicker 零相机权限；不传 saveUri = 照片存入系统相册（与系统相机一致）
+  async takePhoto(): Promise<void> {
+    if (this.attachRoom() <= 0) {
+      return;
+    }
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const profile: cameraPicker.PickerProfile = {
+        cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK
+      };
+      const result = await cameraPicker.pick(ctx, [cameraPicker.PickerMediaType.PHOTO], profile);
+      if (result.resultCode !== 0 || result.resultUri.length === 0) {
+        return;
+      }
+      await this.addImageFromUri(result.resultUri);
+    } catch (_e) {
+      this.showToastSafe('拍摄失败，请重试');
     }
   }
 
@@ -3342,22 +3494,22 @@ export struct ChatPage {
     if (uri.length === 0) {
       return;
     }
-    if (this.pendingImages.length + this.pendingDocs.length >= 9) {
+    if (this.attachFull()) {
       // 防御性满格守卫（画板入口已拦；弹页期间附件被拖满的竞态兜底）
-      this.showToastSafe('待发区已有 9 个附件，请先删除再添加');
+      this.showToastSafe(`待发区已有 ${ATTACH_MAX} 个附件，请先删除再添加`);
       this.sketchResult.imageUri = '';
       return;
     }
     this.pendingImages = [...this.pendingImages, uri];
-    this.saveDraft(); // 图片变化实时写回草稿（selectAttachments 同策略）
+    this.saveDraft(); // 图片变化实时写回草稿（待发图同策略）
     this.sketchResult.imageUri = '';
     this.showToastSafe('已加入待发区');
   }
 
-  // ★ 0.297.0：进画板（满格守卫——9 格附件流已满时提示先删除）
+  // ★ 0.297.0：进画板（满格守卫——附件流已满时提示先删除）
   openSketchBoard(): void {
-    if (this.pendingImages.length + this.pendingDocs.length >= 9) {
-      this.showToastSafe('待发区已有 9 个附件，请先删除再添加');
+    if (this.attachFull()) {
+      this.showToastSafe(`待发区已有 ${ATTACH_MAX} 个附件，请先删除再添加`);
       return;
     }
     this.pathStack.pushPath({ name: 'SketchPage' });
@@ -3431,8 +3583,23 @@ export struct ChatPage {
     });
   }
 
-  // 删除待发送图片
+  // 删除待发送图片（★ 0.310.0：同步反查相册条勾选态，删图即取消条内勾选）
   removeImage(index: number): void {
+    if (index < 0 || index >= this.pendingImages.length) {
+      return;
+    }
+    const removed = this.pendingImages[index];
+    let matchedUri = '';
+    this.stripUriToData.forEach((data: string, uri: string) => {
+      if (data === removed && matchedUri.length === 0) {
+        matchedUri = uri;
+      }
+    });
+    if (matchedUri.length > 0) {
+      this.stripUriToData.delete(matchedUri);
+      this.stripSelectedUris = this.stripSelectedUris.filter((u: string) => u !== matchedUri);
+      this.syncStripCheckboxes(false);
+    }
     const newList: string[] = [];
     for (let i = 0; i < this.pendingImages.length; i++) {
       if (i !== index) {
@@ -3443,15 +3610,31 @@ export struct ChatPage {
     this.saveDraft(); // 0.214.2 删图实时写回草稿
   }
 
+  // ★ 0.310.0：按 data URI 精确移除（相册条取消勾选回调——防 index 漂移）
+  removeImageByData(data: string): void {
+    const idx = this.pendingImages.indexOf(data);
+    if (idx < 0) {
+      return;
+    }
+    const newList: string[] = [];
+    for (let i = 0; i < this.pendingImages.length; i++) {
+      if (i !== idx) {
+        newList.push(this.pendingImages[i]);
+      }
+    }
+    this.pendingImages = newList;
+    this.saveDraft();
+  }
+
   // ============================================================
   // ★ 0.275.0 PC 输入框图片直载（用户需求：Ctrl+V 粘贴剪贴板图片 + 拖拽图片进输入框）
   //   与选图器同链路（图源 → base64 data URI → pendingImages），发送/草稿/预览链零新增改动
   // ============================================================
 
-  // 从 uri 读图入待发区（拖拽 File/Image 记录、剪贴板 uri 记录共用；与 selectAttachments 同读法）
+  // 从 uri 读图入待发区（拖拽 File/Image 记录、剪贴板 uri 记录共用；与相册条同读法）
   async addImageFromUri(uri: string): Promise<boolean> {
-    if (this.pendingImages.length + this.pendingDocs.length >= 9) { // ★ 0.291.2：图+文合计口径
-      this.showToastSafe('图片与文档合计最多 9 个');
+    if (this.attachFull()) {
+      this.showToastSafe(`图片与文档合计最多 ${ATTACH_MAX} 个`);
       return false;
     }
     try {
@@ -3472,8 +3655,8 @@ export struct ChatPage {
 
   // 剪贴板 PixelMap（截图场景）打包 JPEG 入待发区（对齐 0.211.1 压缩档：q80 控制落盘体积）
   async addPixelMapImage(pm: image.PixelMap): Promise<void> {
-    if (this.pendingImages.length + this.pendingDocs.length >= 9) { // ★ 0.291.2：图+文合计口径
-      this.showToastSafe('图片与文档合计最多 9 个');
+    if (this.attachFull()) { // ★ 0.291.2：图+文合计口径
+      this.showToastSafe(`图片与文档合计最多 ${ATTACH_MAX} 个`);
       return;
     }
     try {
@@ -3557,7 +3740,7 @@ export struct ChatPage {
     }
   }
 
-  // 拖拽落点：UDMF 记录流收集全部 Image uri（多选拖入全收，与选图器同上限 9 张截断）
+  // 拖拽落点：UDMF 记录流收集全部 Image uri（多选拖入全收，与选图器同上限 ATTACH_MAX 张截断）
   handleDropImages(event: DragEvent): void {
     try {
       const udata: unifiedDataChannel.UnifiedData = event.getData();
@@ -3576,11 +3759,11 @@ export struct ChatPage {
         this.showToastSafe('仅支持拖入图片');
         return;
       }
-      // ★ 0.275.2 多张拖入（用户拍板：最多 9 张对齐选图器，超出截前 9 张+提示删了再拖）；
-      //   ★ 0.291.2 合计口径（图+文档共享 9 席）
-      const room = 9 - this.pendingImages.length - this.pendingDocs.length;
+      // ★ 0.275.2 多张拖入（用户拍板：最多 ATTACH_MAX 张对齐选图器，超出截前 N 张+提示删了再拖）；
+      //   ★ 0.291.2 合计口径（图+文档共享 ATTACH_MAX 席）
+      const room = this.attachRoom();
       if (room <= 0) {
-        this.showToastSafe('待发区已有 9 个附件，请先删除再拖入');
+        this.showToastSafe(`待发区已有 ${ATTACH_MAX} 个附件，请先删除再拖入`);
         return;
       }
       const take = Math.min(uris.length, room);
@@ -3593,7 +3776,7 @@ export struct ChatPage {
         if (idx >= take) {
           done = true;
           if (uris.length > room) {
-            this.showToastSafe(`图片较多，已添加前 ${added} 张（上限 9 张）`);
+            this.showToastSafe(`图片较多，已添加前 ${added} 张（上限 ${ATTACH_MAX} 张）`);
           } else {
             this.showToastSafe(`已添加 ${added} 张图片`);
           }
@@ -5911,6 +6094,34 @@ export struct ChatPage {
     .padding({ left: this.isTablet ? 28 : 14, right: 14, top: 8, bottom: 8 }) // ★ 0.195.0：顶栏左/上间距以气泡树信息条为准（Pad 实测：信息条标题 590px vs 本页 540px 差 20vp；left 28/14=信息条 ≥520 双分支，top 8/right 14 同款）
   }
 
+  // ★ 0.310.0：附件面板入口瓷砖（画板/拍摄/相册/文件共用——满格整块置灰）
+  @Builder
+  attachTile(icon: Resource, label: string, enabled: boolean, action: () => void) {
+    Column({ space: 6 }) {
+      Image(icon)
+        .width(24)
+        .height(24)
+        .objectFit(ImageFit.Contain)
+      Text(label)
+        .fontSize(12)
+        .fontColor(this.theme.textSecondary)
+        .maxLines(1)
+    }
+    .layoutWeight(1)
+    .height(76)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .borderRadius(16)
+    .backgroundColor(this.theme.surfaceSoft)
+    .opacity(enabled ? 1 : 0.4)
+    .enabled(enabled)
+    .onClick(() => {
+      if (enabled) {
+        action();
+      }
+    })
+  }
+
   build() {
     NavDestination() {
       Stack() {
@@ -7002,10 +7213,11 @@ export struct ChatPage {
         .layoutWeight(1)
         .width('100%')
 
-        // 图片预览区域
+        // 图片预览区域（★ 0.310.0：改横向 Scroll——9×60 在手机上必溢出，不能压出屏幕）
         if (this.pendingImages.length > 0) {
-          Row() {
-            ForEach(this.pendingImages, (img: string, index: number) => {
+          Scroll() {
+            Row({ space: 8 }) {
+              ForEach(this.pendingImages, (img: string, index: number) => {
               // ★ 0.160-fix2: × invisible on device — two suspects fixed at once:
               // ①Button default padding (≈32vp) squeezes the label out of a forced 22x22 box
               //   (content area goes negative) → use Text instead (no default padding);
@@ -7044,9 +7256,11 @@ export struct ChatPage {
               }
               .width(60)
               .height(60)
-              .margin({ right: 8 })
             }, (img: string, index: number) => `${img.substring(0, 30)}_${index}`)
+            }
           }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
           .width('100%')
           .padding({ left: 12, right: 12, top: 8 })
         }
@@ -7387,56 +7601,7 @@ export struct ChatPage {
 
             Blank()
 
-            // ★ 0.297.0：+号展开菜单（图片/文件 + 画板）——点 + 切换展开，点按钮收起并执行
-            if (this.plusMenuOpen) {
-              Row({ space: 8 }) {
-                Row({ space: 5 }) {
-                  Image($r('app.media.image'))
-                    .width(15)
-                    .height(15)
-                    .objectFit(ImageFit.Contain)
-                  Image($r('app.media.file'))
-                    .width(15)
-                    .height(15)
-                    .objectFit(ImageFit.Contain)
-                  Text('图片/文件')
-                    .fontSize(FONT_SIZE_CAPTION)
-                    .fontColor(this.theme.textSecondary)
-                    .maxLines(1)
-                }
-                .height(28)
-                .padding({ left: 10, right: 11 })
-                .borderRadius(14)
-                .backgroundColor(this.theme.surfaceSoft)
-                .border({ width: 0.5, color: this.theme.strokeCard })
-                .onClick(() => {
-                  this.plusMenuOpen = false;
-                  this.selectAttachments(); // 原 + 号链路不变（图片+文档混选，合计 9）
-                })
-
-                Row({ space: 5 }) {
-                  Image($r('app.media.sketch'))
-                    .width(15)
-                    .height(15)
-                    .objectFit(ImageFit.Contain)
-                  Text('画板')
-                    .fontSize(FONT_SIZE_CAPTION)
-                    .fontColor(this.theme.textSecondary)
-                    .maxLines(1)
-                }
-                .height(28)
-                .padding({ left: 10, right: 11 })
-                .borderRadius(14)
-                .backgroundColor(this.theme.surfaceSoft)
-                .border({ width: 0.5, color: this.theme.strokeCard })
-                .onClick(() => {
-                  this.plusMenuOpen = false;
-                  this.openSketchBoard(); // 满格守卫 + pushPath 进画板
-                })
-              }
-            }
-
-            // 右组：＋ 添加附件/画板（★ 0.297.0：点按展开双按钮菜单）——紧跟发送键左侧
+            // 右组：＋ 附件面板开关（★ 0.310.0：+ 旋转 45° 成 ×，面板在输入卡下方展开）——紧跟发送键左侧
             Row() {
               Image($r('app.media.plus'))
                 .width(18)
@@ -7449,6 +7614,12 @@ export struct ChatPage {
             .justifyContent(FlexAlign.Center)
             .margin({ right: 8 }) // ★ 0.287.4：去掉圆底（用户「+ 号取消外面的圆圈」）——裸图标+保留 28 热区，图标 16→18 补足视觉分量
             .onClick(() => {
+              if (!this.plusMenuOpen) {
+                // ★ 0.310.0：展开前按当前剩余额度重算相册条上限（组件重建时读取最新 options）
+                this.pickerOptions.maxSelectNumber = this.attachRoom();
+              } else {
+                this.stripReady = false; // 收起即组件卸载，控制器失效
+              }
               this.plusMenuOpen = !this.plusMenuOpen;
             })
 
@@ -7520,6 +7691,73 @@ export struct ChatPage {
         .width('calc(100% - 24vp)') // ★ 0.281.1：100%→calc 补偿（24=左右 margin 12×2）——0.280.1 的 100%+margin 触发 0.279.9 雷（width 百分比配 margin 会溢出、margin 被吃）致输入卡撑满贴边（用户实锤回归）；calc 先减自身边距恢复与消息区 padding 12 同轴；Stack 仍显式定宽防 0.279.19 反向测量雷，内层百分比参照已定容器
         .margin({ left: 12, right: 12, top: 10, bottom: 10 }) // ★ 0.280.1：边距从输入卡 Column 上移到 Stack（原 0.279.16/17 双 margin 合并为本行；Stack 顶=卡顶，悬浮钮 offset 参照才准）
 
+        // ★ 0.310.0：输入区 DeepSeek 式附件面板（+ 展开）——输入卡正下方、AIGC 声明行上方，仍在根 Column 内
+        //   第一行=内嵌相册条（单行模式，系统勾选框，零权限；禁止申请 READ_IMAGEVIDEO 受限权限，上架不批）
+        //   第二行=四瓷砖（画板→拍摄→相册→文件，顺序固定）；满格仅置灰+小字提示，不弹确认框
+        if (this.plusMenuOpen) {
+          Column({ space: 10 }) {
+            if (this.attachFull()) {
+              Row() {
+                Text(`已满 ${ATTACH_MAX} 个，删除后再添加`)
+                  .fontSize(13)
+                  .fontColor(this.theme.textTertiary)
+              }
+              .width('100%')
+              .height(80)
+              .justifyContent(FlexAlign.Center)
+            } else if (this.supportsEmbeddedPhotoPicker()) {
+              PhotoPickerComponent({
+                pickerOptions: this.pickerOptions,
+                pickerController: this.pickerController,
+                onSelect: (uri: string) => {
+                  this.onStripSelect(uri);
+                },
+                onDeselect: (uri: string) => {
+                  this.onStripDeselect(uri);
+                },
+                onPickerControllerReady: () => {
+                  this.stripReady = true;
+                  this.pickerOptions.maxSelectNumber = this.attachRoom();
+                  this.syncStripCheckboxes(false);
+                }
+              })
+                .width('100%')
+                .height(80)
+                .borderRadius(12)
+                .clip(true)
+            } else {
+              // PC/2in1：内嵌媒体库组件不保证可用 → 不渲染条，四瓷砖保留（相册瓷砖走文件管理器兜底）
+              Row() {
+                Text('相册快速选择仅手机/平板可用')
+                  .fontSize(13)
+                  .fontColor(this.theme.textTertiary)
+              }
+              .width('100%')
+              .height(32)
+              .justifyContent(FlexAlign.Center)
+            }
+
+            Row({ space: 10 }) {
+              this.attachTile($r('app.media.sketch'), '画板', !this.attachFull(), () => {
+                this.openSketchBoard();
+              })
+              this.attachTile($r('app.media.camera'), '拍摄', !this.attachFull(), () => {
+                this.takePhoto();
+              })
+              this.attachTile($r('app.media.image'), '相册', !this.attachFull(), () => {
+                this.pickFromAlbum();
+              })
+              this.attachTile($r('app.media.file'), '文件', !this.attachFull(), () => {
+                this.selectDocuments();
+              })
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 4, bottom: 6 })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 200, curve: Curve.EaseOut }))
+        }
+
         // ★ 0.278.4：AIGC 全局声明行（用户拍板——「内容由 AI 生成」从每条气泡下移到输入框外最下方，
         //   元宝/千问同款形态；气泡行原位改显模型名）
         // ⚠️0.278.4-fix：本行必须留在根 Column 内部、输入卡之后——严禁插到 Column 闭合「}」与根容器属性链
@@ -7561,6 +7799,11 @@ export struct ChatPage {
           // 点空白自研菜单滞留不关（用户实测）；closeSelectionMenu 主动关闭 + 状态清理
           this.closeActiveSelectionMenu();
           this.clearSelectionState();
+          // ★ 0.310.0：点空白处同步收起附件面板（与收键盘一致——否则失焦后 + 消失、面板滞留无出口）
+          if (this.plusMenuOpen) {
+            this.plusMenuOpen = false;
+            this.stripReady = false;
+          }
         })
         // ★ 0.285.2（华为官方 AI 答复范式）：页面级复制快捷键 Ctrl+Shift+C——keyboardShortcut
         //   「组件未获焦、只要窗口获焦即响应」，覆盖「划选气泡文本后焦点不在输入框」场景（华为实锤
