@@ -31,7 +31,7 @@ import { BubbleNode, ChatMessage, BubbleTree, ApiConfig, PersistData, generateNo
 import { SidebarSectionState, connectSidebarSection, KbFolderNavStore, connectKbFolderNav } from '../common/KnowledgeModel'; // ★ 0.220.0：边栏折叠态+文件夹导航共享 store（AppSideBar 树与页内视图同源）
 import { WordSidebarSectionState, connectWordSidebarSection } from '../common/WordModel'; // ★ 0.222.19：单词库边栏折叠态共享 store（独立 key，与知识库隔离）
 import { shouldPromptCloudSyncAfterLogin, enableCloudSyncNow, disableCloudSyncOnLogout } from '../utils/CloudSyncUtil'; // ★ 0.196.8：云同步↔华为账号耦合；★ 0.196.9：弹窗 UI 移 AppConfirmDialog（暗紫）
-import { siyiGateBlockReason, refreshSiyiGatePerm } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（引导弹窗文案/动作分支+权限刷新）
+import { siyiGateBlockReason } from '../utils/SiyiGate'; // ★ 0.293.0：SP 云同步门卫（引导弹窗文案/动作分支；权限刷新在 GSD/EntryAbility——0.305.2 清 unused import）
 import { AppConfirmDialog, ConfirmDialogStore, connectConfirmDialog } from '../components/AppConfirmDialog'; // ★ 0.196.9：通用确认弹窗（退出账号/云同步询问——Index 根唯一挂载点）
 import { SignInDialog, LevelUpDialog } from '../components/SignInDialog'; // ★ 0.256.0：签到弹窗+称号升级弹窗（桥驱动，Index 根唯一挂载点）
 import { AppSideBar } from '../components/AppSideBar'; // ★ 0.195.0：大屏常驻边栏（用户定稿：边栏一直存在，页面平移）
@@ -41,7 +41,7 @@ import { connectUndoStack, UndoStore } from '../common/UndoStack'; // ★ 0.287.
 import { deviceInfo } from '@kit.BasicServicesKit'; // ★ 0.222.11：设备类型兜底——畅享90pro 屏宽 600.6vp 踩线误判平板，手机端恒手机模式（抽屉导航）
 import { HuaweiAccountStore, connectHuaweiAccount, loginWithHuaweiID, logoutHuaweiID, AUTH_CANCELLED_TIP } from '../utils/HuaweiAccountUtil'; // ★ 0.164：华为账号登录；★ 0.196.9：AUTH_CANCELLED_TIP——用户取消登录静默
 import { clearAllLocalUserData } from '../utils/DataWipeUtil'; // ★ 0.263.0：退出登录「同时清空本机数据」（借给他人前场景）
-import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_META, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
+import { RADIUS_NAV, RADIUS_CONTROL, FONT_SIZE_CAPTION, FONT_SIZE_BODY, FONT_SIZE_CARD_TITLE_SM, FONT_INTER_SEMIBOLD } from '../common/DesignTokens';
 import { common } from '@kit.AbilityKit'; // ★ 0.164：登录接口需要 Context
 import { connectWordBank } from '../utils/WordStoreUtil'; // ★ 0.204.0：启动构建桌面卡片快照
 import { connectKnowledgeBank } from '../utils/KnowledgeStoreUtil'; // ★ 0.204.0：同上
@@ -133,6 +133,7 @@ struct Index {
   @Local onboardingChecked: boolean = false;   // 默认未勾选（合规红线）
   @Local onboardingViewing: number = -1;       // -1=门禁主态 0=用户协议正文 1=隐私政策正文
   @Local onboardingShakeX: number = 0;         // 未勾选点登录的抖动偏移
+  @Local onboardingLocalShakeX: number = 0;    // ★ 0.305.2：未勾选点「暂不登录」的抖动偏移
   @Local onboardingHint: string = '';          // 未勾选提示（与登录失败 tip 分开）
   // ★ 0.279.2 华为协议门禁弹窗同款校正（hwAgreed 水合迟到同理）
   @Computed get showHwAgreementPrompt(): boolean {
@@ -212,7 +213,15 @@ struct Index {
   }
 
   // ★ 0.303.0：首启「暂不登录，先本地使用」——协议已同意，本地三板块照用
+  // ★ 0.305.2：未勾选协议不得放行（用户实测报障合规漏洞——原实现无勾选守卫直接
+  //   markAgreed()，「暂不登录」变成静默同意通道，门禁整体失效；本地使用同样以
+  //   同意协议为前提，与登录按钮同款抖动负反馈）
   onOnboardingLocalOnly(): void {
+    if (!this.onboardingChecked) {
+      this.onboardingHint = '请先勾选并同意协议';
+      this.shakeOnboardingLocal();
+      return;
+    }
     markHwAgreed();
     markAgreed();
     this.onboardingTip = '';
@@ -542,6 +551,16 @@ struct Index {
     }
   }
 
+  // ★ 0.305.2：「暂不登录」未勾选抖动（与登录按钮同款序列，驱动各自偏移字段）
+  shakeOnboardingLocal(): void {
+    const seq: number[] = [8, -8, 6, -6, 3, -3, 0];
+    for (let i = 0; i < seq.length; i++) {
+      setTimeout(() => {
+        this.onboardingLocalShakeX = seq[i];
+      }, 40 * i);
+    }
+  }
+
   toggleOnboardingChecked(): void {
     if (this.isProcessing) {
       return;
@@ -558,7 +577,7 @@ struct Index {
       return;
     }
     if (!this.onboardingChecked) {
-      this.onboardingHint = '请先勾选同意上述协议';
+      this.onboardingHint = '请先勾选并同意协议'; // ★ 0.305.2：「上述协议」改「协议」（协议在按钮下方，无上述关系）
       this.shakeOnboarding();
       return;
     }
@@ -640,6 +659,7 @@ struct Index {
         .fontSize(FONT_SIZE_CARD_TITLE_SM)
         .fontColor(this.theme.textSecondary)
         .margin({ top: 20 })
+        .translate({ x: this.onboardingLocalShakeX })
         .onClick(() => {
           if (!this.isProcessing) {
             this.onOnboardingLocalOnly();

@@ -32,7 +32,7 @@
 
 ## pages/
 
-**Index.ets** 799 行 ｜ F: 主页面：Navigation 路由壳+全局弹窗唯一挂载区+启动链（备份恢复询问/卡片快照）+★0.305.0 首启门禁=首页双态（@Computed needsOnboarding 原地渲染门禁态/正常态，无覆盖层；协议正文=首页内切换页；合规逻辑守卫=未同意不渲染边栏/sideBarNav 拦截）+loginCore（门禁检查分离））+SiyiGate 引导弹窗+新用户礼包+登录订阅墙拆除+侧边栏版本号（★0.301.1 读 GSD APP_VERSION 单一来源——0.293.0 硬编码漏更七版根治） ｜ R: 几乎全部 components/common；BackupUtil、CloudSyncUtil、HuaweiAccountUtil、SiyiGate ｜ ⚠S: 满屏必须 Stack 包 Navigation+expandSafeArea；根 Stack 顶层=全部弹窗桥唯一挂载点；畅享 600.6vp 踩线须 deviceInfo 兜底恒手机模式；主题空串=新用户未选择哨兵；**首启登录必须走 loginCore 直通（走 doLogin 会撞 needsAgreement 弹回同一门禁成死循环）**；**首启门禁=首页双态禁回退成覆盖层/延迟判定（0.303 双层重复债已于 0.305.0 清理）**
+**Index.ets** 1267 行 ｜ F: 主页面：Navigation 路由壳+全局弹窗唯一挂载区+启动链（备份恢复询问/卡片快照）+★0.305.0 首启门禁=首页双态（@Computed needsOnboarding 原地渲染门禁态/正常态，无覆盖层；协议正文=首页内切换页；合规逻辑守卫=未同意不渲染边栏/sideBarNav 拦截；★0.305.2 暂不登录/登录两按钮均前置 onboardingChecked 勾选守卫+抖动负反馈——「暂不登录」曾无守卫直通 markAgreed()=合规漏洞）+loginCore（门禁检查分离）+SiyiGate 引导弹窗+新用户礼包+侧边栏版本号（★0.301.1 读 GSD APP_VERSION 单一来源）+首页正常态（进入气泡树+华为登录区——去留待用户拍板） ｜ R: 几乎全部 components/common；BackupUtil、CloudSyncUtil、HuaweiAccountUtil、SiyiGate ｜ ⚠S: 满屏必须 Stack 包 Navigation+expandSafeArea；根 Stack 顶层=全部弹窗桥唯一挂载点；畅享 600.6vp 踩线须 deviceInfo 兜底恒手机模式；主题空串=新用户未选择哨兵；**首启登录必须走 loginCore 直通（走 doLogin 会撞 needsAgreement 弹回同一门禁成死循环）**；**首启门禁=首页双态禁回退成覆盖层/延迟判定（0.303 双层重复债已于 0.305.0 清理）；门禁态任何放行按钮（登录/暂不登录）都必须先过勾选守卫——漏一处=协议静默同意合规漏洞（0.305.2 实锤）**
 
 ## components/
 
