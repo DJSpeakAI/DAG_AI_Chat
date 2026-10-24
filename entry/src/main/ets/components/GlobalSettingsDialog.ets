@@ -203,7 +203,7 @@ class TtsTabCache {
 
 // ★ 0.190.6：应用版本常量（关于 Tab 显示 + 反馈邮件预填）——与 Index.ets 版本号、app.json5
 // versionCode 三处同步（改版本时同步更新此处）
-export const APP_VERSION: string = 'v0.305.2'; // ★ 0.305.2：首启门禁合规漏洞修复 // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
+export const APP_VERSION: string = 'v0.305.3'; // ★ 0.305.3：首页正常态退役（直进气泡树） // ★ 0.301.1：修 Index 侧边栏版本号硬编码漏更七版 bug（现读本常量单一来源，版本同步点三处制：app.json5+GSD+Index 自动跟）
 // ★ 0.190.6：反馈邮箱（用户提供）
 const FEEDBACK_EMAIL: string = '1725912449@qq.com';
 

@@ -28,7 +28,7 @@
 - 测试台交互双轨：用户自用=双击桌面「启动测试台.sh」全自动；AI 驱动=对话里说跑什么，AI 全自动起查盯报；唯一人工=华为授权弹窗
 
 ## PENDING 待办与待验收
-**★ 真人测试流程库（2026-10-24 用户定稿）**：用户口述的人工实测流程结构化沉淀在 docs/真人测试流程参考.md——**测试台新增/更新用例前必须先读它对齐真实用户路径**（真人走查比 AI 编写更真实，冲突时以它为准）；用户会持续口述新流程，收到即追加该档。首条=手机首启全链路（7 场景，含 0.305.1 实测 bug 链）。**连带待办：0.305.3 首页正常态退役（用户已拍板「同意协议后直进气泡树」）**——删 Index 首页正常态（进入气泡树+登录区），冷启直达气泡树，登录入口走设置。
+**★ 真人测试流程库（2026-10-24 用户定稿）**：用户口述的人工实测流程结构化沉淀在 docs/真人测试流程参考.md——**测试台新增/更新用例前必须先读它对齐真实用户路径**（真人走查比 AI 编写更真实，冲突时以它为准）；用户会持续口述新流程，收到即追加该档。首条=手机首启全链路（7 场景，0.305.2/0.305.3 均已修复/实施）。
 **★ 代理提醒权益重申（0.302.1）**：首次申请被驳（缺设置场景截图）→ GSD 已补提醒设置区块+截图在桌面「AI交接/代理提醒-设置场景截图.jpeg」；**等用户带截图重新提交 AGC 申请（入口：项目设置→开放能力管理→代理提醒）；通过后必须重建 Profile+重新签名才真正生效**（connect API 通道，见约束#18；获批前 publishReminder 1700002 静默降级零影响）。
 **★ 0.300.0 司枢 Agent 3.0 待装机验收（六场景=任务书 §九）**：①「去华为官方查 App 上架资质」零点击自动搜索开网页带资料回答；②喂文档+「优化后发华为开发者论坛」=论坛帖体裁成品可整体复制零分析腔/只说「帮我优化一下」=先反问选择题；③司枢+联网同开不互斥；④模糊需求 1 轮 1~3 题反问/明确需求绝不反问；⑤全程 SP 逐轮可见+取消按已耗结算；⑥成品卡一键切形态立即重写。⚠️御史轮/枢机契约链未经真机验证（build 绿≠链路对）——真机异常先查 PLAN3 契约解析与 streamChat 尾参错位高危区。
 **★ 0.299.2.x 云同步战役战果（2026-10-23）**：三端（PC/Pad/手机）SP 200 万全等一致 ✓；bug1/bug5 已根治（根因链全案 grep HISTORY 0.299.2/0.299.2.2）。**连带待修**：①~~bug6 老账号重装误弹「新用户礼包」~~ **✅0.302.3 已修**（见版本表）②bug7 本地空 api-config 以新时间戳 LWW 压制云端好配置（mergeCfgs apply 通道对空值零防御）③手机仍在 0.293.0 待升级（盘值 warn 尾巴）。备份：/data/storage/el2/base/temp/deveco/pcdb-backup/（P2 4MB+旧 RDB 9MB）。
@@ -53,13 +53,14 @@
 
 |版本|核心能力 / 关键教训|
 | ---- | ---- |
+|0.305.3|✅**首页正常态退役（用户拍板「同意协议后直进气泡树」）**：删 Index 首页正常态整段（进入气泡树按钮/华为账号登录区/loginTip 文本位/首页版本号）→ 三落点直达画布：①冷启已同意（aboutToAppear setTimeout(0)——pathStack aboutToAppear 时未附着立即 push 会静默丢）②暂不登录同意完成 ③首启登录成功；home 已同意态=品牌衬底（Blank+brandHeader+Blank，pop 落回再按返回退出 app）。**连带清债**：getHuaweiAccount/getDisplayName/onHomeAccountClick/loginTip 状态全链删；常规登录/退出失败提示改 toast（删 UI 不删反馈）；HuaweiAccountStore/connectHuaweiAccount unused import 清；app.media.user 图标 base+dark 双份删（零引用）。三台 1000456。**测试台连带待核对：冷启用例/登录入口/版本号核对路径（见 docs/真人测试流程参考.md 0.305.3 连带变更节；testing/ 红线 CLI 未动）**|
 |0.305.2|✅**首启门禁合规漏洞修复（用户手机实测报障）**：「暂不登录，先本地使用」原实现（Index.onOnboardingLocalOnly）无勾选守卫直接 markAgreed()=未同意协议静默放行，后续进气泡树/开云同步/性格测试全失守；补 onboardingChecked 守卫+抖动负反馈（新状态 onboardingLocalShakeX）；文案「请先勾选同意上述协议」→「请先勾选并同意协议」（协议在按钮下方无上述关系）；连带清 Index 两处 unused import（refreshSiyiGatePerm/FONT_SIZE_META）。**S 坑再证：check_ets_files 对刚改文件缓存失真，unused 判定必须 grep 现文件复核**。三台已装 1000455。**遗留待用户拍板：首页正常态（进入气泡树+登录华为账号页）去留——用户倾向删（同意协议后直进气泡树），待确认**|
 |0.305.1|✅**技术债三连清零（用户军令"技术债绝对不允许存在"）+零技术债军令入档（project_rule 新节+收尾六件套⑥+AGENTS）**：①订阅退役残留全链删（ReminderDialog 组件+Index 挂载/isVip/vipExpire/vipDaysLeft/stampFreeTrial 打戳/到期提醒引擎；**stampFreeTrialOnLogin→改名 onLoginAccountHooks()**——它 0.293/0.256 被塞了账号切换检测+签到引导活职责不能整删，改名留活职删打戳；SubscriptionStore 类与字段按 **Schema 铁律保留占位**（现役=兑换码/IAP 账本载体，freeTrialStart 等退役字段永不写入））②硬编码色值 33 处全量 token 化（AppTheme 补 onBrand/glassTint/glassStroke/successBg/glowBg+样张常量；#4CAF50→success 等语义归位；唯一豁免=透明哨兵注释）③unused 参数 _ 前缀 5 处（存量已随①大部消解）。**S 坑：codelinter 报 deep-clone/Date 复用=性能建议非债（JSON 往返具名化是 arkts 防御定式勿改）；check_ets_files 对刚改过的文件缓存严重失真——unused 清理须 grep 现文件验证后再修**。三债各编译+git 分批上传；四端冷装 1000454|
 |0.305.0|✅**首页双态重构 + 全代码技术债审计**（用户拍板「不要在首页上盖一层」）：删 components/OnboardingGate.ets 独立覆盖层与 Index 根挂载 → 首页 @Computed needsOnboarding 双态渲染（brandHeader 两态共用一份=零重复）；协议正文变首页内切换页；合规改逻辑守卫（未同意不渲染侧边栏/sideBarNav 入口守卫/不弹业务弹窗）。**连带清债**：AgreementBridge.promptVisible 退役（原 basic 弹窗无挂载点=死路）、Billing/GSD/SideBar 三处 needsAgreement 弹窗分支删除、PC 首页死勾选逻辑删除、撤回同意改 terminateSelf、800ms 门禁判定彻底移除、3 个零引用图标删除。审计清单（待专项）：订阅体系退役残留 9 文件 ~37 处（Index 仍挂 ReminderDialog）；硬编码色值 85 处；未用 import 警告 191 条。全案 docs/0.165+/0.305.0|
 |0.304.2|✅**首启门禁两修**（用户实测报障）：①**bug=冷装首启先闪主界面 ~0.8s 再弹门禁**——根因 Index.aboutToAppear 里 `setTimeout(800ms)` 是 0.279.2 等 PersistenceV2 水合的**时代遗留**；0.279.5 协议存储已整体迁 preferences 同步接口（getSync 即时真值）→ 改**同步判定**（aboutToAppear 先于首帧 build = 首帧直出门禁）。**S 槽：凡「延迟判定弹窗」先查该延迟是否已失效——迁移同步存储后必须回收 setTimeout**。②手机版式终稿：删「登录华为账号，学习数据多端同步」说明句；协议行**固定两行**（用户/隐私协议一行、华为认证协议另起）整组 X 轴居中；「暂不登录」移到按钮下、「不同意退出」移到协议下；**协议行/暂不登录/不同意退出/品牌副标题字号统一 13**（用户「都跟你的AI学习伴侣对齐」）；UI_GUIDELINES 12c 改终稿。四台冷装 1000452 ✓（不启动）|
 |0.304.1|（已迁 docs/MEMORY_HISTORY.md）|
 
-- 版本号纪律：当前 **v0.305.2（versionCode 1000455）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
+- 版本号纪律：当前 **v0.305.3（versionCode 1000456）**；**★ 0.301.1 起版本同步回三处制**：app.json5 + GSD APP_VERSION（已 export）+ Index 侧边栏（读 GSD 单一来源自动跟）——0.292.1「两处制」认知作废（实锤 Index.ets 824 行 0.293.0 硬编码漏更七版的第四处）；versionCode 每版 +1，定号唯一依据=app.json5 实读（多 AI 并行定号规则见 project_rule §7）
 - 迭代文档命名：版本号 变更内容.md（详见 project_rule §7）
 - 真机测试设备（阵容与账号分工定稿）：**三件套常测试=鸿蒙 PC（本机）+ MatePad 11.5 S（hdc 7HZUN26330G02209）+ 畅享90Pro Max（WiFi 192.168.2.17:38611）**，同测同装机；第四台 Pura X View（192.168.2.4:39421）=用户工作机默认不测不装；**手机+Pad 登 180 测试账户、PC+Pura 登 181 主账号**；设备 IP 会变，连不上先问用户；`param get const.product.model` 验身份
 
