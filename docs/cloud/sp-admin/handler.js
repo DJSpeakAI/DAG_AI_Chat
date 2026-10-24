@@ -103,6 +103,216 @@ async function handleReport(event) {
   return { ok: 'y' };
 }
 
+// ══════════════════════════════════════════════════════════════
+// ★ 0.312.0 SP 云函数权威记账（B 方案·根除云空间白嫖；全案 docs/0.312.0）
+// 病根：SP 账本存在华为云空间行里——系统后台关同步后上行失败但本地照扣=白嫖。
+// 解法：SpMirror=权威余额（objectId=accountId），SpLedger=流水+幂等键（objectId=txId），
+//   一切消耗/发放必须本云函数成功才在客户端生效；云空间开关开不开都绕不过。
+// 幂等：同 txId 重复请求返回首次结果（防重试双扣）；sp_init 云端已有记录绝不覆盖。
+// 并发：读-改-写；多端同时扣极小概率丢更新=少扣（对用户有利、无负余额）。字段集=SpMirror 现有 schema 全集（不新增字段，免 AGC 控制台改对象类型）。
+// ══════════════════════════════════════════════════════════════
+function availableOf(m) {
+  return (toInt(m.permSp) + toInt(m.bonusSp) + toInt(m.giftSp))
+    - (toInt(m.permCons) + toInt(m.bonusCons) + toInt(m.giftCons));
+}
+
+async function readMirror(accountId) {
+  const rows = rowsToPlain(await mirrorCol.query().equalTo('objectId', accountId).get());
+  return rows.length > 0 ? rows[0] : null;
+}
+
+async function readLedgerRow(txId) {
+  const rows = rowsToPlain(await ledgerCol.query().equalTo('objectId', txId).get());
+  return rows.length > 0 ? rows[0] : null;
+}
+
+// 余额快照返回体（客户端镜像的唯一来源）
+function balanceOut(m) {
+  return {
+    ok: true,
+    bal: availableOf(m),
+    permSp: toInt(m.permSp),
+    permCons: toInt(m.permCons),
+    bonusSp: toInt(m.bonusSp),
+    bonusCons: toInt(m.bonusCons),
+    giftSp: toInt(m.giftSp),
+    giftCons: toInt(m.giftCons),
+    welcomeGranted: !!m.welcomeGranted,
+  };
+}
+
+// ── sp_balance：查权威余额（客户端门卫/展示）──
+async function handleSpBalance(event) {
+  const accountId = String(event.accountId || '');
+  if (!accountId) {
+    return { ok: false, err: 'accountId required' };
+  }
+  const m = await readMirror(accountId);
+  if (m === null) {
+    return { ok: false, err: 'no-account' }; // 客户端走 sp_init 初始化
+  }
+  return balanceOut(m);
+}
+
+// ── sp_init：旧账号/新账号初始化（云端已有记录绝不覆盖——数据安全第一）──
+async function handleSpInit(event) {
+  const accountId = String(event.accountId || '');
+  if (!accountId) {
+    return { ok: false, err: 'accountId required' };
+  }
+  const existing = await readMirror(accountId);
+  if (existing !== null) {
+    return balanceOut(existing); // 已有权威账本：忽略入参（防本地伪造覆盖云端）
+  }
+  const m = {
+    objectId: accountId,
+    permSp: Math.max(0, toInt(event.permSp)),
+    permCons: Math.max(0, toInt(event.permCons)),
+    bonusSp: Math.max(0, toInt(event.bonusSp)),
+    bonusCons: Math.max(0, toInt(event.bonusCons)),
+    giftSp: Math.max(0, toInt(event.giftSp)),
+    giftCons: Math.max(0, toInt(event.giftCons)),
+    welcomeGranted: !!event.welcomeGranted,
+    pkgJson: '[]',
+    deviceModel: String(event.deviceModel || ''),
+    reportedAt: nowSec(),
+  };
+  await mirrorCol.upsert(buildRow('SpMirror', m));
+  return balanceOut(m);
+}
+
+// ── sp_spend：事务扣点（gift→bonus→perm；幂等 txId）──
+async function handleSpSpend(event) {
+  const accountId = String(event.accountId || '');
+  const txId = String(event.txId || '');
+  const cost = toInt(event.cost);
+  if (!accountId || !txId) {
+    return { ok: false, err: 'accountId/txId required' };
+  }
+  if (cost <= 0) {
+    return { ok: false, err: 'cost must > 0' };
+  }
+  // 幂等：同 txId 已记账 → 返回首次结果，绝不二次扣
+  const dup = await readLedgerRow(txId);
+  if (dup !== null) {
+    return { ok: true, duplicate: true, cost: toInt(dup.amount), bal: toInt(dup.balAfter) };
+  }
+  const m0 = await readMirror(accountId);
+  if (m0 === null) {
+    return { ok: false, err: 'no-account' };
+  }
+  let avail = availableOf(m0);
+  if (avail < cost) {
+    return { ok: false, err: 'insufficient', bal: avail, need: cost };
+  }
+  // 扣减顺序与客户端 consumeSiyiSp 一致：gift → bonus → perm
+  let remain = cost;
+  let g = toInt(m0.giftSp);
+  let gc = toInt(m0.giftCons);
+  let b = toInt(m0.bonusSp);
+  let bc = toInt(m0.bonusCons);
+  let p = toInt(m0.permSp);
+  let pc = toInt(m0.permCons);
+  const gAvail = g - gc;
+  if (gAvail > 0) {
+    const take = Math.min(gAvail, remain);
+    gc += take;
+    remain -= take;
+  }
+  if (remain > 0) {
+    const bAvail = b - bc;
+    if (bAvail > 0) {
+      const take = Math.min(bAvail, remain);
+      bc += take;
+      remain -= take;
+    }
+  }
+  if (remain > 0) {
+    const pAvail = p - pc;
+    if (pAvail > 0) {
+      const take = Math.min(pAvail, remain);
+      pc += take;
+      remain -= take;
+    }
+  }
+  const m1 = {
+    objectId: accountId,
+    permSp: p, permCons: pc,
+    bonusSp: b, bonusCons: bc,
+    giftSp: g, giftCons: gc,
+    welcomeGranted: !!m0.welcomeGranted,
+    pkgJson: String(m0.pkgJson || '[]'),
+    deviceModel: String(m0.deviceModel || event.deviceModel || ''),
+    reportedAt: nowSec(),
+  };
+  await mirrorCol.upsert(buildRow('SpMirror', m1));
+  await ledgerCol.upsert(buildRow('SpLedger', {
+    objectId: txId,
+    accountId: accountId,
+    ts: nowSec(),
+    event: 'spend',
+    src: String(event.scene || 'ai'),
+    amount: -cost,
+    pool: 'auto',
+    balAfter: availableOf(m1),
+    deviceModel: String(event.deviceModel || ''),
+    note: String(event.note || ''),
+  }));
+  return { ok: true, cost: cost, bal: availableOf(m1) };
+}
+
+// ── sp_grant：事务加池（幂等 txId；pool=gift|bonus|perm）──
+async function handleSpGrant(event) {
+  const accountId = String(event.accountId || '');
+  const txId = String(event.txId || '');
+  const amount = toInt(event.amount);
+  const pool = String(event.pool || 'bonus');
+  if (!accountId || !txId) {
+    return { ok: false, err: 'accountId/txId required' };
+  }
+  if (amount <= 0) {
+    return { ok: false, err: 'amount must > 0' };
+  }
+  if (pool !== 'gift' && pool !== 'bonus' && pool !== 'perm') {
+    return { ok: false, err: 'pool invalid' };
+  }
+  const dup = await readLedgerRow(txId);
+  if (dup !== null) {
+    return { ok: true, duplicate: true, amount: toInt(dup.amount), bal: toInt(dup.balAfter) };
+  }
+  const m0 = await readMirror(accountId);
+  if (m0 === null) {
+    return { ok: false, err: 'no-account' };
+  }
+  const m1 = {
+    objectId: accountId,
+    permSp: toInt(m0.permSp) + (pool === 'perm' ? amount : 0),
+    permCons: toInt(m0.permCons),
+    bonusSp: toInt(m0.bonusSp) + (pool === 'bonus' ? amount : 0),
+    bonusCons: toInt(m0.bonusCons),
+    giftSp: toInt(m0.giftSp) + (pool === 'gift' ? amount : 0),
+    giftCons: toInt(m0.giftCons),
+    welcomeGranted: !!m0.welcomeGranted,
+    pkgJson: String(m0.pkgJson || '[]'),
+    deviceModel: String(m0.deviceModel || ''),
+    reportedAt: nowSec(),
+  };
+  await mirrorCol.upsert(buildRow('SpMirror', m1));
+  await ledgerCol.upsert(buildRow('SpLedger', {
+    objectId: txId,
+    accountId: accountId,
+    ts: nowSec(),
+    event: 'grant',
+    src: String(event.src || 'unknown'),
+    amount: amount,
+    pool: pool,
+    balAfter: availableOf(m1),
+    deviceModel: String(event.deviceModel || ''),
+    note: String(event.note || ''),
+  }));
+  return { ok: true, amount: amount, bal: availableOf(m1) };
+}
+
 // ── app: fetch 指令拉取（claim 派发+超时回收；竞态窗口毫秒级=一期已知边界）──
 async function handleFetch(event) {
   const accountId = String(event.accountId || '');
@@ -294,6 +504,23 @@ exports.myHandler = async function (event, context, callback) {
     }
     if (action === 'probe') {
       callback(await handleProbe(ev));
+      return;
+    }
+    // ★ 0.312.0 SP 权威记账四接口（客户端直调——无需 admin token，账本接口幂等+云端校验防滥用）
+    if (action === 'sp_balance') {
+      callback(await handleSpBalance(ev));
+      return;
+    }
+    if (action === 'sp_init') {
+      callback(await handleSpInit(ev));
+      return;
+    }
+    if (action === 'sp_spend') {
+      callback(await handleSpSpend(ev));
+      return;
+    }
+    if (action === 'sp_grant') {
+      callback(await handleSpGrant(ev));
       return;
     }
     if (action === 'query' || action === 'command' || action === 'commands') {

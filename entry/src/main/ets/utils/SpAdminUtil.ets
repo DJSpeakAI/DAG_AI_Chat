@@ -131,3 +131,141 @@ export async function spAdminProbe(accountId: string, deviceModel: string): Prom
   }
   return 'err'; // 'e' 异常 / 空串（旧版函数 unknown action 等）——无法判定按通道失败处理
 }
+
+// ============================================================
+// ★ 0.312.0 SP 云函数权威记账（B 方案·根除云空间白嫖）——四接口客户端封装
+// 语义：余额权威在云端（SpMirror），一切消耗/发放必须本通道成功才在客户端生效。
+// 返回统一 SpAuthResult：ok=false 时 err 区分 no-account/insufficient/network/unknown；
+//   通道失败（resp=null）= network；旧版函数（unknown action）= unknown（客户端降级策略自定）。
+// 全案：docs/0.312.0 SP云函数权威记账.md
+// ============================================================
+export class SpAuthResult {
+  ok: boolean = false;
+  err: string = '';           // no-account / insufficient / network / unknown / 空（成功）
+  bal: number = 0;            // 云端权威余额（三池可用合计）
+  permSp: number = 0;
+  permCons: number = 0;
+  bonusSp: number = 0;
+  bonusCons: number = 0;
+  giftSp: number = 0;
+  giftCons: number = 0;
+  welcomeGranted: boolean = false;
+  amount: number = 0;         // spend 实扣 / grant 实发
+  duplicate: boolean = false; // 幂等命中（txId 已记账，本次未重复扣/发）
+}
+
+// 字段读取（stringify 定式：Record 值转字符串再解析——绕开 Object 直转 Number/布尔的类型限制）
+function strOf(obj: Record<string, Object>, key: string): string {
+  const v = obj[key];
+  if (v === undefined || v === null) {
+    return '';
+  }
+  return `${v}`;
+}
+
+function numOf(obj: Record<string, Object>, key: string): number {
+  const n = Number(strOf(obj, key));
+  return isNaN(n) ? 0 : n;
+}
+
+function boolOf(obj: Record<string, Object>, key: string): boolean {
+  const s = strOf(obj, key);
+  return s === 'true' || s === '1' || s === 'y';
+}
+
+// 响应解析（stringify 双路径同 readStringField 定式——避免 any/索引访问违规）
+function parseAuthResult(resp: Object | null): SpAuthResult {
+  const out = new SpAuthResult();
+  if (resp === null) {
+    out.err = 'network';
+    return out;
+  }
+  let obj: Record<string, Object> | null = null;
+  try {
+    const raw = JSON.stringify(resp);
+    const parsed = JSON.parse(raw) as Record<string, Object>;
+    obj = parsed;
+    const nested = parsed['responseBody'];
+    if (nested !== undefined && typeof nested === 'object' && nested !== null) {
+      obj = nested as Record<string, Object>;
+    }
+  } catch (_e) {
+    out.err = 'unknown';
+    return out;
+  }
+  if (obj === null) {
+    out.err = 'unknown';
+    return out;
+  }
+  out.ok = boolOf(obj, 'ok');
+  out.err = strOf(obj, 'err');
+  out.bal = numOf(obj, 'bal');
+  out.permSp = numOf(obj, 'permSp');
+  out.permCons = numOf(obj, 'permCons');
+  out.bonusSp = numOf(obj, 'bonusSp');
+  out.bonusCons = numOf(obj, 'bonusCons');
+  out.giftSp = numOf(obj, 'giftSp');
+  out.giftCons = numOf(obj, 'giftCons');
+  out.welcomeGranted = boolOf(obj, 'welcomeGranted');
+  out.amount = numOf(obj, 'amount') > 0 ? numOf(obj, 'amount') : numOf(obj, 'cost');
+  out.duplicate = boolOf(obj, 'duplicate');
+  if (!out.ok && out.err.length === 0) {
+    out.err = 'unknown';
+  }
+  return out;
+}
+
+// 查权威余额（no-account=云端无账本，调用方走 spAuthInit）
+export async function spAuthBalance(accountId: string): Promise<SpAuthResult> {
+  const payload: Record<string, Object> = {};
+  payload['action'] = 'sp_balance';
+  payload['accountId'] = accountId;
+  return parseAuthResult(await callWithRetry(payload));
+}
+
+// 初始化云端账本（云端已有记录则忽略入参返回现有余额——绝不覆盖，数据安全第一）
+export async function spAuthInit(accountId: string, permSp: number, permCons: number,
+  bonusSp: number, bonusCons: number, giftSp: number, giftCons: number,
+  welcomeGranted: boolean, deviceModel: string): Promise<SpAuthResult> {
+  const payload: Record<string, Object> = {};
+  payload['action'] = 'sp_init';
+  payload['accountId'] = accountId;
+  payload['permSp'] = `${Math.max(0, Math.floor(permSp))}`;
+  payload['permCons'] = `${Math.max(0, Math.floor(permCons))}`;
+  payload['bonusSp'] = `${Math.max(0, Math.floor(bonusSp))}`;
+  payload['bonusCons'] = `${Math.max(0, Math.floor(bonusCons))}`;
+  payload['giftSp'] = `${Math.max(0, Math.floor(giftSp))}`;
+  payload['giftCons'] = `${Math.max(0, Math.floor(giftCons))}`;
+  payload['welcomeGranted'] = welcomeGranted ? '1' : '0';
+  payload['deviceModel'] = deviceModel;
+  return parseAuthResult(await callWithRetry(payload));
+}
+
+// 事务扣点（txId 幂等——重试不双扣；不足=insufficient 拦截）
+export async function spAuthSpend(accountId: string, txId: string, cost: number,
+  scene: string, note: string, deviceModel: string): Promise<SpAuthResult> {
+  const payload: Record<string, Object> = {};
+  payload['action'] = 'sp_spend';
+  payload['accountId'] = accountId;
+  payload['txId'] = txId;
+  payload['cost'] = `${Math.max(1, Math.floor(cost))}`;
+  payload['scene'] = scene;
+  payload['note'] = note;
+  payload['deviceModel'] = deviceModel;
+  return parseAuthResult(await callWithRetry(payload));
+}
+
+// 事务加池（txId 幂等；pool=gift|bonus|perm）
+export async function spAuthGrant(accountId: string, txId: string, src: string,
+  amount: number, pool: string, note: string, deviceModel: string): Promise<SpAuthResult> {
+  const payload: Record<string, Object> = {};
+  payload['action'] = 'sp_grant';
+  payload['accountId'] = accountId;
+  payload['txId'] = txId;
+  payload['src'] = src;
+  payload['amount'] = `${Math.max(1, Math.floor(amount))}`;
+  payload['pool'] = pool;
+  payload['note'] = note;
+  payload['deviceModel'] = deviceModel;
+  return parseAuthResult(await callWithRetry(payload));
+}
