@@ -850,6 +850,18 @@ const server = http.createServer(async (req, res) => {
           const b = JSON.parse(cbody || '{}');
           const targets = Array.isArray(b.targets) ? b.targets : [];
           if (targets.length === 0) { sendJson(res, 400, { ok: false, err: 'targets 必填（账号 ID 数组）' }); return; }
+          // ★ 0.308.2：手机号别名解析（同查询接口 0.302.4.2 语义——已绑定→映射账号 ID；
+          //   未绑定→拦截报错，杜绝「手机号原文落 target=永不被拉取的死单」——2026-10-24 实锤：
+          //   target=18115530752 的 deduct 指令 pending 到天荒地老）
+          const aliases = loadAliases();
+          for (let i = 0; i < targets.length; i++) {
+            const raw = String(targets[i]).trim();
+            if (/^1\d{10}$/.test(raw)) {
+              const mapped = aliases[raw];
+              if (!mapped) { sendJson(res, 400, { ok: false, err: `手机号 ${raw} 未绑定账号——先用账号 ID 在「账号查询」查一次，再点账号卡片里的「绑定手机号」` }); return; }
+              targets[i] = mapped;
+            }
+          }
           if (b.type !== 'grant' && b.type !== 'deduct') { sendJson(res, 400, { ok: false, err: 'type 必须 grant/deduct' }); return; }
           // ★ 0.302.3.2：池类型（嘉奖/充能）用 type 后缀承载——零表结构变更（Cloud DB 不新增字段）：
           //   bonus=嘉奖（默认，兼容旧端 grant/deduct）；permanent=充能 → grant_perm / deduct_perm

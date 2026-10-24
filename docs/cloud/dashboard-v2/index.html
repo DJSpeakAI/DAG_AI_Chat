@@ -84,8 +84,8 @@
 </div>
 
 <div class="tabs">
-  <div class="tab" data-p="p7" onclick="switchTab('p7')">① SP 数据台</div>
-  <div class="tab active" data-p="p1" onclick="switchTab('p1')">② 行为埋点</div>
+  <div class="tab active" data-p="p7" onclick="switchTab('p7')">① SP 数据台</div>
+  <div class="tab" data-p="p1" onclick="switchTab('p1')">② 行为埋点</div>
   <div class="tab" data-p="p2" onclick="switchTab('p2')">③ SP 消耗与发放</div>
   <div class="tab" data-p="p3" onclick="switchTab('p3')">④ 毛利财务</div>
   <div class="tab" data-p="p4" onclick="switchTab('p4')">⑤ 规模与质量</div>
@@ -93,8 +93,8 @@
   <div class="tab" data-p="p6" onclick="switchTab('p6')">⑦ AI 助手</div>
 </div>
 
-<!-- ============ ★ 0.302.1.3 Tab7 SP 数据台（自测试台平移：查账号/下指令/盯执行） ============ -->
-<div class="page" id="p7">
+<!-- ============ ★ 0.302.1.3 Tab7 SP 数据台（自测试台平移：查账号/下指令/盯执行）——★ 0.308.2 默认 Tab（用户拍板：后台数据打开直达 SP 数据台） ============ -->
+<div class="page show" id="p7">
   <div class="card">
     <h2>账号查询（任意华为账号 SP 全貌——unionID/openID；账号 ID 直接粘贴）</h2>
     <div class="controls">
@@ -123,8 +123,8 @@
   </div>
 </div>
 
-<!-- ============ Tab1 行为埋点（0.206.dash 平移） ============ -->
-<div class="page show" id="p1">
+<!-- ============ Tab1 行为埋点（0.206.dash 平移；★ 0.308.2 默认 Tab 让位 SP 数据台） ============ -->
+<div class="page" id="p1">
   <div class="card">
     <h2>App 界面热区还原（标注 = 被埋点按钮 · 数字 = 窗口内点击数 · 点击跳转图表）</h2>
     <div class="controls">
